@@ -1,0 +1,16 @@
+{
+  "name": "cerebral-helm",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "bootstrap": "node ./scripts/bootstrap.mjs",
+    "check-toolchain": "node ./scripts/check-toolchain.mjs",
+    "dashboard-build": "corepack pnpm --dir apps/dashboard build",
+    "dashboard-dev": "node ./scripts/dashboard-dev.mjs",
+    "dashboard-test": "corepack pnpm --dir apps/dashboard test --run",
+    "test": "node ./scripts/test.mjs"
+  }
+}

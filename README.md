@@ -18,4 +18,16 @@ CerebralHelm is a local-first personal command layer for macOS. Heimlich is its 
 | `scripts/` | Developer experience | Portable automation used by documented commands |
 | `wiki/` | Product | Long-lived product direction beyond the MVP boundary |
 
-Detailed dependency and ownership rules live in [repository boundaries](docs/architecture/repository-boundaries.md). Developer bootstrap and command documentation are intentionally deferred to NIC-12.
+Detailed dependency and ownership rules live in [repository boundaries](docs/architecture/repository-boundaries.md).
+
+## Developer commands
+
+The first NIC-12 increment standardizes the runnable workspace baseline:
+
+| Command | Purpose |
+|---|---|
+| `corepack pnpm run bootstrap` | Verify toolchains, install the JavaScript workspace, and prove the dashboard build succeeds. |
+| `corepack pnpm run dashboard-dev` | Run the Pre-Mac dashboard development server from `apps/dashboard`. |
+| `corepack pnpm run test` | Run `swift test`, dashboard unit tests, and the dashboard production build. |
+
+If `just` is installed locally, the repository exposes matching `just bootstrap`, `just dashboard-dev`, and `just test` shortcuts. Full setup notes live in [developer workspace](docs/operations/developer-workspace.md).

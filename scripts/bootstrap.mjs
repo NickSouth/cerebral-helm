@@ -1,0 +1,5 @@
+import { runCommand } from "./helpers.mjs";
+
+runCommand("node", ["./scripts/check-toolchain.mjs"]);
+runCommand("corepack", ["pnpm", "install"]);
+runCommand("corepack", ["pnpm", "--dir", "apps/dashboard", "build"]);
