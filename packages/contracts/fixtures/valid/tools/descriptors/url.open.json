@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "url.open",
+  "version": "1.0.0",
+  "purpose": "Open an allowlisted URL reference through the platform adapter.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/url-open-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/url-open-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "local_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_local_write",
+  "requiredPermissions": ["url_open"],
+  "secretReferences": [],
+  "timeoutMs": 30000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["url.open"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "denied", "timeout", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

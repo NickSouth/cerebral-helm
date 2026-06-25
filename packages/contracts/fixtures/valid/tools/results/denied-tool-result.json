@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0.0",
+  "toolId": "hook.run",
+  "toolVersion": "1.0.0",
+  "status": "denied",
+  "adapterId": "mock_native",
+  "startedAt": "2026-06-23T16:00:10.000Z",
+  "completedAt": "2026-06-23T16:00:10.010Z",
+  "durationMs": 10,
+  "redactedInput": {
+    "hookId": "ondraft-dev"
+  },
+  "redactedOutput": {},
+  "error": {
+    "code": "policy_denied",
+    "category": "policy_denied",
+    "message": "Policy denied execution before adapter invocation.",
+    "details": {
+      "confirmationId": "conf_000000000000000000000001"
+    },
+    "remediation": null
+  }
+}

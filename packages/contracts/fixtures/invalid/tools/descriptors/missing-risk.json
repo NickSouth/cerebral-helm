@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "hook.run",
+  "version": "1.0.0",
+  "purpose": "Invalid descriptor missing risk metadata.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/hook-run-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/hook-run-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_shell",
+  "requiredPermissions": ["allowlisted_process_execution"],
+  "secretReferences": [],
+  "timeoutMs": 30000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": true,
+  "idempotency": "unknown",
+  "adapterRequirements": {
+    "capabilities": ["hook.run"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "security_audit"
+  },
+  "results": ["success", "denied", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

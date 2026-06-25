@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/tool-result.schema.json",
+  "title": "CerebralHelm Tool Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "toolId",
+    "toolVersion",
+    "status",
+    "adapterId",
+    "startedAt",
+    "completedAt",
+    "durationMs",
+    "redactedInput",
+    "redactedOutput",
+    "error"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "toolId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+    },
+    "toolVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["success", "partial_success", "unavailable", "timeout", "denied", "failure", "cancelled"]
+    },
+    "adapterId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "redactedInput": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "redactedOutput": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "error": {
+      "anyOf": [
+        { "$ref": "../commands/structured-error.schema.json" },
+        { "type": "null" }
+      ]
+    }
+  }
+}

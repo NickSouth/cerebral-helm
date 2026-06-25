@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mode.apply",
+  "version": "1.0.0",
+  "purpose": "Plan and execute configured mode actions with runtime risk at least as strict as the highest planned action.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/mode-apply-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/mode-apply-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "local_write",
+  "runtimeRiskPolicy": "highest_planned_action",
+  "confirmationPolicyKey": "confirm_highest_planned_action",
+  "requiredPermissions": ["mode_plan_execute"],
+  "secretReferences": [],
+  "timeoutMs": 30000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": true,
+  "idempotency": "unknown",
+  "adapterRequirements": {
+    "capabilities": ["mode.apply"],
+    "platforms": ["pre_mac_mock", "macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "partial_success", "unavailable", "denied", "timeout", "failure", "cancelled"],
+  "availability": {
+    "preMac": true,
+    "macOS": true
+  }
+}
