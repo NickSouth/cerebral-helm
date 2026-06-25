@@ -2,4 +2,9 @@
 
 **Owner:** Operations
 
-**Purpose:** Hold bootstrap, recovery, update, backup, diagnostics, and platform-validation runbooks. The developer workspace bootstrap now lives in [developer workspace](developer-workspace.md); the first-Mac checklist is deferred to NIC-15.
+**Purpose:** Hold bootstrap, recovery, update, backup, diagnostics, and platform-validation runbooks.
+
+Current runbooks:
+
+- [developer workspace](developer-workspace.md)
+- [first-Mac bootstrap checklist](first-mac-bootstrap-checklist.md)

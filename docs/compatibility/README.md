@@ -21,6 +21,6 @@ Current compatibility sources:
 
 - Bridge, config, database, command envelope, command events, and tool descriptor contracts are all tracked as versioned compatibility entries.
 - Non-Mac Pre-Mac development is supported with mock bridge and fixture-safe roots.
-- Native macOS minimum version remains intentionally unset until first-Mac validation in NIC-15.
+- Native macOS minimum version remains intentionally unset until first-Mac validation in NIC-15 records the exact shipped device and OS reality.
 
 Run `node ./scripts/validate-compatibility.mjs` or `corepack pnpm run validate-compatibility` to validate the current manifest.

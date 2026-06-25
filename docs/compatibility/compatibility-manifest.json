@@ -58,7 +58,7 @@
     "macOS": {
       "requiredForNativeShell": true,
       "minimumVersion": null,
-      "notes": "Native shell compatibility will be pinned to a validated macOS floor once NIC-15 is completed on target hardware."
+      "notes": "Native shell compatibility will be pinned to a validated macOS floor once NIC-15 is completed on target hardware. Current planning assumes a 16-inch MacBook Pro with 64 GB memory, 2 TB storage, and a likely macOS 26.5.1 starting point, but the exact shipped version must be recorded from the real device before this becomes an invariant."
     }
   },
   "providers": {
