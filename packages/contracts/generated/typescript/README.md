@@ -2,4 +2,4 @@
 
 TypeScript files in this directory are generated from `packages/contracts/schemas/`.
 
-Do not edit generated bindings by hand. NIC-20 will add the generation and drift-check commands.
+Do not edit generated bindings by hand. Run `npm run generate-contracts` after schema changes and `npm run check-contract-drift` before committing.

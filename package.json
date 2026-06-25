@@ -13,9 +13,16 @@
     "dashboard-dev": "node ./scripts/dashboard-dev.mjs",
     "dashboard-test": "corepack pnpm --dir apps/dashboard test --run",
     "events-tail": "node ./scripts/events-tail.mjs",
+    "generate-contracts": "node ./scripts/generate-contracts.mjs",
     "simulate": "node ./scripts/simulate.mjs",
     "test": "node ./scripts/test.mjs",
+    "check-contract-drift": "node ./scripts/check-contract-drift.mjs",
     "validate-compatibility": "node ./scripts/validate-compatibility.mjs",
+    "validate-contracts": "node ./scripts/validate-contracts.mjs",
     "validate-config": "node ./scripts/validate-config.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0",
+    "quicktype-core": "^23.2.6"
   }
 }

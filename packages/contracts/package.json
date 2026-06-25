@@ -3,5 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Canonical CerebralHelm JSON Schemas, fixtures, and generated contract bindings."
+  "description": "Canonical CerebralHelm JSON Schemas, fixtures, and generated contract bindings.",
+  "scripts": {
+    "check-drift": "node ../../scripts/check-contract-drift.mjs",
+    "generate": "node ../../scripts/generate-contracts.mjs",
+    "validate": "node ../../scripts/validate-contracts.mjs"
+  }
 }

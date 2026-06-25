@@ -22,6 +22,13 @@ Contracts are language-neutral and versioned. Command, event, tool, bridge, conf
 | `generated/typescript/` | Reproducibly generated TypeScript bindings. |
 | `Sources/CerebralContracts/` | Reproducibly generated Swift `Codable` DTOs plus package boundary marker. |
 
-## Planned Toolchain
+## Toolchain
 
-The approved MVP stack uses JSON Schema 2020-12, Ajv for TypeScript-side validation, quicktype for generated Swift and TypeScript types, and strict Swift decoding against the same fixture suites. NIC-20 will add the concrete dependency versions, generation scripts, validation command, and drift checks after the first schemas exist.
+The approved MVP stack uses JSON Schema 2020-12, Ajv validation, quicktype-generated Swift and TypeScript types, and Swift decoding against the same fixture suites.
+
+| Command | Purpose |
+|---|---|
+| `npm run generate-contracts` | Regenerate TypeScript and Swift bindings from JSON Schemas. |
+| `npm run validate-contracts` | Compile every schema and validate all canonical valid/invalid fixtures plus checked-in config examples. |
+| `npm run check-contract-drift` | Regenerate contracts in a temporary directory and fail if checked-in generated bindings are stale. |
+| `npm test` | Runs validation, drift detection, focused contract tests, Swift tests, and dashboard checks. |

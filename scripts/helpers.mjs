@@ -28,7 +28,7 @@ function useShellForCommand(command) {
 }
 
 function parseSemver(rawVersion) {
-  const match = rawVersion.trim().match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  const match = rawVersion.trim().match(/\bv?(\d+)\.(\d+)\.(\d+)/);
 
   if (!match) {
     fail(`Unable to parse semantic version from "${rawVersion}".`);

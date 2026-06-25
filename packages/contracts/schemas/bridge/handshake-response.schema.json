@@ -112,5 +112,34 @@
         }
       ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "compatible": { "const": false }
+        },
+        "required": ["compatible"]
+      },
+      "then": {
+        "properties": {
+          "startupMode": { "const": "recovery" },
+          "recovery": { "type": "object" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "compatible": { "const": true }
+        },
+        "required": ["compatible"]
+      },
+      "then": {
+        "properties": {
+          "recovery": { "type": "null" }
+        }
+      }
+    }
+  ]
 }
