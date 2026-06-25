@@ -1,0 +1,8 @@
+{
+  "id": "entertainment",
+  "label": "Entertainment",
+  "accent": "coral",
+  "quickApps": ["spotify", "youtube", "discord"],
+  "agentIds": ["financial-advisor", "system-janitor"],
+  "shortcuts": ["open-media", "capture-note", "check-status"]
+}

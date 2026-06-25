@@ -1,0 +1,11 @@
+{
+  "id": "successful-developer-mode",
+  "source": "dashboard",
+  "modeId": "developer",
+  "summary": "Reference fixture for a successful Developer Mode plan preview.",
+  "steps": [
+    "Resolve the active developer mode configuration.",
+    "Load mock dashboard bootstrap state.",
+    "Prepare deterministic action preview without touching native adapters."
+  ]
+}

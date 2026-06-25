@@ -8,9 +8,13 @@
   "scripts": {
     "bootstrap": "node ./scripts/bootstrap.mjs",
     "check-toolchain": "node ./scripts/check-toolchain.mjs",
+    "db-reset": "node ./scripts/db-reset.mjs",
     "dashboard-build": "corepack pnpm --dir apps/dashboard build",
     "dashboard-dev": "node ./scripts/dashboard-dev.mjs",
     "dashboard-test": "corepack pnpm --dir apps/dashboard test --run",
-    "test": "node ./scripts/test.mjs"
+    "events-tail": "node ./scripts/events-tail.mjs",
+    "simulate": "node ./scripts/simulate.mjs",
+    "test": "node ./scripts/test.mjs",
+    "validate-config": "node ./scripts/validate-config.mjs"
   }
 }

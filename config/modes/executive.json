@@ -1,0 +1,8 @@
+{
+  "id": "executive",
+  "label": "Executive",
+  "accent": "blue",
+  "quickApps": ["chrome", "gmail", "calendar"],
+  "agentIds": ["research-analyst", "project-manager"],
+  "shortcuts": ["daily-brief", "open-calendar", "capture-note"]
+}

@@ -1,6 +1,8 @@
 import { runCommand } from "./helpers.mjs";
 
 runCommand("node", ["./scripts/check-toolchain.mjs", "--require-swift"]);
+runCommand("node", ["./scripts/validate-config.mjs"]);
+runCommand("node", ["--test", "./scripts/command-surface.test.mjs"]);
 runCommand("swift", ["test"]);
 runCommand("corepack", ["pnpm", "--dir", "apps/dashboard", "test", "--run"]);
 runCommand("corepack", ["pnpm", "--dir", "apps/dashboard", "build"]);

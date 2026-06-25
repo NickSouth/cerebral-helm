@@ -1,0 +1,6 @@
+{
+  "id": "system-janitor",
+  "label": "System Janitor",
+  "status": "mock",
+  "summary": "Future maintenance surface for narrow recovery and cleanup actions."
+}

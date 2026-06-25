@@ -1,0 +1,6 @@
+{
+  "id": "project-manager",
+  "label": "Project Manager",
+  "status": "mock",
+  "summary": "Current planning and progress surface for deterministic workflows."
+}

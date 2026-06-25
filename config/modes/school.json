@@ -1,0 +1,8 @@
+{
+  "id": "school",
+  "label": "School",
+  "accent": "gold",
+  "quickApps": ["canvas", "drive", "notes"],
+  "agentIds": ["research-analyst", "project-manager"],
+  "shortcuts": ["open-schedule", "capture-idea", "search-notes"]
+}

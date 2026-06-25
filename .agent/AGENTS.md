@@ -87,6 +87,7 @@ Preserve these architectural truths:
 
 - All input sources converge on one versioned command bus.
 - UI components express intent and render state; they do not directly control the platform.
+- All UI related work should be done in line with the design spec and visual references files in the repo
 - Platform, provider, model, and storage behavior lives behind replaceable adapters.
 - Tools are narrow, explicit, typed, permission-aware, and independently testable.
 - Risk classification and confirmation policy remain deterministic and outside models.

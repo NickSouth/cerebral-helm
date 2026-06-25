@@ -1,0 +1,6 @@
+{
+  "id": "hook.run",
+  "risk": "shell",
+  "timeoutMs": 30000,
+  "availableInPreMac": false
+}
