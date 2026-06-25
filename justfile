@@ -7,6 +7,9 @@ check-toolchain:
 validate-config:
   node ./scripts/validate-config.mjs
 
+validate-compatibility:
+  node ./scripts/validate-compatibility.mjs
+
 db-reset:
   node ./scripts/db-reset.mjs
 

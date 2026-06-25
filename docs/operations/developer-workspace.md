@@ -20,6 +20,7 @@ Use `just` if it is installed locally. The repository also exposes equivalent `p
 | `just bootstrap` or `corepack pnpm run bootstrap` | Verify toolchains, validate config and simulation fixtures, install workspace dependencies, and prove the dashboard build succeeds on a fresh checkout. |
 | `just dashboard-dev` or `corepack pnpm run dashboard-dev` | Start the Vite development server for `apps/dashboard` on `127.0.0.1`. |
 | `just validate-config` or `corepack pnpm run validate-config` | Validate repository defaults, mode, agent, tool, and simulation fixture JSON. |
+| `just validate-compatibility` or `corepack pnpm run validate-compatibility` | Validate the compatibility manifest and its major/minor policy invariants. |
 | `just db-reset` or `corepack pnpm run db-reset` | Reset the dedicated development database file path under `.local/development/database/` and remove any SQLite sidecar files. |
 | `just simulate` or `corepack pnpm run simulate` | Produce a preview-only simulation artifact from `fixtures/simulations/` and append a preview event to `.local/development/events/events.ndjson`. |
 | `just events-tail` or `corepack pnpm run events-tail` | Show the latest lines from the dedicated development event log if preview or runtime events exist. |

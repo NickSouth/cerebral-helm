@@ -15,6 +15,7 @@
     "events-tail": "node ./scripts/events-tail.mjs",
     "simulate": "node ./scripts/simulate.mjs",
     "test": "node ./scripts/test.mjs",
+    "validate-compatibility": "node ./scripts/validate-compatibility.mjs",
     "validate-config": "node ./scripts/validate-config.mjs"
   }
 }

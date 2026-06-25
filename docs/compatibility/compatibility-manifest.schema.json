@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/compatibility-manifest.schema.json",
+  "title": "CerebralHelm Compatibility Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifestSchemaVersion",
+    "manifestVersion",
+    "application",
+    "contracts",
+    "platform",
+    "providers",
+    "updatePolicy"
+  ],
+  "properties": {
+    "manifestSchemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "manifestVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "application": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "channel", "currentVersion"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channel": {
+          "type": "string",
+          "enum": ["stable", "beta", "development"]
+        },
+        "currentVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bridge",
+        "config",
+        "database",
+        "commandEnvelope",
+        "commandEvents",
+        "toolDescriptors"
+      ],
+      "properties": {
+        "bridge": { "$ref": "#/$defs/versionPolicyEntry" },
+        "config": { "$ref": "#/$defs/versionPolicyEntry" },
+        "database": { "$ref": "#/$defs/versionPolicyEntry" },
+        "commandEnvelope": { "$ref": "#/$defs/versionPolicyEntry" },
+        "commandEvents": { "$ref": "#/$defs/versionPolicyEntry" },
+        "toolDescriptors": { "$ref": "#/$defs/versionPolicyEntry" }
+      }
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preMacDevelopment", "macOS"],
+      "properties": {
+        "preMacDevelopment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["supported", "notes"],
+          "properties": {
+            "supported": { "type": "boolean" },
+            "notes": { "type": "string" }
+          }
+        },
+        "macOS": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requiredForNativeShell", "minimumVersion", "notes"],
+          "properties": {
+            "requiredForNativeShell": { "type": "boolean" },
+            "minimumVersion": {
+              "type": ["string", "null"],
+              "pattern": "^\\d+(\\.\\d+){0,2}$"
+            },
+            "notes": { "type": "string" }
+          }
+        }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providersAreRuntimeVariables", "entries"],
+      "properties": {
+        "providersAreRuntimeVariables": { "type": "boolean" },
+        "entries": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/providerEntry" }
+        }
+      }
+    },
+    "updatePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "majorMismatchBehavior",
+        "minorMismatchBehavior",
+        "patchMismatchBehavior",
+        "requiresVerifiedManifest",
+        "requiresSignedArtifact"
+      ],
+      "properties": {
+        "majorMismatchBehavior": {
+          "type": "string",
+          "enum": ["block_and_recover"]
+        },
+        "minorMismatchBehavior": {
+          "type": "string",
+          "enum": ["allow_with_capability_gating"]
+        },
+        "patchMismatchBehavior": {
+          "type": "string",
+          "enum": ["allow"]
+        },
+        "requiresVerifiedManifest": { "type": "boolean" },
+        "requiresSignedArtifact": { "type": "boolean" }
+      }
+    }
+  },
+  "$defs": {
+    "versionPolicyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currentVersion",
+        "compatibleMajor",
+        "compatibleMinorFloor",
+        "majorMismatchOutcome",
+        "minorMismatchOutcome"
+      ],
+      "properties": {
+        "currentVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "compatibleMajor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "compatibleMinorFloor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "majorMismatchOutcome": {
+          "type": "string",
+          "enum": ["block_and_recover"]
+        },
+        "minorMismatchOutcome": {
+          "type": "string",
+          "enum": ["allow_with_capability_gating"]
+        }
+      }
+    },
+    "providerEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "requiredForMvp",
+        "configuredByUser",
+        "protocolVersion",
+        "notes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requiredForMvp": { "type": "boolean" },
+        "configuredByUser": { "type": "boolean" },
+        "protocolVersion": {
+          "type": ["string", "null"],
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

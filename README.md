@@ -29,6 +29,7 @@ NIC-12 now covers the runnable baseline plus the first safe operational helpers:
 | `corepack pnpm run bootstrap` | Verify toolchains, validate repo config and simulation fixtures, install the JavaScript workspace, and prove the dashboard build succeeds. |
 | `corepack pnpm run dashboard-dev` | Run the Pre-Mac dashboard development server from `apps/dashboard`. |
 | `corepack pnpm run validate-config` | Validate repository config JSON and simulation fixtures without activating personal state. |
+| `corepack pnpm run validate-compatibility` | Validate the compatibility manifest and major/minor compatibility policy invariants. |
 | `corepack pnpm run db-reset` | Reset the dedicated development database path under `.local/development/` without touching personal production roots. |
 | `corepack pnpm run simulate` | Generate a preview-only simulation artifact and append a preview event to the development event log. |
 | `corepack pnpm run events-tail` | Read the dedicated development event log when preview or runtime events exist. |
