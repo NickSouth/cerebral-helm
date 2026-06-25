@@ -9,6 +9,10 @@ Current scripts own:
 - toolchain version checks
 - workspace bootstrap
 - dashboard development server launch
+- config and simulation fixture validation
+- dedicated development database reset
+- preview-only simulation artifact generation
+- development event log tailing
 - repository test entry point
 
-Follow-on NIC-12 increments will add configuration validation and fixture-backed operational helpers.
+All script writes stay under `.local/development/` unless an explicit repository-local override is provided.

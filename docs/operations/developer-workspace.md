@@ -17,17 +17,23 @@ Use `just` if it is installed locally. The repository also exposes equivalent `p
 
 | Command | Purpose |
 |---|---|
-| `just bootstrap` or `corepack pnpm run bootstrap` | Verify toolchains, install workspace dependencies, and prove the dashboard build succeeds on a fresh checkout. |
+| `just bootstrap` or `corepack pnpm run bootstrap` | Verify toolchains, validate config and simulation fixtures, install workspace dependencies, and prove the dashboard build succeeds on a fresh checkout. |
 | `just dashboard-dev` or `corepack pnpm run dashboard-dev` | Start the Vite development server for `apps/dashboard` on `127.0.0.1`. |
+| `just validate-config` or `corepack pnpm run validate-config` | Validate repository defaults, mode, agent, tool, and simulation fixture JSON. |
+| `just db-reset` or `corepack pnpm run db-reset` | Reset the dedicated development database file path under `.local/development/database/` and remove any SQLite sidecar files. |
+| `just simulate` or `corepack pnpm run simulate` | Produce a preview-only simulation artifact from `fixtures/simulations/` and append a preview event to `.local/development/events/events.ndjson`. |
+| `just events-tail` or `corepack pnpm run events-tail` | Show the latest lines from the dedicated development event log if preview or runtime events exist. |
 | `just test` or `corepack pnpm run test` | Run `swift test`, dashboard unit tests, and the dashboard production build. |
 
-## Scope
+## Safety Rules
 
-NIC-12 increment 1 standardizes the runnable baseline only:
+- All operational writes stay under `.local/development/` by default.
+- `CEREBRAL_STATE_ROOT`, `CEREBRAL_DATABASE_PATH`, `CEREBRAL_EVENT_LOG_PATH`, and `CEREBRAL_SIMULATION_OUTPUT_ROOT` may override locations only inside the repository workspace.
+- Paths containing production-looking segments are rejected.
+- No command in this repository defaults to personal production state.
 
-- workspace bootstrap;
-- dashboard development server;
-- repository test entry point;
-- explicit dependency version checks.
+## Current Limitations
 
-Later NIC-12 increments will add `validate-config`, `db-reset`, `simulate`, and `events-tail` once those backing systems exist.
+- `db-reset` prepares and clears the dedicated development SQLite path, but it does not apply schema yet because the operational storage layer is not implemented.
+- `simulate` is preview-only in this increment. It validates fixture inputs and writes artifacts without invoking a command bus or native adapters.
+- `events-tail` reads the dedicated development event log when it exists. Runtime event streaming will arrive with the event system implementation.

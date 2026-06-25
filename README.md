@@ -22,12 +22,16 @@ Detailed dependency and ownership rules live in [repository boundaries](docs/arc
 
 ## Developer commands
 
-The first NIC-12 increment standardizes the runnable workspace baseline:
+NIC-12 now covers the runnable baseline plus the first safe operational helpers:
 
 | Command | Purpose |
 |---|---|
-| `corepack pnpm run bootstrap` | Verify toolchains, install the JavaScript workspace, and prove the dashboard build succeeds. |
+| `corepack pnpm run bootstrap` | Verify toolchains, validate repo config and simulation fixtures, install the JavaScript workspace, and prove the dashboard build succeeds. |
 | `corepack pnpm run dashboard-dev` | Run the Pre-Mac dashboard development server from `apps/dashboard`. |
+| `corepack pnpm run validate-config` | Validate repository config JSON and simulation fixtures without activating personal state. |
+| `corepack pnpm run db-reset` | Reset the dedicated development database path under `.local/development/` without touching personal production roots. |
+| `corepack pnpm run simulate` | Generate a preview-only simulation artifact and append a preview event to the development event log. |
+| `corepack pnpm run events-tail` | Read the dedicated development event log when preview or runtime events exist. |
 | `corepack pnpm run test` | Run `swift test`, dashboard unit tests, and the dashboard production build. |
 
-If `just` is installed locally, the repository exposes matching `just bootstrap`, `just dashboard-dev`, and `just test` shortcuts. Full setup notes live in [developer workspace](docs/operations/developer-workspace.md).
+If `just` is installed locally, the repository exposes matching shortcuts for the same command surface. Full setup notes live in [developer workspace](docs/operations/developer-workspace.md).
