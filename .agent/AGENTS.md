@@ -66,6 +66,44 @@ Do not create a Git commit unless the user explicitly asks. The user will review
 
 Avoid unrelated refactors and opportunistic features. A commit-sized increment should leave the repository coherent, tested, and understandable on its own.
 
+## Windows Swift Verification
+
+On the current Windows development machine, Swift is installed but may not be available through the default Codex PowerShell environment. If `swift test` is needed and `swift` is not found, or Swift exits with duplicate `Path`/`PATH` environment errors, use the installed toolchain directly with a cleaned process environment.
+
+Known local paths:
+
+- Swift toolchain: `C:\Users\nickr\AppData\Local\Programs\Swift\Toolchains\6.3.2+Asserts\usr\bin`
+- Swift runtime DLLs: `C:\Users\nickr\AppData\Local\Programs\Swift\Runtimes\6.3.2\usr\bin`
+- Swift Windows SDK: `C:\Users\nickr\AppData\Local\Programs\Swift\Platforms\6.3.2\Windows.platform\Developer\SDKs\Windows.sdk`
+- Visual Studio dev tools: `C:\Program Files\Microsoft Visual Studio\2022\Community`
+- Windows SDK version observed: `10.0.22621.0`
+
+Before running Swift from Codex on Windows:
+
+1. Remove the duplicate process-level `PATH` key and keep `Path`.
+2. Prepend the Swift toolchain, Swift runtime, MSVC linker, and Windows SDK binary paths to `Path`.
+3. Set `SDKROOT` to the Swift Windows SDK path.
+4. Set `INCLUDE` and `LIB` to the MSVC and Windows SDK include/library directories.
+
+Working pattern:
+
+```powershell
+$swiftRoot = 'C:\Users\nickr\AppData\Local\Programs\Swift'
+$msvcRoot = 'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207'
+$winKitRoot = 'C:\Program Files (x86)\Windows Kits\10'
+$winKitVersion = '10.0.22621.0'
+$swiftSDK = "$swiftRoot\Platforms\6.3.2\Windows.platform\Developer\SDKs\Windows.sdk"
+$originalPath = [System.Environment]::GetEnvironmentVariable('Path', 'Process')
+[System.Environment]::SetEnvironmentVariable('PATH', $null, 'Process')
+[System.Environment]::SetEnvironmentVariable('Path', "$swiftRoot\Toolchains\6.3.2+Asserts\usr\bin;$swiftRoot\Runtimes\6.3.2\usr\bin;$msvcRoot\bin\Hostx64\x64;$winKitRoot\bin\$winKitVersion\x64;$winKitRoot\bin\x64;$originalPath", 'Process')
+[System.Environment]::SetEnvironmentVariable('SDKROOT', $swiftSDK, 'Process')
+[System.Environment]::SetEnvironmentVariable('INCLUDE', "$msvcRoot\include;$winKitRoot\Include\$winKitVersion\ucrt;$winKitRoot\Include\$winKitVersion\shared;$winKitRoot\Include\$winKitVersion\um;$winKitRoot\Include\$winKitVersion\winrt", 'Process')
+[System.Environment]::SetEnvironmentVariable('LIB', "$msvcRoot\lib\x64;$winKitRoot\Lib\$winKitVersion\ucrt\x64;$winKitRoot\Lib\$winKitVersion\um\x64", 'Process')
+& "$swiftRoot\Toolchains\6.3.2+Asserts\usr\bin\swift.exe" test
+```
+
+Without this setup, common misleading failures are: `swift` not recognized, exit code `-1073741515`, `Duplicate values for key: 'PATH'`, missing `link`, or `unable to load standard library for target 'x86_64-unknown-windows-msvc'`.
+
 ## Completion Report
 
 At the end of every implementation increment, report:

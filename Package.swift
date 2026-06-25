@@ -9,8 +9,13 @@ let package = Package(
         .library(name: "CerebralTools", targets: ["CerebralTools"]),
         .library(name: "CerebralKnowledge", targets: ["CerebralKnowledge"]),
         .library(name: "CerebralShared", targets: ["CerebralShared"]),
+        .library(name: "CerebralContracts", targets: ["CerebralContracts"]),
     ],
     targets: [
+        .target(
+            name: "CerebralContracts",
+            path: "packages/contracts/Sources/CerebralContracts"
+        ),
         .target(
             name: "CerebralShared",
             path: "packages/shared/Sources/CerebralShared"
@@ -37,6 +42,7 @@ let package = Package(
                 "CerebralTools",
                 "CerebralKnowledge",
                 "CerebralShared",
+                "CerebralContracts",
             ],
             path: "Tests/RepositoryBoundaryTests"
         ),

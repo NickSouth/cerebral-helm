@@ -1,0 +1,7 @@
+{
+  "name": "@cerebral/contracts",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Canonical CerebralHelm JSON Schemas, fixtures, and generated contract bindings."
+}

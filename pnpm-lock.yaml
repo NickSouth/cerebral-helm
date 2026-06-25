@@ -45,6 +45,8 @@ importers:
         specifier: ^2.1.2
         version: 2.1.9(jsdom@25.0.1)
 
+  packages/contracts: {}
+
 packages:
 
   '@adobe/css-tools@4.5.0':
