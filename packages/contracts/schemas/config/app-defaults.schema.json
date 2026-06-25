@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/config/app-defaults.schema.json",
+  "title": "CerebralHelm Application Defaults",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "defaultModeId", "enabledAgentIds", "enabledToolIds"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "defaultModeId": {
+      "$ref": "#/$defs/configId"
+    },
+    "enabledAgentIds": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/configId"
+      },
+      "uniqueItems": true
+    },
+    "enabledToolIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+      },
+      "uniqueItems": true
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    }
+  },
+  "$defs": {
+    "configId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^x-[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": true
+    }
+  }
+}

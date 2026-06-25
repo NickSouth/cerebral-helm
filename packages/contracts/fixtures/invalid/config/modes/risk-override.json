@@ -1,0 +1,11 @@
+{
+  "id": "developer",
+  "label": "Developer",
+  "accent": "cyan",
+  "quickApps": ["vscode", "terminal", "github", "docs"],
+  "agentIds": ["research-analyst", "project-manager", "system-janitor"],
+  "shortcuts": ["open-workspace", "run-tests", "search-notes"],
+  "riskOverrides": {
+    "hook.run": "read_only"
+  }
+}

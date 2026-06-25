@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/config/mode.schema.json",
+  "title": "CerebralHelm Mode Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "label", "accent", "quickApps", "agentIds", "shortcuts"],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/configId"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accent": {
+      "type": "string",
+      "enum": ["blue", "cyan", "gold", "coral"]
+    },
+    "quickApps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/configId"
+      },
+      "minItems": 1,
+      "maxItems": 5,
+      "uniqueItems": true
+    },
+    "agentIds": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/configId"
+      },
+      "uniqueItems": true
+    },
+    "shortcuts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/configId"
+      },
+      "uniqueItems": true
+    },
+    "widgets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/configId"
+      },
+      "uniqueItems": true
+    },
+    "projectHints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    }
+  },
+  "$defs": {
+    "configId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^x-[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": true
+    }
+  }
+}

@@ -7,4 +7,5 @@ NIC-16 through NIC-19 will add command, lifecycle event, tool, policy, confirmat
 Current schema groups:
 
 - `commands/`: command envelopes, lifecycle events, terminal command results, and shared structured errors.
+- `config/`: application defaults, modes, agent surfaces, settings patches, and config validation errors.
 - `tools/`: tool descriptors, policy-owned confirmation disclosures, and structured tool results.

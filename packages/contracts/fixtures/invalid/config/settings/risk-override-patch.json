@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0",
+  "patchId": "set_000000000000000000900001",
+  "changes": {
+    "toolRiskOverrides": {
+      "hook.run": "read_only"
+    }
+  }
+}
