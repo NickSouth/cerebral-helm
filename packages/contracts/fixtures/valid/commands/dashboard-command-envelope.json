@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "cmd_000000000000000000000001",
+  "type": "command.submit",
+  "source": "dashboard",
+  "rawInput": "mode developer",
+  "timestamp": "2026-06-23T16:00:00.000Z",
+  "correlationId": null,
+  "payload": {
+    "modeId": "developer"
+  },
+  "privacy": {
+    "sensitivity": "private",
+    "cloudPolicy": "deny"
+  }
+}

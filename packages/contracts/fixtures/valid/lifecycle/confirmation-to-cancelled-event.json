@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "evt_000000000000000000000007",
+  "commandId": "cmd_000000000000000000000009",
+  "type": "command.lifecycle.transition",
+  "timestamp": "2026-06-23T16:00:10.000Z",
+  "previousStatus": "requires_confirmation",
+  "currentStatus": "cancelled",
+  "message": "Confirmation denied.",
+  "error": {
+    "code": "confirmation_denied",
+    "category": "cancelled",
+    "message": "The user denied the confirmation.",
+    "details": {
+      "confirmationId": "conf_000000000000000000000001"
+    },
+    "remediation": null
+  }
+}

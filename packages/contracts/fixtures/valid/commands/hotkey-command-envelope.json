@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "cmd_000000000000000000000002",
+  "type": "command.submit",
+  "source": "hotkey",
+  "rawInput": "palette.open",
+  "timestamp": "2026-06-23T16:00:01.000Z",
+  "correlationId": null,
+  "payload": {
+    "action": "open_command_palette"
+  },
+  "privacy": {
+    "sensitivity": "private",
+    "cloudPolicy": "deny"
+  }
+}

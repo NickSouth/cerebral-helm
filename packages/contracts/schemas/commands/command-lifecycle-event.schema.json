@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/commands/command-lifecycle-event.schema.json",
+  "title": "CerebralHelm Command Lifecycle Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "commandId",
+    "type",
+    "timestamp",
+    "previousStatus",
+    "currentStatus",
+    "message",
+    "error"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^evt_[A-Za-z0-9_-]{8,64}$"
+    },
+    "commandId": {
+      "type": "string",
+      "pattern": "^cmd_[A-Za-z0-9_-]{8,64}$"
+    },
+    "type": {
+      "type": "string",
+      "const": "command.lifecycle.transition"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "previousStatus": {
+      "type": ["string", "null"],
+      "enum": [null, "received", "planned", "requires_confirmation", "running", "succeeded", "failed", "cancelled"]
+    },
+    "currentStatus": {
+      "type": "string",
+      "enum": ["received", "planned", "requires_confirmation", "running", "succeeded", "failed", "cancelled"]
+    },
+    "message": {
+      "type": ["string", "null"]
+    },
+    "error": {
+      "anyOf": [
+        { "$ref": "structured-error.schema.json" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "previousStatus": { "const": null },
+        "currentStatus": { "const": "received" }
+      }
+    },
+    {
+      "properties": {
+        "previousStatus": { "const": "received" },
+        "currentStatus": { "const": "planned" }
+      }
+    },
+    {
+      "properties": {
+        "previousStatus": { "const": "planned" },
+        "currentStatus": { "const": "requires_confirmation" }
+      }
+    },
+    {
+      "properties": {
+        "previousStatus": { "const": "planned" },
+        "currentStatus": { "const": "running" }
+      }
+    },
+    {
+      "properties": {
+        "previousStatus": { "const": "requires_confirmation" },
+        "currentStatus": { "const": "running" }
+      }
+    },
+    {
+      "properties": {
+        "previousStatus": { "const": "requires_confirmation" },
+        "currentStatus": { "const": "cancelled" }
+      }
+    },
+    {
+      "properties": {
+        "previousStatus": { "const": "running" },
+        "currentStatus": { "const": "succeeded" }
+      }
+    },
+    {
+      "properties": {
+        "previousStatus": { "const": "running" },
+        "currentStatus": { "const": "failed" }
+      }
+    },
+    {
+      "properties": {
+        "previousStatus": { "const": "running" },
+        "currentStatus": { "const": "cancelled" }
+      }
+    }
+  ]
+}

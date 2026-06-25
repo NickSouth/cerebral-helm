@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/commands/structured-error.schema.json",
+  "title": "CerebralHelm Structured Error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "category", "message"],
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "invalid_input",
+        "invalid_transition",
+        "unavailable_capability",
+        "permission_denied",
+        "policy_denied",
+        "timeout",
+        "cancelled",
+        "adapter_contract_failure",
+        "provider_failure",
+        "compatibility_mismatch",
+        "internal_failure"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "details": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "remediation": {
+      "type": ["string", "null"]
+    }
+  }
+}

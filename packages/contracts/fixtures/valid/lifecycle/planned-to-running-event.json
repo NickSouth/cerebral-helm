@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "evt_000000000000000000000006",
+  "commandId": "cmd_000000000000000000000003",
+  "type": "command.lifecycle.transition",
+  "timestamp": "2026-06-23T16:00:02.030Z",
+  "previousStatus": "planned",
+  "currentStatus": "running",
+  "message": "Read-only command can run without confirmation.",
+  "error": null
+}

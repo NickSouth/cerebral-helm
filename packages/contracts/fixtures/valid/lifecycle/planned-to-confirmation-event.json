@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "evt_000000000000000000000003",
+  "commandId": "cmd_000000000000000000000001",
+  "type": "command.lifecycle.transition",
+  "timestamp": "2026-06-23T16:00:00.030Z",
+  "previousStatus": "planned",
+  "currentStatus": "requires_confirmation",
+  "message": "Shell action requires confirmation.",
+  "error": null
+}

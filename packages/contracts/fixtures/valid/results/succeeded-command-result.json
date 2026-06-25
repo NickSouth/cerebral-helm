@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0.0",
+  "commandId": "cmd_000000000000000000000001",
+  "status": "succeeded",
+  "completedAt": "2026-06-23T16:00:00.060Z",
+  "summary": "Developer mode plan completed.",
+  "output": {
+    "modeId": "developer"
+  },
+  "error": null
+}

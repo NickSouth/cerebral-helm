@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/commands/command-terminal-result.schema.json",
+  "title": "CerebralHelm Command Terminal Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "commandId",
+    "status",
+    "completedAt",
+    "summary",
+    "output",
+    "error"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "commandId": {
+      "type": "string",
+      "pattern": "^cmd_[A-Za-z0-9_-]{8,64}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["succeeded", "failed", "cancelled"]
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "error": {
+      "anyOf": [
+        { "$ref": "structured-error.schema.json" },
+        { "type": "null" }
+      ]
+    }
+  }
+}
