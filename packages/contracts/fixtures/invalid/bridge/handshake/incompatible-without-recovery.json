@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000900001",
+  "type": "bridge.handshake.response",
+  "compatible": false,
+  "bridgeVersion": "2.0.0",
+  "uiVersion": "0.1.0",
+  "coreVersion": "0.1.0",
+  "transport": "wkwebview",
+  "capabilities": [],
+  "degradedFeatures": [],
+  "startupMode": "recovery",
+  "recovery": null
+}

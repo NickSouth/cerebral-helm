@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000002",
+  "type": "bridge.handshake.response",
+  "compatible": true,
+  "bridgeVersion": "1.0.0",
+  "uiVersion": "0.1.0",
+  "coreVersion": "0.1.0",
+  "transport": "mock",
+  "capabilities": [
+    {
+      "id": "bridge.bootstrap",
+      "available": true,
+      "source": "mock",
+      "degradedReason": null
+    },
+    {
+      "id": "command.submit",
+      "available": true,
+      "source": "mock",
+      "degradedReason": null
+    },
+    {
+      "id": "system.metrics",
+      "available": true,
+      "source": "mock",
+      "degradedReason": null
+    }
+  ],
+  "degradedFeatures": [],
+  "startupMode": "ready",
+  "recovery": null
+}
