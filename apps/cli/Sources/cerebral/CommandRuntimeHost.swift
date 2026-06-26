@@ -20,6 +20,7 @@ func makeCommandRuntime(_ options: GlobalOptions) throws -> CommandRuntime {
         modePlanner: modePlanner
     )
     let writer = EventLogWriter(eventLogPath: paths.eventLogPath)
+    let toolCallLogPath = paths.eventLogPath.deletingLastPathComponent().appendingPathComponent("tool-calls.ndjson")
 
     return CommandRuntime(
         registry: registry,
@@ -28,8 +29,24 @@ func makeCommandRuntime(_ options: GlobalOptions) throws -> CommandRuntime {
         references: references,
         hookCatalog: hookCatalog,
         modePlanner: modePlanner,
-        sink: { try? writer.append($0) }
+        sink: { try? writer.append($0) },
+        // Already redacted by the runtime; append one JSON line per tool call.
+        toolCallSink: { appendLine($0, to: toolCallLogPath) }
     )
+}
+
+/// Appends one NDJSON line to a development log, creating the directory as needed.
+private func appendLine(_ data: Data, to url: URL) {
+    try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    if !FileManager.default.fileExists(atPath: url.path) {
+        try? Data().write(to: url)
+    }
+    guard let handle = try? FileHandle(forWritingTo: url) else { return }
+    defer { try? handle.close() }
+    try? handle.seekToEnd()
+    var line = data
+    line.append(0x0A)
+    try? handle.write(contentsOf: line)
 }
 
 /// Resolves each configured hook reference to an exact invocation. The pre-Mac

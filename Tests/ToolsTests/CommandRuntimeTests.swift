@@ -34,13 +34,15 @@ private final class EventRecorder: @unchecked Sendable {
 private func makeRuntime(
     knowledge: any KnowledgeService = MockKnowledgeService(),
     policy: PolicyEngine = PolicyEngine(),
-    recorder: EventRecorder = EventRecorder()
+    recorder: EventRecorder = EventRecorder(),
+    hookEnvironment: [String: String] = ["CI": "true"],
+    toolCallSink: @escaping @Sendable (Data) -> Void = { _ in }
 ) throws -> CommandRuntime {
     let hookInvocation = HookInvocation(
         executable: "/usr/bin/just",
         arguments: ["build"],
         workingDirectory: "/repo",
-        environment: ["CI": "true"]
+        environment: hookEnvironment
     )
     let hookCatalog = HookCatalog(["ondraft-dev": hookInvocation])
     let registry = try PreMacToolRuntime.makeRegistry(
@@ -70,8 +72,23 @@ private func makeRuntime(
         references: references,
         hookCatalog: hookCatalog,
         modePlanner: StubModePlanner(),
-        sink: { recorder.record($0) }
+        sink: { recorder.record($0) },
+        toolCallSink: toolCallSink
     )
+}
+
+private final class DataRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [Data] = []
+
+    func record(_ data: Data) {
+        lock.lock(); lines.append(data); lock.unlock()
+    }
+
+    var text: String {
+        lock.lock(); defer { lock.unlock() }
+        return lines.map { String(decoding: $0, as: UTF8.self) }.joined(separator: "\n")
+    }
 }
 
 @Test("an allowed read-only command executes end to end through the wired stack")
@@ -185,6 +202,32 @@ func modeWithHookAggregatesToShell() async throws {
     }
     #expect(status == .succeeded)
     #expect(result?.status == .success)
+}
+
+@Test("a secret in a hook environment never reaches the tool-call log (AC-34.1, AC-34.2)")
+func hookEnvironmentSecretIsRedactedEndToEnd() async throws {
+    let canary = "CANARY-7f3a9c2e-deploy-token"
+    let toolCalls = DataRecorder()
+    let runtime = try makeRuntime(
+        hookEnvironment: ["DEPLOY_TOKEN": canary],
+        toolCallSink: { toolCalls.record($0) }
+    )
+
+    let pending = await runtime.submit("hook ondraft-dev", source: .cli)
+    guard case let .awaitingConfirmation(_, _, token) = pending else {
+        Issue.record("Expected awaitingConfirmation, got \(pending)"); return
+    }
+    let decided = await runtime.decide(token: token, decision: .approve)
+    guard case let .completed(_, status, _) = decided else {
+        Issue.record("Expected completed, got \(decided)"); return
+    }
+    #expect(status == .succeeded)
+
+    let recorded = toolCalls.text
+    #expect(!recorded.isEmpty)
+    #expect(!recorded.contains(canary))         // AC-34.1: the secret never reaches the log
+    #expect(recorded.contains("hook.run"))      // AC-34.2: useful context preserved
+    #expect(recorded.contains(SchemaRedactor.marker))
 }
 
 @Test("unrecognized input is rejected without executing")

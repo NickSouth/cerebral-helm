@@ -51,7 +51,9 @@ public final class CommandRuntime: @unchecked Sendable {
     private let factory: CommandFactory
     private let hookCatalog: HookCatalog
     private let modePlanner: (any ModePlanner)?
+    private let clock: any TimeSource
     private let sink: @Sendable (CommandLifecycleEvent) -> Void
+    private let toolCallSink: @Sendable (Data) -> Void
     private var pending: [String: PendingExecution] = [:]
 
     public init(
@@ -63,7 +65,8 @@ public final class CommandRuntime: @unchecked Sendable {
         hookCatalog: HookCatalog = HookCatalog(),
         modePlanner: (any ModePlanner)? = nil,
         clock: any TimeSource = SystemClock(),
-        sink: @escaping @Sendable (CommandLifecycleEvent) -> Void = { _ in }
+        sink: @escaping @Sendable (CommandLifecycleEvent) -> Void = { _ in },
+        toolCallSink: @escaping @Sendable (Data) -> Void = { _ in }
     ) {
         self.parser = DirectCommandParser(references: references)
         self.registry = registry
@@ -73,7 +76,9 @@ public final class CommandRuntime: @unchecked Sendable {
         self.factory = factory
         self.hookCatalog = hookCatalog
         self.modePlanner = modePlanner
+        self.clock = clock
         self.sink = sink
+        self.toolCallSink = toolCallSink
     }
 
     /// Parses and runs one line of input. An allowed command executes; a
@@ -168,9 +173,11 @@ public final class CommandRuntime: @unchecked Sendable {
 
     private func run(_ commandID: String, _ machine: inout CommandLifecycleMachine, _ resolved: ResolvedInvocation) async -> CommandRuntimeOutcome {
         emit(&machine) { try $0.markRunning(message: "Running.") }
+        let startedAt = clock.now()
         let result = await executor.execute(
             ToolInvocation(toolID: resolved.toolID, input: resolved.input, shellInvocation: resolved.shellInvocation)
         )
+        recordToolCall(resolved: resolved, result: result, startedAt: startedAt, completedAt: clock.now())
 
         switch result.status {
         case .success, .partialSuccess:
@@ -209,15 +216,18 @@ public final class CommandRuntime: @unchecked Sendable {
                 actionSummary: "Open URL \(reference.label)."
             )
         case let .captureNote(text):
-            let title = noteTitle(from: text)
+            // The body is the only place free text lives, and it is redacted in
+            // logs via the descriptor's `/body` path. Title, arguments, and the
+            // disclosure summary are kept content-free so a secret in the note
+            // body cannot leak through an unredacted field (NIC-34).
             return make(
                 toolID: "note.capture",
-                input: try? CerebralHelmNoteCaptureInput(body: text, kind: "note", project: nil, sensitivity: nil, title: title).jsonData(),
+                input: try? CerebralHelmNoteCaptureInput(body: text, kind: "note", project: nil, sensitivity: nil, title: "Captured note").jsonData(),
                 destination: nil,
                 dataLeavingDevice: .none,
                 reversibility: .reversible,
-                arguments: [ConfirmationArgument(name: "title", value: title, sensitive: false)],
-                actionSummary: "Capture note \(title)."
+                arguments: [ConfirmationArgument(name: "kind", value: "note", sensitive: false)],
+                actionSummary: "Capture a note."
             )
         case let .searchNotes(query):
             return make(
@@ -301,6 +311,23 @@ public final class CommandRuntime: @unchecked Sendable {
         )
     }
 
+    /// Emits a redacted ``CerebralHelmToolResult`` to the tool-call sink. Input
+    /// and output are redacted with the descriptor's declared paths before they
+    /// leave the runtime (NIC-34), so no secret reaches the operational log.
+    private func recordToolCall(resolved: ResolvedInvocation, result: ToolExecutionResult, startedAt: Date, completedAt: Date) {
+        guard let descriptor = registry.tool(resolved.toolID)?.descriptor else { return }
+        let record = ToolCallRecorder.record(
+            descriptor: descriptor,
+            input: resolved.input,
+            result: result,
+            startedAt: startedAt,
+            completedAt: completedAt
+        )
+        if let data = try? record.jsonData() {
+            toolCallSink(data)
+        }
+    }
+
     private func emit(_ machine: inout CommandLifecycleMachine, _ transition: (inout CommandLifecycleMachine) throws -> CommandLifecycleEvent) {
         guard let event = try? transition(&machine) else { return }
         sink(event)
@@ -308,12 +335,6 @@ public final class CommandRuntime: @unchecked Sendable {
 
     private func lifecycleError(_ category: Category, _ code: String, _ message: String) -> CerebralHelmCommandLifecycleEventError {
         CerebralHelmCommandLifecycleEventError(category: category, code: code, details: nil, message: message, remediation: nil)
-    }
-
-    private func noteTitle(from text: String) -> String {
-        let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
-        let trimmed = firstLine.trimmingCharacters(in: .whitespaces)
-        return trimmed.isEmpty ? "Untitled note" : String(trimmed.prefix(60))
     }
 
     private func describe(_ reason: UnrecognizedInput.Reason) -> String {

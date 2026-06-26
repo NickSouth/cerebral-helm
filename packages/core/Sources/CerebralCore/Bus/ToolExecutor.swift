@@ -40,6 +40,14 @@ public struct ToolExecutionResult: Sendable {
     /// Structured error on any non-success status; `nil` on success.
     public let error: StructuredError?
     public let durationMs: Int
+
+    public init(toolID: String, status: ToolResultStatus, output: Data?, error: StructuredError?, durationMs: Int) {
+        self.toolID = toolID
+        self.status = status
+        self.output = output
+        self.error = error
+        self.durationMs = durationMs
+    }
 }
 
 /// Executes a validated tool: applies policy before invocation, runs the bound
