@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0.0",
+  "references": [
+    { "id": "vscode", "label": "Visual Studio Code", "target": "com.microsoft.VSCode" },
+    { "id": "terminal", "label": "Terminal", "target": "com.apple.Terminal" },
+    { "id": "xcode", "label": "Xcode", "target": "com.apple.dt.Xcode" }
+  ]
+}
