@@ -1,0 +1,11 @@
+{
+  "hookId": "ondraft-dev",
+  "exitCode": 0,
+  "stdout": "build ok",
+  "stderr": "",
+  "timedOut": false,
+  "durationMs": 42,
+  "environment": {
+    "CI": "true"
+  }
+}

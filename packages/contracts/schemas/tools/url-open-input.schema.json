@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/url-open-input.schema.json",
+  "title": "CerebralHelm Url Open Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["urlId"],
+  "properties": {
+    "urlId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "minLength": 1
+    }
+  }
+}

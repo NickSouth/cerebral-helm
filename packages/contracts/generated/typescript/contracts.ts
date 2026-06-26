@@ -399,6 +399,16 @@ export interface Knowledge {
     rootReference?: string;
 }
 
+export interface CerebralHelmAppOpenInput {
+    appId: string;
+}
+
+export interface CerebralHelmAppOpenOutput {
+    alreadyRunning: boolean;
+    appId:          string;
+    launched:       boolean;
+}
+
 export interface CerebralHelmConfirmationDisclosure {
     accountOrService:  null | string;
     actionSummary:     string;
@@ -489,9 +499,127 @@ export interface Tool {
     version: string;
 }
 
+export interface CerebralHelmHookRunInput {
+    hookId: string;
+}
+
+export interface CerebralHelmHookRunOutput {
+    durationMs:   number;
+    environment?: { [key: string]: string };
+    exitCode:     number;
+    hookId:       string;
+    stderr:       string;
+    stdout:       string;
+    timedOut:     boolean;
+}
+
+export interface CerebralHelmModeApplyInput {
+    modeId: string;
+}
+
+export interface CerebralHelmModeApplyOutput {
+    actions:       Action[];
+    aggregateRisk: Risk;
+    modeId:        string;
+    status:        CerebralHelmModeApplyOutputStatus;
+}
+
+export interface Action {
+    actionId: string;
+    kind:     string;
+    message?: string;
+    risk:     Risk;
+    status:   ActionStatus;
+}
+
+export enum ActionStatus {
+    Failed = "failed",
+    Skipped = "skipped",
+    Success = "success",
+    Unavailable = "unavailable",
+}
+
+export enum CerebralHelmModeApplyOutputStatus {
+    PartialSuccess = "partial_success",
+    Success = "success",
+}
+
+export interface CerebralHelmNoteCaptureInput {
+    body:         string;
+    kind:         string;
+    project?:     string;
+    sensitivity?: Sensitivity;
+    title:        string;
+}
+
+export interface CerebralHelmNoteCaptureOutput {
+    created: boolean;
+    noteId:  string;
+    path:    string;
+}
+
+export interface CerebralHelmNoteSearchInput {
+    limit?: number;
+    query:  string;
+}
+
+export interface CerebralHelmNoteSearchOutput {
+    results:   Result[];
+    truncated: boolean;
+}
+
+export interface Result {
+    excerpt:      string;
+    freshness?:   Freshness;
+    noteId:       string;
+    path:         string;
+    sensitivity?: Sensitivity;
+    title:        string;
+    updated:      string;
+}
+
+export enum Freshness {
+    Aging = "aging",
+    Fresh = "fresh",
+    Stale = "stale",
+    Unknown = "unknown",
+}
+
+export interface CerebralHelmSystemStatusReadInput {
+    metrics?: ID[];
+}
+
+export enum ID {
+    Battery = "battery",
+    CPU = "cpu",
+    Display = "display",
+    Memory = "memory",
+    Network = "network",
+}
+
+export interface CerebralHelmSystemStatusReadOutput {
+    metrics: Metric[];
+}
+
+export interface Metric {
+    availability: AvailabilityEnum;
+    id:           ID;
+    sampledAt?:   string;
+    unit?:        string;
+    value?:       number;
+}
+
+export enum AvailabilityEnum {
+    Available = "available",
+    Disconnected = "disconnected",
+    Loading = "loading",
+    Stale = "stale",
+    Unavailable = "unavailable",
+}
+
 export interface CerebralHelmToolDescriptor {
     adapterRequirements:   AdapterRequirements;
-    availability:          Availability;
+    availability:          AvailabilityClass;
     cancellable:           boolean;
     confirmationPolicyKey: ConfirmationPolicyKey;
     id:                    string;
@@ -522,7 +650,7 @@ export enum Platform {
     PreMACMock = "pre_mac_mock",
 }
 
-export interface Availability {
+export interface AvailabilityClass {
     macOS:  boolean;
     preMac: boolean;
 }
@@ -612,5 +740,15 @@ export interface CerebralHelmToolResultError {
     details?:     { [key: string]: any };
     message:      string;
     remediation?: null | string;
+}
+
+export interface CerebralHelmURLOpenInput {
+    urlId: string;
+}
+
+export interface CerebralHelmURLOpenOutput {
+    opened:      boolean;
+    resolvedUrl: string;
+    urlId:       string;
 }
 

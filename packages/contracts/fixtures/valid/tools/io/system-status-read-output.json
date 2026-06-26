@@ -1,0 +1,15 @@
+{
+  "metrics": [
+    {
+      "id": "cpu",
+      "availability": "available",
+      "value": 12.5,
+      "unit": "percent",
+      "sampledAt": "2026-06-23T16:00:02.000Z"
+    },
+    {
+      "id": "battery",
+      "availability": "unavailable"
+    }
+  ]
+}

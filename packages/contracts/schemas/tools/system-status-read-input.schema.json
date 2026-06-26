@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/system-status-read-input.schema.json",
+  "title": "CerebralHelm System Status Read Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "metrics": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["cpu", "memory", "network", "battery", "display"]
+      }
+    }
+  }
+}

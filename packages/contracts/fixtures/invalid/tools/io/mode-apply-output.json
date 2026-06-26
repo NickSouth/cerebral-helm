@@ -1,0 +1,13 @@
+{
+  "modeId": "developer",
+  "status": "partial_success",
+  "aggregateRisk": "local_write",
+  "actions": [
+    {
+      "actionId": "open-repo",
+      "kind": "app.open",
+      "status": "exploded",
+      "risk": "local_write"
+    }
+  ]
+}

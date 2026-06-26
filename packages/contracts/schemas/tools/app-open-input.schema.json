@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/app-open-input.schema.json",
+  "title": "CerebralHelm App Open Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["appId"],
+  "properties": {
+    "appId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "minLength": 1
+    }
+  }
+}

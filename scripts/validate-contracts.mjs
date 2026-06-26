@@ -79,6 +79,10 @@ function schemaForFixture(filePath) {
     return schemaId("tools", "tool-descriptor");
   }
 
+  if (relativePath.startsWith("valid/tools/io/") || relativePath.startsWith("invalid/tools/io/")) {
+    return schemaId("tools", path.basename(relativePath, ".json"));
+  }
+
   if (relativePath.startsWith("valid/tools/confirmations/")) {
     return schemaId("tools", "confirmation-disclosure");
   }
