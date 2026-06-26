@@ -1,5 +1,6 @@
 import Foundation
 import ArgumentParser
+import CerebralCore
 
 /// The permanent `cerebral` developer and recovery CLI.
 ///
@@ -14,7 +15,11 @@ struct Cerebral: ParsableCommand {
     nonisolated(unsafe) static let configuration = CommandConfiguration(
         commandName: "cerebral",
         abstract: "CerebralHelm developer CLI.",
-        subcommands: [Tools.self, Events.self]
+        subcommands: [
+            Tools.self, Events.self,
+            Mode.self, Note.self, Search.self,
+            Simulate.self, Command.self, Cancel.self,
+        ]
     )
 }
 
@@ -37,4 +42,22 @@ func resolveRepositoryRoot(_ explicit: String?) -> URL {
         return URL(fileURLWithPath: env)
     }
     return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+}
+
+/// Resolves the workspace paths for the given options.
+func workspacePaths(_ options: GlobalOptions) throws -> WorkspacePaths {
+    try WorkspacePaths(
+        repositoryRoot: resolveRepositoryRoot(options.root),
+        environment: ProcessInfo.processInfo.environment
+    )
+}
+
+/// Builds a session that drives the real command bus and persists events.
+func makeSession(_ options: GlobalOptions) throws -> CerebralSession {
+    try CerebralSession(paths: workspacePaths(options))
+}
+
+/// Prints a run outcome in the requested form.
+func emit(_ outcome: RunOutcome, json: Bool) throws {
+    print(json ? try CliRenderer.json(outcome) : CliRenderer.human(outcome))
 }
