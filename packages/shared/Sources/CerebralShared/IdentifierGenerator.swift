@@ -6,6 +6,7 @@ public enum IdentifierKind: Sendable {
     case command
     case event
     case correlation
+    case confirmation
 
     /// Identifier prefix without the trailing underscore.
     public var prefix: String {
@@ -13,6 +14,7 @@ public enum IdentifierKind: Sendable {
         case .command: return "cmd"
         case .event: return "evt"
         case .correlation: return "corr"
+        case .confirmation: return "conf"
         }
     }
 }
