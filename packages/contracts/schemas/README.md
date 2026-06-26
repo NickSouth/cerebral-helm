@@ -9,4 +9,4 @@ Current schema groups:
 - `bridge/`: bridge handshake, operation messages, bootstrap state, capability flags, degraded features, and events.
 - `commands/`: command envelopes, lifecycle events, terminal command results, and shared structured errors.
 - `config/`: application defaults, modes, agent surfaces, settings patches, and config validation errors.
-- `tools/`: tool descriptors, policy-owned confirmation disclosures, and structured tool results.
+- `tools/`: tool descriptors, per-tool input/output payloads, policy-owned confirmation disclosures, and structured tool results.
