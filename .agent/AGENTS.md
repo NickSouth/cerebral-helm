@@ -104,6 +104,19 @@ $originalPath = [System.Environment]::GetEnvironmentVariable('Path', 'Process')
 
 Without this setup, common misleading failures are: `swift` not recognized, exit code `-1073741515`, `Duplicate values for key: 'PATH'`, missing `link`, or `unable to load standard library for target 'x86_64-unknown-windows-msvc'`.
 
+### OneDrive, scratch path, and external packages
+
+The repository lives under a OneDrive-synced folder. OneDrive's filesystem filter blocks symbolic links / reparse points and intermittently locks build artifacts (for example `.build/.../data.mdb`), which corrupts an in-tree `.build`. When building or testing anything that resolves external Swift packages, point SwiftPM at a scratch directory outside OneDrive:
+
+```powershell
+& $swift test --scratch-path 'C:\Users\nickr\AppData\Local\cerebral-build'
+& $swift build --product cerebral --scratch-path 'C:\Users\nickr\AppData\Local\cerebral-build'
+```
+
+External package checkouts also need symlink support: enable Windows **Developer Mode** (Settings → Privacy & security → For developers) so git can materialize package symlinks. `swift-argument-parser` is pinned to the `1.1.x` line on purpose — `1.2.0+` adds SwiftPM command plugins whose shared sources are referenced through directory symlinks that SwiftPM on Windows does not traverse, which breaks `swift test`.
+
+Linux/CI has none of these constraints; the plain `swift test` invocation in `scripts/test.mjs` is correct there.
+
 ## Completion Report
 
 At the end of every implementation increment, report:
