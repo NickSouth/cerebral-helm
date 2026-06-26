@@ -2,7 +2,7 @@ import CerebralContracts
 
 /// A descriptor that passed validation, with its bound handler and the effective
 /// operational metadata after any stricter-only overlay is applied.
-public struct RegisteredTool {
+public struct RegisteredTool: Sendable {
     public let descriptor: CerebralHelmToolDescriptor
     public let handler: any ToolHandler
     /// Descriptor timeout, possibly shortened by a stricter config overlay.
@@ -17,7 +17,7 @@ public struct RegisteredTool {
 /// The validated tool registry: the single source of bound, executable tools
 /// (ADR-003). Rich descriptors are authoritative; the registry rejects any
 /// invalid or duplicate registration so every tool it exposes is safe to run.
-public struct ToolRegistry {
+public struct ToolRegistry: Sendable {
     private let toolsByID: [String: RegisteredTool]
 
     fileprivate init(toolsByID: [String: RegisteredTool]) {

@@ -14,3 +14,7 @@ extension PreviousStatus: @unchecked Sendable {}
 extension CerebralHelmCommandEnvelopeSource: @unchecked Sendable {}
 extension Risk: @unchecked Sendable {}
 extension RuntimeRiskPolicy: @unchecked Sendable {}
+extension Category: @unchecked Sendable {}
+extension StatusElement: @unchecked Sendable {}
+extension CerebralHelmToolDescriptor: @unchecked Sendable {}
+extension CerebralHelmStructuredError: @unchecked Sendable {}
