@@ -11,13 +11,15 @@ import CerebralShared
 /// knowledge package (the service is injected). hook.run (NIC-33-B) and mode.apply
 /// (NIC-33-C) are registered by later increments.
 public enum PreMacToolRuntime {
-    public static func makeExecutor(
+    /// Builds the validated registry of portable handlers bound to mock adapters.
+    /// `hook.run` (NIC-33-B) is registered with the supplied catalog; mode.apply
+    /// (NIC-33-C) is added by a later increment.
+    public static func makeRegistry(
         descriptorsDirectory: URL,
         capabilityMatrix: CapabilityMatrix = .allAvailable,
         knowledge: any KnowledgeService = MockKnowledgeService(),
-        policy: PolicyEngine = PolicyEngine(),
-        clock: any TimeSource = SystemClock()
-    ) throws -> ToolExecutor {
+        hookCatalog: HookCatalog = HookCatalog()
+    ) throws -> ToolRegistry {
         let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory)
 
         let handlers: [String: any ToolHandler] = [
@@ -26,6 +28,7 @@ public enum PreMacToolRuntime {
             "system.status.read": SystemStatusReadHandler(capability: MockSystemStatusCapability(matrix: capabilityMatrix)),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
+            "hook.run": HookRunHandler(catalog: hookCatalog, capability: MockProcessCapability(matrix: capabilityMatrix)),
         ]
 
         var builder = ToolRegistryBuilder()
@@ -33,7 +36,23 @@ public enum PreMacToolRuntime {
             guard let handler = handlers[descriptor.id] else { continue }
             try builder.register(descriptor: descriptor, handler: handler)
         }
+        return builder.build()
+    }
 
-        return ToolExecutor(registry: builder.build(), policy: policy, clock: clock)
+    public static func makeExecutor(
+        descriptorsDirectory: URL,
+        capabilityMatrix: CapabilityMatrix = .allAvailable,
+        knowledge: any KnowledgeService = MockKnowledgeService(),
+        hookCatalog: HookCatalog = HookCatalog(),
+        policy: PolicyEngine = PolicyEngine(),
+        clock: any TimeSource = SystemClock()
+    ) throws -> ToolExecutor {
+        let registry = try makeRegistry(
+            descriptorsDirectory: descriptorsDirectory,
+            capabilityMatrix: capabilityMatrix,
+            knowledge: knowledge,
+            hookCatalog: hookCatalog
+        )
+        return ToolExecutor(registry: registry, policy: policy, clock: clock)
     }
 }
