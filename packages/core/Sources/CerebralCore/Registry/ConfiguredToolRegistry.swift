@@ -2,10 +2,10 @@ import Foundation
 
 /// A configured tool as declared in `config/tools/*.json`.
 ///
-/// This is the minimal, config-backed view used by the CLI's `tools list`. The
-/// full ADR-003 descriptor registry (input/output schemas, policy metadata,
-/// handler binding) is owned by a later issue; this type intentionally exposes
-/// only the operational fields the pre-Mac surface needs.
+/// This is the minimal, config-backed view used by the CLI's `tools list`. It is
+/// also the stricter-only overlay consumed by ``ToolRegistryBuilder``: the rich
+/// ``CerebralHelmToolDescriptor`` is authoritative (ADR-003, NIC-28), and an
+/// overlay may only tighten operational limits, never weaken them.
 public struct ConfiguredTool: Codable, Equatable, Sendable {
     public let id: String
     public let risk: String
