@@ -5,3 +5,7 @@
 **Purpose:** Hold repository-specific agent instructions, canonical MVP specifications, and local workflow skills. Product code must not depend on this directory at runtime.
 
 The MVP scope is defined by `spec/MVP-PRD.md`; implementation technology is defined by `spec/TECH-STACK.md`.
+
+## Skills
+
+`skills/` is the canonical, tool-neutral home for local workflow skills. Claude Code only auto-discovers skills under `.claude/skills/`, so `.claude/skills/implementation-planning/SKILL.md` is a mirror of `skills/implementation-planning/SKILL.md`. Edit the copy here and re-copy to `.claude/skills/` to keep the two in sync.
