@@ -12,3 +12,5 @@ import CerebralContracts
 // `Sendable` conformances, these lines become duplicates and should be removed.
 extension PreviousStatus: @unchecked Sendable {}
 extension CerebralHelmCommandEnvelopeSource: @unchecked Sendable {}
+extension Risk: @unchecked Sendable {}
+extension RuntimeRiskPolicy: @unchecked Sendable {}
