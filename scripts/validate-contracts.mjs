@@ -145,6 +145,10 @@ function currentConfigExamples() {
     ...collectJsonFiles(path.join(configRoot, "agents")).map((filePath) => ({
       filePath,
       schema: schemaId("config", "agent")
+    })),
+    ...collectJsonFiles(path.join(configRoot, "tools", "descriptors")).map((filePath) => ({
+      filePath,
+      schema: schemaId("tools", "tool-descriptor")
     }))
   ];
 }

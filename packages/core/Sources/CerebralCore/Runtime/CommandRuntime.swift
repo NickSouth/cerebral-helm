@@ -124,6 +124,9 @@ public final class CommandRuntime: @unchecked Sendable {
         emit(&machine) { try $0.markPlanned(message: "Command planned.") }
 
         guard let resolved = resolve(intent) else {
+            // No registered tool for this intent (e.g. mode.apply before NIC-33-C).
+            // Reach the terminal through the legal running → failed edge.
+            emit(&machine) { try $0.markRunning(message: "Running.") }
             emit(&machine) {
                 try $0.markFailed(
                     error: lifecycleError(.unavailableCapability, "tool.unavailable", "No tool is available for this command yet."),

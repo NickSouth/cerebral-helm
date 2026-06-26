@@ -50,6 +50,8 @@ let package = Package(
             name: "cerebral",
             dependencies: [
                 "CerebralCore",
+                "CerebralTools",
+                "CerebralShared",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             path: "apps/cli/Sources/cerebral"

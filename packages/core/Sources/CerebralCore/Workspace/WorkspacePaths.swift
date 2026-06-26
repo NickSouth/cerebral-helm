@@ -16,6 +16,8 @@ public struct WorkspacePaths: Sendable {
     public let repositoryRoot: URL
     public let configDirectory: URL
     public let fixturesDirectory: URL
+    /// Directory of authoritative rich tool descriptors (`config/tools/descriptors`).
+    public let toolDescriptorsDirectory: URL
     public let stateRoot: URL
     public let eventLogPath: URL
 
@@ -24,6 +26,10 @@ public struct WorkspacePaths: Sendable {
         self.repositoryRoot = root
         self.configDirectory = root.appendingPathComponent("config", isDirectory: true)
         self.fixturesDirectory = root.appendingPathComponent("fixtures", isDirectory: true)
+        self.toolDescriptorsDirectory = root
+            .appendingPathComponent("config", isDirectory: true)
+            .appendingPathComponent("tools", isDirectory: true)
+            .appendingPathComponent("descriptors", isDirectory: true)
 
         let defaultStateRoot = root
             .appendingPathComponent(".local", isDirectory: true)

@@ -9,7 +9,7 @@ import CerebralCore
 /// (FR-CMD-05, FR-CMD-06). NIC-26 part 1 ships the read surfaces; the action
 /// surfaces (`mode`, `note`, `search`, `simulate`, `cancel`) follow.
 @main
-struct Cerebral: ParsableCommand {
+struct Cerebral: AsyncParsableCommand {
     // `nonisolated(unsafe)` because swift-argument-parser 1.1.x predates
     // `Sendable` on `CommandConfiguration`; the value is effectively immutable.
     nonisolated(unsafe) static let configuration = CommandConfiguration(
@@ -17,7 +17,7 @@ struct Cerebral: ParsableCommand {
         abstract: "CerebralHelm developer CLI.",
         subcommands: [
             Tools.self, Events.self,
-            Mode.self, Note.self, Search.self,
+            Open.self, Hook.self, Mode.self, Note.self, Search.self,
             Simulate.self, Command.self, Cancel.self,
         ]
     )
@@ -30,6 +30,9 @@ struct GlobalOptions: ParsableArguments {
 
     @Flag(name: .long, help: "Emit machine-readable JSON instead of human-readable text.")
     var json = false
+
+    @Flag(name: .long, help: "Approve any required confirmation within the same invocation.")
+    var yes = false
 }
 
 /// Resolves the repository root from an explicit flag, then `$CEREBRAL_ROOT`,
