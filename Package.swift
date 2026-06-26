@@ -74,5 +74,14 @@ let package = Package(
             ],
             path: "Tests/CoreModelTests"
         ),
+        .testTarget(
+            name: "SpineRegressionTests",
+            dependencies: [
+                "CerebralCore",
+                "CerebralShared",
+                "CerebralContracts",
+            ],
+            path: "Tests/SpineRegressionTests"
+        ),
     ]
 )
