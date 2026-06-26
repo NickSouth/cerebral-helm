@@ -12,10 +12,12 @@ func makeCommandRuntime(_ options: GlobalOptions) throws -> CommandRuntime {
     let paths = try workspacePaths(options)
     let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory)
     let hookCatalog = makeHookCatalog(references: references, repositoryRoot: paths.repositoryRoot)
+    let modePlanner = StubModePlanner()
     let registry = try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: paths.toolDescriptorsDirectory,
         knowledge: MockKnowledgeService(),
-        hookCatalog: hookCatalog
+        hookCatalog: hookCatalog,
+        modePlanner: modePlanner
     )
     let writer = EventLogWriter(eventLogPath: paths.eventLogPath)
 
@@ -25,6 +27,7 @@ func makeCommandRuntime(_ options: GlobalOptions) throws -> CommandRuntime {
         factory: CommandFactory(clock: SystemClock(), identifiers: UUIDIdentifierGenerator()),
         references: references,
         hookCatalog: hookCatalog,
+        modePlanner: modePlanner,
         sink: { try? writer.append($0) }
     )
 }

@@ -27,6 +27,7 @@ public final class CommandRuntime: @unchecked Sendable {
         let toolPurpose: String
         let declaredRisk: Risk
         let runtimeRiskPolicy: RuntimeRiskPolicy
+        let plannedActionRisks: [Risk]
         let input: Data
         let shellInvocation: HookInvocation?
         let destination: String?
@@ -49,6 +50,7 @@ public final class CommandRuntime: @unchecked Sendable {
     private let coordinator: ConfirmationCoordinator
     private let factory: CommandFactory
     private let hookCatalog: HookCatalog
+    private let modePlanner: (any ModePlanner)?
     private let sink: @Sendable (CommandLifecycleEvent) -> Void
     private var pending: [String: PendingExecution] = [:]
 
@@ -59,6 +61,7 @@ public final class CommandRuntime: @unchecked Sendable {
         factory: CommandFactory,
         references: CommandReferences,
         hookCatalog: HookCatalog = HookCatalog(),
+        modePlanner: (any ModePlanner)? = nil,
         clock: any TimeSource = SystemClock(),
         sink: @escaping @Sendable (CommandLifecycleEvent) -> Void = { _ in }
     ) {
@@ -69,6 +72,7 @@ public final class CommandRuntime: @unchecked Sendable {
         self.coordinator = coordinator
         self.factory = factory
         self.hookCatalog = hookCatalog
+        self.modePlanner = modePlanner
         self.sink = sink
     }
 
@@ -141,6 +145,7 @@ public final class CommandRuntime: @unchecked Sendable {
                 toolID: resolved.toolID,
                 declaredRisk: resolved.declaredRisk,
                 runtimeRiskPolicy: resolved.runtimeRiskPolicy,
+                plannedActionRisks: resolved.plannedActionRisks,
                 shellInvocation: resolved.shellInvocation
             )
         )
@@ -148,7 +153,7 @@ public final class CommandRuntime: @unchecked Sendable {
         if evaluation.decision == .requireConfirmation {
             emit(&machine) { try $0.requireConfirmation(message: "Awaiting confirmation.") }
             let request = coordinator.requestConfirmation(
-                plan: makePlan(commandID: envelope.id, resolved: resolved, policyReason: evaluation.reason)
+                plan: makePlan(commandID: envelope.id, resolved: resolved, risk: evaluation.governingRisk, policyReason: evaluation.reason)
             )
             store(envelope.id, machine: machine, invocation: resolved)
             return .awaitingConfirmation(commandID: envelope.id, disclosure: request.disclosure, token: request.token)
@@ -235,15 +240,25 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [ConfirmationArgument(name: "hook", value: reference.label, sensitive: false)],
                 actionSummary: "Run hook \(reference.label)."
             )
-        case .applyMode:
-            // mode.apply is wired by NIC-33-C (Increment 9).
-            return nil
+        case let .applyMode(modeID):
+            guard let planner = modePlanner, let plan = try? planner.plan(modeID: modeID) else { return nil }
+            return make(
+                toolID: "mode.apply",
+                input: try? CerebralHelmModeApplyInput(modeID: modeID).jsonData(),
+                plannedActionRisks: plan.actions.map(\.risk),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .partiallyReversible,
+                arguments: [ConfirmationArgument(name: "mode", value: modeID, sensitive: false)],
+                actionSummary: "Apply mode \(modeID)."
+            )
         }
     }
 
     private func make(
         toolID: String,
         input: Data?,
+        plannedActionRisks: [Risk] = [],
         shellInvocation: HookInvocation? = nil,
         destination: String?,
         dataLeavingDevice: DataLeavingDevice,
@@ -258,6 +273,7 @@ public final class CommandRuntime: @unchecked Sendable {
             toolPurpose: tool.descriptor.purpose,
             declaredRisk: tool.risk,
             runtimeRiskPolicy: tool.descriptor.runtimeRiskPolicy,
+            plannedActionRisks: plannedActionRisks,
             input: input,
             shellInvocation: shellInvocation,
             destination: destination,
@@ -268,13 +284,13 @@ public final class CommandRuntime: @unchecked Sendable {
         )
     }
 
-    private func makePlan(commandID: String, resolved: ResolvedInvocation, policyReason: String) -> ConfirmationPlan {
+    private func makePlan(commandID: String, resolved: ResolvedInvocation, risk: Risk, policyReason: String) -> ConfirmationPlan {
         ConfirmationPlan(
             commandID: commandID,
             toolID: resolved.toolID,
             toolVersion: resolved.toolVersion,
             toolPurpose: resolved.toolPurpose,
-            risk: resolved.declaredRisk,
+            risk: risk,
             destination: resolved.destination,
             accountOrService: nil,
             dataLeavingDevice: resolved.dataLeavingDevice,

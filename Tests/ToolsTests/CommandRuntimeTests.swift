@@ -69,6 +69,7 @@ private func makeRuntime(
         factory: factory,
         references: references,
         hookCatalog: hookCatalog,
+        modePlanner: StubModePlanner(),
         sink: { recorder.record($0) }
     )
 }
@@ -164,6 +165,26 @@ func deniedCommandNeverExecutes() async throws {
     #expect(result?.status == .denied)
     #expect(result?.error?.category == .policyDenied)
     #expect(recorder.statuses == [.received, .planned, .running, .failed])
+}
+
+@Test("a mode whose plan contains a hook aggregates to shell and requires confirmation (FR-MOD-03)")
+func modeWithHookAggregatesToShell() async throws {
+    let runtime = try makeRuntime()
+
+    let pending = await runtime.submit("mode developer", source: .cli)
+    guard case let .awaitingConfirmation(_, disclosure, token) = pending else {
+        Issue.record("Expected awaitingConfirmation, got \(pending)"); return
+    }
+    // The disclosure shows the aggregate risk, not the declared local_write.
+    #expect(disclosure.tool.id == "mode.apply")
+    #expect(disclosure.risk == .shell)
+
+    let decided = await runtime.decide(token: token, decision: .approve)
+    guard case let .completed(_, status, result) = decided else {
+        Issue.record("Expected completed, got \(decided)"); return
+    }
+    #expect(status == .succeeded)
+    #expect(result?.status == .success)
 }
 
 @Test("unrecognized input is rejected without executing")

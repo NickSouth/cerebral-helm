@@ -18,7 +18,8 @@ public enum PreMacToolRuntime {
         descriptorsDirectory: URL,
         capabilityMatrix: CapabilityMatrix = .allAvailable,
         knowledge: any KnowledgeService = MockKnowledgeService(),
-        hookCatalog: HookCatalog = HookCatalog()
+        hookCatalog: HookCatalog = HookCatalog(),
+        modePlanner: any ModePlanner = StubModePlanner()
     ) throws -> ToolRegistry {
         let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory)
 
@@ -29,6 +30,7 @@ public enum PreMacToolRuntime {
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: MockProcessCapability(matrix: capabilityMatrix)),
+            "mode.apply": ModeApplyHandler(planner: modePlanner),
         ]
 
         var builder = ToolRegistryBuilder()
