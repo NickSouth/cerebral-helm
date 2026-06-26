@@ -1,13 +1,7 @@
 import type { DashboardBootstrapState } from "./types";
+import { getDashboardFixture } from "../fixtures/canonicalFixtures";
 
-const bootstrapState: DashboardBootstrapState = {
-  mode: "Developer",
-  project: "NIC-12 Workspace Bootstrap",
-  summary: "Pre-Mac foundation is running against a mock CerebralBridge.",
-  commandsToday: 4,
-  pendingConfirmations: 0,
-  activeSurface: "Project Manager"
-};
+const bootstrapState = getDashboardFixture("mode.developer.ready");
 
 export function loadBootstrapState(): DashboardBootstrapState {
   return bootstrapState;

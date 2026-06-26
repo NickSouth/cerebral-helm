@@ -7,4 +7,5 @@ export interface DashboardBootstrapState {
   readonly commandsToday: number;
   readonly pendingConfirmations: number;
   readonly activeSurface: string;
+  readonly uiState: "loading" | "empty" | "stale" | "unavailable" | "offline" | "error" | "confirmation" | "success" | "cancelled" | "ready";
 }

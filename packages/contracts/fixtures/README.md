@@ -4,6 +4,8 @@ Fixtures in this directory are shared across contract validation, Swift tests, d
 
 Future valid and invalid fixtures should use stable IDs, fixed clocks, and sanitized non-personal data.
 
+Product-state fixture catalogs live in `fixtures/catalog/` at the repository root. Contract fixtures stay here so schema validation and generated-type drift checks can own the language-neutral wire examples.
+
 Current fixture groups:
 
 - `valid/bridge/`: valid bridge handshake, operation, event, and recovery examples shared by mock and future WKWebView transports.

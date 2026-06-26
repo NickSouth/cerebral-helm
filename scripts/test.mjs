@@ -11,6 +11,7 @@ runCommand("node", ["--test", "./scripts/contracts-bridge.test.mjs"]);
 runCommand("node", ["--test", "./scripts/contracts-command.test.mjs"]);
 runCommand("node", ["--test", "./scripts/contracts-config.test.mjs"]);
 runCommand("node", ["--test", "./scripts/contracts-tool.test.mjs"]);
+runCommand("node", ["--test", "./scripts/fixture-catalog.test.mjs"]);
 runCommand("swift", ["test"]);
 runCommand("corepack", ["pnpm", "--dir", "apps/dashboard", "test", "--run"]);
 runCommand("corepack", ["pnpm", "--dir", "apps/dashboard", "build"]);
