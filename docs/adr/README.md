@@ -1,0 +1,12 @@
+# Architecture decision records
+
+**Owner:** Architecture
+
+**Purpose:** Store numbered decisions with context, alternatives, consequences, and status.
+
+Current records:
+
+- [ADR-001](ADR-001-appkit-wkwebview-shell.md): AppKit shell with `WKWebView` dashboard host
+- [ADR-002](ADR-002-single-command-lifecycle.md): Single command bus and immutable lifecycle
+- [ADR-003](ADR-003-internal-tool-registry-and-risk-policy.md): Internal tool registry with policy-owned risk and confirmation
+- [ADR-004](ADR-004-versioned-cerebral-bridge.md): Versioned `CerebralBridge` with mock Pre-Mac and `WKWebView` macOS transports

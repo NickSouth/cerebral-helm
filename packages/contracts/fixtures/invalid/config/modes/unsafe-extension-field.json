@@ -1,0 +1,26 @@
+{
+  "id": "developer",
+  "label": "Developer",
+  "theme": {
+    "accentPrimary": "developer.primary",
+    "accentSecondary": "developer.secondary"
+  },
+  "quickApps": ["vscode", "terminal", "github", "docs"],
+  "quickActions": [
+    "open-developer-layout",
+    "open-workspace",
+    "run-tests",
+    "search-notes",
+    "git-status",
+    "open-terminal",
+    "review-pull-requests",
+    "capture-note"
+  ],
+  "widgets": {
+    "left": "project-git-status",
+    "right": "repositories"
+  },
+  "unknownFutureField": {
+    "shouldNotBeImplicitlyPreserved": true
+  }
+}

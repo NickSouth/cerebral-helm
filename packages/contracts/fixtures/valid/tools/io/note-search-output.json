@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "noteId": "ch-idea-001",
+      "title": "Fixture note",
+      "excerpt": "Deterministic fixture note body.",
+      "path": "inbox/ch-idea-001.md",
+      "updated": "2026-06-23",
+      "sensitivity": "private",
+      "freshness": "fresh"
+    }
+  ],
+  "truncated": false
+}

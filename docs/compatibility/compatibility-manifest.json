@@ -1,0 +1,90 @@
+{
+  "manifestSchemaVersion": "1.0.0",
+  "manifestVersion": "0.1.0",
+  "application": {
+    "id": "cerebral-helm",
+    "channel": "development",
+    "currentVersion": "0.1.0"
+  },
+  "contracts": {
+    "bridge": {
+      "currentVersion": "1.0.0",
+      "compatibleMajor": 1,
+      "compatibleMinorFloor": 0,
+      "majorMismatchOutcome": "block_and_recover",
+      "minorMismatchOutcome": "allow_with_capability_gating"
+    },
+    "config": {
+      "currentVersion": "1.0.0",
+      "compatibleMajor": 1,
+      "compatibleMinorFloor": 0,
+      "majorMismatchOutcome": "block_and_recover",
+      "minorMismatchOutcome": "allow_with_capability_gating"
+    },
+    "database": {
+      "currentVersion": "1.0.0",
+      "compatibleMajor": 1,
+      "compatibleMinorFloor": 0,
+      "majorMismatchOutcome": "block_and_recover",
+      "minorMismatchOutcome": "allow_with_capability_gating"
+    },
+    "commandEnvelope": {
+      "currentVersion": "1.0.0",
+      "compatibleMajor": 1,
+      "compatibleMinorFloor": 0,
+      "majorMismatchOutcome": "block_and_recover",
+      "minorMismatchOutcome": "allow_with_capability_gating"
+    },
+    "commandEvents": {
+      "currentVersion": "1.0.0",
+      "compatibleMajor": 1,
+      "compatibleMinorFloor": 0,
+      "majorMismatchOutcome": "block_and_recover",
+      "minorMismatchOutcome": "allow_with_capability_gating"
+    },
+    "toolDescriptors": {
+      "currentVersion": "1.0.0",
+      "compatibleMajor": 1,
+      "compatibleMinorFloor": 0,
+      "majorMismatchOutcome": "block_and_recover",
+      "minorMismatchOutcome": "allow_with_capability_gating"
+    }
+  },
+  "platform": {
+    "preMacDevelopment": {
+      "supported": true,
+      "notes": "Portable core and dashboard development run on non-Mac environments with mock bridge and fixture-safe roots."
+    },
+    "macOS": {
+      "requiredForNativeShell": true,
+      "minimumVersion": null,
+      "notes": "Native shell compatibility will be pinned to a validated macOS floor once NIC-15 is completed on target hardware. Current planning assumes a 16-inch MacBook Pro with 64 GB memory, 2 TB storage, and a likely macOS 26.5.1 starting point, but the exact shipped version must be recorded from the real device before this becomes an invariant."
+    }
+  },
+  "providers": {
+    "providersAreRuntimeVariables": true,
+    "entries": [
+      {
+        "id": "mock-native",
+        "requiredForMvp": true,
+        "configuredByUser": false,
+        "protocolVersion": "1.0.0",
+        "notes": "Pre-Mac development uses mock bridge and deterministic local fixtures."
+      },
+      {
+        "id": "future-cloud-model",
+        "requiredForMvp": false,
+        "configuredByUser": true,
+        "protocolVersion": null,
+        "notes": "Provider and model selection are runtime configuration concerns, not manifest invariants."
+      }
+    ]
+  },
+  "updatePolicy": {
+    "majorMismatchBehavior": "block_and_recover",
+    "minorMismatchBehavior": "allow_with_capability_gating",
+    "patchMismatchBehavior": "allow",
+    "requiresVerifiedManifest": true,
+    "requiresSignedArtifact": true
+  }
+}

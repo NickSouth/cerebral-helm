@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/url-open-output.schema.json",
+  "title": "CerebralHelm Url Open Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["urlId", "opened", "resolvedUrl"],
+  "properties": {
+    "urlId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "minLength": 1
+    },
+    "opened": {
+      "type": "boolean"
+    },
+    "resolvedUrl": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

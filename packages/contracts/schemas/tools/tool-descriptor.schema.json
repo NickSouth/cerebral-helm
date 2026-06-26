@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/tool-descriptor.schema.json",
+  "title": "CerebralHelm Tool Descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "version",
+    "purpose",
+    "inputSchema",
+    "outputSchema",
+    "risk",
+    "runtimeRiskPolicy",
+    "confirmationPolicyKey",
+    "requiredPermissions",
+    "secretReferences",
+    "timeoutMs",
+    "retry",
+    "cancellable",
+    "idempotency",
+    "adapterRequirements",
+    "logging",
+    "results",
+    "availability"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inputSchema": {
+      "$ref": "#/$defs/schemaReference"
+    },
+    "outputSchema": {
+      "$ref": "#/$defs/schemaReference"
+    },
+    "risk": {
+      "$ref": "#/$defs/riskClass"
+    },
+    "runtimeRiskPolicy": {
+      "type": "string",
+      "enum": ["descriptor_risk", "highest_planned_action"]
+    },
+    "confirmationPolicyKey": {
+      "type": "string",
+      "enum": [
+        "allow_read_without_confirmation",
+        "confirm_local_write",
+        "confirm_external_write",
+        "confirm_destructive",
+        "confirm_shell",
+        "confirm_financial",
+        "confirm_purchase_or_booking",
+        "confirm_highest_planned_action"
+      ]
+    },
+    "requiredPermissions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "uniqueItems": true
+    },
+    "secretReferences": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "uniqueItems": true
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxAttempts", "strategy"],
+      "properties": {
+        "maxAttempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "strategy": {
+          "type": "string",
+          "enum": ["none", "fixed", "exponential"]
+        }
+      }
+    },
+    "cancellable": {
+      "type": "boolean"
+    },
+    "idempotency": {
+      "type": "string",
+      "enum": ["idempotent", "idempotent_with_key", "non_idempotent", "unknown"]
+    },
+    "adapterRequirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capabilities", "platforms"],
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+          },
+          "uniqueItems": true
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["pre_mac_mock", "macos_native", "future_provider"]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["redactionPaths", "retention"],
+      "properties": {
+        "redactionPaths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "retention": {
+          "type": "string",
+          "enum": ["none", "standard", "security_audit"]
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/toolResultStatus"
+      },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preMac", "macOS"],
+      "properties": {
+        "preMac": {
+          "type": "boolean"
+        },
+        "macOS": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "schemaReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaId", "schemaVersion"],
+      "properties": {
+        "schemaId": {
+          "type": "string",
+          "format": "uri"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        }
+      }
+    },
+    "riskClass": {
+      "type": "string",
+      "enum": [
+        "read_only",
+        "local_write",
+        "external_write",
+        "destructive",
+        "shell",
+        "financial",
+        "purchase_or_booking"
+      ]
+    },
+    "toolResultStatus": {
+      "type": "string",
+      "enum": ["success", "partial_success", "unavailable", "timeout", "denied", "failure", "cancelled"]
+    }
+  }
+}

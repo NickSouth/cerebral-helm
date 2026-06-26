@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "cmd_000000000000000000900001",
+  "type": "command.submit",
+  "source": "browser_extension",
+  "rawInput": "mode developer",
+  "timestamp": "2026-06-23T16:10:00.000Z",
+  "correlationId": null,
+  "payload": {},
+  "privacy": {
+    "sensitivity": "private",
+    "cloudPolicy": "deny"
+  }
+}

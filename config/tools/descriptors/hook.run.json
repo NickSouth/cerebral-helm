@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "hook.run",
+  "version": "1.0.0",
+  "purpose": "Execute a configured allowlisted hook without accepting arbitrary shell text.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/hook-run-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/hook-run-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "shell",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_shell",
+  "requiredPermissions": ["allowlisted_process_execution"],
+  "secretReferences": [],
+  "timeoutMs": 30000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": true,
+  "idempotency": "unknown",
+  "adapterRequirements": {
+    "capabilities": ["hook.run"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": ["/environment", "/stdout", "/stderr"],
+    "retention": "security_audit"
+  },
+  "results": ["success", "partial_success", "unavailable", "denied", "timeout", "failure", "cancelled"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/commands/command-envelope.schema.json",
+  "title": "CerebralHelm Command Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "type",
+    "source",
+    "rawInput",
+    "timestamp",
+    "correlationId",
+    "payload",
+    "privacy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^cmd_[A-Za-z0-9_-]{8,64}$"
+    },
+    "type": {
+      "type": "string",
+      "const": "command.submit"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "dashboard",
+        "hotkey",
+        "cli",
+        "automation",
+        "system",
+        "voice",
+        "ios",
+        "agent"
+      ]
+    },
+    "rawInput": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "correlationId": {
+      "type": ["string", "null"],
+      "pattern": "^(cmd|corr)_[A-Za-z0-9_-]{8,64}$"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sensitivity", "cloudPolicy"],
+      "properties": {
+        "sensitivity": {
+          "type": "string",
+          "enum": ["public", "private", "sensitive", "secret"]
+        },
+        "cloudPolicy": {
+          "type": "string",
+          "enum": ["deny", "ask", "allow"]
+        }
+      }
+    }
+  }
+}

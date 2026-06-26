@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0.0",
+  "references": [
+    { "id": "github", "label": "GitHub", "target": "https://github.com" },
+    { "id": "docs", "label": "Project Docs", "target": "https://docs.cerebralhelm.local" }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000004",
+  "type": "bridge.handshake.response",
+  "compatible": false,
+  "bridgeVersion": "2.0.0",
+  "uiVersion": "0.1.0",
+  "coreVersion": "0.1.0",
+  "transport": "wkwebview",
+  "capabilities": [],
+  "degradedFeatures": [
+    {
+      "id": "bridge",
+      "reason": "Bridge major version 2 is incompatible with UI-supported major version 1.",
+      "fallbackUiState": "error"
+    }
+  ],
+  "startupMode": "recovery",
+  "recovery": {
+    "reason": "major_version_mismatch",
+    "readOnly": true,
+    "diagnosticCode": "bridge_major_mismatch",
+    "remediation": "Block startup writes and show recovery guidance until compatible bridge and UI versions are installed."
+  }
+}

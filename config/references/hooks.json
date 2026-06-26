@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0.0",
+  "references": [
+    { "id": "ondraft-dev", "label": "On Draft (dev)", "target": "scripts/ondraft-dev.sh" }
+  ]
+}

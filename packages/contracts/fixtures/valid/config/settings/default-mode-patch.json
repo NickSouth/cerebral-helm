@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0.0",
+  "patchId": "set_000000000000000000000001",
+  "changes": {
+    "defaultModeId": "executive",
+    "appearance": {
+      "density": "comfortable",
+      "reducedMotion": false
+    }
+  }
+}

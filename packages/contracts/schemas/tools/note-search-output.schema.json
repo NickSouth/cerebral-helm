@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/note-search-output.schema.json",
+  "title": "CerebralHelm Note Search Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["results", "truncated"],
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["noteId", "title", "excerpt", "path", "updated"],
+        "properties": {
+          "noteId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "updated": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sensitivity": {
+            "type": "string",
+            "enum": ["public", "private", "sensitive", "secret"]
+          },
+          "freshness": {
+            "type": "string",
+            "enum": ["fresh", "aging", "stale", "unknown"]
+          }
+        }
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  }
+}

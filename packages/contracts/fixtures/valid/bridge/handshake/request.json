@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000001",
+  "type": "bridge.handshake.request",
+  "uiVersion": "0.1.0",
+  "supportedBridgeMajor": 1,
+  "supportedBridgeMinorFloor": 0
+}

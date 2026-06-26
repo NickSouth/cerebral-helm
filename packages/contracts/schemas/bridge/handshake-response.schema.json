@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/bridge/handshake-response.schema.json",
+  "title": "CerebralHelm Bridge Handshake Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "messageId",
+    "type",
+    "compatible",
+    "bridgeVersion",
+    "uiVersion",
+    "coreVersion",
+    "transport",
+    "capabilities",
+    "degradedFeatures",
+    "startupMode",
+    "recovery"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^brmsg_[A-Za-z0-9_-]{8,64}$"
+    },
+    "type": {
+      "type": "string",
+      "const": "bridge.handshake.response"
+    },
+    "compatible": {
+      "type": "boolean"
+    },
+    "bridgeVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "uiVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "coreVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "transport": {
+      "type": "string",
+      "enum": ["mock", "wkwebview"]
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "capability-state.schema.json"
+      }
+    },
+    "degradedFeatures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "reason", "fallbackUiState"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fallbackUiState": {
+            "type": "string",
+            "enum": ["unavailable", "offline", "error", "stale"]
+          }
+        }
+      }
+    },
+    "startupMode": {
+      "type": "string",
+      "enum": ["ready", "degraded", "recovery"]
+    },
+    "recovery": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason", "readOnly", "diagnosticCode", "remediation"],
+          "properties": {
+            "reason": {
+              "type": "string",
+              "enum": ["major_version_mismatch", "startup_validation_failed"]
+            },
+            "readOnly": {
+              "type": "boolean",
+              "const": true
+            },
+            "diagnosticCode": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "remediation": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "compatible": { "const": false }
+        },
+        "required": ["compatible"]
+      },
+      "then": {
+        "properties": {
+          "startupMode": { "const": "recovery" },
+          "recovery": { "type": "object" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "compatible": { "const": true }
+        },
+        "required": ["compatible"]
+      },
+      "then": {
+        "properties": {
+          "recovery": { "type": "null" }
+        }
+      }
+    }
+  ]
+}

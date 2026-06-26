@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "cmd_000000000000000000000005",
+  "type": "command.submit",
+  "source": "system",
+  "rawInput": "startup.healthcheck",
+  "timestamp": "2026-06-23T16:00:04.000Z",
+  "correlationId": null,
+  "payload": {
+    "checkId": "fixture_startup_healthcheck"
+  },
+  "privacy": {
+    "sensitivity": "private",
+    "cloudPolicy": "deny"
+  }
+}

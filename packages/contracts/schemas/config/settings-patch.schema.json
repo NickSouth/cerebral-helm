@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/config/settings-patch.schema.json",
+  "title": "CerebralHelm Settings Patch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "patchId", "changes"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "patchId": {
+      "type": "string",
+      "pattern": "^set_[A-Za-z0-9_-]{8,64}$"
+    },
+    "changes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaultModeId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "appearance": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "density": {
+              "type": "string",
+              "enum": ["comfortable", "compact"]
+            },
+            "reducedMotion": {
+              "type": "boolean"
+            }
+          }
+        },
+        "hotkeys": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "commandPalette": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "knowledge": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "rootReference": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^x-[a-z][a-z0-9-]*$"
+          },
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

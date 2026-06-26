@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/bridge/operation-request.schema.json",
+  "title": "CerebralHelm Bridge Operation Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "messageId", "type", "operation", "payload"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^brmsg_[A-Za-z0-9_-]{8,64}$"
+    },
+    "type": {
+      "type": "string",
+      "const": "bridge.operation.request"
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "getBootstrapState",
+        "submitCommand",
+        "applyMode",
+        "captureNote",
+        "searchNotes",
+        "decideConfirmation",
+        "updateSettings",
+        "subscribe"
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

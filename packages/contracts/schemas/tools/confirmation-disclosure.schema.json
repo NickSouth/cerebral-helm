@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/confirmation-disclosure.schema.json",
+  "title": "CerebralHelm Confirmation Disclosure",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "commandId",
+    "planHash",
+    "actionSummary",
+    "tool",
+    "risk",
+    "destination",
+    "arguments",
+    "dataLeavingDevice",
+    "accountOrService",
+    "reversibility",
+    "policyReason",
+    "choices",
+    "expiresAt",
+    "invalidation",
+    "executionNotice"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^conf_[A-Za-z0-9_-]{8,64}$"
+    },
+    "commandId": {
+      "type": "string",
+      "pattern": "^cmd_[A-Za-z0-9_-]{8,64}$"
+    },
+    "planHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "actionSummary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "purpose"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "risk": {
+      "type": "string",
+      "enum": [
+        "read_only",
+        "local_write",
+        "external_write",
+        "destructive",
+        "shell",
+        "financial",
+        "purchase_or_booking"
+      ]
+    },
+    "destination": {
+      "type": ["string", "null"]
+    },
+    "arguments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "value", "sensitive"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": "string"
+          },
+          "sensitive": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "dataLeavingDevice": {
+      "type": "string",
+      "enum": ["none", "metadata_only", "content", "unknown"]
+    },
+    "accountOrService": {
+      "type": ["string", "null"]
+    },
+    "reversibility": {
+      "type": "string",
+      "enum": ["reversible", "partially_reversible", "not_reversible", "unknown"]
+    },
+    "policyReason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "choices": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approve", "review", "cancel", "defaultFocusedChoice"],
+      "properties": {
+        "approve": {
+          "$ref": "#/$defs/choice"
+        },
+        "review": {
+          "$ref": "#/$defs/choice"
+        },
+        "cancel": {
+          "$ref": "#/$defs/choice"
+        },
+        "defaultFocusedChoice": {
+          "type": "string",
+          "enum": ["review", "cancel"]
+        }
+      }
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "invalidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expires", "invalidAfterPlanChange", "singleUseToken"],
+      "properties": {
+        "expires": {
+          "type": "boolean"
+        },
+        "invalidAfterPlanChange": {
+          "type": "boolean"
+        },
+        "singleUseToken": {
+          "type": "boolean"
+        }
+      }
+    },
+    "executionNotice": {
+      "type": "string",
+      "const": "Execution has not happened yet."
+    }
+  },
+  "$defs": {
+    "choice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

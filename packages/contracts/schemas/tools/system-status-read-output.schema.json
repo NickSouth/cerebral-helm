@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/system-status-read-output.schema.json",
+  "title": "CerebralHelm System Status Read Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["metrics"],
+  "properties": {
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "availability"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": ["cpu", "memory", "network", "battery", "display"]
+          },
+          "availability": {
+            "type": "string",
+            "enum": ["available", "unavailable", "stale", "loading", "disconnected"]
+          },
+          "value": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "sampledAt": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

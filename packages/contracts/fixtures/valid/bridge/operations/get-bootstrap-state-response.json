@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000011",
+  "type": "bridge.operation.response",
+  "operation": "getBootstrapState",
+  "status": "ok",
+  "payload": {
+    "bootstrapStateFixture": "packages/contracts/fixtures/valid/bridge/bootstrap/bootstrap-state.json"
+  },
+  "error": null
+}

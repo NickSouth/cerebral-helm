@@ -1,0 +1,20 @@
+{
+  "modeId": "developer",
+  "status": "partial_success",
+  "aggregateRisk": "local_write",
+  "actions": [
+    {
+      "actionId": "open-repo",
+      "kind": "app.open",
+      "status": "success",
+      "risk": "local_write"
+    },
+    {
+      "actionId": "open-tickets",
+      "kind": "url.open",
+      "status": "unavailable",
+      "risk": "local_write",
+      "message": "Configured application missing."
+    }
+  ]
+}

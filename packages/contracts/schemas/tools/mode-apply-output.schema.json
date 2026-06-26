@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/mode-apply-output.schema.json",
+  "title": "CerebralHelm Mode Apply Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["modeId", "status", "aggregateRisk", "actions"],
+  "properties": {
+    "modeId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["success", "partial_success"]
+    },
+    "aggregateRisk": {
+      "$ref": "#/$defs/riskClass"
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["actionId", "kind", "status", "risk"],
+        "properties": {
+          "actionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["success", "failed", "skipped", "unavailable"]
+          },
+          "risk": {
+            "$ref": "#/$defs/riskClass"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "riskClass": {
+      "type": "string",
+      "enum": [
+        "read_only",
+        "local_write",
+        "external_write",
+        "destructive",
+        "shell",
+        "financial",
+        "purchase_or_booking"
+      ]
+    }
+  }
+}

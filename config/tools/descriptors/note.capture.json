@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "note.capture",
+  "version": "1.0.0",
+  "purpose": "Atomically write a Markdown note into the configured knowledge hierarchy.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/note-capture-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/note-capture-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "local_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_local_write",
+  "requiredPermissions": ["knowledge_root_write"],
+  "secretReferences": [],
+  "timeoutMs": 5000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "idempotent_with_key",
+  "adapterRequirements": {
+    "capabilities": ["note.capture"],
+    "platforms": ["pre_mac_mock", "macos_native"]
+  },
+  "logging": {
+    "redactionPaths": ["/body"],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "denied", "timeout", "failure"],
+  "availability": {
+    "preMac": true,
+    "macOS": true
+  }
+}

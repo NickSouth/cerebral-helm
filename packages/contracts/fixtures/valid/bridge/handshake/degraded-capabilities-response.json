@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000003",
+  "type": "bridge.handshake.response",
+  "compatible": true,
+  "bridgeVersion": "1.1.0",
+  "uiVersion": "0.1.0",
+  "coreVersion": "0.1.0",
+  "transport": "mock",
+  "capabilities": [
+    {
+      "id": "bridge.bootstrap",
+      "available": true,
+      "source": "mock",
+      "degradedReason": null
+    },
+    {
+      "id": "native.app.open",
+      "available": false,
+      "source": "unavailable",
+      "degradedReason": "Native app launching is unavailable in Pre-Mac mock transport."
+    },
+    {
+      "id": "system.metrics",
+      "available": false,
+      "source": "unavailable",
+      "degradedReason": "Live system metrics are unavailable in this fixture."
+    }
+  ],
+  "degradedFeatures": [
+    {
+      "id": "native.app.open",
+      "reason": "Native app launching is unavailable in Pre-Mac mock transport.",
+      "fallbackUiState": "unavailable"
+    },
+    {
+      "id": "system.metrics",
+      "reason": "Live system metrics are unavailable in this fixture.",
+      "fallbackUiState": "stale"
+    }
+  ],
+  "startupMode": "degraded",
+  "recovery": null
+}

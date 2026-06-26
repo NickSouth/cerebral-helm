@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/bridge/bootstrap-state.schema.json",
+  "title": "CerebralHelm Bridge Bootstrap State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "mode",
+    "project",
+    "summary",
+    "commandsToday",
+    "pendingConfirmations",
+    "activeSurface",
+    "uiState"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["Executive", "Developer", "School", "Entertainment"]
+    },
+    "project": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "commandsToday": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "pendingConfirmations": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "activeSurface": {
+      "type": "string"
+    },
+    "uiState": {
+      "type": "string",
+      "enum": ["loading", "empty", "stale", "unavailable", "offline", "error", "confirmation", "success", "cancelled", "ready"]
+    }
+  }
+}

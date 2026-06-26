@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/bridge/capability-state.schema.json",
+  "title": "CerebralHelm Bridge Capability State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "available", "source", "degradedReason"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "available": {
+      "type": "boolean"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["mock", "native", "unavailable"]
+    },
+    "degradedReason": {
+      "type": ["string", "null"]
+    }
+  }
+}

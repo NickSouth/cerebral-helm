@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/note-capture-input.schema.json",
+  "title": "CerebralHelm Note Capture Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "body", "kind"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "body": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "minLength": 1
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "minLength": 1
+    },
+    "sensitivity": {
+      "type": "string",
+      "enum": ["public", "private", "sensitive", "secret"]
+    }
+  }
+}

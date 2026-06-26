@@ -1,0 +1,391 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Canonical deterministic product-state fixtures shared by core tests, dashboard mock/story data, simulations, and acceptance flows.",
+  "fixtures": [
+    {
+      "id": "fx_mode_executive_ready",
+      "canonicalKey": "mode.executive.ready",
+      "category": "mode",
+      "clock": "2026-06-23T16:10:00.000Z",
+      "modeId": "executive",
+      "dashboardState": {
+        "mode": "Executive",
+        "project": "Daily Command",
+        "summary": "Executive mode is ready with planning, status, and cross-project briefing surfaces.",
+        "commandsToday": 2,
+        "pendingConfirmations": 0,
+        "activeSurface": "Project Manager",
+        "uiState": "ready"
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_mode_developer_ready",
+      "canonicalKey": "mode.developer.ready",
+      "category": "mode",
+      "clock": "2026-06-23T16:11:00.000Z",
+      "modeId": "developer",
+      "dashboardState": {
+        "mode": "Developer",
+        "project": "NIC-12 Workspace Bootstrap",
+        "summary": "Pre-Mac foundation is running against a mock CerebralBridge.",
+        "commandsToday": 4,
+        "pendingConfirmations": 0,
+        "activeSurface": "Project Manager",
+        "uiState": "ready"
+      },
+      "sourceFixtures": [
+        "fixtures/simulations/successful-developer-mode.json",
+        "packages/contracts/fixtures/valid/bridge/bootstrap/bootstrap-state.json"
+      ]
+    },
+    {
+      "id": "fx_mode_school_ready",
+      "canonicalKey": "mode.school.ready",
+      "category": "mode",
+      "clock": "2026-06-23T16:12:00.000Z",
+      "modeId": "school",
+      "dashboardState": {
+        "mode": "School",
+        "project": "Coursework Focus",
+        "summary": "School mode is ready with deadlines, study shortcuts, and research support.",
+        "commandsToday": 1,
+        "pendingConfirmations": 0,
+        "activeSurface": "Research Analyst",
+        "uiState": "ready"
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_mode_entertainment_ready",
+      "canonicalKey": "mode.entertainment.ready",
+      "category": "mode",
+      "clock": "2026-06-23T16:13:00.000Z",
+      "modeId": "entertainment",
+      "dashboardState": {
+        "mode": "Entertainment",
+        "project": "Evening Downtime",
+        "summary": "Entertainment mode is ready with lighter density and non-work shortcuts.",
+        "commandsToday": 1,
+        "pendingConfirmations": 0,
+        "activeSurface": "Heimlich",
+        "uiState": "ready"
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_app_missing",
+      "canonicalKey": "failure.configured_application_missing",
+      "category": "adapter_failure",
+      "clock": "2026-06-23T16:20:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "toolId": "app.open",
+        "status": "unavailable",
+        "errorCode": "app_not_found",
+        "message": "Configured application reference could not be resolved by the adapter."
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/tools/descriptors/app.open.json"
+      ]
+    },
+    {
+      "id": "fx_shell_confirmation_approved",
+      "canonicalKey": "confirmation.shell.approved",
+      "category": "confirmation",
+      "clock": "2026-06-23T16:21:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "confirmationId": "conf_000000000000000000000001",
+        "decision": "approved",
+        "terminalStatus": "running"
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/tools/confirmations/shell-confirmation-disclosure.json",
+        "packages/contracts/fixtures/valid/lifecycle/confirmation-to-running-event.json"
+      ]
+    },
+    {
+      "id": "fx_confirmation_denied",
+      "canonicalKey": "confirmation.denied",
+      "category": "confirmation",
+      "clock": "2026-06-23T16:22:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "confirmationId": "conf_000000000000000000000001",
+        "decision": "denied",
+        "terminalStatus": "cancelled"
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/lifecycle/confirmation-to-cancelled-event.json",
+        "packages/contracts/fixtures/valid/results/cancelled-command-result.json",
+        "packages/contracts/fixtures/valid/tools/results/denied-tool-result.json"
+      ]
+    },
+    {
+      "id": "fx_confirmation_expired",
+      "canonicalKey": "confirmation.expired_or_plan_changed",
+      "category": "confirmation",
+      "clock": "2026-06-23T16:23:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "confirmationId": "conf_000000000000000000000002",
+        "decision": "expired",
+        "terminalStatus": "cancelled",
+        "reason": "The single-use confirmation token expired or no longer matches the plan hash."
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/tools/confirmations/shell-confirmation-disclosure.json"
+      ]
+    },
+    {
+      "id": "fx_tool_timeout",
+      "canonicalKey": "failure.tool_timeout",
+      "category": "adapter_failure",
+      "clock": "2026-06-23T16:24:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "toolId": "hook.run",
+        "status": "timeout",
+        "errorCode": "adapter_timeout",
+        "message": "The allowlisted hook exceeded its configured timeout."
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/tools/descriptors/hook.run.json"
+      ]
+    },
+    {
+      "id": "fx_execution_cancelled",
+      "canonicalKey": "failure.cancellation_during_execution",
+      "category": "adapter_failure",
+      "clock": "2026-06-23T16:25:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "toolId": "hook.run",
+        "status": "cancelled",
+        "errorCode": "user_cancelled",
+        "message": "Execution was cancelled while the adapter was running."
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/lifecycle/running-to-cancelled-event.json"
+      ]
+    },
+    {
+      "id": "fx_knowledge_root_missing",
+      "canonicalKey": "failure.knowledge_root_missing",
+      "category": "storage_failure",
+      "clock": "2026-06-23T16:26:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "store": "knowledge",
+        "status": "unavailable",
+        "errorCode": "knowledge_root_missing",
+        "message": "The configured Markdown knowledge root does not exist."
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_knowledge_root_read_only",
+      "canonicalKey": "failure.knowledge_root_read_only",
+      "category": "storage_failure",
+      "clock": "2026-06-23T16:27:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "store": "knowledge",
+        "status": "unavailable",
+        "errorCode": "knowledge_root_read_only",
+        "message": "The configured Markdown knowledge root is readable but cannot accept writes."
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_sqlite_locked",
+      "canonicalKey": "failure.sqlite_locked",
+      "category": "storage_failure",
+      "clock": "2026-06-23T16:28:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "store": "operational_sqlite",
+        "status": "unavailable",
+        "errorCode": "sqlite_locked",
+        "message": "The operational database is locked and the current write cannot proceed."
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_bridge_major_mismatch",
+      "canonicalKey": "failure.bridge_major_version_mismatch",
+      "category": "bridge_failure",
+      "clock": "2026-06-23T16:29:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "startupMode": "recovery",
+        "status": "read_only",
+        "message": "Bridge major version is incompatible and startup must enter read-only recovery."
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/bridge/handshake/major-version-mismatch-response.json"
+      ]
+    },
+    {
+      "id": "fx_dashboard_offline",
+      "canonicalKey": "failure.dashboard_offline",
+      "category": "dashboard_failure",
+      "clock": "2026-06-23T16:30:00.000Z",
+      "modeId": "developer",
+      "dashboardState": {
+        "mode": "Developer",
+        "project": "NIC-12 Workspace Bootstrap",
+        "summary": "Dashboard is offline and showing the last-known safe fixture state.",
+        "commandsToday": 4,
+        "pendingConfirmations": 0,
+        "activeSurface": "Heimlich",
+        "uiState": "offline"
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/bridge/bootstrap/bootstrap-state.json"
+      ]
+    },
+    {
+      "id": "fx_metrics_loading",
+      "canonicalKey": "system.metrics.loading",
+      "category": "metrics",
+      "clock": "2026-06-23T16:31:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "capabilityId": "system.metrics",
+        "status": "loading",
+        "message": "System metrics are being sampled."
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/tools/descriptors/system.status.read.json"
+      ]
+    },
+    {
+      "id": "fx_metrics_stale",
+      "canonicalKey": "system.metrics.stale",
+      "category": "metrics",
+      "clock": "2026-06-23T16:32:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "capabilityId": "system.metrics",
+        "status": "stale",
+        "message": "Last metric sample is older than the freshness window."
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/bridge/events/capability-changed-event.json"
+      ]
+    },
+    {
+      "id": "fx_metrics_unavailable",
+      "canonicalKey": "system.metrics.unavailable",
+      "category": "metrics",
+      "clock": "2026-06-23T16:33:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "capabilityId": "system.metrics",
+        "status": "unavailable",
+        "message": "Live system metrics are unavailable in this fixture."
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/bridge/handshake/degraded-capabilities-response.json"
+      ]
+    },
+    {
+      "id": "fx_metrics_disconnected",
+      "canonicalKey": "system.metrics.disconnected",
+      "category": "metrics",
+      "clock": "2026-06-23T16:34:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "capabilityId": "system.metrics",
+        "status": "disconnected",
+        "message": "The metrics provider disconnected without disabling the command surface."
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/bridge/handshake/degraded-capabilities-response.json"
+      ]
+    },
+    {
+      "id": "fx_external_provider_unavailable",
+      "canonicalKey": "future.external_provider_unavailable",
+      "category": "future_provider",
+      "clock": "2026-06-23T16:35:00.000Z",
+      "modeId": "executive",
+      "state": {
+        "providerId": "google_workspace",
+        "status": "unavailable",
+        "message": "Future external provider is unavailable; local command surface remains usable."
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_model_unavailable",
+      "canonicalKey": "future.model_unavailable",
+      "category": "future_model_policy",
+      "clock": "2026-06-23T16:36:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "modelProfile": "balanced",
+        "status": "unavailable",
+        "message": "No model is required for MVP deterministic workflows."
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_sensitive_context_blocked",
+      "canonicalKey": "future.sensitive_context_blocked",
+      "category": "future_model_policy",
+      "clock": "2026-06-23T16:37:00.000Z",
+      "modeId": "developer",
+      "state": {
+        "sensitivity": "private",
+        "cloudPolicy": "deny",
+        "status": "blocked",
+        "message": "Sensitive context is blocked from future cloud transmission by policy."
+      },
+      "sourceFixtures": [
+        "packages/contracts/fixtures/valid/commands/dashboard-command-envelope.json"
+      ]
+    },
+    {
+      "id": "fx_update_backup_failure",
+      "canonicalKey": "update.backup_failure",
+      "category": "update_failure",
+      "clock": "2026-06-23T16:38:00.000Z",
+      "modeId": "executive",
+      "state": {
+        "stage": "backup",
+        "status": "failed",
+        "message": "Update stopped because user-state backup failed."
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_update_migration_failure",
+      "canonicalKey": "update.migration_failure",
+      "category": "update_failure",
+      "clock": "2026-06-23T16:39:00.000Z",
+      "modeId": "executive",
+      "state": {
+        "stage": "migration",
+        "status": "failed",
+        "message": "Update stopped because a version-locked migration failed."
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_update_health_check_failure_rollback",
+      "canonicalKey": "update.health_check_failure_rollback",
+      "category": "update_failure",
+      "clock": "2026-06-23T16:40:00.000Z",
+      "modeId": "executive",
+      "state": {
+        "stage": "health_check",
+        "status": "rollback_offered",
+        "message": "Updated app failed health checks; rollback is available and user state is preserved."
+      },
+      "sourceFixtures": []
+    }
+  ]
+}

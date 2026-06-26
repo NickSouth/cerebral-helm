@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000012",
+  "type": "bridge.operation.request",
+  "operation": "submitCommand",
+  "payload": {
+    "input": {
+      "rawInput": "mode developer",
+      "source": "dashboard"
+    }
+  }
+}

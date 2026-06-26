@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "system.status.read",
+  "version": "1.0.0",
+  "purpose": "Return supported system metrics and explicit unavailable states.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/system-status-read-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/system-status-read-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "read_only",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "allow_read_without_confirmation",
+  "requiredPermissions": ["system_metrics_read"],
+  "secretReferences": [],
+  "timeoutMs": 10000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": true,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["system.status.read"],
+    "platforms": ["pre_mac_mock", "macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "partial_success", "unavailable", "timeout", "failure", "cancelled"],
+  "availability": {
+    "preMac": true,
+    "macOS": true
+  }
+}

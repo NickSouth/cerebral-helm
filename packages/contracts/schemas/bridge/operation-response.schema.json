@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/bridge/operation-response.schema.json",
+  "title": "CerebralHelm Bridge Operation Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "messageId", "type", "operation", "status", "payload", "error"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^brmsg_[A-Za-z0-9_-]{8,64}$"
+    },
+    "type": {
+      "type": "string",
+      "const": "bridge.operation.response"
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "getBootstrapState",
+        "submitCommand",
+        "applyMode",
+        "captureNote",
+        "searchNotes",
+        "decideConfirmation",
+        "updateSettings",
+        "subscribe"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "error"]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "error": {
+      "anyOf": [
+        { "$ref": "../commands/structured-error.schema.json" },
+        { "type": "null" }
+      ]
+    }
+  }
+}

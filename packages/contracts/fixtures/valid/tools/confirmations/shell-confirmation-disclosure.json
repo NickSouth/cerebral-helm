@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "conf_000000000000000000000001",
+  "commandId": "cmd_000000000000000000000009",
+  "planHash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "actionSummary": "Run allowlisted hook ondraft-dev.",
+  "tool": {
+    "id": "hook.run",
+    "version": "1.0.0",
+    "purpose": "Execute a configured allowlisted hook without accepting arbitrary shell text."
+  },
+  "risk": "shell",
+  "destination": "C:\\Users\\nickr\\OneDrive\\Desktop\\cerebral-helm",
+  "arguments": [
+    {
+      "name": "hookId",
+      "value": "ondraft-dev",
+      "sensitive": false
+    },
+    {
+      "name": "executable",
+      "value": "corepack",
+      "sensitive": false
+    }
+  ],
+  "dataLeavingDevice": "none",
+  "accountOrService": null,
+  "reversibility": "partially_reversible",
+  "policyReason": "Shell tools require policy-owned confirmation unless the exact invocation is explicitly trusted.",
+  "choices": {
+    "approve": {
+      "label": "Approve"
+    },
+    "review": {
+      "label": "Review"
+    },
+    "cancel": {
+      "label": "Cancel"
+    },
+    "defaultFocusedChoice": "review"
+  },
+  "expiresAt": "2026-06-23T16:01:00.000Z",
+  "invalidation": {
+    "expires": true,
+    "invalidAfterPlanChange": true,
+    "singleUseToken": true
+  },
+  "executionNotice": "Execution has not happened yet."
+}

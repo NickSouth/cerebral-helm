@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/app-open-output.schema.json",
+  "title": "CerebralHelm App Open Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["appId", "launched", "alreadyRunning"],
+  "properties": {
+    "appId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "minLength": 1
+    },
+    "launched": {
+      "type": "boolean"
+    },
+    "alreadyRunning": {
+      "type": "boolean"
+    }
+  }
+}

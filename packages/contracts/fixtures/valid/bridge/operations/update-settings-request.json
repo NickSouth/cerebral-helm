@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000017",
+  "type": "bridge.operation.request",
+  "operation": "updateSettings",
+  "payload": {
+    "patchFixture": "packages/contracts/fixtures/valid/config/settings/default-mode-patch.json"
+  }
+}

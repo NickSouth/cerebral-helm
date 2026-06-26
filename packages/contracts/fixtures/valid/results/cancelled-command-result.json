@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "commandId": "cmd_000000000000000000000009",
+  "status": "cancelled",
+  "completedAt": "2026-06-23T16:00:10.010Z",
+  "summary": "Confirmation denied.",
+  "output": {},
+  "error": {
+    "code": "confirmation_denied",
+    "category": "cancelled",
+    "message": "The user denied the confirmation.",
+    "details": {
+      "confirmationId": "conf_000000000000000000000001"
+    },
+    "remediation": null
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "id": "school",
+  "label": "School",
+  "theme": {
+    "accentPrimary": "school.primary",
+    "accentSecondary": "school.secondary"
+  },
+  "quickApps": ["canvas", "drive", "notes"],
+  "quickActions": [
+    "open-school-layout",
+    "open-schedule",
+    "capture-idea",
+    "search-notes",
+    "review-assignments",
+    "start-study-block",
+    "summarize-notes",
+    "open-courses"
+  ],
+  "widgets": {
+    "left": "deadlines",
+    "right": "courses"
+  }
+}

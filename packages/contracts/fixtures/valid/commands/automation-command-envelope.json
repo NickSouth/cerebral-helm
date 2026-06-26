@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "cmd_000000000000000000000004",
+  "type": "command.submit",
+  "source": "automation",
+  "rawInput": "scheduled.status.refresh",
+  "timestamp": "2026-06-23T16:00:03.000Z",
+  "correlationId": null,
+  "payload": {
+    "automationId": "fixture_status_refresh"
+  },
+  "privacy": {
+    "sensitivity": "private",
+    "cloudPolicy": "deny"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/bridge/handshake-request.schema.json",
+  "title": "CerebralHelm Bridge Handshake Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "messageId", "type", "uiVersion", "supportedBridgeMajor", "supportedBridgeMinorFloor"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^brmsg_[A-Za-z0-9_-]{8,64}$"
+    },
+    "type": {
+      "type": "string",
+      "const": "bridge.handshake.request"
+    },
+    "uiVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "supportedBridgeMajor": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "supportedBridgeMinorFloor": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/config/mode.schema.json",
+  "title": "CerebralHelm Mode Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "label", "theme", "quickApps", "quickActions", "widgets"],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/configId"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accentPrimary", "accentSecondary"],
+      "properties": {
+        "accentPrimary": {
+          "$ref": "#/$defs/themeToken"
+        },
+        "accentSecondary": {
+          "$ref": "#/$defs/themeToken"
+        }
+      }
+    },
+    "quickApps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/configId"
+      },
+      "minItems": 0,
+      "maxItems": 5,
+      "uniqueItems": true
+    },
+    "quickActions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/configId"
+      },
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true
+    },
+    "widgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "right"],
+      "properties": {
+        "left": {
+          "$ref": "#/$defs/configId"
+        },
+        "right": {
+          "$ref": "#/$defs/configId"
+        }
+      }
+    },
+    "projectHints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    }
+  },
+  "$defs": {
+    "configId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "themeToken": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$"
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^x-[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": true
+    }
+  }
+}

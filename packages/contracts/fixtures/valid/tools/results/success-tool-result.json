@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "toolId": "system.status.read",
+  "toolVersion": "1.0.0",
+  "status": "success",
+  "adapterId": "mock_native",
+  "startedAt": "2026-06-23T16:00:02.030Z",
+  "completedAt": "2026-06-23T16:00:02.040Z",
+  "durationMs": 10,
+  "redactedInput": {},
+  "redactedOutput": {
+    "availability": "fixture"
+  },
+  "error": null
+}

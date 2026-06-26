@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0.0",
+  "file": "modes/developer.json",
+  "field": "/label",
+  "expected": "string",
+  "message": "Mode label must be a string.",
+  "remediation": "Set label to a human-readable mode name."
+}
