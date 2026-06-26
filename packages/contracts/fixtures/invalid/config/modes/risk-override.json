@@ -1,10 +1,25 @@
 {
   "id": "developer",
   "label": "Developer",
-  "accent": "cyan",
+  "theme": {
+    "accentPrimary": "developer.primary",
+    "accentSecondary": "developer.secondary"
+  },
   "quickApps": ["vscode", "terminal", "github", "docs"],
-  "agentIds": ["research-analyst", "project-manager", "system-janitor"],
-  "shortcuts": ["open-workspace", "run-tests", "search-notes"],
+  "quickActions": [
+    "open-developer-layout",
+    "open-workspace",
+    "run-tests",
+    "search-notes",
+    "git-status",
+    "open-terminal",
+    "review-pull-requests",
+    "capture-note"
+  ],
+  "widgets": {
+    "left": "project-git-status",
+    "right": "repositories"
+  },
   "riskOverrides": {
     "hook.run": "read_only"
   }

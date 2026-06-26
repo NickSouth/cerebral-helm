@@ -14,4 +14,4 @@ path); the parser only resolves the reference and never executes it.
 This catalog is intentionally minimal and not yet wired into the JSON Schema /
 codegen pipeline. It is a deliberate placeholder meant to be easy to rewrite
 when the full, validated reference model is designed. Mode files
-(`config/modes/*.json`) reference these ids through `quickApps`/`shortcuts`.
+(`config/modes/*.json`) reference these ids through `quickApps`/`quickActions`.

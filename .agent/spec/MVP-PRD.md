@@ -391,7 +391,7 @@ Handshake messages include bridge version, UI version, core version, supported c
 
 | ID | Requirement | Acceptance |
 |---|---|---|
-| FR-UI-01 | The dashboard shall implement Executive, Developer, School, and Entertainment presentations from shared layout grammar and mode tokens. | Mode changes alter accent, briefing, shortcuts, apps, project context, and available agent surfaces without remounting the application shell. |
+| FR-UI-01 | The dashboard shall implement Executive, Developer, School, and Entertainment presentations from shared layout grammar and mode tokens. | Mode changes alter theme, briefing, quick actions, apps, and project context without remounting the application shell. The displayed agent roster is a fixed global set shown identically in every mode and does not change when the mode changes. |
 | FR-UI-02 | The main layout shall use a dense left information zone, calm center Heimlich/action zone, and right mode/app/agent/context zone. | Required content remains readable at target laptop and external-display viewports. |
 | FR-UI-03 | The command center shall expose note, task placeholder, idea, command/voice placeholder, knowledge, projects, inbox, files, calendar, and downloads actions according to mode config. | MVP-available actions execute; future actions are visibly disabled or marked unavailable, never simulated as successful. |
 | FR-UI-04 | The persistent bottom bar shall expose Heimlich state, active mode, active project/context, compact status, time, settings, and emergency return/close controls. | Bar remains thin, keyboard accessible, and does not cover dashboard content. |
@@ -637,11 +637,11 @@ The UI must show the product itself in the first viewport. It does not begin as 
 | Mode | Primary purpose | Visual direction | MVP content |
 |---|---|---|---|
 | Executive | General planning, daily briefing, cross-project overview | Rich gold with restrained teal highlights on deep charcoal | schedule, system health, current projects, high-level briefing, all four agent surfaces |
-| Developer | Coding and project execution | Cyan/blue, technical but not neon-heavy | current repo/project, recent commands, dev shortcuts, hooks, research/project/system agents |
-| School | Classes, assignments, focused study | Distinct gold/yellow with selective indigo contrast | schedule, deadlines fixture, school apps/links, class/project context, research/project agents |
-| Entertainment | Games, golf, fantasy, media, social time | A clearly different but coherent palette, avoiding a mere blue recolor | entertainment shortcuts, lighter briefing, reduced work density, selected projects |
+| Developer | Coding and project execution | Cyan/blue, technical but not neon-heavy | current repo/project, recent commands, dev quick actions, hooks, all four agent surfaces |
+| School | Classes, assignments, focused study | Distinct gold/yellow with selective indigo contrast | schedule, deadlines fixture, school apps/links, class/project context, all four agent surfaces |
+| Entertainment | Games, golf, fantasy, media, social time | A clearly different but coherent palette, avoiding a mere blue recolor | entertainment quick actions, lighter briefing, reduced work density, selected projects, all four agent surfaces |
 
-Mode changes must be visibly substantial while preserving control placement and interaction grammar.
+The agent roster is the same fixed global set in every mode; the mode never adds, removes, or filters which agents appear. Mode changes must otherwise be visibly substantial while preserving control placement and interaction grammar.
 
 ## 9.4 Command Palette
 

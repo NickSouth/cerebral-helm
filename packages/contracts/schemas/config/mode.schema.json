@@ -4,7 +4,7 @@
   "title": "CerebralHelm Mode Config",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "label", "accent", "quickApps", "agentIds", "shortcuts"],
+  "required": ["id", "label", "theme", "quickApps", "quickActions", "widgets"],
   "properties": {
     "id": {
       "$ref": "#/$defs/configId"
@@ -13,39 +13,49 @@
       "type": "string",
       "minLength": 1
     },
-    "accent": {
-      "type": "string",
-      "enum": ["blue", "cyan", "gold", "coral"]
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accentPrimary", "accentSecondary"],
+      "properties": {
+        "accentPrimary": {
+          "$ref": "#/$defs/themeToken"
+        },
+        "accentSecondary": {
+          "$ref": "#/$defs/themeToken"
+        }
+      }
     },
     "quickApps": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/configId"
       },
-      "minItems": 1,
+      "minItems": 0,
       "maxItems": 5,
       "uniqueItems": true
     },
-    "agentIds": {
+    "quickActions": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/configId"
       },
-      "uniqueItems": true
-    },
-    "shortcuts": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/configId"
-      },
+      "minItems": 8,
+      "maxItems": 8,
       "uniqueItems": true
     },
     "widgets": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/configId"
-      },
-      "uniqueItems": true
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "right"],
+      "properties": {
+        "left": {
+          "$ref": "#/$defs/configId"
+        },
+        "right": {
+          "$ref": "#/$defs/configId"
+        }
+      }
     },
     "projectHints": {
       "type": "array",
@@ -61,6 +71,10 @@
     "configId": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "themeToken": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$"
     },
     "extensions": {
       "type": "object",

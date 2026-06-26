@@ -165,7 +165,7 @@ Submitting `Ask Heimlich` opens the active Heimlich conversation in the center p
 
 Quick Apps contains:
 
-- one to five user-configurable app shortcuts;
+- zero to five user-configurable app shortcuts;
 - a final `More Apps` control that opens a searchable menu of all discovered applications on the device.
 
 Default emphasis:

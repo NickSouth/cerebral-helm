@@ -27,15 +27,51 @@ function validateDefaults(document, relativePath, errors) {
 function validateMode(document, relativePath, errors) {
   assert(typeof document.id === "string", `${relativePath}: id must be a string.`, errors);
   assert(typeof document.label === "string", `${relativePath}: label must be a string.`, errors);
-  assert(typeof document.accent === "string", `${relativePath}: accent must be a string.`, errors);
-  assert(Array.isArray(document.quickApps), `${relativePath}: quickApps must be an array.`, errors);
   assert(
-    Array.isArray(document.quickApps) && document.quickApps.length >= 1 && document.quickApps.length <= 5,
-    `${relativePath}: quickApps must contain between 1 and 5 entries.`,
+    typeof document.theme === "object" && document.theme !== null && !Array.isArray(document.theme),
+    `${relativePath}: theme must be an object.`,
     errors
   );
-  assert(Array.isArray(document.agentIds), `${relativePath}: agentIds must be an array.`, errors);
-  assert(Array.isArray(document.shortcuts), `${relativePath}: shortcuts must be an array.`, errors);
+  assert(
+    typeof document.theme?.accentPrimary === "string" && typeof document.theme?.accentSecondary === "string",
+    `${relativePath}: theme must define string accentPrimary and accentSecondary tokens.`,
+    errors
+  );
+  assert(Array.isArray(document.quickApps), `${relativePath}: quickApps must be an array.`, errors);
+  assert(
+    Array.isArray(document.quickApps) && document.quickApps.length >= 0 && document.quickApps.length <= 5,
+    `${relativePath}: quickApps must contain between 0 and 5 entries.`,
+    errors
+  );
+  assert(Array.isArray(document.quickActions), `${relativePath}: quickActions must be an array.`, errors);
+  assert(
+    Array.isArray(document.quickActions) && document.quickActions.length === 8,
+    `${relativePath}: quickActions must contain exactly 8 entries.`,
+    errors
+  );
+  assert(
+    typeof document.widgets === "object" && document.widgets !== null && !Array.isArray(document.widgets),
+    `${relativePath}: widgets must be an object.`,
+    errors
+  );
+  assert(
+    typeof document.widgets?.left === "string" && typeof document.widgets?.right === "string",
+    `${relativePath}: widgets must define string left and right slots.`,
+    errors
+  );
+
+  // The design spec mandates that Developer, School, and Entertainment each
+  // expose their own `open-<modeId>-layout` quick action; Executive's layout
+  // action is optional. JSON Schema cannot express this id-derived rule, so it
+  // is enforced here.
+  if (document.id !== "executive") {
+    const layoutAction = `open-${document.id}-layout`;
+    assert(
+      Array.isArray(document.quickActions) && document.quickActions.includes(layoutAction),
+      `${relativePath}: quickActions must include the "${layoutAction}" layout action for non-Executive modes.`,
+      errors
+    );
+  }
 }
 
 function validateAgent(document, relativePath, errors) {
@@ -113,14 +149,6 @@ export function validateRepositoryConfig() {
 
   for (const toolId of defaults.enabledToolIds ?? []) {
     assert(toolIds.has(toolId), `defaults/app.json: enabledToolId "${toolId}" must reference a tool file.`, errors);
-  }
-
-  for (const filePath of modeFiles) {
-    const document = readJson(filePath);
-
-    for (const agentId of document.agentIds ?? []) {
-      assert(agentIds.has(agentId), `${path.relative(configRoot, filePath)}: agentId "${agentId}" must reference an agent file.`, errors);
-    }
   }
 
   if (errors.length > 0) {

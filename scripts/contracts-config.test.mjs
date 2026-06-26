@@ -94,9 +94,15 @@ test("current mode configs fit the mode schema surface", () => {
 
     assert.match(mode.id, /^[a-z][a-z0-9-]*$/);
     assert.equal(typeof mode.label, "string");
-    assert.ok(Array.isArray(mode.quickApps) && mode.quickApps.length >= 1 && mode.quickApps.length <= 5);
-    assert.ok(Array.isArray(mode.agentIds));
-    assert.ok(Array.isArray(mode.shortcuts));
+    assert.equal(typeof mode.theme.accentPrimary, "string");
+    assert.equal(typeof mode.theme.accentSecondary, "string");
+    assert.ok(Array.isArray(mode.quickApps) && mode.quickApps.length >= 0 && mode.quickApps.length <= 5);
+    assert.ok(Array.isArray(mode.quickActions) && mode.quickActions.length === 8);
+    assert.equal(typeof mode.widgets.left, "string");
+    assert.equal(typeof mode.widgets.right, "string");
+    if (mode.id !== "executive") {
+      assert.ok(mode.quickActions.includes(`open-${mode.id}-layout`));
+    }
     observedModeIds.add(mode.id);
   }
 
@@ -122,18 +128,6 @@ test("current agent configs fit the agent schema surface", () => {
   }
 
   assert.deepEqual(observedAgentIds, expectedAgentIds);
-});
-
-test("mode agent references resolve to configured agents", () => {
-  const agentIds = new Set(collectJsonFiles(path.join(configRoot, "agents")).map((filePath) => readJson(filePath).id));
-
-  for (const filePath of collectJsonFiles(path.join(configRoot, "modes"))) {
-    const mode = readJson(filePath);
-
-    for (const agentId of mode.agentIds) {
-      assert.ok(agentIds.has(agentId), `${filePath} references unknown agent ${agentId}`);
-    }
-  }
 });
 
 test("safe extension fields are explicitly namespaced and preserved under extensions", () => {

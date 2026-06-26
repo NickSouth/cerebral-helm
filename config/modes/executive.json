@@ -1,8 +1,23 @@
 {
   "id": "executive",
   "label": "Executive",
-  "accent": "blue",
+  "theme": {
+    "accentPrimary": "executive.primary",
+    "accentSecondary": "executive.secondary"
+  },
   "quickApps": ["chrome", "gmail", "calendar"],
-  "agentIds": ["research-analyst", "project-manager"],
-  "shortcuts": ["daily-brief", "open-calendar", "capture-note"]
+  "quickActions": [
+    "daily-brief",
+    "open-calendar",
+    "capture-note",
+    "review-projects",
+    "check-system-status",
+    "open-mail",
+    "start-focus-block",
+    "open-news-brief"
+  ],
+  "widgets": {
+    "left": "market-brief",
+    "right": "projects"
+  }
 }

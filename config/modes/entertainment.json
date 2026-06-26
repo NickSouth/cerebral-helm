@@ -1,8 +1,23 @@
 {
   "id": "entertainment",
   "label": "Entertainment",
-  "accent": "coral",
+  "theme": {
+    "accentPrimary": "entertainment.primary",
+    "accentSecondary": "entertainment.secondary"
+  },
   "quickApps": ["spotify", "youtube", "discord"],
-  "agentIds": ["financial-advisor", "system-janitor"],
-  "shortcuts": ["open-media", "capture-note", "check-status"]
+  "quickActions": [
+    "open-entertainment-layout",
+    "open-media",
+    "capture-note",
+    "check-status",
+    "resume-playback",
+    "open-queue",
+    "browse-library",
+    "start-party-mode"
+  ],
+  "widgets": {
+    "left": "spotify",
+    "right": "media-list"
+  }
 }

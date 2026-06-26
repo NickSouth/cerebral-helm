@@ -347,22 +347,24 @@ export interface CerebralHelmConfigValidationError {
 }
 
 export interface CerebralHelmModeConfig {
-    accent:        Accent;
-    agentIds:      string[];
     extensions?:   { [key: string]: any };
     id:            string;
     label:         string;
     projectHints?: string[];
+    quickActions:  string[];
     quickApps:     string[];
-    shortcuts:     string[];
-    widgets?:      string[];
+    theme:         Theme;
+    widgets:       Widgets;
 }
 
-export enum Accent {
-    Blue = "blue",
-    Coral = "coral",
-    Cyan = "cyan",
-    Gold = "gold",
+export interface Theme {
+    accentPrimary:   string;
+    accentSecondary: string;
+}
+
+export interface Widgets {
+    left:  string;
+    right: string;
 }
 
 export interface CerebralHelmSettingsPatch {
