@@ -38,7 +38,7 @@ let package = Package(
         ),
         .target(
             name: "CerebralTools",
-            dependencies: ["CerebralCore", "CerebralShared"],
+            dependencies: ["CerebralCore", "CerebralShared", "CerebralContracts"],
             path: "packages/tools/Sources/CerebralTools"
         ),
         .target(
@@ -89,6 +89,7 @@ let package = Package(
                 "CerebralTools",
                 "CerebralCore",
                 "CerebralShared",
+                "CerebralContracts",
             ],
             path: "Tests/ToolsTests"
         ),
