@@ -194,8 +194,82 @@ function normalizeGeneratedSwift(source) {
       "    public var hashValue: Int {\n            return 0\n    }",
       "    public func hash(into hasher: inout Hasher) {}"
     )
-    .replace("class JSONCodingKey: CodingKey {", "final class JSONCodingKey: CodingKey {");
+    .replace("class JSONCodingKey: CodingKey {", "final class JSONCodingKey: CodingKey {")
+    .replace(GENERATED_DATE_CODERS_PATTERN, GENERATED_DATE_CODERS_REPLACEMENT);
 }
+
+// quicktype's Swift renderer emits date coders that use the plain `.iso8601`
+// strategy, which cannot parse the fractional-second timestamps used by the
+// canonical fixtures (e.g. `2026-06-23T16:00:00.000Z`). Swap in a custom
+// strategy that accepts ISO-8601 with or without fractional seconds on decode
+// and always emits fractional seconds on encode, mirroring CerebralCore's
+// CommandCoding so every generated DTO's public init(data:)/jsonData() helpers
+// round-trip against the canonical schemas and fixtures.
+const GENERATED_DATE_CODERS_PATTERN =
+  `func newJSONDecoder() -> JSONDecoder {
+    let decoder = JSONDecoder()
+    if #available(iOS 10.0, OSX 10.12, tvOS 10.0, watchOS 3.0, *) {
+        decoder.dateDecodingStrategy = .iso8601
+    }
+    return decoder
+}
+
+func newJSONEncoder() -> JSONEncoder {
+    let encoder = JSONEncoder()
+    if #available(iOS 10.0, OSX 10.12, tvOS 10.0, watchOS 3.0, *) {
+        encoder.dateEncodingStrategy = .iso8601
+    }
+    return encoder
+}`;
+
+const GENERATED_DATE_CODERS_REPLACEMENT =
+  `func newJSONDecoder() -> JSONDecoder {
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .custom { decoder in
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        if let date = generatedContractsISO8601Date(from: raw) {
+            return date
+        }
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Invalid ISO-8601 timestamp: \\(raw)"
+            )
+        )
+    }
+    return decoder
+}
+
+func newJSONEncoder() -> JSONEncoder {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .custom { date, encoder in
+        var container = encoder.singleValueContainer()
+        try container.encode(generatedContractsISO8601String(from: date))
+    }
+    return encoder
+}
+
+// ISO-8601 conversion helpers that accept timestamps with or without
+// fractional seconds and always emit fractional seconds. Formatters are
+// created per call so the @Sendable custom coding closures capture nothing
+// (ISO8601DateFormatter is not Sendable under strict concurrency).
+private func generatedContractsISO8601Date(from raw: String) -> Date? {
+    let withFraction = ISO8601DateFormatter()
+    withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = withFraction.date(from: raw) {
+        return date
+    }
+    let plain = ISO8601DateFormatter()
+    plain.formatOptions = [.withInternetDateTime]
+    return plain.date(from: raw)
+}
+
+private func generatedContractsISO8601String(from date: Date) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: date)
+}`;
 
 export async function generateContracts(outputRoot = contractsRoot) {
   const generatedTypescriptPath = path.join(outputRoot, "generated", "typescript", "contracts.ts");

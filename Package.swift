@@ -22,7 +22,7 @@ let package = Package(
         ),
         .target(
             name: "CerebralCore",
-            dependencies: ["CerebralShared"],
+            dependencies: ["CerebralShared", "CerebralContracts"],
             path: "packages/core/Sources/CerebralCore"
         ),
         .target(
@@ -45,6 +45,15 @@ let package = Package(
                 "CerebralContracts",
             ],
             path: "Tests/RepositoryBoundaryTests"
+        ),
+        .testTarget(
+            name: "CoreModelTests",
+            dependencies: [
+                "CerebralCore",
+                "CerebralShared",
+                "CerebralContracts",
+            ],
+            path: "Tests/CoreModelTests"
         ),
     ]
 )
