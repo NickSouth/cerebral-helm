@@ -1,4 +1,5 @@
 import Foundation
+import CerebralContracts
 import CerebralCore
 import CerebralShared
 import CerebralTools
@@ -70,8 +71,10 @@ private func makeHookCatalog(references: CommandReferences, repositoryRoot: URL)
 
 /// Parses and runs one line of input through the runtime, printing the outcome.
 /// A confirmation-required command stops with its disclosure unless `--yes`
-/// approves it within the same invocation.
-func runThroughRuntime(_ rawInput: String, options: GlobalOptions) async throws {
+/// approves it within the same invocation. Returns the terminal outcome so a
+/// caller (e.g. `mode`) can record follow-up state.
+@discardableResult
+func runThroughRuntime(_ rawInput: String, options: GlobalOptions) async throws -> CommandRuntimeOutcome {
     let runtime = try makeCommandRuntime(options)
     var outcome = await runtime.submit(rawInput, source: .cli)
 
@@ -80,6 +83,114 @@ func runThroughRuntime(_ rawInput: String, options: GlobalOptions) async throws 
     }
 
     print(options.json ? try RuntimeOutcomeRenderer.json(outcome) : RuntimeOutcomeRenderer.human(outcome))
+    return outcome
+}
+
+// MARK: - Mode session state (NIC-39 / FR-MOD-05, FR-MOD-06)
+
+private func makeModeStateStore(_ paths: WorkspacePaths) -> FileModeStateStore {
+    FileModeStateStore(activeModePath: paths.activeModePath, activeContextPath: paths.activeContextPath)
+}
+
+/// Records a mode session and updates the active mode after a mode application
+/// that actually executed. A confirmation that was not approved, a rejection, or
+/// a denial produces no `mode.apply` output, so nothing is recorded — only a real
+/// activation becomes history (FR-MOD-06) and the persisted active mode (FR-MOD-05).
+func recordModeSessionIfApplied(modeID: String, outcome: CommandRuntimeOutcome, options: GlobalOptions) throws {
+    guard
+        case let .completed(_, _, result) = outcome,
+        let result, result.toolID == "mode.apply",
+        let output = result.output,
+        let applyOutput = try? CerebralHelmModeApplyOutput(data: output)
+    else { return }
+
+    let paths = try workspacePaths(options)
+    let store = makeModeStateStore(paths)
+    let coordinator = ModeSessionCoordinator(
+        stateStore: store,
+        sessionLog: NDJSONModeSessionLog(path: paths.modeSessionLogPath)
+    )
+
+    let sessionResult: ModeSessionResult = (applyOutput.status == .success) ? .success : .partialSuccess
+    // Carry the separately-managed context forward into the session record.
+    let context = (try? store.loadActiveContext()) ?? nil
+    try coordinator.recordApplication(
+        modeID: modeID,
+        context: context,
+        source: "cli",
+        result: sessionResult,
+        configVersion: configVersion(paths: paths)
+    )
+}
+
+/// Prints the restored active mode and context. The persisted mode is resolved
+/// against the current config so a mode that no longer exists falls back to the
+/// configured default rather than leaving the workspace stuck (FR-MOD-05).
+func renderActiveMode(options: GlobalOptions) throws {
+    let paths = try workspacePaths(options)
+    let store = makeModeStateStore(paths)
+    let persisted = (try? store.loadActiveModeID()) ?? nil
+    let context = (try? store.loadActiveContext()) ?? nil
+
+    var availableModeIDs: Set<String> = []
+    var defaultModeID = persisted ?? ""
+    if case let .valid(validated) = ConfigValidator.validate(configDirectory: paths.configDirectory) {
+        availableModeIDs = Set(validated.modes.map(\.id))
+        defaultModeID = validated.defaults.defaultModeID
+    }
+
+    let hasConfiguredDefault = !defaultModeID.isEmpty
+    let active = hasConfiguredDefault
+        ? ModeStateResolver.resolveActiveModeID(
+            persisted: persisted, availableModeIDs: availableModeIDs, defaultModeID: defaultModeID
+        )
+        : persisted
+    // "Fell back" means a previously-saved mode is no longer configured — not a
+    // never-set state, which simply shows the default.
+    let fellBack = persisted != nil && active != persisted
+
+    if options.json {
+        print(try ActiveModeRenderer.json(active: active, fellBack: fellBack, context: context))
+    } else {
+        print(ActiveModeRenderer.human(active: active, fellBack: fellBack, context: context))
+    }
+}
+
+/// The active configuration version recorded with a session (the application
+/// defaults' schema version; mirrors the future `settings_metadata` config version).
+private func configVersion(paths: WorkspacePaths) -> String {
+    guard case let .valid(validated) = ConfigValidator.validate(configDirectory: paths.configDirectory) else {
+        return "unknown"
+    }
+    return validated.defaults.schemaVersion
+}
+
+/// Renders the active-mode read surface.
+enum ActiveModeRenderer {
+    private struct View: Codable {
+        let activeMode: String?
+        let restoredFromDefault: Bool
+        let contextId: String?
+        let contextLabel: String?
+    }
+
+    private static func view(_ active: String?, _ fellBack: Bool, _ context: ProjectContext?) -> View {
+        View(activeMode: active, restoredFromDefault: fellBack, contextId: context?.id, contextLabel: context?.label)
+    }
+
+    static func json(active: String?, fellBack: Bool, context: ProjectContext?) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
+        return String(decoding: try encoder.encode(view(active, fellBack, context)), as: UTF8.self)
+    }
+
+    static func human(active: String?, fellBack: Bool, context: ProjectContext?) -> String {
+        guard let active else { return "No active mode yet. Apply one with: cerebral mode <id>" }
+        var line = "Active mode: \(active)"
+        if fellBack { line += " (restored to default; the saved mode is no longer configured)" }
+        if let context { line += "\nActive context: \(context.label ?? context.id)" }
+        return line
+    }
 }
 
 /// Renders a ``CommandRuntimeOutcome`` in human- and machine-readable forms.

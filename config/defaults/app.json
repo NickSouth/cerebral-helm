@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "defaultModeId": "developer",
+  "defaultModeId": "executive",
   "enabledAgentIds": [
     "research-analyst",
     "financial-advisor",
