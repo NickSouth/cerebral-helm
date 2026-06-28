@@ -95,5 +95,13 @@ let package = Package(
             ],
             path: "Tests/ToolsTests"
         ),
+        .testTarget(
+            name: "ConfigTests",
+            dependencies: [
+                "CerebralCore",
+                "CerebralContracts",
+            ],
+            path: "Tests/ConfigTests"
+        ),
     ]
 )
