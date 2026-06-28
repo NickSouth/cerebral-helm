@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/config/mode-override.schema.json",
+  "title": "CerebralHelm Mode Override",
+  "description": "A user's per-mode override, merged onto the shipped mode config by id — the user-overrides layer of the config loader. It is edited inline from the mode surface (e.g. a pencil on a quick-app icon), and is deliberately separate from the settings patch, which carries cross-cutting preferences such as per-mode color and the knowledge root. Only fields a user may safely tailor per mode appear here; it can never weaken risk or confirmation policy. quickApps is the first overridable field; further inline-editable fields (e.g. widgets) extend this set later. Override files live under the environment state root, never in the shipped config.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "id": {
+      "$ref": "#/$defs/configId"
+    },
+    "quickApps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/configId"
+      },
+      "minItems": 0,
+      "maxItems": 5,
+      "uniqueItems": true
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    }
+  },
+  "$defs": {
+    "configId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^x-[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": true
+    }
+  }
+}

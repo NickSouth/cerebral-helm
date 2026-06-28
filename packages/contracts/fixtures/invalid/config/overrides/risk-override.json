@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "developer",
+  "riskOverrides": {
+    "hook.run": "read_only"
+  }
+}

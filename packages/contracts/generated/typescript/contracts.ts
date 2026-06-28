@@ -346,6 +346,23 @@ export interface CerebralHelmConfigValidationError {
     schemaVersion: string;
 }
 
+/**
+ * A user's per-mode override, merged onto the shipped mode config by id — the
+ * user-overrides layer of the config loader. It is edited inline from the mode surface
+ * (e.g. a pencil on a quick-app icon), and is deliberately separate from the settings
+ * patch, which carries cross-cutting preferences such as per-mode color and the knowledge
+ * root. Only fields a user may safely tailor per mode appear here; it can never weaken risk
+ * or confirmation policy. quickApps is the first overridable field; further inline-editable
+ * fields (e.g. widgets) extend this set later. Override files live under the environment
+ * state root, never in the shipped config.
+ */
+export interface CerebralHelmModeOverride {
+    extensions?:   { [key: string]: any };
+    id:            string;
+    quickApps?:    string[];
+    schemaVersion: string;
+}
+
 export interface CerebralHelmModeConfig {
     calendarProfile?: CalendarProfile;
     extensions?:      { [key: string]: any };
