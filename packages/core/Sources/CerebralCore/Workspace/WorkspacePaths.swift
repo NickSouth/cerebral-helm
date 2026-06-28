@@ -45,6 +45,12 @@ public struct WorkspacePaths: Sendable {
     public let overridesDirectory: URL
     /// Last-known-good activated config snapshot (`<stateRoot>/active-config.json`).
     public let activeConfigPath: URL
+    /// Active mode id, persisted separately from context (`<stateRoot>/active-mode.json`).
+    public let activeModePath: URL
+    /// Active project/context, persisted separately from mode (`<stateRoot>/active-context.json`).
+    public let activeContextPath: URL
+    /// Append-only mode session history (`<stateRoot>/sessions/mode-sessions.ndjson`).
+    public let modeSessionLogPath: URL
     public let eventLogPath: URL
 
     /// Resolves workspace paths. The environment is selected by `CEREBRAL_ENV`
@@ -70,6 +76,11 @@ public struct WorkspacePaths: Sendable {
         self.stateRoot = stateRoot
         self.overridesDirectory = stateRoot.appendingPathComponent("overrides", isDirectory: true)
         self.activeConfigPath = stateRoot.appendingPathComponent("active-config.json")
+        self.activeModePath = stateRoot.appendingPathComponent("active-mode.json")
+        self.activeContextPath = stateRoot.appendingPathComponent("active-context.json")
+        self.modeSessionLogPath = stateRoot
+            .appendingPathComponent("sessions", isDirectory: true)
+            .appendingPathComponent("mode-sessions.ndjson")
 
         let eventLogPath: URL
         if let configured = processEnvironment["CEREBRAL_EVENT_LOG_PATH"], !configured.isEmpty {
