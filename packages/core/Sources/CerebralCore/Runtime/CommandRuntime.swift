@@ -277,6 +277,30 @@ public final class CommandRuntime: @unchecked Sendable {
         actionSummary: String
     ) -> ResolvedInvocation? {
         guard let tool = registry.tool(toolID), let input else { return nil }
+
+        // Enforce descriptor-declared redaction on the confirmation disclosure
+        // itself, not just the tool-call log. Any value the descriptor marks as a
+        // redaction path (e.g. note.search `/query`) is extracted from the input
+        // and masked wherever it appears verbatim in the action summary or an
+        // argument value. This runs before makePlan/PlanHash, so the hash and the
+        // disclosure are computed over the already-redacted form. The mechanism is
+        // generic over the descriptor; functionally only note.search changes today
+        // (its summary becomes "Search notes for [REDACTED]").
+        //
+        // DECISION (NIC-110): actionSummary may carry free text, but only what
+        // survives this pass — a descriptor-covered value must never reach the
+        // disclosure in the clear, so callers no longer rely on hand-written
+        // content-free summaries to stay secret-free.
+        let coveredValues = SchemaRedactor.valuesAtPaths(input, paths: tool.descriptor.logging.redactionPaths)
+        let redactedArguments = arguments.map { argument in
+            ConfirmationArgument(
+                name: argument.name,
+                value: redactCoveredValues(in: argument.value, covered: coveredValues),
+                sensitive: argument.sensitive
+            )
+        }
+        let redactedActionSummary = redactCoveredValues(in: actionSummary, covered: coveredValues)
+
         return ResolvedInvocation(
             toolID: toolID,
             toolVersion: tool.descriptor.version,
@@ -289,9 +313,20 @@ public final class CommandRuntime: @unchecked Sendable {
             destination: destination,
             dataLeavingDevice: dataLeavingDevice,
             reversibility: reversibility,
-            arguments: arguments,
-            actionSummary: actionSummary
+            arguments: redactedArguments,
+            actionSummary: redactedActionSummary
         )
+    }
+
+    /// Replaces every verbatim occurrence of a descriptor-covered value with the
+    /// redaction marker. Longer values are masked first so a value that contains
+    /// a shorter one is not partially revealed; empty covered values are ignored.
+    private func redactCoveredValues(in text: String, covered: [String]) -> String {
+        var result = text
+        for value in covered.sorted(by: { $0.count > $1.count }) where !value.isEmpty {
+            result = result.replacingOccurrences(of: value, with: SchemaRedactor.marker)
+        }
+        return result
     }
 
     private func makePlan(commandID: String, resolved: ResolvedInvocation, risk: Risk, policyReason: String) -> ConfirmationPlan {

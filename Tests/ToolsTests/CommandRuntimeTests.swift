@@ -109,8 +109,14 @@ func allowedCommandExecutes() async throws {
     #expect(recorder.statuses == [.received, .planned, .running, .succeeded])
 }
 
-@Test("a local-write command requires confirmation, then executes on approval (FR-SAF-04)")
+@Test("a local-write command requires confirmation, then is refused as phase-unavailable on approval (FR-SAF-04, NIC-111)")
 func confirmationThenExecution() async throws {
+    // app.open declares availability.preMac == false. The confirmation path is
+    // unchanged — it still pauses and discloses a local_write action — but on
+    // approval the executor's NIC-111 availability gate refuses it: the command
+    // terminates `failed` with an `.unavailable` result, never running the
+    // handler. (A pre-Mac-available local_write tool — note.capture — is exercised
+    // end-to-end in `capturedNoteSecretIsRedactedEndToEnd`.)
     let recorder = EventRecorder()
     let runtime = try makeRuntime(recorder: recorder)
 
@@ -126,13 +132,18 @@ func confirmationThenExecution() async throws {
     guard case let .completed(_, status, result) = decided else {
         Issue.record("Expected completed, got \(decided)"); return
     }
-    #expect(status == .succeeded)
-    #expect(result?.status == .success)
-    #expect(recorder.statuses == [.received, .planned, .requiresConfirmation, .running, .succeeded])
+    #expect(status == .failed)
+    #expect(result?.status == .unavailable)
+    #expect(result?.error?.code == "tool.unavailable_in_phase")
+    #expect(recorder.statuses == [.received, .planned, .requiresConfirmation, .running, .failed])
 }
 
-@Test("a shell hook cannot execute without confirmation, then runs once approved (AC-33.2, FR-SAF-03)")
+@Test("a shell hook requires confirmation, then is refused as phase-unavailable on approval (AC-33.2, FR-SAF-03, NIC-111)")
 func shellHookRequiresConfirmation() async throws {
+    // hook.run declares availability.preMac == false. Confirmation still gates the
+    // shell class, but approval no longer runs it: the NIC-111 availability gate
+    // returns `.unavailable` and the command terminates `failed`, so the
+    // shell-class handler never executes pre-Mac.
     let runtime = try makeRuntime()
 
     let pending = await runtime.submit("hook ondraft-dev", source: .cli)
@@ -145,8 +156,9 @@ func shellHookRequiresConfirmation() async throws {
     guard case let .completed(_, status, result) = decided else {
         Issue.record("Expected completed, got \(decided)"); return
     }
-    #expect(status == .succeeded)
-    #expect(result?.status == .success)
+    #expect(status == .failed)
+    #expect(result?.status == .unavailable)
+    #expect(result?.error?.code == "tool.unavailable_in_phase")
 }
 
 @Test("a replayed approval is refused (AC-31.1, wired)")
@@ -204,8 +216,42 @@ func modeWithHookAggregatesToShell() async throws {
     #expect(result?.status == .success)
 }
 
-@Test("a secret in a hook environment never reaches the tool-call log (AC-34.1, AC-34.2)")
-func hookEnvironmentSecretIsRedactedEndToEnd() async throws {
+@Test("a secret in a captured note body never reaches the tool-call log (AC-34.1, AC-34.2)")
+func capturedNoteSecretIsRedactedEndToEnd() async throws {
+    // NIC-111 re-vehicles this end-to-end redaction proof onto note.capture: a
+    // pre-Mac-available, redacting tool (descriptor redaction path `/body`). The
+    // former hook.run vehicle now terminates `.unavailable` pre-Mac (proven by
+    // `hookRunIsRefusedPreMac` below), so it can no longer carry this proof.
+    let canary = "CANARY-7f3a9c2e-deploy-token"
+    let toolCalls = DataRecorder()
+    let runtime = try makeRuntime(toolCallSink: { toolCalls.record($0) })
+
+    // note.capture is local_write, so it pauses for confirmation; the canary
+    // rides in the note body, which the descriptor marks for redaction.
+    let pending = await runtime.submit("note \(canary)", source: .cli)
+    guard case let .awaitingConfirmation(_, _, token) = pending else {
+        Issue.record("Expected awaitingConfirmation, got \(pending)"); return
+    }
+    let decided = await runtime.decide(token: token, decision: .approve)
+    guard case let .completed(_, status, result) = decided else {
+        Issue.record("Expected completed, got \(decided)"); return
+    }
+    #expect(status == .succeeded)
+    #expect(result?.status == .success)
+
+    let recorded = toolCalls.text
+    #expect(!recorded.isEmpty)
+    #expect(!recorded.contains(canary))         // AC-34.1: the secret never reaches the log
+    #expect(recorded.contains("note.capture"))  // AC-34.2: useful context preserved
+    #expect(recorded.contains(SchemaRedactor.marker))
+}
+
+@Test("the pre-Mac-unavailable hook.run shell tool is refused even after approval (NIC-111)")
+func hookRunIsRefusedPreMac() async throws {
+    // hook.run declares availability.preMac == false. Even when the caller
+    // approves the shell confirmation, the executor's availability gate refuses
+    // it: the result is `.unavailable` with the distinct phase code, and the
+    // command terminates `failed` (no shell handler runs pre-Mac).
     let canary = "CANARY-7f3a9c2e-deploy-token"
     let toolCalls = DataRecorder()
     let runtime = try makeRuntime(
@@ -218,16 +264,16 @@ func hookEnvironmentSecretIsRedactedEndToEnd() async throws {
         Issue.record("Expected awaitingConfirmation, got \(pending)"); return
     }
     let decided = await runtime.decide(token: token, decision: .approve)
-    guard case let .completed(_, status, _) = decided else {
+    guard case let .completed(_, status, result) = decided else {
         Issue.record("Expected completed, got \(decided)"); return
     }
-    #expect(status == .succeeded)
-
-    let recorded = toolCalls.text
-    #expect(!recorded.isEmpty)
-    #expect(!recorded.contains(canary))         // AC-34.1: the secret never reaches the log
-    #expect(recorded.contains("hook.run"))      // AC-34.2: useful context preserved
-    #expect(recorded.contains(SchemaRedactor.marker))
+    // The shell tool never ran: it is refused as unavailable in this phase.
+    #expect(status == .failed)
+    #expect(result?.status == .unavailable)
+    #expect(result?.error?.category == .unavailableCapability)
+    #expect(result?.error?.code == "tool.unavailable_in_phase")
+    // And the secret-bearing environment is still kept out of the log.
+    #expect(!toolCalls.text.contains(canary))
 }
 
 @Test("unrecognized input is rejected without executing")

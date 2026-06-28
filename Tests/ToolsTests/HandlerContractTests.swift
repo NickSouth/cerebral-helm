@@ -8,9 +8,12 @@ import CerebralTools
 /// NIC-33-A (PRE-SAFETY-6): portable read and local-write tool handlers.
 ///
 /// AC-33.1 every tool validates I/O; AC-33.3 all handlers satisfy the shared
-/// contract suite. The suite runs each handler end to end through the registry,
-/// policy engine, and executor — the same suite a native adapter will later
-/// satisfy (MAC-ADAPTER-6).
+/// contract suite. The I/O-contract cases exercise each bound handler directly so
+/// they are phase-independent — covering Mac-only tools (app.open, url.open) that
+/// the pre-Mac executor refuses via the NIC-111 availability gate. Capability and
+/// permission paths still run through the executor. Phase gating itself is covered
+/// by `ToolExecutorTests`/`CommandRuntimeTests`; on the Mac the native adapter
+/// satisfies this same suite (MAC-ADAPTER-6).
 
 private func descriptorsDirectory() -> URL {
     URL(fileURLWithPath: #filePath)
@@ -27,11 +30,13 @@ private struct ToolContractCase: Sendable {
 }
 
 private func runContractCase(_ contractCase: ToolContractCase, knowledge: any KnowledgeService) async throws {
-    let executor = try PreMacToolRuntime.makeExecutor(descriptorsDirectory: descriptorsDirectory(), knowledge: knowledge)
-    let result = await executor.execute(ToolInvocation(toolID: contractCase.toolID, input: contractCase.input))
-
-    #expect(result.status == .success, "\(contractCase.toolID): \(result.error?.message ?? "no error")")
-    let output = try #require(result.output)
+    // Invoke the bound handler directly. The handler owns I/O validation; the
+    // executor's phase gate (NIC-111) would refuse a Mac-only tool before its
+    // handler ever runs, so going through the executor here would only test the
+    // gate, not the contract this suite exists to check.
+    let registry = try PreMacToolRuntime.makeRegistry(descriptorsDirectory: descriptorsDirectory(), knowledge: knowledge)
+    let handler = try #require(registry.handler(for: contractCase.toolID), "\(contractCase.toolID): no handler bound")
+    let output = try await handler.execute(input: contractCase.input)
     try contractCase.validateOutput(output)
 }
 
@@ -82,12 +87,22 @@ func portableHandlersSatisfyContractSuite() async throws {
 
 @Test("invalid input is rejected before the adapter (AC-33.1)")
 func invalidInputIsRejected() async throws {
-    let executor = try PreMacToolRuntime.makeExecutor(descriptorsDirectory: descriptorsDirectory())
-    // appId must be a string.
-    let result = await executor.execute(ToolInvocation(toolID: "app.open", input: Data(#"{"appId":123}"#.utf8)))
+    // Input validation is the handler's contract and is independent of the
+    // executor's phase gate (app.open is Mac-only, so the pre-Mac executor would
+    // refuse it before any input check). Exercise the handler directly.
+    let registry = try PreMacToolRuntime.makeRegistry(descriptorsDirectory: descriptorsDirectory())
+    let handler = try #require(registry.handler(for: "app.open"))
 
-    #expect(result.status == .failure)
-    #expect(result.error?.category == .invalidInput)
+    do {
+        // appId must be a string.
+        _ = try await handler.execute(input: Data(#"{"appId":123}"#.utf8))
+        Issue.record("Expected invalid input to be rejected")
+    } catch let error as ToolHandlerError {
+        guard case .invalidInput = error else {
+            Issue.record("Expected .invalidInput, got \(error)")
+            return
+        }
+    }
 }
 
 @Test("a disabled native capability yields an unavailable result (FR-SHL-06)")
