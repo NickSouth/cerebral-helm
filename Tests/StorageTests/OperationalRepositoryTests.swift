@@ -150,6 +150,35 @@ func recordEventAdvancesStatusAndTails() throws {
     #expect(try repo.recentEventPayloads(limit: 1) == ["{\"id\":\"evt_00000002\"}"])
 }
 
+@Test("pruning removes old operational rows but never knowledge or required history (AC-47.2)")
+func pruningPreservesKnowledgeAndHistory() throws {
+    let database = try migratedDatabase()
+    let commands = CommandRepository(database: database)
+    let calls = ToolCallRepository(database: database)
+
+    // An old command with an event and a tool call.
+    try commands.upsert(command("cmd_old00001", status: "succeeded", created: c0, updated: at(1)))
+    try commands.append(event("evt_old00001", "cmd_old00001", "succeeded", previous: "running", at: c0))
+    try calls.record(ToolCallRecord(
+        commandID: "cmd_old00001", toolID: "note.search", toolVersion: "1.0.0", adapterID: "mock_native",
+        status: "success", durationMs: nil, startedAt: c0, completedAt: at(1),
+        redactedInput: nil, redactedOutput: nil, errorCategory: nil, errorCode: nil, errorMessage: nil
+    ))
+    // Knowledge metadata and required update history that must NOT be pruned.
+    try database.run("INSERT INTO note_metadata (note_id, path) VALUES (?, ?);", [.text("ch-note-001"), .text("inbox/ch-note-001.md")])
+    try database.run("INSERT INTO updates (status, recorded_at) VALUES (?, ?);", [.text("succeeded"), .text("2026-01-01T00:00:00.000Z")])
+
+    let removed = try OperationalRetention(database: database).prune(olderThan: at(100))
+
+    #expect(removed == 1)
+    #expect(try commands.command(id: "cmd_old00001") == nil)
+    #expect(try database.query("SELECT COUNT(*) AS c FROM command_events;")[0].integer("c") == 0) // cascaded
+    #expect(try database.query("SELECT COUNT(*) AS c FROM tool_calls;")[0].integer("c") == 0)      // cascaded
+    #expect(try database.query("SELECT COUNT(*) AS c FROM note_metadata;")[0].integer("c") == 1)   // knowledge kept
+    #expect(try database.query("SELECT COUNT(*) AS c FROM updates;")[0].integer("c") == 1)         // history kept
+    #expect(try database.query("SELECT COUNT(*) AS c FROM schema_migrations;")[0].integer("c") == Int64(SchemaMigrations.all.count))
+}
+
 @Test("a tool call for an unknown command is a structured foreign-key error (AC-47.3)")
 func toolCallForUnknownCommandFails() throws {
     let calls = ToolCallRepository(database: try migratedDatabase())

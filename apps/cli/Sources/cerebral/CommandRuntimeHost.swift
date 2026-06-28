@@ -165,8 +165,9 @@ func runThroughRuntime(_ rawInput: String, options: GlobalOptions) async throws 
 
 // MARK: - Mode session state (NIC-39 / FR-MOD-05, FR-MOD-06)
 
-private func makeModeStateStore(_ paths: WorkspacePaths) -> FileModeStateStore {
-    FileModeStateStore(activeModePath: paths.activeModePath, activeContextPath: paths.activeContextPath)
+/// The active mode/context store, backed by the operational database (ADR-006).
+private func makeModeStateStore(_ paths: WorkspacePaths) throws -> SQLiteModeStateStore {
+    SQLiteModeStateStore(database: try operationalDatabase(paths))
 }
 
 /// Records a mode session and updates the active mode after a mode application
@@ -182,15 +183,16 @@ func recordModeSessionIfApplied(modeID: String, outcome: CommandRuntimeOutcome, 
     else { return }
 
     let paths = try workspacePaths(options)
-    let store = makeModeStateStore(paths)
+    let database = try operationalDatabase(paths)
+    let stateStore = SQLiteModeStateStore(database: database)
     let coordinator = ModeSessionCoordinator(
-        stateStore: store,
-        sessionLog: NDJSONModeSessionLog(path: paths.modeSessionLogPath)
+        stateStore: stateStore,
+        sessionLog: SQLiteModeSessionLog(database: database)
     )
 
     let sessionResult: ModeSessionResult = (applyOutput.status == .success) ? .success : .partialSuccess
     // Carry the separately-managed context forward into the session record.
-    let context = (try? store.loadActiveContext()) ?? nil
+    let context = (try? stateStore.loadActiveContext()) ?? nil
     try coordinator.recordApplication(
         modeID: modeID,
         context: context,
@@ -205,7 +207,7 @@ func recordModeSessionIfApplied(modeID: String, outcome: CommandRuntimeOutcome, 
 /// configured default rather than leaving the workspace stuck (FR-MOD-05).
 func renderActiveMode(options: GlobalOptions) throws {
     let paths = try workspacePaths(options)
-    let store = makeModeStateStore(paths)
+    let store = try makeModeStateStore(paths)
     let persisted = (try? store.loadActiveModeID()) ?? nil
     let context = (try? store.loadActiveContext()) ?? nil
 

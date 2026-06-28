@@ -10,6 +10,7 @@ public enum SchemaMigrations {
     /// Every migration, in application order.
     public static let all: [SchemaMigration] = [
         SchemaMigration(id: "0001_initial", sql: initialSQL),
+        SchemaMigration(id: "0002_mode_state", sql: modeStateSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -127,5 +128,18 @@ public enum SchemaMigrations {
         recorded_at  TEXT NOT NULL
     );
     CREATE INDEX idx_updates_recorded_at ON updates (recorded_at);
+    """
+
+    /// Migration 0002: the active-mode/context singleton (FR-MOD-05). Mode and
+    /// context are independent columns of one row so either can change or fall back
+    /// without disturbing the other.
+    public static let modeStateSQL = """
+    CREATE TABLE mode_state (
+        id                   INTEGER PRIMARY KEY CHECK (id = 1),
+        active_mode_id       TEXT,
+        active_context_id    TEXT,
+        active_context_label TEXT,
+        updated_at           TEXT NOT NULL
+    );
     """
 }

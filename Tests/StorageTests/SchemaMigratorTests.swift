@@ -7,6 +7,7 @@ import CerebralStorage
 private let expectedTables = [
     "schema_migrations", "commands", "command_events", "tool_calls",
     "confirmations", "note_metadata", "mode_sessions", "settings_metadata", "updates",
+    "mode_state",
 ]
 
 private let expectedIndexes = [
@@ -33,13 +34,13 @@ func emptyDatabaseReachesSchema() throws {
     let db = try SQLiteDatabase(location: .memory)
     let applied = try SchemaMigrator().migrate(db)
 
-    #expect(applied == ["0001_initial"])
+    #expect(applied == SchemaMigrations.all.map(\.id))
     let tables = try tableNames(db)
     for table in expectedTables {
         #expect(tables.contains(table), "missing table \(table)")
     }
     let recorded = try SchemaMigrator().appliedMigrations(db)
-    #expect(recorded.map(\.id) == ["0001_initial"])
+    #expect(recorded.map(\.id) == SchemaMigrations.all.map(\.id))
     #expect(recorded.first?.checksum == SchemaMigrations.all[0].checksum)
 }
 
@@ -52,7 +53,7 @@ func migrationsAreIdempotent() throws {
 
     #expect(secondRun.isEmpty)
     let rows = try db.query("SELECT COUNT(*) AS c FROM schema_migrations;")
-    #expect(rows[0].integer("c") == 1)
+    #expect(rows[0].integer("c") == Int64(SchemaMigrations.all.count))
     #expect(try tableNames(db).isSuperset(of: expectedTables))
 }
 
@@ -150,6 +151,25 @@ func deleteCascades() throws {
     #expect(try db.query("SELECT COUNT(*) AS c FROM tool_calls;")[0].integer("c") == 0)
 }
 
+@Test("a later migration applies forward on an existing database, preserving data")
+func forwardMigrationOnExistingDatabase() throws {
+    let db = try SQLiteDatabase(location: .memory)
+
+    // First release: only migration 0001 exists.
+    let firstRelease = SchemaMigrator(migrations: [SchemaMigrations.all[0]])
+    #expect(try firstRelease.migrate(db) == ["0001_initial"])
+    try db.run(
+        "INSERT INTO commands (id, source, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?);",
+        [.text("cmd_keep0001"), .text("cli"), .text("succeeded"), .text("2026-06-28T00:00:00.000Z"), .text("2026-06-28T00:00:00.000Z")]
+    )
+
+    // Next release adds 0002: only the new migration runs, and prior data survives.
+    let applied = try SchemaMigrator().migrate(db)
+    #expect(applied == ["0002_mode_state"])
+    #expect(try tableNames(db).contains("mode_state"))
+    #expect(try db.query("SELECT COUNT(*) AS c FROM commands;")[0].integer("c") == 1)
+}
+
 @Test("required indexes are created (AC-46.3)")
 func requiredIndexesPresent() throws {
     let db = try SQLiteDatabase(location: .memory)
@@ -186,19 +206,20 @@ func migrationsPersistToFile() throws {
     #expect(try SchemaMigrator().migrate(reopened).isEmpty)
 }
 
-@Test("the checked-in .sql mirror matches the embedded canonical schema")
-func sqlMirrorMatchesEmbedded() throws {
-    let repositoryRoot = URL(fileURLWithPath: #filePath)
+@Test("each checked-in .sql mirror matches its embedded canonical migration")
+func sqlMirrorsMatchEmbedded() throws {
+    let migrationsDir = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    let sqlURL = repositoryRoot
         .appendingPathComponent("database", isDirectory: true)
         .appendingPathComponent("migrations", isDirectory: true)
-        .appendingPathComponent("0001_initial.sql")
 
-    let fileSQL = try String(contentsOf: sqlURL, encoding: .utf8)
-    #expect(normalizedSchema(fileSQL) == normalizedSchema(SchemaMigrations.initialSQL))
+    for migration in SchemaMigrations.all {
+        let sqlURL = migrationsDir.appendingPathComponent("\(migration.id).sql")
+        let fileSQL = try String(contentsOf: sqlURL, encoding: .utf8)
+        #expect(normalizedSchema(fileSQL) == normalizedSchema(migration.sql), "mirror drift in \(migration.id)")
+    }
 }
 
 /// Reduces SQL to its executable statements: drops blank lines and full-line
