@@ -185,4 +185,5 @@ func allowedKeysMatchSchemas() throws {
     #expect(try schemaProperties("app-defaults.schema.json") == ConfigValidator.defaultsKeys)
     #expect(try schemaProperties("mode.schema.json") == ConfigValidator.modeKeys)
     #expect(try schemaProperties("agent.schema.json") == ConfigValidator.agentKeys)
+    #expect(try schemaProperties("mode-override.schema.json") == ConfigValidator.overrideKeys)
 }

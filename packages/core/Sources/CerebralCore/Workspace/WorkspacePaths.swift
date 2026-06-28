@@ -41,6 +41,10 @@ public struct WorkspacePaths: Sendable {
     /// Directory of authoritative rich tool descriptors (`config/tools/descriptors`).
     public let toolDescriptorsDirectory: URL
     public let stateRoot: URL
+    /// Directory of per-mode user override files (`<stateRoot>/overrides`).
+    public let overridesDirectory: URL
+    /// Last-known-good activated config snapshot (`<stateRoot>/active-config.json`).
+    public let activeConfigPath: URL
     public let eventLogPath: URL
 
     /// Resolves workspace paths. The environment is selected by `CEREBRAL_ENV`
@@ -64,6 +68,8 @@ public struct WorkspacePaths: Sendable {
         )
         try Self.validate(stateRoot, root: root, environment: env, label: "State root")
         self.stateRoot = stateRoot
+        self.overridesDirectory = stateRoot.appendingPathComponent("overrides", isDirectory: true)
+        self.activeConfigPath = stateRoot.appendingPathComponent("active-config.json")
 
         let eventLogPath: URL
         if let configured = processEnvironment["CEREBRAL_EVENT_LOG_PATH"], !configured.isEmpty {

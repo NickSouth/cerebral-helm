@@ -61,6 +61,9 @@ public enum ConfigValidator {
     static let agentKeys: Set<String> = [
         "id", "label", "status", "summary", "allowedKnowledgeRoots", "allowedToolIds", "extensions"
     ]
+    static let overrideKeys: Set<String> = [
+        "schemaVersion", "id", "quickApps", "extensions"
+    ]
 
     // MARK: - Directory orchestration
 
@@ -151,6 +154,10 @@ public enum ConfigValidator {
         decodeAgent(file: file, data: data).errors
     }
 
+    public static func overrideDocumentErrors(file: String, data: Data) -> [CerebralHelmConfigValidationError] {
+        decodeOverride(file: file, data: data).errors
+    }
+
     /// Cross-file reference checks, exposed for in-memory testing without disk.
     public static func crossReferenceErrors(
         defaults: CerebralHelmApplicationDefaults,
@@ -202,6 +209,14 @@ public enum ConfigValidator {
         file: String, data: Data
     ) -> (value: CerebralHelmAgentSurfaceConfig?, errors: [CerebralHelmConfigValidationError]) {
         decode(file: file, data: data, allowed: agentKeys, type: CerebralHelmAgentSurfaceConfig.self) { _ in [] }
+    }
+
+    private static func decodeOverride(
+        file: String, data: Data
+    ) -> (value: CerebralHelmModeOverride?, errors: [CerebralHelmConfigValidationError]) {
+        decode(file: file, data: data, allowed: overrideKeys, type: CerebralHelmModeOverride.self) { override in
+            structuralOverrideErrors(override, file: file)
+        }
     }
 
     private static func decodeMode(
@@ -297,6 +312,33 @@ public enum ConfigValidator {
                     expected: "includes \"\(layoutAction)\"",
                     message: "Non-Executive mode \"\(mode.id)\" must include its layout action.",
                     remediation: "Add \"\(layoutAction)\" to quickActions."
+                ))
+            }
+        }
+        return errors
+    }
+
+    private static func structuralOverrideErrors(
+        _ override: CerebralHelmModeOverride, file: String
+    ) -> [CerebralHelmConfigValidationError] {
+        var errors: [CerebralHelmConfigValidationError] = []
+        if let apps = override.quickApps {
+            if apps.count > 5 {
+                errors.append(makeError(
+                    file: file,
+                    field: "/quickApps",
+                    expected: "0 to 5 entries",
+                    message: "Override defines \(apps.count) quick apps; at most 5 are allowed.",
+                    remediation: "Reduce quick apps to 5 or fewer."
+                ))
+            }
+            if Set(apps).count != apps.count {
+                errors.append(makeError(
+                    file: file,
+                    field: "/quickApps",
+                    expected: "unique entries",
+                    message: "Override quick apps contain duplicates.",
+                    remediation: "Remove duplicate quick app ids."
                 ))
             }
         }
