@@ -24,45 +24,110 @@ func makeCommandRuntime(_ options: GlobalOptions) throws -> CommandRuntime {
         hookCatalog: hookCatalog,
         modePlanner: modePlanner
     )
-    let writer = EventLogWriter(eventLogPath: paths.eventLogPath)
-    let toolCallLogPath = paths.eventLogPath.deletingLastPathComponent().appendingPathComponent("tool-calls.ndjson")
+    // SQLite is the single source of truth for operational history (ADR-006). One
+    // migrated connection backs confirmations, commands, events, and tool calls;
+    // the NDJSON/file adapters are demoted to test bindings.
+    let database = try operationalDatabase(paths)
+    let commands = CommandRepository(database: database)
+    let toolCalls = ToolCallRepository(database: database)
 
     return CommandRuntime(
         registry: registry,
-        coordinator: try makeConfirmationCoordinator(paths),
+        coordinator: ConfirmationCoordinator(store: SQLiteConfirmationStore(database: database)),
         factory: CommandFactory(clock: SystemClock(), identifiers: UUIDIdentifierGenerator()),
         references: references,
         hookCatalog: hookCatalog,
         modePlanner: modePlanner,
-        sink: { try? writer.append($0) },
-        // Already redacted by the runtime; append one JSON line per tool call.
-        toolCallSink: { appendLine($0, to: toolCallLogPath) }
+        commandSink: { persistCommand($0, into: commands) },
+        sink: { persistEvent($0, into: commands) },
+        // Already redacted by the runtime; linked to its command by the runtime.
+        toolCallSink: { commandID, data in persistToolCall(commandID, data, into: toolCalls) }
     )
 }
 
-/// Builds the confirmation coordinator over the operational SQLite store, opening
-/// and migrating the database so pending confirmations persist across `cerebral`
-/// invocations (NIC-112). This is where the schema migrations first run live; the
-/// database and migrator are idempotent, so every invocation is a cheap no-op once
-/// the schema is current.
-private func makeConfirmationCoordinator(_ paths: WorkspacePaths) throws -> ConfirmationCoordinator {
+/// Opens and migrates the operational SQLite database (ADR-006). This is where the
+/// schema migrations run live; the database and migrator are idempotent, so every
+/// invocation is a cheap no-op once the schema is current.
+func operationalDatabase(_ paths: WorkspacePaths) throws -> SQLiteDatabase {
     let database = try SQLiteDatabase(location: .file(paths.operationalDatabasePath))
     try SchemaMigrator().migrate(database)
-    return ConfirmationCoordinator(store: SQLiteConfirmationStore(database: database))
+    return database
 }
 
-/// Appends one NDJSON line to a development log, creating the directory as needed.
-private func appendLine(_ data: Data, to url: URL) {
-    try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    if !FileManager.default.fileExists(atPath: url.path) {
-        try? Data().write(to: url)
-    }
-    guard let handle = try? FileHandle(forWritingTo: url) else { return }
-    defer { try? handle.close() }
-    try? handle.seekToEnd()
-    var line = data
-    line.append(0x0A)
-    try? handle.write(contentsOf: line)
+/// Reconstructs a command's latest status from the operational database — the
+/// SQLite single source of truth that `command status` and `cancel` read (ADR-006).
+func latestCommandStatus(id: String, options: GlobalOptions) throws -> CommandStatusRecord? {
+    let paths = try workspacePaths(options)
+    let repository = CommandRepository(database: try operationalDatabase(paths))
+    let eventLines = try repository.events(commandID: id).compactMap(\.payload)
+    return CommandStatusReader.latest(commandId: id, eventLines: eventLines)
+}
+
+/// The most recent event payloads from the operational database, oldest first —
+/// the SQLite-sourced event stream `events tail` renders (ADR-006).
+func recentEventPayloads(options: GlobalOptions, limit: Int) throws -> [String] {
+    let paths = try workspacePaths(options)
+    let repository = CommandRepository(database: try operationalDatabase(paths))
+    return try repository.recentEventPayloads(limit: limit)
+}
+
+/// Writes the command row from its envelope before any event references it (FK
+/// ordering). The raw command text is deliberately not persisted — it can contain
+/// secrets (the NIC-34 leak class); only non-sensitive envelope metadata is stored.
+private func persistCommand(_ envelope: CommandEnvelope, into repository: CommandRepository) {
+    let record = CommandRecord(
+        id: envelope.id,
+        source: envelope.source.rawValue,
+        redactedInput: nil,
+        sensitivity: envelope.privacy.sensitivity.rawValue,
+        cloudPolicy: envelope.privacy.cloudPolicy.rawValue,
+        status: CommandStatus.received.rawValue,
+        createdAt: envelope.timestamp,
+        updatedAt: envelope.timestamp
+    )
+    try? repository.upsert(record)
+}
+
+/// Advances the command's status and records the event atomically, storing the
+/// full event JSON as the row payload so readers reconstruct it verbatim.
+private func persistEvent(_ event: CommandLifecycleEvent, into repository: CommandRepository) {
+    let payload = (try? CommandCoding.makeEncoder().encode(event)).map { String(decoding: $0, as: UTF8.self) }
+    let record = CommandEventRecord(
+        id: event.id,
+        commandID: event.commandID,
+        status: event.currentStatus.rawValue,
+        previousStatus: event.previousStatus?.rawValue,
+        occurredAt: event.timestamp,
+        payload: payload
+    )
+    try? repository.recordEvent(record)
+}
+
+/// Persists the already-redacted tool-call record (NIC-34), linked to its command.
+private func persistToolCall(_ commandID: String, _ data: Data, into repository: ToolCallRepository) {
+    guard let result = try? CerebralHelmToolResult(data: data) else { return }
+    let record = ToolCallRecord(
+        commandID: commandID,
+        toolID: result.toolID,
+        toolVersion: result.toolVersion,
+        adapterID: result.adapterID,
+        status: result.status.rawValue,
+        durationMs: result.durationMS,
+        startedAt: result.startedAt,
+        completedAt: result.completedAt,
+        redactedInput: encodeJSONObject(result.redactedInput),
+        redactedOutput: encodeJSONObject(result.redactedOutput),
+        errorCategory: result.error?.category.rawValue,
+        errorCode: result.error?.code,
+        errorMessage: result.error?.message
+    )
+    try? repository.record(record)
+}
+
+/// Serializes a JSON object to a compact string for a TEXT column.
+private func encodeJSONObject(_ object: [String: JSONAny]) -> String? {
+    guard let data = try? JSONEncoder().encode(object) else { return nil }
+    return String(decoding: data, as: UTF8.self)
 }
 
 /// Resolves each configured hook reference to an exact invocation. The pre-Mac

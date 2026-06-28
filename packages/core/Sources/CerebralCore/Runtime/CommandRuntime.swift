@@ -52,8 +52,9 @@ public final class CommandRuntime: @unchecked Sendable {
     private let hookCatalog: HookCatalog
     private let modePlanner: (any ActionPlanner)?
     private let clock: any TimeSource
+    private let commandSink: @Sendable (CommandEnvelope) -> Void
     private let sink: @Sendable (CommandLifecycleEvent) -> Void
-    private let toolCallSink: @Sendable (Data) -> Void
+    private let toolCallSink: @Sendable (String, Data) -> Void
     private var pending: [String: PendingExecution] = [:]
 
     public init(
@@ -65,8 +66,9 @@ public final class CommandRuntime: @unchecked Sendable {
         hookCatalog: HookCatalog = HookCatalog(),
         modePlanner: (any ActionPlanner)? = nil,
         clock: any TimeSource = SystemClock(),
+        commandSink: @escaping @Sendable (CommandEnvelope) -> Void = { _ in },
         sink: @escaping @Sendable (CommandLifecycleEvent) -> Void = { _ in },
-        toolCallSink: @escaping @Sendable (Data) -> Void = { _ in }
+        toolCallSink: @escaping @Sendable (String, Data) -> Void = { _, _ in }
     ) {
         self.parser = DirectCommandParser(references: references)
         self.registry = registry
@@ -77,6 +79,7 @@ public final class CommandRuntime: @unchecked Sendable {
         self.hookCatalog = hookCatalog
         self.modePlanner = modePlanner
         self.clock = clock
+        self.commandSink = commandSink
         self.sink = sink
         self.toolCallSink = toolCallSink
     }
@@ -128,6 +131,10 @@ public final class CommandRuntime: @unchecked Sendable {
     // MARK: - Internals
 
     private func start(envelope: CommandEnvelope, intent: CommandIntent) async -> CommandRuntimeOutcome {
+        // Surface the command before its first event so a durable sink can create
+        // the command row the events reference (FK ordering); the envelope carries
+        // the source and privacy the events do not.
+        commandSink(envelope)
         var machine = CommandLifecycleMachine(commandId: envelope.id, factory: factory)
         emit(&machine) { try $0.markReceived(message: "Command received.") }
         emit(&machine) { try $0.markPlanned(message: "Command planned.") }
@@ -177,7 +184,7 @@ public final class CommandRuntime: @unchecked Sendable {
         let result = await executor.execute(
             ToolInvocation(toolID: resolved.toolID, input: resolved.input, shellInvocation: resolved.shellInvocation)
         )
-        recordToolCall(resolved: resolved, result: result, startedAt: startedAt, completedAt: clock.now())
+        recordToolCall(commandID: commandID, resolved: resolved, result: result, startedAt: startedAt, completedAt: clock.now())
 
         switch result.status {
         case .success, .partialSuccess:
@@ -349,7 +356,7 @@ public final class CommandRuntime: @unchecked Sendable {
     /// Emits a redacted ``CerebralHelmToolResult`` to the tool-call sink. Input
     /// and output are redacted with the descriptor's declared paths before they
     /// leave the runtime (NIC-34), so no secret reaches the operational log.
-    private func recordToolCall(resolved: ResolvedInvocation, result: ToolExecutionResult, startedAt: Date, completedAt: Date) {
+    private func recordToolCall(commandID: String, resolved: ResolvedInvocation, result: ToolExecutionResult, startedAt: Date, completedAt: Date) {
         guard let descriptor = registry.tool(resolved.toolID)?.descriptor else { return }
         let record = ToolCallRecorder.record(
             descriptor: descriptor,
@@ -359,7 +366,7 @@ public final class CommandRuntime: @unchecked Sendable {
             completedAt: completedAt
         )
         if let data = try? record.jsonData() {
-            toolCallSink(data)
+            toolCallSink(commandID, data)
         }
     }
 

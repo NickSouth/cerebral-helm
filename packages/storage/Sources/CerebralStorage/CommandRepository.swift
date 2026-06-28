@@ -34,6 +34,31 @@ public struct CommandRepository: Sendable {
         try insertEvent(event)
     }
 
+    /// Advances the command's status to the event's status and inserts the event in
+    /// one transaction (AC-47.1), so each transition keeps the command row and its
+    /// events consistent. The command row is expected to already exist (created
+    /// from the envelope); if it does not, the event's foreign key fails and the
+    /// transaction rolls back.
+    public func recordEvent(_ event: CommandEventRecord) throws {
+        try database.transaction {
+            try database.run(
+                "UPDATE commands SET status = ?, updated_at = ? WHERE id = ?;",
+                [.text(event.status), .timestamp(event.occurredAt), .text(event.commandID)]
+            )
+            try insertEvent(event)
+        }
+    }
+
+    /// The most recent event payloads across all commands, oldest first — the
+    /// SQLite-sourced equivalent of tailing the NDJSON event log.
+    public func recentEventPayloads(limit: Int) throws -> [String] {
+        let rows = try database.query(
+            "SELECT payload FROM command_events WHERE payload IS NOT NULL ORDER BY occurred_at DESC, id DESC LIMIT ?;",
+            [.integer(Int64(limit))]
+        )
+        return rows.compactMap { $0.text("payload") }.reversed()
+    }
+
     public func command(id: String) throws -> CommandRecord? {
         let rows = try database.query(
             """

@@ -36,7 +36,7 @@ private func makeRuntime(
     policy: PolicyEngine = PolicyEngine(),
     recorder: EventRecorder = EventRecorder(),
     hookEnvironment: [String: String] = ["CI": "true"],
-    toolCallSink: @escaping @Sendable (Data) -> Void = { _ in }
+    toolCallSink: @escaping @Sendable (String, Data) -> Void = { _, _ in }
 ) throws -> CommandRuntime {
     let hookInvocation = HookInvocation(
         executable: "/usr/bin/just",
@@ -224,7 +224,7 @@ func capturedNoteSecretIsRedactedEndToEnd() async throws {
     // `hookRunIsRefusedPreMac` below), so it can no longer carry this proof.
     let canary = "CANARY-7f3a9c2e-deploy-token"
     let toolCalls = DataRecorder()
-    let runtime = try makeRuntime(toolCallSink: { toolCalls.record($0) })
+    let runtime = try makeRuntime(toolCallSink: { _, data in toolCalls.record(data) })
 
     // note.capture is local_write, so it pauses for confirmation; the canary
     // rides in the note body, which the descriptor marks for redaction.
@@ -256,7 +256,7 @@ func hookRunIsRefusedPreMac() async throws {
     let toolCalls = DataRecorder()
     let runtime = try makeRuntime(
         hookEnvironment: ["DEPLOY_TOKEN": canary],
-        toolCallSink: { toolCalls.record($0) }
+        toolCallSink: { _, data in toolCalls.record(data) }
     )
 
     let pending = await runtime.submit("hook ondraft-dev", source: .cli)

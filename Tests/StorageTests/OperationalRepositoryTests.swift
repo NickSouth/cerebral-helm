@@ -132,6 +132,24 @@ func toolCallsRoundTrip() throws {
     #expect(stored[1].errorCode == "tool.failed")
 }
 
+@Test("recordEvent advances the command status and event payloads tail oldest-first")
+func recordEventAdvancesStatusAndTails() throws {
+    let repo = CommandRepository(database: try migratedDatabase())
+    try repo.upsert(command("cmd_00000001", status: "received", created: c0, updated: c0))
+    try repo.recordEvent(CommandEventRecord(
+        id: "evt_00000001", commandID: "cmd_00000001", status: "running",
+        previousStatus: "planned", occurredAt: at(1), payload: "{\"id\":\"evt_00000001\"}"
+    ))
+    try repo.recordEvent(CommandEventRecord(
+        id: "evt_00000002", commandID: "cmd_00000001", status: "succeeded",
+        previousStatus: "running", occurredAt: at(2), payload: "{\"id\":\"evt_00000002\"}"
+    ))
+
+    #expect(try repo.command(id: "cmd_00000001")?.status == "succeeded")
+    #expect(try repo.recentEventPayloads(limit: 10) == ["{\"id\":\"evt_00000001\"}", "{\"id\":\"evt_00000002\"}"])
+    #expect(try repo.recentEventPayloads(limit: 1) == ["{\"id\":\"evt_00000002\"}"])
+}
+
 @Test("a tool call for an unknown command is a structured foreign-key error (AC-47.3)")
 func toolCallForUnknownCommandFails() throws {
     let calls = ToolCallRepository(database: try migratedDatabase())
