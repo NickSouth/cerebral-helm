@@ -5,12 +5,19 @@
     "accentPrimary": "entertainment.primary",
     "accentSecondary": "entertainment.secondary"
   },
-  "quickApps": ["spotify", "youtube", "discord"],
+  "calendarProfile": "leisure",
+  "newsProfile": "interest",
+  "greeting": {
+    "persona": "Downtime concierge",
+    "directive": "Greet and suggest something to unwind with.",
+    "fallback": "Time to unwind."
+  },
+  "quickApps": ["spotify", "youtube", "steam", "discord", "photos"],
   "quickActions": [
     "open-entertainment-layout",
     "open-media",
     "capture-note",
-    "check-status",
+    "check-system-status",
     "resume-playback",
     "open-queue",
     "browse-library",
@@ -19,5 +26,7 @@
   "widgets": {
     "left": "spotify",
     "right": "media-list"
-  }
+  },
+  "projectHints": ["weekend-plans"],
+  "layoutId": "entertainment.default"
 }

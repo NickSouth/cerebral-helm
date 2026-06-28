@@ -1,0 +1,23 @@
+{
+  "id": "executive",
+  "label": "Executive",
+  "theme": {
+    "accentPrimary": "executive.primary",
+    "accentSecondary": "executive.secondary"
+  },
+  "quickApps": ["chrome", "gmail"],
+  "quickActions": [
+    "daily-brief",
+    null,
+    "capture-note",
+    null,
+    "check-system-status",
+    null,
+    null,
+    null
+  ],
+  "widgets": {
+    "left": "market-brief",
+    "right": "projects"
+  }
+}

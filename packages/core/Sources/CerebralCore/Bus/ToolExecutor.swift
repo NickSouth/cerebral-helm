@@ -83,6 +83,26 @@ public struct ToolExecutor: Sendable {
             )
         }
 
+        // Availability gate (NIC-111). A tool the descriptor (after any stricter
+        // overlay) marks unavailable in the current pre-Mac phase must not run, no
+        // matter how it was reached. This is distinct from `tool.unknown`
+        // (unregistered): the tool exists and is bound, but its declared
+        // availability forbids execution in this phase, so the handler — including
+        // shell-class tools like hook.run — is never invoked.
+        guard tool.availableInPreMac else {
+            return ToolExecutionResult(
+                toolID: tool.id,
+                status: .unavailable,
+                output: nil,
+                error: structured(
+                    .unavailableCapability,
+                    "tool.unavailable_in_phase",
+                    "Tool '\(tool.id)' is not available in the current phase."
+                ),
+                durationMs: elapsedMs()
+            )
+        }
+
         // Policy gate. A denied call never reaches the handler (AC-29.1).
         let evaluation = policy.evaluate(
             PolicyRequest(

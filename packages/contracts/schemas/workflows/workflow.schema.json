@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/workflows/workflow.schema.json",
+  "title": "CerebralHelm Workflow Definition",
+  "description": "An ordered, linear, deterministic 1..N-step plan of tool invocations, resolved by the action planner (NIC-38). A quickAction id and a mode application both resolve to this same artifact; a single-step action is simply N=1. Step inputs are resolved statically (literal values and reference-catalog ids) and validated against each tool's input schema at resolve time. MVP scope is intentionally narrow: there is no data flow between steps (a step never consumes a prior step's output), and no branching, conditional, or model-driven steps. A capability a workflow lacks is added as a new tool, never as new planner logic.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "label", "steps"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "id": {
+      "$ref": "#/$defs/configId"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    }
+  },
+  "$defs": {
+    "configId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "toolId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tool"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/configId"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool": {
+          "$ref": "#/$defs/toolId"
+        },
+        "input": {
+          "type": "object",
+          "description": "Static input/reference bindings for this step. Deep validation is deferred to resolve time, where the planner checks this object against the step tool's input schema (descriptors authoritative). MVP: resolved only from literal values and reference-catalog ids, never from another step's output.",
+          "additionalProperties": true
+        }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^x-[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": true
+    }
+  }
+}

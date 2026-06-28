@@ -17,6 +17,7 @@ extension RuntimeRiskPolicy: @unchecked Sendable {}
 extension Category: @unchecked Sendable {}
 extension StatusElement: @unchecked Sendable {}
 extension CerebralHelmToolDescriptor: @unchecked Sendable {}
+extension CerebralHelmWorkflowDefinition: @unchecked Sendable {}
 extension CerebralHelmStructuredError: @unchecked Sendable {}
 extension DataLeavingDevice: @unchecked Sendable {}
 extension Reversibility: @unchecked Sendable {}

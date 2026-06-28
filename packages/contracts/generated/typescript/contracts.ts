@@ -218,12 +218,19 @@ export interface Privacy {
     sensitivity: Sensitivity;
 }
 
+/**
+ * Whether the note may be sent to a cloud provider. Defaults to deny; never defaults to
+ * allow.
+ */
 export enum CloudPolicy {
     Allow = "allow",
     Ask = "ask",
     Deny = "deny",
 }
 
+/**
+ * Defaults to private when unspecified.
+ */
 export enum Sensitivity {
     Private = "private",
     Public = "public",
@@ -346,15 +353,62 @@ export interface CerebralHelmConfigValidationError {
     schemaVersion: string;
 }
 
-export interface CerebralHelmModeConfig {
+/**
+ * A user's per-mode override, merged onto the shipped mode config by id — the
+ * user-overrides layer of the config loader. It is edited inline from the mode surface
+ * (e.g. a pencil on a quick-app icon), and is deliberately separate from the settings
+ * patch, which carries cross-cutting preferences such as per-mode color and the knowledge
+ * root. Only fields a user may safely tailor per mode appear here; it can never weaken risk
+ * or confirmation policy. quickApps is the first overridable field; further inline-editable
+ * fields (e.g. widgets) extend this set later. Override files live under the environment
+ * state root, never in the shipped config.
+ */
+export interface CerebralHelmModeOverride {
     extensions?:   { [key: string]: any };
     id:            string;
-    label:         string;
-    projectHints?: string[];
-    quickActions:  string[];
-    quickApps:     string[];
-    theme:         Theme;
-    widgets:       Widgets;
+    quickApps?:    string[];
+    schemaVersion: string;
+}
+
+export interface CerebralHelmModeConfig {
+    calendarProfile?: CalendarProfile;
+    extensions?:      { [key: string]: any };
+    greeting?:        Greeting;
+    id:               string;
+    label:            string;
+    layoutId?:        string;
+    newsProfile?:     NewsProfile;
+    projectHints?:    string[];
+    /**
+     * Exactly 8 ordered quick-action slots forming the binding 4+4 ambient grid (slots 0-3
+     * render as compact bars, 4-7 as boxes; the shared shell owns that geometry). Each slot is
+     * an action id or null for an unconfigured slot (rendered as an 'add action' button).
+     * Non-null ids must be unique; null slots may repeat.
+     */
+    quickActions: Array<null | string>;
+    quickApps:    string[];
+    theme:        Theme;
+    widgets:      Widgets;
+}
+
+export enum CalendarProfile {
+    Academic = "academic",
+    All = "all",
+    Engineering = "engineering",
+    Leisure = "leisure",
+}
+
+export interface Greeting {
+    directive?: string;
+    fallback:   string;
+    persona:    string;
+}
+
+export enum NewsProfile {
+    Academic = "academic",
+    Broad = "broad",
+    Engineering = "engineering",
+    Interest = "interest",
 }
 
 export interface Theme {
@@ -397,6 +451,70 @@ export interface Hotkeys {
 
 export interface Knowledge {
     rootReference?: string;
+}
+
+/**
+ * The system-managed YAML frontmatter of a durable Markdown note (FR-KNW-05). Markdown is
+ * the source of truth; this is the metadata block the system reads and writes. User-added
+ * frontmatter keys are preserved by the note codec and are outside this contract. Safe
+ * defaults are applied when optional fields are absent, and cloudPolicy defaults to deny or
+ * ask — never allow.
+ */
+export interface CerebralHelmNoteMetadata {
+    /**
+     * Whether the note may be sent to a cloud provider. Defaults to deny; never defaults to
+     * allow.
+     */
+    cloudPolicy: CloudPolicy;
+    created:     Date;
+    /**
+     * Stable, URL/file-safe note id.
+     */
+    id: string;
+    /**
+     * Note kind (e.g. note, daily, project-note, reference).
+     */
+    kind: string;
+    /**
+     * Optional durable project or area this note belongs to. Modes reference these; they do not
+     * duplicate the note.
+     */
+    project?: string;
+    /**
+     * Optional freshness boundary: after this instant the note is due for review.
+     */
+    reviewAfter?:  Date;
+    schemaVersion: string;
+    /**
+     * Defaults to private when unspecified.
+     */
+    sensitivity: Sensitivity;
+    /**
+     * Defaults to active when unspecified.
+     */
+    status:  CerebralHelmNoteMetadataStatus;
+    title:   string;
+    updated: Date;
+}
+
+/**
+ * Defaults to active when unspecified.
+ */
+export enum CerebralHelmNoteMetadataStatus {
+    Active = "active",
+    Archived = "archived",
+    Draft = "draft",
+}
+
+export interface CerebralHelmReferenceCatalog {
+    references:    Reference[];
+    schemaVersion: string;
+}
+
+export interface Reference {
+    id:     string;
+    label:  string;
+    target: string;
 }
 
 export interface CerebralHelmAppOpenInput {
@@ -750,5 +868,36 @@ export interface CerebralHelmURLOpenOutput {
     opened:      boolean;
     resolvedUrl: string;
     urlId:       string;
+}
+
+/**
+ * An ordered, linear, deterministic 1..N-step plan of tool invocations, resolved by the
+ * action planner (NIC-38). A quickAction id and a mode application both resolve to this
+ * same artifact; a single-step action is simply N=1. Step inputs are resolved statically
+ * (literal values and reference-catalog ids) and validated against each tool's input schema
+ * at resolve time. MVP scope is intentionally narrow: there is no data flow between steps
+ * (a step never consumes a prior step's output), and no branching, conditional, or
+ * model-driven steps. A capability a workflow lacks is added as a new tool, never as new
+ * planner logic.
+ */
+export interface CerebralHelmWorkflowDefinition {
+    extensions?:   { [key: string]: any };
+    id:            string;
+    label:         string;
+    schemaVersion: string;
+    steps:         Step[];
+}
+
+export interface Step {
+    id: string;
+    /**
+     * Static input/reference bindings for this step. Deep validation is deferred to resolve
+     * time, where the planner checks this object against the step tool's input schema
+     * (descriptors authoritative). MVP: resolved only from literal values and reference-catalog
+     * ids, never from another step's output.
+     */
+    input?: { [key: string]: any };
+    label?: string;
+    tool:   string;
 }
 

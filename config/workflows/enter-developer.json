@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "enter-developer",
+  "label": "Enter Developer Mode",
+  "steps": [
+    { "id": "snapshot-system", "label": "Snapshot system status", "tool": "system.status.read" },
+    { "id": "open-editor", "label": "Open editor", "tool": "app.open", "input": { "appId": "vscode" } },
+    { "id": "open-terminal", "label": "Open terminal", "tool": "app.open", "input": { "appId": "terminal" } },
+    { "id": "open-repo", "label": "Open repository", "tool": "url.open", "input": { "urlId": "github" } },
+    { "id": "run-dev-hook", "label": "Run dev setup hook", "tool": "hook.run", "input": { "hookId": "ondraft-dev" } }
+  ]
+}

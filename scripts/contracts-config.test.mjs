@@ -17,6 +17,7 @@ const expectedSchemaNames = new Set([
   "app-defaults.schema.json",
   "config-validation-error.schema.json",
   "mode.schema.json",
+  "mode-override.schema.json",
   "settings-patch.schema.json"
 ]);
 
@@ -27,7 +28,9 @@ function readJson(filePath) {
 function collectJsonFiles(directoryPath) {
   return fs
     .readdirSync(directoryPath, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    // statSync follows reparse points; a OneDrive Files-On-Demand placeholder
+    // reports isFile()=false from readdir and would be silently skipped.
+    .filter((entry) => entry.name.endsWith(".json") && fs.statSync(path.join(directoryPath, entry.name)).isFile())
     .map((entry) => path.join(directoryPath, entry.name));
 }
 
@@ -131,7 +134,7 @@ test("current agent configs fit the agent schema surface", () => {
 });
 
 test("safe extension fields are explicitly namespaced and preserved under extensions", () => {
-  for (const schemaName of ["app-defaults.schema.json", "mode.schema.json", "agent.schema.json", "settings-patch.schema.json"]) {
+  for (const schemaName of ["app-defaults.schema.json", "mode.schema.json", "mode-override.schema.json", "agent.schema.json", "settings-patch.schema.json"]) {
     const schema = readJson(path.join(schemasRoot, schemaName));
     const rawExtensionSchema =
       schemaName === "settings-patch.schema.json" ? schema.properties.changes.properties.extensions : schema.properties.extensions;
@@ -144,7 +147,7 @@ test("safe extension fields are explicitly namespaced and preserved under extens
 });
 
 test("schemas do not expose direct risk weakening fields", () => {
-  for (const schemaName of ["mode.schema.json", "settings-patch.schema.json"]) {
+  for (const schemaName of ["mode.schema.json", "mode-override.schema.json", "settings-patch.schema.json"]) {
     const schemaText = fs.readFileSync(path.join(schemasRoot, schemaName), "utf8");
 
     assert.equal(schemaText.includes("riskOverrides"), false);

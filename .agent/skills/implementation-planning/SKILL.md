@@ -345,6 +345,7 @@ Do not implement it.
 
 ## Planning Rules
 
+- The last increment should almost be to update CLAUDE.md or write ADRs for any important decisions made during implementation.
 - Do not modify code.
 - Do not modify Linear.
 - Do not create commits.

@@ -18,7 +18,7 @@ struct Cerebral: AsyncParsableCommand {
         subcommands: [
             Tools.self, Events.self,
             Open.self, Hook.self, Mode.self, Note.self, Search.self,
-            Simulate.self, Command.self, Cancel.self,
+            Knowledge.self, Backup.self, Doctor.self, Simulate.self, Command.self, Cancel.self,
         ]
     )
 }
@@ -53,11 +53,6 @@ func workspacePaths(_ options: GlobalOptions) throws -> WorkspacePaths {
         repositoryRoot: resolveRepositoryRoot(options.root),
         environment: ProcessInfo.processInfo.environment
     )
-}
-
-/// Builds a session that drives the real command bus and persists events.
-func makeSession(_ options: GlobalOptions) throws -> CerebralSession {
-    try CerebralSession(paths: workspacePaths(options))
 }
 
 /// Prints a run outcome in the requested form.

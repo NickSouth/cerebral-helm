@@ -170,3 +170,20 @@ func unknownToolIsUnavailable() async throws {
     #expect(result.status == .unavailable)
     #expect(result.error?.category == .unavailableCapability)
 }
+
+@Test("a tool unavailable in the current phase is refused without reaching its handler (NIC-111)")
+func phaseUnavailableToolIsRefused() async throws {
+    // hook.run declares availability.preMac == false, so the registry computes
+    // availableInPreMac == false. The executor must refuse it before the handler
+    // runs — distinct from `tool.unknown` (the tool is registered and bound).
+    let spy = SpyHandler(toolID: "hook.run")
+    let executor = try executor(for: "hook.run", handler: spy)
+
+    let result = await executor.execute(invocation("hook.run"))
+
+    #expect(result.status == .unavailable)
+    #expect(result.error?.category == .unavailableCapability)
+    #expect(result.error?.code == "tool.unavailable_in_phase")
+    // The handler is never invoked: a phase-unavailable tool cannot execute.
+    #expect(await spy.invoked == false)
+}

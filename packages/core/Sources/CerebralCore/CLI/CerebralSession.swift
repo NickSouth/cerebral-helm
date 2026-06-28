@@ -9,8 +9,17 @@ public enum RunOutcome: Equatable, Sendable {
     case rejected(reason: String, suggestions: [String])
 }
 
-/// Composition root that wires the parser, command factory, bus, and event-log
-/// writer together for a single CLI invocation.
+/// **Legacy / test-and-recovery only.** Composition root that wires the parser,
+/// command factory, bus, and the NDJSON ``EventLogWriter`` together for a single
+/// CLI invocation.
+///
+/// This is **not** part of the production write path. Per
+/// [ADR-006](../../../../docs/adr/ADR-006-sqlite-single-source-of-truth.md),
+/// SQLite (via `CerebralStorage`) is the single source of truth for operational
+/// history; the NDJSON adapters this session wires up (``EventLogWriter`` plus
+/// the `EventLogReader` / `CommandStatusReader` read surfaces) are demoted to
+/// test/fixture and recovery bindings behind the Core ports — retained for
+/// deterministic unit tests and fallback, never the runtime store.
 ///
 /// The session loads reference catalogs from config, attaches an
 /// ``EventLogWriter`` to the bus so lifecycle events persist, and exposes the

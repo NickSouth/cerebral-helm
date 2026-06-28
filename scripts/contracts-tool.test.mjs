@@ -54,7 +54,9 @@ function readJson(filePath) {
 function collectJsonFiles(directoryPath) {
   return fs
     .readdirSync(directoryPath, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    // statSync follows reparse points; a OneDrive Files-On-Demand placeholder
+    // reports isFile()=false from readdir and would be silently skipped.
+    .filter((entry) => entry.name.endsWith(".json") && fs.statSync(path.join(directoryPath, entry.name)).isFile())
     .map((entry) => path.join(directoryPath, entry.name));
 }
 

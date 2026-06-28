@@ -1,0 +1,24 @@
+{
+  "id": "executive",
+  "label": "Executive",
+  "theme": {
+    "accentPrimary": "executive.primary",
+    "accentSecondary": "executive.secondary"
+  },
+  "quickApps": ["chrome", "gmail", "finder"],
+  "quickActions": [
+    "daily-brief",
+    "open-calendar",
+    "capture-note",
+    "review-projects",
+    "check-system-status",
+    "open-mail",
+    "start-focus-block",
+    "open-news-brief"
+  ],
+  "widgets": {
+    "left": "market-brief",
+    "right": "projects"
+  },
+  "calendarProfile": "cosmic"
+}

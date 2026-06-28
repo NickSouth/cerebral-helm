@@ -50,10 +50,11 @@ public final class CommandRuntime: @unchecked Sendable {
     private let coordinator: ConfirmationCoordinator
     private let factory: CommandFactory
     private let hookCatalog: HookCatalog
-    private let modePlanner: (any ModePlanner)?
+    private let modePlanner: (any ActionPlanner)?
     private let clock: any TimeSource
+    private let commandSink: @Sendable (CommandEnvelope) -> Void
     private let sink: @Sendable (CommandLifecycleEvent) -> Void
-    private let toolCallSink: @Sendable (Data) -> Void
+    private let toolCallSink: @Sendable (String, Data) -> Void
     private var pending: [String: PendingExecution] = [:]
 
     public init(
@@ -63,10 +64,11 @@ public final class CommandRuntime: @unchecked Sendable {
         factory: CommandFactory,
         references: CommandReferences,
         hookCatalog: HookCatalog = HookCatalog(),
-        modePlanner: (any ModePlanner)? = nil,
+        modePlanner: (any ActionPlanner)? = nil,
         clock: any TimeSource = SystemClock(),
+        commandSink: @escaping @Sendable (CommandEnvelope) -> Void = { _ in },
         sink: @escaping @Sendable (CommandLifecycleEvent) -> Void = { _ in },
-        toolCallSink: @escaping @Sendable (Data) -> Void = { _ in }
+        toolCallSink: @escaping @Sendable (String, Data) -> Void = { _, _ in }
     ) {
         self.parser = DirectCommandParser(references: references)
         self.registry = registry
@@ -77,6 +79,7 @@ public final class CommandRuntime: @unchecked Sendable {
         self.hookCatalog = hookCatalog
         self.modePlanner = modePlanner
         self.clock = clock
+        self.commandSink = commandSink
         self.sink = sink
         self.toolCallSink = toolCallSink
     }
@@ -128,6 +131,10 @@ public final class CommandRuntime: @unchecked Sendable {
     // MARK: - Internals
 
     private func start(envelope: CommandEnvelope, intent: CommandIntent) async -> CommandRuntimeOutcome {
+        // Surface the command before its first event so a durable sink can create
+        // the command row the events reference (FK ordering); the envelope carries
+        // the source and privacy the events do not.
+        commandSink(envelope)
         var machine = CommandLifecycleMachine(commandId: envelope.id, factory: factory)
         emit(&machine) { try $0.markReceived(message: "Command received.") }
         emit(&machine) { try $0.markPlanned(message: "Command planned.") }
@@ -177,7 +184,7 @@ public final class CommandRuntime: @unchecked Sendable {
         let result = await executor.execute(
             ToolInvocation(toolID: resolved.toolID, input: resolved.input, shellInvocation: resolved.shellInvocation)
         )
-        recordToolCall(resolved: resolved, result: result, startedAt: startedAt, completedAt: clock.now())
+        recordToolCall(commandID: commandID, resolved: resolved, result: result, startedAt: startedAt, completedAt: clock.now())
 
         switch result.status {
         case .success, .partialSuccess:
@@ -277,6 +284,30 @@ public final class CommandRuntime: @unchecked Sendable {
         actionSummary: String
     ) -> ResolvedInvocation? {
         guard let tool = registry.tool(toolID), let input else { return nil }
+
+        // Enforce descriptor-declared redaction on the confirmation disclosure
+        // itself, not just the tool-call log. Any value the descriptor marks as a
+        // redaction path (e.g. note.search `/query`) is extracted from the input
+        // and masked wherever it appears verbatim in the action summary or an
+        // argument value. This runs before makePlan/PlanHash, so the hash and the
+        // disclosure are computed over the already-redacted form. The mechanism is
+        // generic over the descriptor; functionally only note.search changes today
+        // (its summary becomes "Search notes for [REDACTED]").
+        //
+        // DECISION (NIC-110): actionSummary may carry free text, but only what
+        // survives this pass — a descriptor-covered value must never reach the
+        // disclosure in the clear, so callers no longer rely on hand-written
+        // content-free summaries to stay secret-free.
+        let coveredValues = SchemaRedactor.valuesAtPaths(input, paths: tool.descriptor.logging.redactionPaths)
+        let redactedArguments = arguments.map { argument in
+            ConfirmationArgument(
+                name: argument.name,
+                value: redactCoveredValues(in: argument.value, covered: coveredValues),
+                sensitive: argument.sensitive
+            )
+        }
+        let redactedActionSummary = redactCoveredValues(in: actionSummary, covered: coveredValues)
+
         return ResolvedInvocation(
             toolID: toolID,
             toolVersion: tool.descriptor.version,
@@ -289,9 +320,20 @@ public final class CommandRuntime: @unchecked Sendable {
             destination: destination,
             dataLeavingDevice: dataLeavingDevice,
             reversibility: reversibility,
-            arguments: arguments,
-            actionSummary: actionSummary
+            arguments: redactedArguments,
+            actionSummary: redactedActionSummary
         )
+    }
+
+    /// Replaces every verbatim occurrence of a descriptor-covered value with the
+    /// redaction marker. Longer values are masked first so a value that contains
+    /// a shorter one is not partially revealed; empty covered values are ignored.
+    private func redactCoveredValues(in text: String, covered: [String]) -> String {
+        var result = text
+        for value in covered.sorted(by: { $0.count > $1.count }) where !value.isEmpty {
+            result = result.replacingOccurrences(of: value, with: SchemaRedactor.marker)
+        }
+        return result
     }
 
     private func makePlan(commandID: String, resolved: ResolvedInvocation, risk: Risk, policyReason: String) -> ConfirmationPlan {
@@ -314,7 +356,7 @@ public final class CommandRuntime: @unchecked Sendable {
     /// Emits a redacted ``CerebralHelmToolResult`` to the tool-call sink. Input
     /// and output are redacted with the descriptor's declared paths before they
     /// leave the runtime (NIC-34), so no secret reaches the operational log.
-    private func recordToolCall(resolved: ResolvedInvocation, result: ToolExecutionResult, startedAt: Date, completedAt: Date) {
+    private func recordToolCall(commandID: String, resolved: ResolvedInvocation, result: ToolExecutionResult, startedAt: Date, completedAt: Date) {
         guard let descriptor = registry.tool(resolved.toolID)?.descriptor else { return }
         let record = ToolCallRecorder.record(
             descriptor: descriptor,
@@ -324,7 +366,7 @@ public final class CommandRuntime: @unchecked Sendable {
             completedAt: completedAt
         )
         if let data = try? record.jsonData() {
-            toolCallSink(data)
+            toolCallSink(commandID, data)
         }
     }
 

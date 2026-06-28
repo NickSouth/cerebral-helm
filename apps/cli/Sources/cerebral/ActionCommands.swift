@@ -30,17 +30,23 @@ struct Hook: AsyncParsableCommand {
     }
 }
 
-/// `cerebral mode <id>` — apply a configured mode.
+/// `cerebral mode [id]` — apply a configured mode, or show the active mode when
+/// no id is given.
 struct Mode: AsyncParsableCommand {
-    nonisolated(unsafe) static let configuration = CommandConfiguration(abstract: "Apply a configured mode.")
+    nonisolated(unsafe) static let configuration = CommandConfiguration(abstract: "Apply a configured mode, or show the active mode.")
 
     @OptionGroup var options: GlobalOptions
 
-    @Argument(help: "Mode id, e.g. developer.")
-    var id: String
+    @Argument(help: "Mode id to apply, e.g. developer. Omit to show the active mode.")
+    var id: String?
 
     func run() async throws {
-        try await runThroughRuntime("mode \(id)", options: options)
+        guard let id else {
+            try renderActiveMode(options: options)
+            return
+        }
+        let outcome = try await runThroughRuntime("mode \(id)", options: options)
+        try recordModeSessionIfApplied(modeID: id, outcome: outcome, options: options)
     }
 }
 

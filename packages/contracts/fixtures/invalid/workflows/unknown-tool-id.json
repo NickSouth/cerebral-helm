@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "bad-tool",
+  "label": "Bad Tool",
+  "steps": [
+    { "id": "do-it", "tool": "Not A Tool" }
+  ]
+}

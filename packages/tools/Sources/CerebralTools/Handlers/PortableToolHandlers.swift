@@ -24,6 +24,7 @@ func toolHandlerError(from error: KnowledgeServiceError) -> ToolHandlerError {
     switch error {
     case .rootUnavailable: return .unavailable("The knowledge root is unavailable.")
     case .rootReadOnly: return .permissionDenied("The knowledge root is read-only.")
+    case let .collision(message): return .providerFailure(message)
     case let .writeFailed(message): return .providerFailure(message)
     }
 }

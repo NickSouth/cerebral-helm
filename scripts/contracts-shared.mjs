@@ -26,11 +26,16 @@ export function collectJsonFiles(directoryPath) {
     .readdirSync(directoryPath, { withFileTypes: true })
     .flatMap((entry) => {
       const entryPath = path.join(directoryPath, entry.name);
-      if (entry.isDirectory()) {
+      // Resolve through statSync (follows reparse points) rather than the Dirent's
+      // lstat-based flags: a OneDrive Files-On-Demand placeholder reports
+      // isFile()/isDirectory() === false from readdir, which would silently drop
+      // committed schemas/fixtures from generation and validation.
+      const stats = fs.statSync(entryPath);
+      if (stats.isDirectory()) {
         return collectJsonFiles(entryPath);
       }
 
-      return entry.isFile() && entry.name.endsWith(".json") ? [entryPath] : [];
+      return stats.isFile() && entry.name.endsWith(".json") ? [entryPath] : [];
     })
     .sort((left, right) => left.localeCompare(right));
 }

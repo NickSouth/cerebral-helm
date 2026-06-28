@@ -99,8 +99,24 @@ function schemaForFixture(filePath) {
     return schemaId("config", "config-validation-error");
   }
 
-  if (relativePath.startsWith("invalid/config/modes/")) {
+  if (relativePath.startsWith("valid/config/modes/") || relativePath.startsWith("invalid/config/modes/")) {
     return schemaId("config", "mode");
+  }
+
+  if (relativePath.startsWith("valid/config/overrides/") || relativePath.startsWith("invalid/config/overrides/")) {
+    return schemaId("config", "mode-override");
+  }
+
+  if (relativePath.startsWith("valid/references/") || relativePath.startsWith("invalid/references/")) {
+    return schemaId("references", "reference-catalog");
+  }
+
+  if (relativePath.startsWith("valid/workflows/") || relativePath.startsWith("invalid/workflows/")) {
+    return schemaId("workflows", "workflow");
+  }
+
+  if (relativePath.startsWith("valid/knowledge/") || relativePath.startsWith("invalid/knowledge/")) {
+    return schemaId("knowledge", "note-metadata");
   }
 
   if (relativePath.includes("/bridge/handshake/request.json")) {
@@ -149,8 +165,60 @@ function currentConfigExamples() {
     ...collectJsonFiles(path.join(configRoot, "tools", "descriptors")).map((filePath) => ({
       filePath,
       schema: schemaId("tools", "tool-descriptor")
+    })),
+    ...collectJsonFiles(path.join(configRoot, "references")).map((filePath) => ({
+      filePath,
+      schema: schemaId("references", "reference-catalog")
     }))
   ];
+}
+
+// JSON Schema cannot dedupe array entries by an object key, so duplicate
+// reference ids would otherwise be silently dropped at runtime. Scan each
+// reference catalog and treat any repeated id as a hard validation error,
+// mirroring the cross-file id checks already performed elsewhere.
+function scanReferenceCatalogDuplicateIds(filePath, errors) {
+  const document = readJson(filePath);
+  const references = Array.isArray(document.references) ? document.references : [];
+  const seen = new Set();
+
+  for (const reference of references) {
+    const id = reference?.id;
+
+    if (typeof id !== "string") {
+      continue;
+    }
+
+    if (seen.has(id)) {
+      errors.push(`${path.relative(repositoryRoot, filePath)} declares duplicate reference id "${id}".`);
+    }
+
+    seen.add(id);
+  }
+}
+
+// JSON Schema cannot dedupe array entries by an object key, so a workflow that
+// repeats a step id would be ambiguous to the planner. Scan each workflow and
+// treat any repeated step id as a hard validation error, mirroring the
+// reference-catalog duplicate-id check.
+function scanWorkflowDuplicateStepIds(filePath, errors) {
+  const document = readJson(filePath);
+  const steps = Array.isArray(document.steps) ? document.steps : [];
+  const seen = new Set();
+
+  for (const step of steps) {
+    const id = step?.id;
+
+    if (typeof id !== "string") {
+      continue;
+    }
+
+    if (seen.has(id)) {
+      errors.push(`${path.relative(repositoryRoot, filePath)} declares duplicate workflow step id "${id}".`);
+    }
+
+    seen.add(id);
+  }
 }
 
 export function validateContracts() {
@@ -177,6 +245,14 @@ export function validateContracts() {
     }
 
     validateDocument(ajv, filePath, schema, errors, true);
+
+    if (schema === schemaId("references", "reference-catalog")) {
+      scanReferenceCatalogDuplicateIds(filePath, errors);
+    }
+
+    if (schema === schemaId("workflows", "workflow")) {
+      scanWorkflowDuplicateStepIds(filePath, errors);
+    }
   }
 
   for (const filePath of invalidFixtures) {
@@ -187,11 +263,46 @@ export function validateContracts() {
       continue;
     }
 
+    // Reference catalogs can be invalid either structurally (caught by Ajv) or
+    // because they declare duplicate ids (caught by the duplicate-id scan, which
+    // JSON Schema cannot express). Accept either signal as the expected failure.
+    if (schema === schemaId("references", "reference-catalog")) {
+      const validate = ajv.getSchema(schema);
+      const ajvValid = validate ? validate(readJson(filePath)) : false;
+      const duplicateErrors = [];
+      scanReferenceCatalogDuplicateIds(filePath, duplicateErrors);
+
+      if (ajvValid && duplicateErrors.length === 0) {
+        errors.push(`${path.relative(repositoryRoot, filePath)} unexpectedly passed ${schema}`);
+      }
+
+      continue;
+    }
+
+    // Workflows can be invalid structurally (Ajv) or by repeating a step id
+    // (the duplicate-step scan, which JSON Schema cannot express). Accept either.
+    if (schema === schemaId("workflows", "workflow")) {
+      const validate = ajv.getSchema(schema);
+      const ajvValid = validate ? validate(readJson(filePath)) : false;
+      const duplicateErrors = [];
+      scanWorkflowDuplicateStepIds(filePath, duplicateErrors);
+
+      if (ajvValid && duplicateErrors.length === 0) {
+        errors.push(`${path.relative(repositoryRoot, filePath)} unexpectedly passed ${schema}`);
+      }
+
+      continue;
+    }
+
     validateDocument(ajv, filePath, schema, errors, false);
   }
 
   for (const example of currentConfigExamples()) {
     validateDocument(ajv, example.filePath, example.schema, errors, true);
+
+    if (example.schema === schemaId("references", "reference-catalog")) {
+      scanReferenceCatalogDuplicateIds(example.filePath, errors);
+    }
   }
 
   if (errors.length > 0) {

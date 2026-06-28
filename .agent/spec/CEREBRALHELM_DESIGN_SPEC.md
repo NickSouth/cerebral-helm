@@ -174,14 +174,14 @@ Default emphasis:
 |---|---|
 | Executive | Chrome, Gmail, Finder, Claude Desktop, plus one configurable slot |
 | Developer | VS Code, Terminal, GitHub, Docker, Linear |
-| School | Canvas, Google Drive, Claude, Gmail, Quizlet |
+| School | Canvas, Google Drive, Claude Desktop, Gmail, Quizlet |
 | Entertainment | Spotify, YouTube, Steam, Discord, Photos |
 
 These are shipped defaults, not permanent hard-coding. Missing or unavailable apps show an actionable unavailable state and remain editable.
 
 ### 5.7 Heimlich center
 
-The center panel has two primary views: `ambient` and `conversation`.
+The center panel has a persistent `ambient` view — Heimlich's consciousness — and a `conversation` overlay composited above it.
 
 #### Ambient view
 
@@ -189,7 +189,7 @@ Contains:
 
 - Heimlich label and current system state;
 - mode-aware system greeting;
-- lightweight animated wispy flow;
+- Heimlich's consciousness: the animated ribbon field (see 5.8);
 - optional concise contextual summary;
 - exactly eight quick actions at the bottom.
 
@@ -203,36 +203,53 @@ Quick-action geometry is binding:
 
 Executive actions emphasize broad daily orchestration. The other modes emphasize their specific workflow and default layout.
 
-#### Conversation view
+#### Conversation overlay
 
-The panel switches to conversation view after a typed Heimlich prompt, voice request requiring visible dialogue, or explicit open-chat action.
+Conversation does not replace the ambient view — it is a translucent overlay composited **above the still-running consciousness** (see PLATE 05). The animation never stops; on output it eases aside and lowers energy (the `success` motion signature in 5.8) so the chat reads clearly while the stream continues behind it.
 
-Contains:
+The overlay opens after a typed Heimlich prompt, a voice request requiring visible dialogue, or an explicit open-chat action. It contains:
 
-- conversation transcript and activity trace where appropriate;
+- a scrollable chat transcript of slightly transparent message bubbles, with activity trace where appropriate;
 - tool, source, and status surfaces required for trust;
-- a persistent follow-up text box at the bottom;
+- a persistent text-and-send box at the bottom;
 - a small minimize-chat control.
 
-Minimizing ends the expanded center view but may preserve conversation history according to product settings. When no conversation is active or the chat is minimized, the ambient view and quick actions return.
+The overlay must carry enough contrast — a soft scrim or backdrop blur behind the bubbles — that text meets contrast requirements regardless of the animation behind it (NFR-08, FR-UI-09). Minimizing lifts the overlay and may preserve conversation history per product settings. With no overlay active, the consciousness returns to full ambient idle and the quick actions are unobscured.
 
 Heimlich system states include `idle`, `listening`, `thinking`, `acting`, `awaiting_confirmation`, `success`, and `error`. State must be communicated through text and motion, not color alone.
 
 ### 5.8 Heimlich motion system
 
-The wispy flow should feel continuous, organic, futuristic, and non-repeating without consuming disproportionate CPU or GPU.
+The ambient view is **Heimlich's consciousness**: a continuous, organic, futuristic, non-repeating field of ethereal ribbons that drift, break off, and throw sparks. It is generative, not a baked timeline — ribbon control points are advected through a slowly evolving seeded noise (flow) field, with short-lived spark particles emitted at high-energy points. Colors are drawn from the active mode's semantic tokens (`accent-primary`, `accent-secondary`, `glow-soft`); the field recolors per mode and never embeds mode-specific hex values.
+
+It is one system driven by one parameter set (drift speed, turbulence, energy, color-shift rate, dispersion, center-bias, spark rate). Heimlich's states are **presets** of those parameters; transitions are smooth interpolations between presets, never separate animations or hard cuts.
+
+State motion signatures:
+
+| State | Signature |
+|---|---|
+| `idle` | slow ethereal drift, low energy, gentle color shift, centered |
+| `thinking` | high energy with an amplitude pulse ("bounce"), increased sparks |
+| `acting` | directed, flowing energy with moderate sparks; purposeful, not agitated |
+| `awaiting_confirmation` | motion settles toward still; a slow color shift continues; minimal sparks. State is still carried by the persistent text label — never color alone, never motion alone |
+| `success` | the field eases aside (center-bias shifts) and lowers energy to make room for the conversation overlay, then returns to idle when the overlay lifts |
+| `error` | a brief, contained disturbance that settles, with a shift toward the status token; always accompanied by the text state |
+| `offline` / disconnected | dimmed, desaturated, near-static |
+| `listening` | audio-reactive; **deferred to the voice (North Star) phase** — no MVP motion signature |
 
 Implementation direction:
 
-- begin with Canvas 2D or a small WebGL shader only if measurement shows it is justified;
-- separate a slowly evolving field from short state-reactive pulses;
+- use a small WebGL renderer (a micro-library such as OGL or regl); the ribbon and spark density makes Canvas 2D insufficient for the target richness at the required frame budget;
+- separate the slowly evolving field from short state-reactive pulses;
 - use seeded noise with long, offset time domains so obvious loops do not emerge;
-- reduce particle density and frame rate when the dashboard is unfocused, on battery, or thermally constrained;
-- pause or substantially simplify under reduced-motion;
+- the renderer is an isolated component taking `{ state, palette, audioLevel }`; `audioLevel` is a wired-but-unfed port until the voice phase;
+- **never drop below 30fps**, and yield aggressively — reduce particle density and frame rate when the dashboard is unfocused, on battery, or thermally constrained — so that under heavy local compute (for example a 70B local model running) the renderer's own footprint stays negligible;
+- pause the render loop entirely when the ambient surface is offscreen or backgrounded;
+- pause or substantially simplify under reduced-motion, conveying state through the text label and color;
 - keep text and controls in the DOM above the effect;
-- never make animation required to understand status.
+- never make animation required to understand status — the text label is always the primary status carrier.
 
-Exact rendering technology remains an implementation decision and should be selected after profiling on the target Mac.
+Exact rendering parameters and the final frame budget are tuned after profiling on the target Mac; the 30fps floor and the negligible-footprint-under-load requirement are not negotiable.
 
 ### 5.9 Mode switcher
 
@@ -303,7 +320,7 @@ The bottom bar changes accent color with the active mode on the home dashboard o
 | Right free widget | Projects | Repositories | Courses | Media List |
 | News | Broad priority | Engineering | Academic | Interest/media |
 | Layout quick action | Optional general layout | Open Developer Layout | Open School Layout | Open Entertainment Layout |
-| Greeting | Executive partner | Development copilot | Academic partner | Downtime concierge |
+| Greeting | Friendly Assistant | Development Copilot | Academic Partner | Downtime Concierge |
 
 Mode color values are semantic tokens and remain tunable. Components reference roles such as `accent-primary`, `accent-secondary`, `panel-border`, `glow-soft`, `status-success`, and `focus-ring`; they do not embed mode-specific hex values.
 

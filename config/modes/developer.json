@@ -5,7 +5,14 @@
     "accentPrimary": "developer.primary",
     "accentSecondary": "developer.secondary"
   },
-  "quickApps": ["vscode", "terminal", "github", "docs"],
+  "calendarProfile": "engineering",
+  "newsProfile": "engineering",
+  "greeting": {
+    "persona": "Development copilot",
+    "directive": "Greet and point to the active project's next task.",
+    "fallback": "Ready to build."
+  },
+  "quickApps": ["vscode", "terminal", "github", "docker", "linear"],
   "quickActions": [
     "open-developer-layout",
     "open-workspace",
@@ -19,5 +26,7 @@
   "widgets": {
     "left": "project-git-status",
     "right": "repositories"
-  }
+  },
+  "projectHints": ["cerebralhelm", "active-pull-request"],
+  "layoutId": "developer.default"
 }

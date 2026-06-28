@@ -79,9 +79,12 @@ public struct NoteSearchOutcome: Equatable, Sendable {
 }
 
 /// Failures the knowledge service raises, mirroring the canonical knowledge
-/// fixtures (PRD §13.2): a missing or read-only root, or a write failure.
+/// fixtures (PRD §13.2): a missing or read-only root, a collision with an existing
+/// note, or a write failure.
 public enum KnowledgeServiceError: Error, Equatable, Sendable {
     case rootUnavailable
     case rootReadOnly
+    /// A note already exists at the target path; capture never overwrites (AC-44.3).
+    case collision(String)
     case writeFailed(String)
 }

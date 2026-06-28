@@ -21,8 +21,7 @@ struct Command: ParsableCommand {
         var id: String
 
         func run() throws {
-            let paths = try workspacePaths(options)
-            let record = try CommandStatusReader.latest(commandId: id, eventLogPath: paths.eventLogPath)
+            let record = try latestCommandStatus(id: id, options: options)
             print(options.json
                 ? try CliRenderer.json(record, commandId: id)
                 : CliRenderer.human(record, commandId: id))
@@ -45,8 +44,7 @@ struct Cancel: ParsableCommand {
     var id: String
 
     func run() throws {
-        let paths = try workspacePaths(options)
-        let record = try CommandStatusReader.latest(commandId: id, eventLogPath: paths.eventLogPath)
+        let record = try latestCommandStatus(id: id, options: options)
 
         if options.json {
             print(try CliRenderer.json(record, commandId: id))

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "enter-school",
+  "label": "Enter School Mode",
+  "steps": [
+    { "id": "snapshot-system", "label": "Snapshot system status", "tool": "system.status.read" },
+    { "id": "recent-notes", "label": "Surface recent notes", "tool": "note.search", "input": { "query": "today" } },
+    { "id": "open-courses", "label": "Open courses", "tool": "app.open", "input": { "appId": "canvas" } }
+  ]
+}

@@ -1,6 +1,5 @@
 import Foundation
 import ArgumentParser
-import CerebralCore
 
 /// `cerebral events …` — inspect the development event stream.
 struct Events: ParsableCommand {
@@ -19,12 +18,10 @@ struct Events: ParsableCommand {
         var lines: Int = 20
 
         func run() throws {
-            let root = resolveRepositoryRoot(options.root)
-            let paths = try WorkspacePaths(repositoryRoot: root, environment: ProcessInfo.processInfo.environment)
-            let entries = try EventLogReader.tail(paths.eventLogPath, lines: lines)
+            let entries = try recentEventPayloads(options: options, limit: lines)
 
             guard !entries.isEmpty else {
-                FileHandle.standardError.write(Data("No events recorded yet at \(paths.eventLogPath.path).\n".utf8))
+                FileHandle.standardError.write(Data("No events recorded yet.\n".utf8))
                 return
             }
 

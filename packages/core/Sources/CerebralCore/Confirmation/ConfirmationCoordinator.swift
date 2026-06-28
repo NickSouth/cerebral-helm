@@ -61,29 +61,29 @@ public enum ConfirmationResolution: Equatable, Sendable {
 /// replayed, expired, or plan-changed approvals fail (FR-SAF-04, FR-SAF-05).
 ///
 /// Lock-serialized so concurrent decisions cannot double-spend a token.
+///
+/// Pending tokens live behind a ``ConfirmationStore`` seam. The default in-memory
+/// store reproduces the historical per-process behavior; a durable store (SQLite,
+/// NIC-112) makes a confirmation requested in one invocation decidable in the
+/// next. Store failures are handled fail-closed — a decision that cannot read or
+/// durably record state authorizes nothing.
 public final class ConfirmationCoordinator: @unchecked Sendable {
-    private struct Pending {
-        let confirmationID: String
-        let tokenValue: String
-        let planHash: String
-        let expiresAt: Date
-        var used: Bool
-    }
-
     private let lock = NSLock()
     private let clock: any TimeSource
     private let identifiers: any IdentifierGenerator
     private let ttl: TimeInterval
-    private var pending: [String: Pending] = [:] // keyed by commandID
+    private let store: any ConfirmationStore
 
     public init(
         clock: any TimeSource = SystemClock(),
         identifiers: any IdentifierGenerator = UUIDIdentifierGenerator(),
-        ttlSeconds: TimeInterval = 120
+        ttlSeconds: TimeInterval = 120,
+        store: any ConfirmationStore = InMemoryConfirmationStore()
     ) {
         self.clock = clock
         self.identifiers = identifiers
         self.ttl = ttlSeconds
+        self.store = store
     }
 
     /// Creates a disclosure and single-use token for `plan`, superseding any
@@ -100,12 +100,18 @@ public final class ConfirmationCoordinator: @unchecked Sendable {
         let tokenValue = identifiers.nextIdentifier(for: .confirmation)
         let expiresAt = now.addingTimeInterval(ttl)
 
-        pending[plan.commandID] = Pending(
-            confirmationID: confirmationID,
-            tokenValue: tokenValue,
-            planHash: planHash,
-            expiresAt: expiresAt,
-            used: false
+        // Best-effort durability: the in-memory store never fails; a durable store
+        // that fails here leaves no pending row, so a later decide fails closed (the
+        // token resolves to `unknownToken`) rather than authorizing unrecorded work.
+        try? store.save(
+            PendingConfirmation(
+                commandID: plan.commandID,
+                confirmationID: confirmationID,
+                tokenValue: tokenValue,
+                planHash: planHash,
+                expiresAt: expiresAt,
+                used: false
+            )
         )
 
         return ConfirmationRequest(
@@ -127,7 +133,9 @@ public final class ConfirmationCoordinator: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        guard let entry = pending[token.commandID] else {
+        // A store failure is treated as "no pending row": the decision fails closed
+        // (nothing is authorized) rather than bypassing the guard.
+        guard let entry = (try? store.load(commandID: token.commandID)) ?? nil else {
             return .rejected(.unknownToken)
         }
         // A newer confirmation for this command has superseded the token.
@@ -135,7 +143,7 @@ public final class ConfirmationCoordinator: @unchecked Sendable {
             return .rejected(.planChanged)
         }
         if clock.now() >= entry.expiresAt {
-            pending[token.commandID] = nil
+            try? store.delete(commandID: token.commandID)
             return .rejected(.expired)
         }
 
@@ -147,11 +155,13 @@ public final class ConfirmationCoordinator: @unchecked Sendable {
             if entry.used { return .rejected(.alreadyUsed) }
             var updated = entry
             updated.used = true
-            pending[token.commandID] = updated
+            // Only authorize once the single-use consumption is durably recorded, so
+            // a replay after a restart cannot find the token still unused.
+            guard (try? store.save(updated)) != nil else { return .rejected(.unknownToken) }
             return .approved(confirmationID: entry.confirmationID, commandID: token.commandID)
         case .cancel:
             if entry.used { return .rejected(.alreadyUsed) }
-            pending[token.commandID] = nil
+            guard (try? store.delete(commandID: token.commandID)) != nil else { return .rejected(.unknownToken) }
             return .cancelled(confirmationID: entry.confirmationID, commandID: token.commandID)
         }
     }

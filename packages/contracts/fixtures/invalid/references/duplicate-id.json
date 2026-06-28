@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0.0",
+  "references": [
+    { "id": "github", "label": "GitHub", "target": "https://github.com" },
+    { "id": "github", "label": "GitHub Mirror", "target": "https://github.example" }
+  ]
+}

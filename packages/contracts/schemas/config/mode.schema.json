@@ -36,13 +36,13 @@
       "uniqueItems": true
     },
     "quickActions": {
+      "description": "Exactly 8 ordered quick-action slots forming the binding 4+4 ambient grid (slots 0-3 render as compact bars, 4-7 as boxes; the shared shell owns that geometry). Each slot is an action id or null for an unconfigured slot (rendered as an 'add action' button). Non-null ids must be unique; null slots may repeat.",
       "type": "array",
       "items": {
-        "$ref": "#/$defs/configId"
+        "$ref": "#/$defs/actionSlot"
       },
       "minItems": 8,
-      "maxItems": 8,
-      "uniqueItems": true
+      "maxItems": 8
     },
     "widgets": {
       "type": "object",
@@ -63,6 +63,36 @@
         "type": "string"
       }
     },
+    "calendarProfile": {
+      "type": "string",
+      "enum": ["all", "engineering", "academic", "leisure"]
+    },
+    "newsProfile": {
+      "type": "string",
+      "enum": ["broad", "engineering", "academic", "interest"]
+    },
+    "greeting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["persona", "fallback"],
+      "properties": {
+        "persona": {
+          "type": "string",
+          "minLength": 1
+        },
+        "directive": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fallback": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "layoutId": {
+      "$ref": "#/$defs/layoutId"
+    },
     "extensions": {
       "$ref": "#/$defs/extensions"
     }
@@ -72,9 +102,17 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$"
     },
+    "actionSlot": {
+      "type": ["string", "null"],
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
     "themeToken": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$"
+    },
+    "layoutId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*$"
     },
     "extensions": {
       "type": "object",

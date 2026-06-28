@@ -46,7 +46,20 @@ function validateMode(document, relativePath, errors) {
   assert(Array.isArray(document.quickActions), `${relativePath}: quickActions must be an array.`, errors);
   assert(
     Array.isArray(document.quickActions) && document.quickActions.length === 8,
-    `${relativePath}: quickActions must contain exactly 8 entries.`,
+    `${relativePath}: quickActions must contain exactly 8 slots (use null for an unconfigured slot).`,
+    errors
+  );
+  assert(
+    Array.isArray(document.quickActions) && document.quickActions.every((action) => action === null || typeof action === "string"),
+    `${relativePath}: each quick action must be a string id or null.`,
+    errors
+  );
+  const configuredActions = (Array.isArray(document.quickActions) ? document.quickActions : []).filter(
+    (action) => typeof action === "string"
+  );
+  assert(
+    new Set(configuredActions).size === configuredActions.length,
+    `${relativePath}: quickActions must not repeat a configured action id.`,
     errors
   );
   assert(
@@ -72,6 +85,45 @@ function validateMode(document, relativePath, errors) {
       errors
     );
   }
+}
+
+function validateWorkflow(document, relativePath, errors, registeredToolIds) {
+  assert(typeof document.schemaVersion === "string", `${relativePath}: schemaVersion must be a string.`, errors);
+  assert(typeof document.id === "string", `${relativePath}: id must be a string.`, errors);
+  assert(
+    typeof document.label === "string" && document.label.length > 0,
+    `${relativePath}: label must be a non-empty string.`,
+    errors
+  );
+  assert(
+    Array.isArray(document.steps) && document.steps.length >= 1,
+    `${relativePath}: steps must be a non-empty array.`,
+    errors
+  );
+
+  const steps = Array.isArray(document.steps) ? document.steps : [];
+  const stepIds = [];
+  for (const step of steps) {
+    const ok = step !== null && typeof step === "object" && !Array.isArray(step);
+    assert(ok && typeof step.id === "string", `${relativePath}: every step must have a string id.`, errors);
+    assert(ok && typeof step.tool === "string", `${relativePath}: every step must have a string tool.`, errors);
+    // A workflow step may only invoke a registered tool. A missing capability is
+    // a new tool, never a silently skipped step (the planner mirrors this with a
+    // structured error at resolve time).
+    if (ok && typeof step.tool === "string") {
+      assert(
+        registeredToolIds.has(step.tool),
+        `${relativePath}: step "${step.id}" references unregistered tool "${step.tool}".`,
+        errors
+      );
+    }
+    if (ok && typeof step.id === "string") stepIds.push(step.id);
+  }
+  assert(
+    new Set(stepIds).size === stepIds.length,
+    `${relativePath}: step ids must be unique within a workflow.`,
+    errors
+  );
 }
 
 function validateAgent(document, relativePath, errors) {
@@ -104,7 +156,9 @@ function validateSimulation(document, relativePath, errors) {
 function collectJsonFiles(directoryPath) {
   return fs
     .readdirSync(directoryPath, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    // statSync follows reparse points; a OneDrive Files-On-Demand placeholder
+    // reports isFile()=false from readdir and would be silently skipped.
+    .filter((entry) => entry.name.endsWith(".json") && fs.statSync(path.join(directoryPath, entry.name)).isFile())
     .map((entry) => path.join(directoryPath, entry.name));
 }
 
@@ -116,6 +170,9 @@ export function validateRepositoryConfig() {
   const modeFiles = collectJsonFiles(path.join(configRoot, "modes"));
   const agentFiles = collectJsonFiles(path.join(configRoot, "agents"));
   const toolFiles = collectJsonFiles(path.join(configRoot, "tools"));
+  const descriptorFiles = collectJsonFiles(path.join(configRoot, "tools", "descriptors"));
+  const workflowsDir = path.join(configRoot, "workflows");
+  const workflowFiles = fs.existsSync(workflowsDir) ? collectJsonFiles(workflowsDir) : [];
   const simulationFiles = collectJsonFiles(path.join(fixtureRoot, "simulations"));
 
   validateDefaults(readJson(defaultsPath), path.relative(configRoot, defaultsPath), errors);
@@ -136,9 +193,19 @@ export function validateRepositoryConfig() {
     validateSimulation(readJson(filePath), path.relative(fixtureRoot, filePath), errors);
   }
 
+  // Workflows resolve their per-step risk from the rich descriptors (the source
+  // of truth, all 7 tools), not the stricter-only overlay (only 4 files).
+  const registeredToolIds = new Set(descriptorFiles.map((filePath) => readJson(filePath).id));
+  const workflowIds = [];
+  for (const filePath of workflowFiles) {
+    const document = readJson(filePath);
+    validateWorkflow(document, path.relative(configRoot, filePath), errors, registeredToolIds);
+    if (typeof document.id === "string") workflowIds.push(document.id);
+  }
+  assert(new Set(workflowIds).size === workflowIds.length, `workflows: workflow ids must be unique across files.`, errors);
+
   const modeIds = new Set(modeFiles.map((filePath) => readJson(filePath).id));
   const agentIds = new Set(agentFiles.map((filePath) => readJson(filePath).id));
-  const toolIds = new Set(toolFiles.map((filePath) => readJson(filePath).id));
   const defaults = readJson(defaultsPath);
 
   assert(modeIds.has(defaults.defaultModeId), `defaults/app.json: defaultModeId "${defaults.defaultModeId}" must reference a mode file.`, errors);
@@ -147,8 +214,10 @@ export function validateRepositoryConfig() {
     assert(agentIds.has(agentId), `defaults/app.json: enabledAgentId "${agentId}" must reference an agent file.`, errors);
   }
 
+  // enabledToolIds must reference the authoritative descriptors (ADR-003, all 7
+  // tools), not the stricter-only overlay subset (config/tools/*.json, 4 files).
   for (const toolId of defaults.enabledToolIds ?? []) {
-    assert(toolIds.has(toolId), `defaults/app.json: enabledToolId "${toolId}" must reference a tool file.`, errors);
+    assert(registeredToolIds.has(toolId), `defaults/app.json: enabledToolId "${toolId}" must reference a registered tool descriptor.`, errors);
   }
 
   if (errors.length > 0) {
@@ -160,6 +229,7 @@ export function validateRepositoryConfig() {
     modeCount: modeFiles.length,
     agentCount: agentFiles.length,
     toolCount: toolFiles.length,
+    workflowCount: workflowFiles.length,
     simulationCount: simulationFiles.length
   };
 }
@@ -168,7 +238,7 @@ export function main() {
   const summary = validateRepositoryConfig();
 
   console.log(
-    `Validated ${summary.modeCount} modes, ${summary.agentCount} agents, ${summary.toolCount} tools, and ${summary.simulationCount} simulations.`
+    `Validated ${summary.modeCount} modes, ${summary.agentCount} agents, ${summary.toolCount} tools, ${summary.workflowCount} workflows, and ${summary.simulationCount} simulations.`
   );
   console.log(`Defaults file: ${summary.defaultsPath}`);
 }

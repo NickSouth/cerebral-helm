@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "defaultModeId": "developer",
+  "defaultModeId": "executive",
   "enabledAgentIds": [
     "research-analyst",
     "financial-advisor",
@@ -11,6 +11,9 @@
     "app.open",
     "url.open",
     "hook.run",
-    "system.status.read"
+    "system.status.read",
+    "note.capture",
+    "note.search",
+    "mode.apply"
   ]
 }

@@ -1,0 +1,116 @@
+-- Operational schema 0001 (PRE-DATA-4 / FR-OBS-01).
+-- Full note bodies remain authoritative in Markdown; this database stores
+-- operational history and rebuildable derived state only.
+--
+-- This file is a human-readable mirror. The canonical source the migrator runs
+-- and checksums is `SchemaMigrations.initialSQL` in the CerebralStorage package;
+-- `Tests/StorageTests` asserts the two stay identical.
+
+CREATE TABLE commands (
+    id             TEXT PRIMARY KEY,
+    source         TEXT NOT NULL,
+    redacted_input TEXT,
+    sensitivity    TEXT,
+    cloud_policy   TEXT,
+    status         TEXT NOT NULL,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+CREATE INDEX idx_commands_created_at ON commands (created_at);
+CREATE INDEX idx_commands_status ON commands (status);
+
+CREATE TABLE command_events (
+    id              TEXT PRIMARY KEY,
+    command_id      TEXT NOT NULL REFERENCES commands (id) ON DELETE CASCADE,
+    status          TEXT NOT NULL,
+    previous_status TEXT,
+    occurred_at     TEXT NOT NULL,
+    payload         TEXT
+);
+CREATE INDEX idx_command_events_command_id ON command_events (command_id);
+CREATE INDEX idx_command_events_occurred_at ON command_events (occurred_at);
+
+CREATE TABLE tool_calls (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    command_id      TEXT NOT NULL REFERENCES commands (id) ON DELETE CASCADE,
+    tool_id         TEXT NOT NULL,
+    tool_version    TEXT NOT NULL,
+    adapter_id      TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    duration_ms     INTEGER,
+    started_at      TEXT NOT NULL,
+    completed_at    TEXT NOT NULL,
+    redacted_input  TEXT,
+    redacted_output TEXT,
+    error_category  TEXT,
+    error_code      TEXT,
+    error_message   TEXT
+);
+CREATE INDEX idx_tool_calls_command_id ON tool_calls (command_id);
+CREATE INDEX idx_tool_calls_tool_id ON tool_calls (tool_id);
+
+-- One pending confirmation per command (mirrors the in-memory coordinator map).
+-- expires_at and used are persisted so the single-use / expiry guards
+-- (FR-SAF-05) survive a process restart (NIC-112).
+CREATE TABLE confirmations (
+    command_id      TEXT PRIMARY KEY,
+    confirmation_id TEXT NOT NULL,
+    token_value     TEXT NOT NULL,
+    plan_hash       TEXT NOT NULL,
+    expires_at      TEXT NOT NULL,
+    used            INTEGER NOT NULL DEFAULT 0,
+    decision        TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX idx_confirmations_expires_at ON confirmations (expires_at);
+
+CREATE TABLE note_metadata (
+    note_id      TEXT PRIMARY KEY,
+    path         TEXT NOT NULL,
+    title        TEXT,
+    kind         TEXT,
+    project      TEXT,
+    sensitivity  TEXT,
+    cloud_policy TEXT,
+    status       TEXT,
+    created_at   TEXT,
+    updated_at   TEXT,
+    review_after TEXT
+);
+CREATE INDEX idx_note_metadata_project ON note_metadata (project);
+CREATE INDEX idx_note_metadata_updated_at ON note_metadata (updated_at);
+
+CREATE TABLE mode_sessions (
+    id             TEXT PRIMARY KEY,
+    mode_id        TEXT NOT NULL,
+    context_id     TEXT,
+    context_label  TEXT,
+    source         TEXT NOT NULL,
+    started_at     TEXT NOT NULL,
+    ended_at       TEXT,
+    result         TEXT NOT NULL,
+    config_version TEXT NOT NULL
+);
+CREATE INDEX idx_mode_sessions_started_at ON mode_sessions (started_at);
+CREATE INDEX idx_mode_sessions_mode_id ON mode_sessions (mode_id);
+
+CREATE TABLE settings_metadata (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    active_config_version   TEXT NOT NULL,
+    last_known_good_version TEXT,
+    applied_migrations      TEXT,
+    recorded_at             TEXT NOT NULL
+);
+CREATE INDEX idx_settings_metadata_recorded_at ON settings_metadata (recorded_at);
+
+CREATE TABLE updates (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_version TEXT,
+    to_version   TEXT,
+    channel      TEXT,
+    stage        TEXT,
+    status       TEXT NOT NULL,
+    message      TEXT,
+    recorded_at  TEXT NOT NULL
+);
+CREATE INDEX idx_updates_recorded_at ON updates (recorded_at);

@@ -434,6 +434,8 @@ Handshake messages include bridge version, UI version, core version, supported c
 | FR-MOD-05 | Active mode and project/context shall be persisted separately. | Restart restores the last valid mode and context, or safe defaults if references are missing. |
 | FR-MOD-06 | Mode history shall be recorded as sessions. | Activation, end time, source, project/context, result, and version are queryable. |
 
+> A quick action is a workflow resolved by the same planner; FR-MOD-02 (deterministic ordered plan) and FR-MOD-03 (aggregate risk ≥ highest step) apply identically to a single quick action (N=1) and a mode application.
+
 ## 7.6 Knowledge Capture and Search
 
 | ID | Requirement | Acceptance |
