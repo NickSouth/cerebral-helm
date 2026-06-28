@@ -158,15 +158,11 @@ public struct MarkdownKnowledgeService: KnowledgeService {
     }
 
     private static func iso(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        ISO8601Timestamp.string(from: date)
     }
 
     private static func parseISO(_ string: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: string)
+        ISO8601Timestamp.date(from: string)
     }
 
     // MARK: - Atomic write

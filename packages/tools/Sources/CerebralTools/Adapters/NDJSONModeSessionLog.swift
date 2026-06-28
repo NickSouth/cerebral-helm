@@ -1,14 +1,18 @@
 import Foundation
 import CerebralCore
 
-/// NDJSON-backed ``ModeSessionLog`` for the pre-Mac foundation.
+/// NDJSON-backed ``ModeSessionLog`` — a **demoted test/fixture binding**.
+///
+/// Per ADR-006, SQLite is the single source of truth for durable state: the
+/// production ``ModeSessionLog`` is `CerebralStorage.SQLiteModeSessionLog`. This
+/// NDJSON adapter is no longer the pre-Mac production path; it is retained as a
+/// lightweight test/fixture binding behind the same port.
 ///
 /// Each activation is one JSON line appended under the env-aware state root, so
 /// history accrues without rewriting prior lines (end times are derived on read).
 /// Writes are serialized so concurrent callers cannot interleave a line. Reads
 /// skip blank lines and tolerate a trailing partial line from an interrupted
-/// append, returning the well-formed sessions in order. NIC-42 PRE-DATA swaps a
-/// SQLite-backed adapter behind the same port.
+/// append, returning the well-formed sessions in order.
 public final class NDJSONModeSessionLog: ModeSessionLog, @unchecked Sendable {
     private let lock = NSLock()
     private let path: URL

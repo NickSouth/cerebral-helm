@@ -1,14 +1,18 @@
 import Foundation
 import CerebralCore
 
-/// File-backed ``ModeStateStore`` for the pre-Mac foundation.
+/// File-backed ``ModeStateStore`` — a **demoted test/fixture binding**.
+///
+/// Per ADR-006, SQLite is the single source of truth for durable state: the
+/// production ``ModeStateStore`` is `CerebralStorage.SQLiteModeStateStore`. This
+/// JSON-file adapter is no longer the pre-Mac production path; it is retained as
+/// a lightweight test/fixture binding behind the same port.
 ///
 /// The active mode and active context live in **separate** JSON files under the
 /// env-aware state root (FR-MOD-05), each written atomically so an interrupted
 /// write cannot corrupt the other or leave a half-written file. A missing or
 /// unreadable file loads as `nil`, so a fresh workspace — or a corrupted line —
-/// degrades to safe defaults rather than failing. NIC-42 PRE-DATA swaps a
-/// SQLite-backed adapter behind the same port.
+/// degrades to safe defaults rather than failing.
 public struct FileModeStateStore: ModeStateStore {
     private struct ActiveModeFile: Codable { let activeModeId: String? }
 

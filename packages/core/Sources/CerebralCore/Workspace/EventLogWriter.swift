@@ -1,10 +1,17 @@
 import Foundation
 
-/// Appends command lifecycle events to the development event log as
-/// newline-delimited JSON.
+/// **Legacy / test-and-recovery only.** Appends command lifecycle events to a
+/// development event log as newline-delimited JSON.
 ///
-/// This is the bus subscriber that gives the CLI cross-invocation visibility:
-/// once a command runs, its events are on disk for `events tail` and
+/// This NDJSON sink is **not** part of the production write path. Per
+/// [ADR-006](../../../../docs/adr/ADR-006-sqlite-single-source-of-truth.md),
+/// SQLite (via `CerebralStorage`) is the single source of truth for operational
+/// history; this writer and its companion `EventLogReader` / `CommandStatusReader`
+/// are demoted to test/fixture and recovery bindings behind the Core ports
+/// (deterministic unit tests, fallback) rather than the runtime store.
+///
+/// As a bus subscriber it gives those test/recovery paths cross-invocation
+/// visibility: once a command runs, its events are on disk for `events tail` and
 /// `command status` to read. Writes are serialized so concurrent subscriber
 /// callbacks cannot interleave a line.
 public final class EventLogWriter: @unchecked Sendable {

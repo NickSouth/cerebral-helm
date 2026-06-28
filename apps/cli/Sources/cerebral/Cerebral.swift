@@ -55,11 +55,6 @@ func workspacePaths(_ options: GlobalOptions) throws -> WorkspacePaths {
     )
 }
 
-/// Builds a session that drives the real command bus and persists events.
-func makeSession(_ options: GlobalOptions) throws -> CerebralSession {
-    try CerebralSession(paths: workspacePaths(options))
-}
-
 /// Prints a run outcome in the requested form.
 func emit(_ outcome: RunOutcome, json: Bool) throws {
     print(json ? try CliRenderer.json(outcome) : CliRenderer.human(outcome))

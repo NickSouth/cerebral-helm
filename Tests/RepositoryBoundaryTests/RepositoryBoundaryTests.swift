@@ -95,3 +95,54 @@ func portablePackagesStayPortable() throws {
 
     #expect(violations.isEmpty)
 }
+
+// ADR-006 (Consequences): SQLite is the single source of truth for operational
+// history, and `RepositoryBoundaryTests` must assert that `CerebralStorage` is the
+// ONLY package linking the SQLite C target (`SwiftToolchainCSQLite`). This
+// reinforces the ADR-005 boundary so the engine cannot leak into Core / Tools /
+// Knowledge / Contracts / Shared.
+//
+// The check scans every `.swift` under `packages/` for `import SwiftToolchainCSQLite`
+// and fails if any importer lives outside `packages/storage` (the `CerebralStorage`
+// package).
+@Test("only CerebralStorage links the SQLite C target")
+func onlyStorageLinksSQLiteEngine() throws {
+    let repositoryRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let packagesRoot = repositoryRoot.appendingPathComponent("packages", isDirectory: true)
+    let storageRoot = packagesRoot.appendingPathComponent("storage", isDirectory: true)
+
+    // Matched at line start, tolerating the `@_exported` / `@testable` attributes
+    // that legitimately precede an import, mirroring the AppKit/Cocoa/UIKit matcher.
+    let importPattern = #"(?m)^\s*(?:@_exported\s+|@testable\s+)?import\s+SwiftToolchainCSQLite\b"#
+    let regex = try NSRegularExpression(pattern: importPattern)
+
+    let files = FileManager.default.enumerator(
+        at: packagesRoot,
+        includingPropertiesForKeys: [.isRegularFileKey]
+    )
+
+    var violations: [String] = []
+    var storageImporters = 0
+    while let file = files?.nextObject() as? URL {
+        guard file.pathExtension == "swift" else { continue }
+        let source = try String(contentsOf: file, encoding: .utf8)
+        let range = NSRange(source.startIndex..., in: source)
+        guard regex.firstMatch(in: source, range: range) != nil else { continue }
+
+        // `storageRoot` is the only allowed location for the SQLite engine import.
+        if file.path.hasPrefix(storageRoot.path) {
+            storageImporters += 1
+        } else {
+            violations.append(file.path)
+        }
+    }
+
+    #expect(violations.isEmpty)
+    // Sanity check: the import must still exist somewhere under CerebralStorage, so
+    // the test fails loudly if the engine is renamed/removed rather than passing
+    // vacuously.
+    #expect(storageImporters > 0)
+}

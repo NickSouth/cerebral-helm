@@ -1,5 +1,6 @@
 import Foundation
 import CerebralContracts
+import CerebralShared
 
 /// Minimal YAML-frontmatter codec for note files (FR-KNW-01).
 ///
@@ -76,8 +77,6 @@ public enum FrontmatterCodec {
     }
 
     private static func iso(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        ISO8601Timestamp.string(from: date)
     }
 }

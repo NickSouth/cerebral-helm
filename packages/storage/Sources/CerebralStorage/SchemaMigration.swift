@@ -144,21 +144,16 @@ public struct SchemaMigrator: Sendable {
     }
 }
 
-/// ISO-8601 timestamp formatting for operational rows. A fresh formatter per call
-/// avoids shared mutable state; migrations and (later) repository writes are
-/// infrequent relative to the cost.
+/// ISO-8601 timestamp formatting for operational rows. A thin wrapper over the
+/// shared ``ISO8601Timestamp`` helper so storage rows and Markdown frontmatter
+/// share one canonical format; the `StorageTimestamp` name is retained for its
+/// existing call sites.
 enum StorageTimestamp {
     static func iso8601(from date: Date) -> String {
-        formatter().string(from: date)
+        ISO8601Timestamp.string(from: date)
     }
 
     static func date(from string: String) -> Date? {
-        formatter().date(from: string)
-    }
-
-    private static func formatter() -> ISO8601DateFormatter {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
+        ISO8601Timestamp.date(from: string)
     }
 }
