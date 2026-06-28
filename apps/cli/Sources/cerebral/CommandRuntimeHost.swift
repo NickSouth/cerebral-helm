@@ -31,7 +31,8 @@ func makeCommandRuntime(_ options: GlobalOptions) throws -> CommandRuntime {
     // depends on the knowledge package (the service is injected).
     let knowledge = MarkdownKnowledgeService(
         rootURL: paths.knowledgeRoot,
-        metadataStore: SQLiteNoteMetadataStore(database: database)
+        metadataStore: SQLiteNoteMetadataStore(database: database),
+        searchIndex: SQLiteNoteSearchIndex(database: database)
     )
     let registry = try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: paths.toolDescriptorsDirectory,
@@ -61,6 +62,18 @@ func operationalDatabase(_ paths: WorkspacePaths) throws -> SQLiteDatabase {
     let database = try SQLiteDatabase(location: .file(paths.operationalDatabasePath))
     try SchemaMigrator().migrate(database)
     return database
+}
+
+/// Builds the durable knowledge service over the env-aware knowledge root and the
+/// operational database. Used by the `knowledge rebuild` surface, which needs the
+/// concrete service to reconstruct its search index.
+func makeKnowledgeService(_ paths: WorkspacePaths) throws -> MarkdownKnowledgeService {
+    let database = try operationalDatabase(paths)
+    return MarkdownKnowledgeService(
+        rootURL: paths.knowledgeRoot,
+        metadataStore: SQLiteNoteMetadataStore(database: database),
+        searchIndex: SQLiteNoteSearchIndex(database: database)
+    )
 }
 
 /// Reconstructs a command's latest status from the operational database — the

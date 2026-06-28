@@ -13,11 +13,18 @@ import CerebralShared
 public struct MarkdownKnowledgeService: KnowledgeService {
     private let rootURL: URL
     private let metadataStore: (any NoteMetadataStore)?
+    private let searchIndex: (any NoteSearchIndex)?
     private let clock: any TimeSource
 
-    public init(rootURL: URL, metadataStore: (any NoteMetadataStore)? = nil, clock: any TimeSource = SystemClock()) {
+    public init(
+        rootURL: URL,
+        metadataStore: (any NoteMetadataStore)? = nil,
+        searchIndex: (any NoteSearchIndex)? = nil,
+        clock: any TimeSource = SystemClock()
+    ) {
         self.rootURL = rootURL
         self.metadataStore = metadataStore
+        self.searchIndex = searchIndex
         self.clock = clock
     }
 
@@ -47,41 +54,47 @@ public struct MarkdownKnowledgeService: KnowledgeService {
             throw KnowledgeServiceError.writeFailed("The note was not present after writing.")
         }
 
-        // Metadata is rebuildable from the file, so its persistence is best-effort:
-        // a failed row never loses the captured note.
+        // Metadata and the search index are rebuildable from the file, so their
+        // persistence is best-effort: a failed row never loses the captured note,
+        // and a rebuild reconstructs them. Indexing here makes the note findable
+        // immediately (AC-45.1).
         try? metadataStore?.upsert(Self.entry(for: metadata, path: relativePath))
+        try? searchIndex?.upsert(Self.indexEntry(for: metadata, body: request.body, path: relativePath))
 
         return NoteCaptureOutcome(noteID: metadata.id, path: relativePath, created: true)
     }
 
     public func search(_ request: NoteSearchRequest) async throws -> NoteSearchOutcome {
-        guard FileManager.default.fileExists(atPath: rootURL.path) else {
-            return NoteSearchOutcome(hits: [], truncated: false)
-        }
-        let query = request.query.lowercased()
-        var hits: [NoteSearchHit] = []
+        guard let searchIndex else { return NoteSearchOutcome(hits: [], truncated: false) }
+        let now = clock.now()
+        let hits = try searchIndex.matches(query: request.query).map { Self.hit(from: $0, now: now) }
+        let limited = request.limit.map { Array(hits.prefix($0)) } ?? hits
+        return NoteSearchOutcome(hits: limited, truncated: limited.count < hits.count)
+    }
+
+    /// Rebuilds the search index from the Markdown files on disk (FR-KNW-06): the
+    /// derived index is dropped and reconstructed from the source of truth, so
+    /// deleting it and rebuilding preserves results (AC-45.3).
+    public func rebuild() throws {
+        guard let searchIndex else { return }
+        try searchIndex.deleteAll()
+        guard FileManager.default.fileExists(atPath: rootURL.path) else { return }
         let enumerator = FileManager.default.enumerator(at: rootURL, includingPropertiesForKeys: nil)
         while let url = enumerator?.nextObject() as? URL {
             guard url.pathExtension == "md" else { continue }
             guard let content = try? String(contentsOf: url, encoding: .utf8) else { continue }
             let (frontmatter, body) = FrontmatterCodec.parse(content)
-            let relativePath = Self.relativePath(of: url, under: rootURL)
-            let title = frontmatter["title"] ?? url.deletingPathExtension().lastPathComponent
-            let haystack = "\(title)\n\(body)\n\(relativePath)".lowercased()
-            guard query.isEmpty || haystack.contains(query) else { continue }
-            hits.append(NoteSearchHit(
-                noteID: frontmatter["id"] ?? url.deletingPathExtension().lastPathComponent,
-                title: title,
-                excerpt: Self.excerpt(body),
-                path: relativePath,
-                updated: frontmatter["updated"] ?? "",
+            let fallbackID = url.deletingPathExtension().lastPathComponent
+            try searchIndex.upsert(NoteSearchIndexEntry(
+                noteID: frontmatter["id"] ?? fallbackID,
+                path: Self.relativePath(of: url, under: rootURL),
+                title: frontmatter["title"],
+                body: body,
                 sensitivity: frontmatter["sensitivity"],
-                freshness: nil
+                updated: frontmatter["updated"].flatMap(Self.parseISO),
+                reviewAfter: frontmatter["reviewAfter"].flatMap(Self.parseISO)
             ))
         }
-        hits.sort { $0.path < $1.path }
-        let limited = request.limit.map { Array(hits.prefix($0)) } ?? hits
-        return NoteSearchOutcome(hits: limited, truncated: limited.count < hits.count)
     }
 
     // MARK: - Paths
@@ -114,6 +127,46 @@ public struct MarkdownKnowledgeService: KnowledgeService {
             cloudPolicy: metadata.cloudPolicy.rawValue, status: metadata.status.rawValue,
             created: metadata.created, updated: metadata.updated, reviewAfter: metadata.reviewAfter
         )
+    }
+
+    private static func indexEntry(for metadata: CerebralHelmNoteMetadata, body: String, path: String) -> NoteSearchIndexEntry {
+        NoteSearchIndexEntry(
+            noteID: metadata.id, path: path, title: metadata.title, body: body,
+            sensitivity: metadata.sensitivity.rawValue, updated: metadata.updated, reviewAfter: metadata.reviewAfter
+        )
+    }
+
+    // MARK: - Hits
+
+    private static func hit(from entry: NoteSearchIndexEntry, now: Date) -> NoteSearchHit {
+        NoteSearchHit(
+            noteID: entry.noteID,
+            title: entry.title ?? entry.noteID,
+            excerpt: excerpt(entry.body ?? ""),
+            path: entry.path, // every result cites its source path (AC-45.2)
+            updated: entry.updated.map(iso) ?? "",
+            sensitivity: entry.sensitivity,
+            freshness: freshness(reviewAfter: entry.reviewAfter, now: now)
+        )
+    }
+
+    /// Derives freshness from the review boundary: no boundary is `unknown`, a
+    /// passed boundary is `stale`, otherwise `fresh`.
+    private static func freshness(reviewAfter: Date?, now: Date) -> String {
+        guard let reviewAfter else { return Freshness.unknown.rawValue }
+        return now >= reviewAfter ? Freshness.stale.rawValue : Freshness.fresh.rawValue
+    }
+
+    private static func iso(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    private static func parseISO(_ string: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: string)
     }
 
     // MARK: - Atomic write

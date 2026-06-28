@@ -110,7 +110,9 @@ func classifyMapsFilesystemErrors() {
 func captureThenSearchFinds() async throws {
     let root = temporaryRoot()
     defer { try? FileManager.default.removeItem(at: root) }
-    let service = MarkdownKnowledgeService(rootURL: root, metadataStore: nil, clock: FixedClock(t0))
+    let service = MarkdownKnowledgeService(
+        rootURL: root, metadataStore: nil, searchIndex: InMemoryNoteSearchIndex(), clock: FixedClock(t0)
+    )
 
     _ = try await service.capture(
         NoteCaptureRequest(title: "Captured note", body: "rivet the hull", kind: "note", project: nil, sensitivity: nil)

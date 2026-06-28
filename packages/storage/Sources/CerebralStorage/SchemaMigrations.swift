@@ -11,6 +11,7 @@ public enum SchemaMigrations {
     public static let all: [SchemaMigration] = [
         SchemaMigration(id: "0001_initial", sql: initialSQL),
         SchemaMigration(id: "0002_mode_state", sql: modeStateSQL),
+        SchemaMigration(id: "0003_note_search", sql: noteSearchSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -141,5 +142,21 @@ public enum SchemaMigrations {
         active_context_label TEXT,
         updated_at           TEXT NOT NULL
     );
+    """
+
+    /// Migration 0003: the rebuildable note search index (FR-KNW-04/06, NFR-09).
+    /// A disposable derived projection of each note's searchable text; the Markdown
+    /// file stays authoritative, so this table can be dropped and rebuilt from disk.
+    public static let noteSearchSQL = """
+    CREATE TABLE note_search (
+        note_id      TEXT PRIMARY KEY,
+        path         TEXT NOT NULL,
+        title        TEXT,
+        body         TEXT,
+        sensitivity  TEXT,
+        updated_at   TEXT,
+        review_after TEXT
+    );
+    CREATE INDEX idx_note_search_path ON note_search (path);
     """
 }

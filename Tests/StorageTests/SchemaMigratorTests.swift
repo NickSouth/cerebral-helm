@@ -7,7 +7,7 @@ import CerebralStorage
 private let expectedTables = [
     "schema_migrations", "commands", "command_events", "tool_calls",
     "confirmations", "note_metadata", "mode_sessions", "settings_metadata", "updates",
-    "mode_state",
+    "mode_state", "note_search",
 ]
 
 private let expectedIndexes = [
@@ -163,10 +163,11 @@ func forwardMigrationOnExistingDatabase() throws {
         [.text("cmd_keep0001"), .text("cli"), .text("succeeded"), .text("2026-06-28T00:00:00.000Z"), .text("2026-06-28T00:00:00.000Z")]
     )
 
-    // Next release adds 0002: only the new migration runs, and prior data survives.
+    // Next release adds the later migrations: only those run, and prior data survives.
     let applied = try SchemaMigrator().migrate(db)
-    #expect(applied == ["0002_mode_state"])
+    #expect(applied == Array(SchemaMigrations.all.dropFirst().map(\.id)))
     #expect(try tableNames(db).contains("mode_state"))
+    #expect(try tableNames(db).contains("note_search"))
     #expect(try db.query("SELECT COUNT(*) AS c FROM commands;")[0].integer("c") == 1)
 }
 

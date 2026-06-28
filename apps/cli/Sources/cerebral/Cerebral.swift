@@ -18,7 +18,7 @@ struct Cerebral: AsyncParsableCommand {
         subcommands: [
             Tools.self, Events.self,
             Open.self, Hook.self, Mode.self, Note.self, Search.self,
-            Simulate.self, Command.self, Cancel.self,
+            Knowledge.self, Simulate.self, Command.self, Cancel.self,
         ]
     )
 }
