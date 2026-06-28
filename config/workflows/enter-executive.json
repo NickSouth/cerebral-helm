@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "enter-executive",
+  "label": "Enter Executive Mode",
+  "steps": [
+    { "id": "snapshot-system", "label": "Snapshot system status", "tool": "system.status.read" },
+    { "id": "open-dashboard", "label": "Open dashboard browser", "tool": "app.open", "input": { "appId": "chrome" } },
+    { "id": "open-mail", "label": "Open mail", "tool": "app.open", "input": { "appId": "gmail" } }
+  ]
+}

@@ -12,7 +12,10 @@ func makeCommandRuntime(_ options: GlobalOptions) throws -> CommandRuntime {
     let paths = try workspacePaths(options)
     let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory)
     let hookCatalog = makeHookCatalog(references: references, repositoryRoot: paths.repositoryRoot)
-    let modePlanner = StubModePlanner()
+    let modePlanner = try PreMacToolRuntime.makeActionPlanner(
+        descriptorsDirectory: paths.toolDescriptorsDirectory,
+        configDirectory: paths.configDirectory
+    )
     let registry = try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: paths.toolDescriptorsDirectory,
         knowledge: MockKnowledgeService(),

@@ -41,6 +41,38 @@ public enum PreMacToolRuntime {
         return builder.build()
     }
 
+    /// Builds the live config-driven action planner (NIC-38).
+    ///
+    /// Reads each tool's authoritative descriptor for its risk and pre-Mac
+    /// availability, loads the workflow catalog, and maps every configured mode to
+    /// its apply-workflow by the `enter-<modeId>` convention (a mode that has no
+    /// matching workflow is simply left unresolvable, surfacing as a structured
+    /// `unknownMode` rather than a silent success). Composition lives here, at the
+    /// tools layer, so the core engine stays pure and convention-free.
+    public static func makeActionPlanner(
+        descriptorsDirectory: URL,
+        configDirectory: URL
+    ) throws -> WorkflowActionPlanner {
+        let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory)
+        let toolFacts = Dictionary(uniqueKeysWithValues: descriptors.map { descriptor in
+            (descriptor.id, ToolPlanningFacts(risk: descriptor.risk, availableInPreMac: descriptor.availability.preMAC))
+        })
+
+        let workflows = try WorkflowCatalogLoader.load(configDirectory: configDirectory)
+        let modeIDs = try ReferenceCatalogLoader.load(configDirectory: configDirectory).modeIds
+        var modeWorkflowIDs: [String: String] = [:]
+        for modeID in modeIDs {
+            let workflowID = "enter-\(modeID)"
+            if workflows[workflowID] != nil { modeWorkflowIDs[modeID] = workflowID }
+        }
+
+        return WorkflowActionPlanner(
+            workflows: workflows,
+            modeWorkflowIDs: modeWorkflowIDs,
+            toolFacts: toolFacts
+        )
+    }
+
     public static func makeExecutor(
         descriptorsDirectory: URL,
         capabilityMatrix: CapabilityMatrix = .allAvailable,
