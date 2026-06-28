@@ -99,7 +99,7 @@ function schemaForFixture(filePath) {
     return schemaId("config", "config-validation-error");
   }
 
-  if (relativePath.startsWith("invalid/config/modes/")) {
+  if (relativePath.startsWith("valid/config/modes/") || relativePath.startsWith("invalid/config/modes/")) {
     return schemaId("config", "mode");
   }
 

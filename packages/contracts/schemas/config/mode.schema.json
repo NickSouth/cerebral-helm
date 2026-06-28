@@ -63,6 +63,36 @@
         "type": "string"
       }
     },
+    "calendarProfile": {
+      "type": "string",
+      "enum": ["all", "engineering", "academic", "leisure"]
+    },
+    "newsProfile": {
+      "type": "string",
+      "enum": ["broad", "engineering", "academic", "interest"]
+    },
+    "greeting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["persona", "fallback"],
+      "properties": {
+        "persona": {
+          "type": "string",
+          "minLength": 1
+        },
+        "directive": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fallback": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "layoutId": {
+      "$ref": "#/$defs/layoutId"
+    },
     "extensions": {
       "$ref": "#/$defs/extensions"
     }
@@ -75,6 +105,10 @@
     "themeToken": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$"
+    },
+    "layoutId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*$"
     },
     "extensions": {
       "type": "object",

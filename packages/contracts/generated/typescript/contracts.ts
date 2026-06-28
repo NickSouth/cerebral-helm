@@ -347,14 +347,38 @@ export interface CerebralHelmConfigValidationError {
 }
 
 export interface CerebralHelmModeConfig {
-    extensions?:   { [key: string]: any };
-    id:            string;
-    label:         string;
-    projectHints?: string[];
-    quickActions:  string[];
-    quickApps:     string[];
-    theme:         Theme;
-    widgets:       Widgets;
+    calendarProfile?: CalendarProfile;
+    extensions?:      { [key: string]: any };
+    greeting?:        Greeting;
+    id:               string;
+    label:            string;
+    layoutId?:        string;
+    newsProfile?:     NewsProfile;
+    projectHints?:    string[];
+    quickActions:     string[];
+    quickApps:        string[];
+    theme:            Theme;
+    widgets:          Widgets;
+}
+
+export enum CalendarProfile {
+    Academic = "academic",
+    All = "all",
+    Engineering = "engineering",
+    Leisure = "leisure",
+}
+
+export interface Greeting {
+    directive?: string;
+    fallback:   string;
+    persona:    string;
+}
+
+export enum NewsProfile {
+    Academic = "academic",
+    Broad = "broad",
+    Engineering = "engineering",
+    Interest = "interest",
 }
 
 export interface Theme {
@@ -397,6 +421,17 @@ export interface Hotkeys {
 
 export interface Knowledge {
     rootReference?: string;
+}
+
+export interface CerebralHelmReferenceCatalog {
+    references:    Reference[];
+    schemaVersion: string;
+}
+
+export interface Reference {
+    id:     string;
+    label:  string;
+    target: string;
 }
 
 export interface CerebralHelmAppOpenInput {
