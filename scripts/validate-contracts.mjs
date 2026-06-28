@@ -107,6 +107,10 @@ function schemaForFixture(filePath) {
     return schemaId("references", "reference-catalog");
   }
 
+  if (relativePath.startsWith("valid/workflows/") || relativePath.startsWith("invalid/workflows/")) {
+    return schemaId("workflows", "workflow");
+  }
+
   if (relativePath.includes("/bridge/handshake/request.json")) {
     return schemaId("bridge", "handshake-request");
   }
@@ -185,6 +189,30 @@ function scanReferenceCatalogDuplicateIds(filePath, errors) {
   }
 }
 
+// JSON Schema cannot dedupe array entries by an object key, so a workflow that
+// repeats a step id would be ambiguous to the planner. Scan each workflow and
+// treat any repeated step id as a hard validation error, mirroring the
+// reference-catalog duplicate-id check.
+function scanWorkflowDuplicateStepIds(filePath, errors) {
+  const document = readJson(filePath);
+  const steps = Array.isArray(document.steps) ? document.steps : [];
+  const seen = new Set();
+
+  for (const step of steps) {
+    const id = step?.id;
+
+    if (typeof id !== "string") {
+      continue;
+    }
+
+    if (seen.has(id)) {
+      errors.push(`${path.relative(repositoryRoot, filePath)} declares duplicate workflow step id "${id}".`);
+    }
+
+    seen.add(id);
+  }
+}
+
 export function validateContracts() {
   const ajv = createAjv();
   const errors = [];
@@ -213,6 +241,10 @@ export function validateContracts() {
     if (schema === schemaId("references", "reference-catalog")) {
       scanReferenceCatalogDuplicateIds(filePath, errors);
     }
+
+    if (schema === schemaId("workflows", "workflow")) {
+      scanWorkflowDuplicateStepIds(filePath, errors);
+    }
   }
 
   for (const filePath of invalidFixtures) {
@@ -231,6 +263,21 @@ export function validateContracts() {
       const ajvValid = validate ? validate(readJson(filePath)) : false;
       const duplicateErrors = [];
       scanReferenceCatalogDuplicateIds(filePath, duplicateErrors);
+
+      if (ajvValid && duplicateErrors.length === 0) {
+        errors.push(`${path.relative(repositoryRoot, filePath)} unexpectedly passed ${schema}`);
+      }
+
+      continue;
+    }
+
+    // Workflows can be invalid structurally (Ajv) or by repeating a step id
+    // (the duplicate-step scan, which JSON Schema cannot express). Accept either.
+    if (schema === schemaId("workflows", "workflow")) {
+      const validate = ajv.getSchema(schema);
+      const ajvValid = validate ? validate(readJson(filePath)) : false;
+      const duplicateErrors = [];
+      scanWorkflowDuplicateStepIds(filePath, duplicateErrors);
 
       if (ajvValid && duplicateErrors.length === 0) {
         errors.push(`${path.relative(repositoryRoot, filePath)} unexpectedly passed ${schema}`);

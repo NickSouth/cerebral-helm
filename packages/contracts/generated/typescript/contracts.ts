@@ -787,3 +787,34 @@ export interface CerebralHelmURLOpenOutput {
     urlId:       string;
 }
 
+/**
+ * An ordered, linear, deterministic 1..N-step plan of tool invocations, resolved by the
+ * action planner (NIC-38). A quickAction id and a mode application both resolve to this
+ * same artifact; a single-step action is simply N=1. Step inputs are resolved statically
+ * (literal values and reference-catalog ids) and validated against each tool's input schema
+ * at resolve time. MVP scope is intentionally narrow: there is no data flow between steps
+ * (a step never consumes a prior step's output), and no branching, conditional, or
+ * model-driven steps. A capability a workflow lacks is added as a new tool, never as new
+ * planner logic.
+ */
+export interface CerebralHelmWorkflowDefinition {
+    extensions?:   { [key: string]: any };
+    id:            string;
+    label:         string;
+    schemaVersion: string;
+    steps:         Step[];
+}
+
+export interface Step {
+    id: string;
+    /**
+     * Static input/reference bindings for this step. Deep validation is deferred to resolve
+     * time, where the planner checks this object against the step tool's input schema
+     * (descriptors authoritative). MVP: resolved only from literal values and reference-catalog
+     * ids, never from another step's output.
+     */
+    input?: { [key: string]: any };
+    label?: string;
+    tool:   string;
+}
+

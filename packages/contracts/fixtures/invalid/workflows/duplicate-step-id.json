@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "duplicate-steps",
+  "label": "Duplicate Steps",
+  "steps": [
+    { "id": "open", "tool": "app.open", "input": { "appRef": "gmail" } },
+    { "id": "open", "tool": "url.open", "input": { "urlRef": "github" } }
+  ]
+}

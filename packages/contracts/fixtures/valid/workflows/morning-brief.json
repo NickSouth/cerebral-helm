@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "morning-brief",
+  "label": "Morning Brief",
+  "steps": [
+    { "id": "system-snapshot", "label": "System snapshot", "tool": "system.status.read" },
+    { "id": "recent-notes", "label": "Recent notes", "tool": "note.search", "input": { "query": "today" } },
+    { "id": "open-mail", "label": "Open mail", "tool": "app.open", "input": { "appRef": "gmail" } }
+  ]
+}
