@@ -71,6 +71,7 @@ let package = Package(
                 "CerebralCore",
                 "CerebralTools",
                 "CerebralStorage",
+                "CerebralKnowledge",
                 "CerebralShared",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
@@ -137,6 +138,7 @@ let package = Package(
             name: "KnowledgeTests",
             dependencies: [
                 "CerebralKnowledge",
+                "CerebralCore",
                 "CerebralContracts",
                 "CerebralShared",
             ],

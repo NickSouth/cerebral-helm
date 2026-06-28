@@ -55,6 +55,10 @@ public struct WorkspacePaths: Sendable {
     public let modeSessionLogPath: URL
     /// Operational SQLite database (`<stateRoot>/database/cerebral.sqlite`).
     public let operationalDatabasePath: URL
+    /// User-owned Markdown knowledge root (`<stateRoot>/knowledge`). Per-environment
+    /// so tests/dev never touch a personal knowledge base; the user-chosen root is
+    /// future (FR-KNW-07).
+    public let knowledgeRoot: URL
     public let eventLogPath: URL
 
     /// Resolves workspace paths. The environment is selected by `CEREBRAL_ENV`
@@ -89,6 +93,7 @@ public struct WorkspacePaths: Sendable {
         self.operationalDatabasePath = stateRoot
             .appendingPathComponent("database", isDirectory: true)
             .appendingPathComponent("cerebral.sqlite")
+        self.knowledgeRoot = stateRoot.appendingPathComponent("knowledge", isDirectory: true)
 
         let eventLogPath: URL
         if let configured = processEnvironment["CEREBRAL_EVENT_LOG_PATH"], !configured.isEmpty {

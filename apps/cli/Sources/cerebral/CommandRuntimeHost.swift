@@ -1,6 +1,7 @@
 import Foundation
 import CerebralContracts
 import CerebralCore
+import CerebralKnowledge
 import CerebralShared
 import CerebralStorage
 import CerebralTools
@@ -18,18 +19,26 @@ func makeCommandRuntime(_ options: GlobalOptions) throws -> CommandRuntime {
         descriptorsDirectory: paths.toolDescriptorsDirectory,
         configDirectory: paths.configDirectory
     )
-    let registry = try PreMacToolRuntime.makeRegistry(
-        descriptorsDirectory: paths.toolDescriptorsDirectory,
-        knowledge: MockKnowledgeService(),
-        hookCatalog: hookCatalog,
-        modePlanner: modePlanner
-    )
     // SQLite is the single source of truth for operational history (ADR-006). One
-    // migrated connection backs confirmations, commands, events, and tool calls;
-    // the NDJSON/file adapters are demoted to test bindings.
+    // migrated connection backs confirmations, commands, events, tool calls, and
+    // note metadata; the NDJSON/file/mock adapters are demoted to test bindings.
     let database = try operationalDatabase(paths)
     let commands = CommandRepository(database: database)
     let toolCalls = ToolCallRepository(database: database)
+
+    // Durable knowledge: notes are Markdown under the env-aware knowledge root,
+    // with rebuildable metadata in SQLite. Composed here so CerebralTools never
+    // depends on the knowledge package (the service is injected).
+    let knowledge = MarkdownKnowledgeService(
+        rootURL: paths.knowledgeRoot,
+        metadataStore: SQLiteNoteMetadataStore(database: database)
+    )
+    let registry = try PreMacToolRuntime.makeRegistry(
+        descriptorsDirectory: paths.toolDescriptorsDirectory,
+        knowledge: knowledge,
+        hookCatalog: hookCatalog,
+        modePlanner: modePlanner
+    )
 
     return CommandRuntime(
         registry: registry,
