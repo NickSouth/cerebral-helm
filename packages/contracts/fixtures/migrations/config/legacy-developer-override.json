@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "0.9.0",
+  "id": "developer",
+  "apps": ["vscode", "terminal"],
+  "x-user-note": "keep me through the upgrade"
+}
