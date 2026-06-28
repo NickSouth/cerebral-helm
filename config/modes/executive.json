@@ -5,7 +5,14 @@
     "accentPrimary": "executive.primary",
     "accentSecondary": "executive.secondary"
   },
-  "quickApps": ["chrome", "gmail", "calendar"],
+  "calendarProfile": "all",
+  "newsProfile": "broad",
+  "greeting": {
+    "persona": "Friendly Assistant",
+    "directive": "Greet by time of day and surface today's priorities.",
+    "fallback": "Good day."
+  },
+  "quickApps": ["chrome", "gmail", "finder", "claude-desktop"],
   "quickActions": [
     "daily-brief",
     "open-calendar",
@@ -19,5 +26,7 @@
   "widgets": {
     "left": "market-brief",
     "right": "projects"
-  }
+  },
+  "projectHints": ["quarterly-planning", "board-prep"],
+  "layoutId": "executive.default"
 }

@@ -94,6 +94,7 @@ Prefer Apple frameworks and small focused packages. Avoid broad application fram
 | Forms | React Hook Form | Recommended |
 | Runtime schema validation | Ajv | Recommended |
 | Animation | Motion | Recommended |
+| Consciousness renderer | Small WebGL micro-library (OGL or regl) | Recommended; Heimlich ambient ribbon/spark field, isolated component, 30fps floor |
 | Component fixtures | Storybook | Recommended |
 | Unit tests | Vitest + React Testing Library | Recommended |
 | Browser and visual tests | Playwright in Chromium and WebKit | Locked capability; recommended tooling |

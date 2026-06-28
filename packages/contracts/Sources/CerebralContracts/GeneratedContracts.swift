@@ -1752,7 +1752,12 @@ public struct CerebralHelmModeConfig: Codable {
     public let layoutID: String?
     public let newsProfile: NewsProfile?
     public let projectHints: [String]?
-    public let quickActions, quickApps: [String]
+    /// Exactly 8 ordered quick-action slots forming the binding 4+4 ambient grid (slots 0-3
+    /// render as compact bars, 4-7 as boxes; the shared shell owns that geometry). Each slot is
+    /// an action id or null for an unconfigured slot (rendered as an 'add action' button).
+    /// Non-null ids must be unique; null slots may repeat.
+    public let quickActions: [String?]
+    public let quickApps: [String]
     public let theme: Theme
     public let widgets: Widgets
 
@@ -1762,7 +1767,7 @@ public struct CerebralHelmModeConfig: Codable {
         case newsProfile, projectHints, quickActions, quickApps, theme, widgets
     }
 
-    public init(calendarProfile: CalendarProfile?, extensions: [String: JSONAny]?, greeting: Greeting?, id: String, label: String, layoutID: String?, newsProfile: NewsProfile?, projectHints: [String]?, quickActions: [String], quickApps: [String], theme: Theme, widgets: Widgets) {
+    public init(calendarProfile: CalendarProfile?, extensions: [String: JSONAny]?, greeting: Greeting?, id: String, label: String, layoutID: String?, newsProfile: NewsProfile?, projectHints: [String]?, quickActions: [String?], quickApps: [String], theme: Theme, widgets: Widgets) {
         self.calendarProfile = calendarProfile
         self.extensions = extensions
         self.greeting = greeting
@@ -1805,7 +1810,7 @@ public extension CerebralHelmModeConfig {
         layoutID: String?? = nil,
         newsProfile: NewsProfile?? = nil,
         projectHints: [String]?? = nil,
-        quickActions: [String]? = nil,
+        quickActions: [String?]? = nil,
         quickApps: [String]? = nil,
         theme: Theme? = nil,
         widgets: Widgets? = nil

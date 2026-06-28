@@ -108,6 +108,39 @@ func quickActionsCountEnforced() {
     #expect(errors.contains { $0.field == "/quickActions" && $0.expected == "exactly 8 entries" })
 }
 
+@Test("nullable (unconfigured) quick-action slots are accepted")
+func nullableQuickActionSlotsAccepted() {
+    let json = Data(#"""
+    {
+      "id": "executive",
+      "label": "Executive",
+      "theme": { "accentPrimary": "executive.primary", "accentSecondary": "executive.secondary" },
+      "quickApps": [],
+      "quickActions": ["daily-brief", null, "capture-note", null, "check-system-status", null, null, null],
+      "widgets": { "left": "x", "right": "y" }
+    }
+    """#.utf8)
+
+    #expect(ConfigValidator.modeDocumentErrors(file: "modes/x.json", data: json).isEmpty)
+}
+
+@Test("a duplicate configured quick-action id is rejected (null slots may repeat)")
+func duplicateConfiguredQuickActionRejected() {
+    let json = Data(#"""
+    {
+      "id": "executive",
+      "label": "Executive",
+      "theme": { "accentPrimary": "executive.primary", "accentSecondary": "executive.secondary" },
+      "quickApps": [],
+      "quickActions": ["capture-note", "capture-note", null, null, null, null, null, null],
+      "widgets": { "left": "x", "right": "y" }
+    }
+    """#.utf8)
+
+    let errors = ConfigValidator.modeDocumentErrors(file: "modes/x.json", data: json)
+    #expect(errors.contains { $0.field == "/quickActions" && $0.expected == "unique configured entries" })
+}
+
 @Test("a non-Executive mode missing its layout action is rejected")
 func nonExecutiveLayoutActionEnforced() {
     let json = Data(#"""

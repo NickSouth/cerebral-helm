@@ -372,10 +372,16 @@ export interface CerebralHelmModeConfig {
     layoutId?:        string;
     newsProfile?:     NewsProfile;
     projectHints?:    string[];
-    quickActions:     string[];
-    quickApps:        string[];
-    theme:            Theme;
-    widgets:          Widgets;
+    /**
+     * Exactly 8 ordered quick-action slots forming the binding 4+4 ambient grid (slots 0-3
+     * render as compact bars, 4-7 as boxes; the shared shell owns that geometry). Each slot is
+     * an action id or null for an unconfigured slot (rendered as an 'add action' button).
+     * Non-null ids must be unique; null slots may repeat.
+     */
+    quickActions: Array<null | string>;
+    quickApps:    string[];
+    theme:        Theme;
+    widgets:      Widgets;
 }
 
 export enum CalendarProfile {

@@ -46,7 +46,20 @@ function validateMode(document, relativePath, errors) {
   assert(Array.isArray(document.quickActions), `${relativePath}: quickActions must be an array.`, errors);
   assert(
     Array.isArray(document.quickActions) && document.quickActions.length === 8,
-    `${relativePath}: quickActions must contain exactly 8 entries.`,
+    `${relativePath}: quickActions must contain exactly 8 slots (use null for an unconfigured slot).`,
+    errors
+  );
+  assert(
+    Array.isArray(document.quickActions) && document.quickActions.every((action) => action === null || typeof action === "string"),
+    `${relativePath}: each quick action must be a string id or null.`,
+    errors
+  );
+  const configuredActions = (Array.isArray(document.quickActions) ? document.quickActions : []).filter(
+    (action) => typeof action === "string"
+  );
+  assert(
+    new Set(configuredActions).size === configuredActions.length,
+    `${relativePath}: quickActions must not repeat a configured action id.`,
     errors
   );
   assert(

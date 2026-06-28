@@ -5,7 +5,14 @@
     "accentPrimary": "school.primary",
     "accentSecondary": "school.secondary"
   },
-  "quickApps": ["canvas", "drive", "notes"],
+  "calendarProfile": "academic",
+  "newsProfile": "academic",
+  "greeting": {
+    "persona": "Academic partner",
+    "directive": "Greet and nudge toward the next deadline.",
+    "fallback": "Time to study."
+  },
+  "quickApps": ["canvas", "drive", "claude", "gmail", "quizlet"],
   "quickActions": [
     "open-school-layout",
     "open-schedule",
@@ -19,5 +26,7 @@
   "widgets": {
     "left": "deadlines",
     "right": "courses"
-  }
+  },
+  "projectHints": ["current-term"],
+  "layoutId": "school.default"
 }

@@ -274,13 +274,16 @@ public enum ConfigValidator {
                 remediation: "Provide exactly 8 quick action ids."
             ))
         }
-        if Set(mode.quickActions).count != mode.quickActions.count {
+        // Null slots are unconfigured ("add action") and may repeat; only the
+        // configured (non-null) action ids must be unique.
+        let configuredActions = mode.quickActions.compactMap { $0 }
+        if Set(configuredActions).count != configuredActions.count {
             errors.append(makeError(
                 file: file,
                 field: "/quickActions",
-                expected: "unique entries",
-                message: "Quick actions contain duplicates.",
-                remediation: "Remove duplicate quick action ids."
+                expected: "unique configured entries",
+                message: "Quick actions contain a duplicate action id.",
+                remediation: "Remove duplicate quick-action ids (unconfigured null slots may repeat)."
             ))
         }
         if mode.quickApps.count > 5 {
@@ -305,7 +308,7 @@ public enum ConfigValidator {
         // their own `open-<id>-layout` action; Executive's layout action is optional.
         if mode.id != "executive" {
             let layoutAction = "open-\(mode.id)-layout"
-            if !mode.quickActions.contains(layoutAction) {
+            if !configuredActions.contains(layoutAction) {
                 errors.append(makeError(
                     file: file,
                     field: "/quickActions",
