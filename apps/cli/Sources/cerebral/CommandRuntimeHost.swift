@@ -64,6 +64,17 @@ func operationalDatabase(_ paths: WorkspacePaths) throws -> SQLiteDatabase {
     return database
 }
 
+/// Builds the backup service over the durable user state under the state root
+/// (operational database, user configuration, knowledge manifest).
+func makeBackupService(_ paths: WorkspacePaths) -> BackupService {
+    BackupService(
+        databasePath: paths.operationalDatabasePath,
+        configFiles: [paths.activeConfigPath, paths.settingsMetadataPath],
+        overridesDirectory: paths.overridesDirectory,
+        knowledgeRoot: paths.knowledgeRoot
+    )
+}
+
 /// Builds the durable knowledge service over the env-aware knowledge root and the
 /// operational database. Used by the `knowledge rebuild` surface, which needs the
 /// concrete service to reconstruct its search index.

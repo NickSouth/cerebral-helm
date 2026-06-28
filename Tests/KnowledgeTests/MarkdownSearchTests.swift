@@ -54,6 +54,27 @@ func rebuildPreservesResults() async throws {
     #expect(after.hits.map(\.path) == before.hits.map(\.path))
 }
 
+@Test("rebuild reconciles the index to the files, not trusting stale entries (AC-48.3)")
+func rebuildReconcilesStaleIndex() async throws {
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let index = InMemoryNoteSearchIndex()
+    let service = MarkdownKnowledgeService(rootURL: root, searchIndex: index, clock: FixedClock(t0, step: 1))
+
+    // A real note on disk, indexed at capture.
+    _ = try await service.capture(NoteCaptureRequest(title: "Captured note", body: "real hull", kind: "note", project: nil, sensitivity: nil))
+    // A stale/phantom entry as if restored from an untrusted index — no file backs it.
+    try index.upsert(NoteSearchIndexEntry(noteID: "ghost", path: "inbox/ghost.md", title: "ghost", body: "real phantom", sensitivity: nil, updated: nil, reviewAfter: nil))
+    #expect(try await service.search(NoteSearchRequest(query: "real", limit: nil)).hits.count == 2)
+
+    // After a restore the derived index is rebuilt from the durable files, so the
+    // phantom disappears and only on-disk notes remain (FR-UPD-07).
+    try service.rebuild()
+    let hits = try await service.search(NoteSearchRequest(query: "real", limit: nil)).hits
+    #expect(hits.count == 1)
+    #expect(hits.allSatisfy { $0.noteID != "ghost" })
+}
+
 @Test("freshness is derived from the review boundary")
 func freshnessFromReviewBoundary() async throws {
     let root = temporaryRoot()

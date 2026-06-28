@@ -59,6 +59,9 @@ public struct WorkspacePaths: Sendable {
     /// so tests/dev never touch a personal knowledge base; the user-chosen root is
     /// future (FR-KNW-07).
     public let knowledgeRoot: URL
+    /// Timestamped state backups (`<stateRoot>/backups`), created and verified
+    /// before a migration (FR-UPD-04).
+    public let backupsDirectory: URL
     public let eventLogPath: URL
 
     /// Resolves workspace paths. The environment is selected by `CEREBRAL_ENV`
@@ -94,6 +97,7 @@ public struct WorkspacePaths: Sendable {
             .appendingPathComponent("database", isDirectory: true)
             .appendingPathComponent("cerebral.sqlite")
         self.knowledgeRoot = stateRoot.appendingPathComponent("knowledge", isDirectory: true)
+        self.backupsDirectory = stateRoot.appendingPathComponent("backups", isDirectory: true)
 
         let eventLogPath: URL
         if let configured = processEnvironment["CEREBRAL_EVENT_LOG_PATH"], !configured.isEmpty {

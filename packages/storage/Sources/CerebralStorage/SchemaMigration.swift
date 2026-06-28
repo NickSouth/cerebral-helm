@@ -100,6 +100,13 @@ public struct SchemaMigrator: Sendable {
         return appliedNow
     }
 
+    /// The migrations not yet recorded as applied (those a `migrate` call would run).
+    /// Used to back up only when the schema is actually about to change (FR-UPD-04).
+    public func pendingMigrations(_ database: SQLiteDatabase) throws -> [SchemaMigration] {
+        let recorded = Set(try appliedMigrations(database).map(\.id))
+        return migrations.filter { !recorded.contains($0.id) }
+    }
+
     /// The migrations recorded as applied, ordered by id.
     public func appliedMigrations(_ database: SQLiteDatabase) throws -> [AppliedSchemaMigration] {
         try database.execute(Self.registryTable)
