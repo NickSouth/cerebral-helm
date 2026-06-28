@@ -115,6 +115,10 @@ function schemaForFixture(filePath) {
     return schemaId("workflows", "workflow");
   }
 
+  if (relativePath.startsWith("valid/knowledge/") || relativePath.startsWith("invalid/knowledge/")) {
+    return schemaId("knowledge", "note-metadata");
+  }
+
   if (relativePath.includes("/bridge/handshake/request.json")) {
     return schemaId("bridge", "handshake-request");
   }

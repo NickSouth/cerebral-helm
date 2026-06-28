@@ -53,7 +53,7 @@ let package = Package(
         ),
         .target(
             name: "CerebralKnowledge",
-            dependencies: ["CerebralCore", "CerebralShared"],
+            dependencies: ["CerebralCore", "CerebralShared", "CerebralContracts"],
             path: "packages/knowledge/Sources/CerebralKnowledge"
         ),
         .target(
@@ -132,6 +132,15 @@ let package = Package(
                 "CerebralShared",
             ],
             path: "Tests/StorageTests"
+        ),
+        .testTarget(
+            name: "KnowledgeTests",
+            dependencies: [
+                "CerebralKnowledge",
+                "CerebralContracts",
+                "CerebralShared",
+            ],
+            path: "Tests/KnowledgeTests"
         ),
     ]
 )

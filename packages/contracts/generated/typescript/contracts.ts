@@ -218,12 +218,19 @@ export interface Privacy {
     sensitivity: Sensitivity;
 }
 
+/**
+ * Whether the note may be sent to a cloud provider. Defaults to deny; never defaults to
+ * allow.
+ */
 export enum CloudPolicy {
     Allow = "allow",
     Ask = "ask",
     Deny = "deny",
 }
 
+/**
+ * Defaults to private when unspecified.
+ */
 export enum Sensitivity {
     Private = "private",
     Public = "public",
@@ -444,6 +451,59 @@ export interface Hotkeys {
 
 export interface Knowledge {
     rootReference?: string;
+}
+
+/**
+ * The system-managed YAML frontmatter of a durable Markdown note (FR-KNW-05). Markdown is
+ * the source of truth; this is the metadata block the system reads and writes. User-added
+ * frontmatter keys are preserved by the note codec and are outside this contract. Safe
+ * defaults are applied when optional fields are absent, and cloudPolicy defaults to deny or
+ * ask — never allow.
+ */
+export interface CerebralHelmNoteMetadata {
+    /**
+     * Whether the note may be sent to a cloud provider. Defaults to deny; never defaults to
+     * allow.
+     */
+    cloudPolicy: CloudPolicy;
+    created:     Date;
+    /**
+     * Stable, URL/file-safe note id.
+     */
+    id: string;
+    /**
+     * Note kind (e.g. note, daily, project-note, reference).
+     */
+    kind: string;
+    /**
+     * Optional durable project or area this note belongs to. Modes reference these; they do not
+     * duplicate the note.
+     */
+    project?: string;
+    /**
+     * Optional freshness boundary: after this instant the note is due for review.
+     */
+    reviewAfter?:  Date;
+    schemaVersion: string;
+    /**
+     * Defaults to private when unspecified.
+     */
+    sensitivity: Sensitivity;
+    /**
+     * Defaults to active when unspecified.
+     */
+    status:  CerebralHelmNoteMetadataStatus;
+    title:   string;
+    updated: Date;
+}
+
+/**
+ * Defaults to active when unspecified.
+ */
+export enum CerebralHelmNoteMetadataStatus {
+    Active = "active",
+    Archived = "archived",
+    Draft = "draft",
 }
 
 export interface CerebralHelmReferenceCatalog {

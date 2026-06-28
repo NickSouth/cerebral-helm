@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/knowledge/note-metadata.schema.json",
+  "title": "CerebralHelm Note Metadata",
+  "description": "The system-managed YAML frontmatter of a durable Markdown note (FR-KNW-05). Markdown is the source of truth; this is the metadata block the system reads and writes. User-added frontmatter keys are preserved by the note codec and are outside this contract. Safe defaults are applied when optional fields are absent, and cloudPolicy defaults to deny or ask — never allow.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "title", "kind", "sensitivity", "cloudPolicy", "status", "created", "updated"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "minLength": 1,
+      "description": "Stable, URL/file-safe note id."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "minLength": 1,
+      "description": "Note kind (e.g. note, daily, project-note, reference)."
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "minLength": 1,
+      "description": "Optional durable project or area this note belongs to. Modes reference these; they do not duplicate the note."
+    },
+    "sensitivity": {
+      "type": "string",
+      "enum": ["public", "private", "sensitive", "secret"],
+      "description": "Defaults to private when unspecified."
+    },
+    "cloudPolicy": {
+      "type": "string",
+      "enum": ["deny", "ask", "allow"],
+      "description": "Whether the note may be sent to a cloud provider. Defaults to deny; never defaults to allow."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "active", "archived"],
+      "description": "Defaults to active when unspecified."
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reviewAfter": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Optional freshness boundary: after this instant the note is due for review."
+    }
+  }
+}
