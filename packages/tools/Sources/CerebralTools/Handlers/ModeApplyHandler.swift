@@ -6,15 +6,15 @@ import CerebralCore
 /// least as strict as the strictest planned action (FR-MOD-03), supporting
 /// partial success (FR-MOD-04).
 ///
-/// The handler delegates planning to the ``ModePlanner`` port, aggregates the
+/// The handler delegates planning to the ``ActionPlanner`` port, aggregates the
 /// plan's risk, and reports a per-action result. Confirmation for the aggregate
 /// risk is enforced upstream by the policy engine's `highest_planned_action`
 /// path, so a mode containing a hook cannot bypass shell confirmation.
 public struct ModeApplyHandler: ToolHandler {
     public let toolID = "mode.apply"
-    private let planner: any ModePlanner
+    private let planner: any ActionPlanner
 
-    public init(planner: any ModePlanner) { self.planner = planner }
+    public init(planner: any ActionPlanner) { self.planner = planner }
 
     public func execute(input: Data) async throws -> Data {
         let decoded: CerebralHelmModeApplyInput
@@ -25,7 +25,7 @@ public struct ModeApplyHandler: ToolHandler {
         let plan: ModePlan
         do {
             plan = try planner.plan(modeID: decoded.modeID)
-        } catch let ModePlannerError.unknownMode(modeID) {
+        } catch let ActionPlannerError.unknownMode(modeID) {
             throw ToolHandlerError.unavailable("Mode '\(modeID)' is not configured.")
         }
 

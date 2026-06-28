@@ -50,7 +50,7 @@ public final class CommandRuntime: @unchecked Sendable {
     private let coordinator: ConfirmationCoordinator
     private let factory: CommandFactory
     private let hookCatalog: HookCatalog
-    private let modePlanner: (any ModePlanner)?
+    private let modePlanner: (any ActionPlanner)?
     private let clock: any TimeSource
     private let sink: @Sendable (CommandLifecycleEvent) -> Void
     private let toolCallSink: @Sendable (Data) -> Void
@@ -63,7 +63,7 @@ public final class CommandRuntime: @unchecked Sendable {
         factory: CommandFactory,
         references: CommandReferences,
         hookCatalog: HookCatalog = HookCatalog(),
-        modePlanner: (any ModePlanner)? = nil,
+        modePlanner: (any ActionPlanner)? = nil,
         clock: any TimeSource = SystemClock(),
         sink: @escaping @Sendable (CommandLifecycleEvent) -> Void = { _ in },
         toolCallSink: @escaping @Sendable (Data) -> Void = { _ in }

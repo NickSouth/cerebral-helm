@@ -19,7 +19,7 @@ public enum PreMacToolRuntime {
         capabilityMatrix: CapabilityMatrix = .allAvailable,
         knowledge: any KnowledgeService = MockKnowledgeService(),
         hookCatalog: HookCatalog = HookCatalog(),
-        modePlanner: any ModePlanner = StubModePlanner()
+        modePlanner: any ActionPlanner = StubModePlanner()
     ) throws -> ToolRegistry {
         let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory)
 
