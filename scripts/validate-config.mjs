@@ -206,7 +206,6 @@ export function validateRepositoryConfig() {
 
   const modeIds = new Set(modeFiles.map((filePath) => readJson(filePath).id));
   const agentIds = new Set(agentFiles.map((filePath) => readJson(filePath).id));
-  const toolIds = new Set(toolFiles.map((filePath) => readJson(filePath).id));
   const defaults = readJson(defaultsPath);
 
   assert(modeIds.has(defaults.defaultModeId), `defaults/app.json: defaultModeId "${defaults.defaultModeId}" must reference a mode file.`, errors);
@@ -215,8 +214,10 @@ export function validateRepositoryConfig() {
     assert(agentIds.has(agentId), `defaults/app.json: enabledAgentId "${agentId}" must reference an agent file.`, errors);
   }
 
+  // enabledToolIds must reference the authoritative descriptors (ADR-003, all 7
+  // tools), not the stricter-only overlay subset (config/tools/*.json, 4 files).
   for (const toolId of defaults.enabledToolIds ?? []) {
-    assert(toolIds.has(toolId), `defaults/app.json: enabledToolId "${toolId}" must reference a tool file.`, errors);
+    assert(registeredToolIds.has(toolId), `defaults/app.json: enabledToolId "${toolId}" must reference a registered tool descriptor.`, errors);
   }
 
   if (errors.length > 0) {

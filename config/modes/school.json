@@ -12,7 +12,7 @@
     "directive": "Greet and nudge toward the next deadline.",
     "fallback": "Time to study."
   },
-  "quickApps": ["canvas", "drive", "claude", "gmail", "quizlet"],
+  "quickApps": ["canvas", "drive", "claude-desktop", "gmail", "quizlet"],
   "quickActions": [
     "open-school-layout",
     "open-schedule",

@@ -3,6 +3,7 @@
   "id": "enter-entertainment",
   "label": "Enter Entertainment Mode",
   "steps": [
+    { "id": "snapshot-system", "label": "Snapshot system status", "tool": "system.status.read" },
     { "id": "open-media", "label": "Open media player", "tool": "app.open", "input": { "appId": "spotify" } },
     { "id": "open-video", "label": "Open video", "tool": "app.open", "input": { "appId": "youtube" } }
   ]

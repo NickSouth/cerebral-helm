@@ -104,6 +104,51 @@ func unknownModeThrows() {
     }
 }
 
+// MARK: - Resolve-time step-input validation
+
+/// Builds a planner with an injected validator that rejects any step input whose
+/// serialized JSON contains the marker key `"__bad"`, standing in for a tool's
+/// generated-type decode failure without binding a concrete tool type here.
+private func makeValidatingPlanner() throws -> WorkflowActionPlanner {
+    // Build the marker input via the generated Step decoder rather than
+    // constructing JSONAny directly (which has no public value initializer).
+    let badStep = try Step(data: Data(
+        #"{"id":"read-status","tool":"system.status.read","input":{"__bad":true}}"#.utf8
+    ))
+    let workflows = [
+        "good": workflow("good", [step("read-status", "system.status.read")]),
+        "bad": workflow("bad", [badStep]),
+    ]
+    return WorkflowActionPlanner(
+        workflows: workflows,
+        modeWorkflowIDs: [:],
+        toolFacts: toolFacts,
+        validateStepInput: { _, input in
+            if let input, let text = String(data: input, encoding: .utf8), text.contains("__bad") {
+                struct Rejected: Error {}
+                throw Rejected()
+            }
+        }
+    )
+}
+
+@Test("a step whose input fails its tool schema is a structured resolve error")
+func invalidStepInputThrows() throws {
+    let planner = try makeValidatingPlanner()
+    #expect {
+        try planner.plan(actionID: "bad")
+    } throws: { error in
+        guard case let ActionPlannerError.invalidStepInput(action, step, tool, _) = error else { return false }
+        return action == "bad" && step == "read-status" && tool == "system.status.read"
+    }
+}
+
+@Test("a step with a valid (absent) input passes resolve-time validation")
+func validStepInputResolves() throws {
+    let plan = try makeValidatingPlanner().plan(actionID: "good")
+    #expect(plan.actions.map(\.kind) == ["system.status.read"])
+}
+
 // MARK: - Determinism
 
 @Test("the same request always yields an equal plan")

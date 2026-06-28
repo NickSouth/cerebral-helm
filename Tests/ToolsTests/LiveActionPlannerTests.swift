@@ -52,9 +52,11 @@ func quickActionResolvesDirectly() throws {
     let plan = try livePlanner().plan(actionID: "enter-entertainment")
 
     #expect(plan.subjectID == "enter-entertainment")
-    #expect(plan.actions.allSatisfy { $0.risk == .localWrite })
-    // app.open is Mac-only, so an all-app entertainment entry plans all-unavailable.
-    #expect(plan.actions.allSatisfy { $0.status == .unavailable })
+    // The read-only system snapshot runs pre-Mac; the Mac-only app.open steps
+    // carry localWrite risk and plan unavailable.
+    #expect(plan.actions.contains { $0.risk == .localWrite })
+    #expect(plan.actions.contains { $0.status == .success })
+    #expect(plan.actions.contains { $0.status == .unavailable })
 }
 
 @Test("an unconfigured mode is a structured error on the live planner")

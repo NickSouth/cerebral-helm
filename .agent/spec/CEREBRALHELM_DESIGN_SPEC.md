@@ -174,7 +174,7 @@ Default emphasis:
 |---|---|
 | Executive | Chrome, Gmail, Finder, Claude Desktop, plus one configurable slot |
 | Developer | VS Code, Terminal, GitHub, Docker, Linear |
-| School | Canvas, Google Drive, Claude, Gmail, Quizlet |
+| School | Canvas, Google Drive, Claude Desktop, Gmail, Quizlet |
 | Entertainment | Spotify, YouTube, Steam, Discord, Photos |
 
 These are shipped defaults, not permanent hard-coding. Missing or unavailable apps show an actionable unavailable state and remain editable.
@@ -320,7 +320,7 @@ The bottom bar changes accent color with the active mode on the home dashboard o
 | Right free widget | Projects | Repositories | Courses | Media List |
 | News | Broad priority | Engineering | Academic | Interest/media |
 | Layout quick action | Optional general layout | Open Developer Layout | Open School Layout | Open Entertainment Layout |
-| Greeting | Executive partner | Development copilot | Academic partner | Downtime concierge |
+| Greeting | Friendly Assistant | Development Copilot | Academic Partner | Downtime Concierge |
 
 Mode color values are semantic tokens and remain tunable. Components reference roles such as `accent-primary`, `accent-secondary`, `panel-border`, `glow-soft`, `status-success`, and `focus-ring`; they do not embed mode-specific hex values.
 

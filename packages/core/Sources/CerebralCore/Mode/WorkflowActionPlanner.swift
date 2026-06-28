@@ -1,3 +1,4 @@
+import Foundation
 import CerebralContracts
 
 /// The authoritative planning facts the engine reads for one tool, sourced from
@@ -34,19 +35,29 @@ public struct WorkflowActionPlanner: ActionPlanner {
     private let workflows: [String: CerebralHelmWorkflowDefinition]
     private let modeWorkflowIDs: [String: String]
     private let toolFacts: [String: ToolPlanningFacts]
+    private let validateStepInput: @Sendable (_ toolID: String, _ input: Data?) throws -> Void
 
     /// - Parameters:
     ///   - workflows: workflow/quick-action definitions keyed by id.
     ///   - modeWorkflowIDs: the workflow id each mode resolves to, keyed by mode id.
     ///   - toolFacts: descriptor-sourced planning facts keyed by tool id.
+    ///   - validateStepInput: validates one step's serialized static input against
+    ///     its tool's input schema, throwing on a mismatch. The core stays portable
+    ///     and the planner pure: the composition layer injects a validator that
+    ///     decodes the input into each tool's generated input type. Defaults to a
+    ///     no-op so construction sites that do not exercise input validation
+    ///     (e.g. unit tests of resolution shape) compile and behave as before; the
+    ///     live composition must inject a real validator.
     public init(
         workflows: [String: CerebralHelmWorkflowDefinition],
         modeWorkflowIDs: [String: String],
-        toolFacts: [String: ToolPlanningFacts]
+        toolFacts: [String: ToolPlanningFacts],
+        validateStepInput: @escaping @Sendable (_ toolID: String, _ input: Data?) throws -> Void = { _, _ in }
     ) {
         self.workflows = workflows
         self.modeWorkflowIDs = modeWorkflowIDs
         self.toolFacts = toolFacts
+        self.validateStepInput = validateStepInput
     }
 
     public func plan(_ target: PlanTarget) throws -> ModePlan {
@@ -68,6 +79,20 @@ public struct WorkflowActionPlanner: ActionPlanner {
             guard let facts = toolFacts[step.tool] else {
                 throw ActionPlannerError.unsupportedTool(action: workflow.id, tool: step.tool)
             }
+            // The workflow contract promises step inputs are validated against the
+            // tool's input schema at resolve time. An absent input is treated as an
+            // empty object `{}` so tools that require no input validate cleanly.
+            let inputData = try serializeStepInput(step.input)
+            do {
+                try validateStepInput(step.tool, inputData)
+            } catch {
+                throw ActionPlannerError.invalidStepInput(
+                    action: workflow.id,
+                    step: step.id,
+                    tool: step.tool,
+                    reason: String(describing: error)
+                )
+            }
             return PlannedAction(
                 actionID: step.id,
                 kind: step.tool,
@@ -79,5 +104,14 @@ public struct WorkflowActionPlanner: ActionPlanner {
             )
         }
         return ModePlan(subjectID: subjectID, actions: actions)
+    }
+
+    /// Serializes a step's static input bindings to JSON `Data`. An absent input
+    /// is rendered as an empty object `{}` rather than `nil`, so a tool that
+    /// requires no input (e.g. `system.status.read`) still validates cleanly and
+    /// the injected validator always receives well-formed JSON to decode.
+    private func serializeStepInput(_ input: [String: JSONAny]?) throws -> Data {
+        guard let input else { return Data("{}".utf8) }
+        return try JSONEncoder().encode(input)
     }
 }

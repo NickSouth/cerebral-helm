@@ -42,8 +42,8 @@ but does **not** auto-place future features inside the MVP.
 
 > Keep this line current — it's the highest-value, fastest-stale pointer in the repo.
 
-- **Done:** NIC-9 (command spine) and **NIC-10 PRE-SAFETY** (registry, executor, policy, confirmation, redaction) — full stack runs through the live `cerebral` CLI; 117 Swift tests green.
-- **Next chunks (separate issues):** NIC-42 PRE-DATA (SQLite + durable `KnowledgeService` + cross-invocation confirmation persistence) · NIC-38 PRE-MODE (real `ModePlanner`). NIC-33 ships these behind **ports** with mock/stub bindings, so they are not blocked pre-Mac.
+- **Done:** NIC-9 (command spine), **NIC-10 PRE-SAFETY** (registry, executor, policy, confirmation, redaction), and **PRE-MODE** — NIC-38 (deterministic config-driven action/workflow planner) and NIC-39 (mode state + session persistence), with the live `WorkflowActionPlanner` bound in the runtime. Full stack runs through the live `cerebral` CLI; full Swift test suite green (run `swift test` for the current count). The only still-open PRE-MODE tickets are the parent epic NIC-35 and NIC-41 (data-root separation).
+- **Next chunk (separate issue):** NIC-42 PRE-DATA (SQLite + durable `KnowledgeService` + cross-invocation confirmation persistence). NIC-33 ships this behind **ports** with mock/stub bindings, so it is not blocked pre-Mac.
 - **Tech debt NIC-107..NIC-111 (Linear, `Tech Debt`):** all five implemented + green; staged/uncommitted pending review. Out of NIC-111: **`app.open`/`url.open`/`hook.run` are deliberately Mac-only** (descriptors say so), so the pre-Mac CLI surface is **notes + status + mode**; those three terminate `.unavailable` pre-Mac by design.
 
 ## Where state lives (don't duplicate it)

@@ -1,4 +1,5 @@
 import Foundation
+import CerebralContracts
 import CerebralCore
 import CerebralShared
 
@@ -69,8 +70,36 @@ public enum PreMacToolRuntime {
         return WorkflowActionPlanner(
             workflows: workflows,
             modeWorkflowIDs: modeWorkflowIDs,
-            toolFacts: toolFacts
+            toolFacts: toolFacts,
+            validateStepInput: { toolID, input in try validateStepInput(toolID: toolID, input: input) }
         )
+    }
+
+    /// Validates one workflow step's static input against its tool's input schema.
+    ///
+    /// There is no generic JSON-Schema validator in Swift; the authoritative
+    /// validation is each tool's generated input type Codable-decoding the input
+    /// (the same gate every handler uses). This seam decodes the serialized step
+    /// input into the matching generated type and throws on a mismatch, so a
+    /// malformed step input surfaces as a structured `invalidStepInput` resolve
+    /// error instead of failing only when the native adapter runs on macOS.
+    ///
+    /// Tools whose required set is empty (e.g. `system.status.read`) accept an
+    /// empty object `{}`, which the planner passes for an absent step input. An
+    /// unknown tool id validates trivially — the planner's `toolFacts` check
+    /// already rejects unsupported tools before this seam runs.
+    static func validateStepInput(toolID: String, input: Data?) throws {
+        let data = input ?? Data("{}".utf8)
+        switch toolID {
+        case "app.open": _ = try CerebralHelmAppOpenInput(data: data)
+        case "url.open": _ = try CerebralHelmURLOpenInput(data: data)
+        case "hook.run": _ = try CerebralHelmHookRunInput(data: data)
+        case "note.capture": _ = try CerebralHelmNoteCaptureInput(data: data)
+        case "note.search": _ = try CerebralHelmNoteSearchInput(data: data)
+        case "mode.apply": _ = try CerebralHelmModeApplyInput(data: data)
+        case "system.status.read": _ = try CerebralHelmSystemStatusReadInput(data: data)
+        default: break
+        }
     }
 
     public static func makeExecutor(
@@ -78,6 +107,7 @@ public enum PreMacToolRuntime {
         capabilityMatrix: CapabilityMatrix = .allAvailable,
         knowledge: any KnowledgeService = MockKnowledgeService(),
         hookCatalog: HookCatalog = HookCatalog(),
+        modePlanner: any ActionPlanner = StubModePlanner(),
         policy: PolicyEngine = PolicyEngine(),
         clock: any TimeSource = SystemClock()
     ) throws -> ToolExecutor {
@@ -85,7 +115,8 @@ public enum PreMacToolRuntime {
             descriptorsDirectory: descriptorsDirectory,
             capabilityMatrix: capabilityMatrix,
             knowledge: knowledge,
-            hookCatalog: hookCatalog
+            hookCatalog: hookCatalog,
+            modePlanner: modePlanner
         )
         return ToolExecutor(registry: registry, policy: policy, clock: clock)
     }

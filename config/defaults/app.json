@@ -11,6 +11,9 @@
     "app.open",
     "url.open",
     "hook.run",
-    "system.status.read"
+    "system.status.read",
+    "note.capture",
+    "note.search",
+    "mode.apply"
   ]
 }

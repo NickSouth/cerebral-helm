@@ -58,6 +58,11 @@ public enum ActionPlannerError: Error, Equatable, Sendable {
     /// A workflow step names a tool the planner cannot resolve. The workflow is
     /// malformed: a missing capability is a new tool, never a silent skip.
     case unsupportedTool(action: String, tool: String)
+    /// A workflow step's static input does not satisfy its tool's input schema.
+    /// The workflow contract promises step inputs are validated against the tool's
+    /// input schema at resolve time, so a malformed input is a structured resolve
+    /// error here rather than a deferred failure when the native adapter runs.
+    case invalidStepInput(action: String, step: String, tool: String, reason: String)
 }
 
 /// Produces a deterministic ordered action plan for a mode or a quick action.

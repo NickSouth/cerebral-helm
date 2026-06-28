@@ -118,11 +118,22 @@ public enum ConfigValidator {
             if let agent = result.value { agents.append(agent) }
         }
 
-        // Tool ids (the cross-reference target; the rich tool descriptor remains
-        // authoritative under NIC-28 and is validated there, not here).
-        let toolResult = readToolIDs(in: configDirectory.appendingPathComponent("tools", isDirectory: true))
+        // Tool ids. Two distinct sets live under `config/tools`:
+        //   * the optional stricter-only OVERLAY files (`config/tools/*.json`), and
+        //   * the authoritative tool DESCRIPTORS (`config/tools/descriptors/*.json`).
+        // `ValidatedConfig.toolIDs` preserves the overlay ids (its established
+        // semantics; the config loader carries it into `ActiveConfig`). The
+        // `enabledToolIds` cross-reference, however, must resolve against the
+        // authoritative descriptor set (ADR-003): an overlay is an optional
+        // stricter-only subset, so an enabled tool that has a descriptor but no
+        // overlay is valid and must not be flagged.
+        let toolsDirectory = configDirectory.appendingPathComponent("tools", isDirectory: true)
+        let toolResult = readToolIDs(in: toolsDirectory)
         errors += toolResult.errors
         let toolIDs = toolResult.ids
+        let descriptorIDs = readDescriptorIDs(
+            in: toolsDirectory.appendingPathComponent("descriptors", isDirectory: true)
+        )
 
         // Cross-file references (only meaningful once defaults decoded).
         if let defaults {
@@ -130,7 +141,7 @@ public enum ConfigValidator {
                 defaults: defaults,
                 modeIDs: Set(modes.map { $0.id }),
                 agentIDs: Set(agents.map { $0.id }),
-                toolIDs: Set(toolIDs)
+                toolIDs: Set(descriptorIDs)
             )
         }
 
@@ -375,6 +386,24 @@ public enum ConfigValidator {
             }
         }
         return (ids, errors)
+    }
+
+    /// Reads the tool ids from the authoritative descriptor set
+    /// (`config/tools/descriptors/*.json`) for the `enabledToolIds` cross-reference.
+    /// Descriptors are authoritative (ADR-003) and validated in full elsewhere
+    /// (NIC-28); here only their `id` is needed, so a descriptor that fails to
+    /// decode is simply omitted from the reference set rather than re-reported.
+    private static func readDescriptorIDs(in directory: URL) -> [String] {
+        struct ToolIdentity: Decodable { let id: String }
+        var ids: [String] = []
+        for url in jsonFiles(in: directory) {
+            guard
+                let data = readFile(url),
+                let identity = try? JSONDecoder().decode(ToolIdentity.self, from: data)
+            else { continue }
+            ids.append(identity.id)
+        }
+        return ids
     }
 
     // MARK: - Helpers
