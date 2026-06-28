@@ -124,6 +124,90 @@ func invalidOverrideKeepsLastKnownGood() throws {
     }
 }
 
+// MARK: - NIC-40: config migration in the live load path (FR-CFG-05)
+
+private struct OverrideRenameMigration: ConfigMigration {
+    let fromVersion = "0.9.0"
+    let toVersion = "1.0.0"
+    func migrate(_ document: [String: JSONValue]) throws -> [String: JSONValue] {
+        var out = document
+        if let apps = out["apps"] {
+            out["quickApps"] = apps
+            out.removeValue(forKey: "apps")
+        }
+        out["schemaVersion"] = .string(toVersion)
+        return out
+    }
+}
+
+private struct OverrideThrowingMigration: ConfigMigration {
+    let fromVersion = "0.9.0"
+    let toVersion = "1.0.0"
+    struct Boom: Error {}
+    func migrate(_ document: [String: JSONValue]) throws -> [String: JSONValue] { throw Boom() }
+}
+
+@Test("an older supported override is migrated before activation (FR-CFG-05)")
+func loadMigratesOlderOverride() throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: loaderRepositoryRoot())
+    try writeOverride(
+        #"{"schemaVersion":"0.9.0","id":"developer","apps":["vscode","terminal","linear"]}"#,
+        to: paths, name: "developer.json"
+    )
+    let loader = ConfigLoader(
+        workspace: paths,
+        migrator: ConfigMigrator(currentVersion: "1.0.0", migrations: [OverrideRenameMigration()])
+    )
+
+    switch loader.load() {
+    case let .activated(active):
+        // The legacy `apps` field migrated to `quickApps` and merged onto the mode.
+        #expect(active.mode(id: "developer")?.quickApps == ["vscode", "terminal", "linear"])
+    case let .rejected(errors, _):
+        Issue.record("expected activation, got: \(errors.map { $0.message })")
+    }
+}
+
+@Test("a failed override migration leaves the last-known-good config active")
+func failedOverrideMigrationKeepsLastKnownGood() throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: loaderRepositoryRoot())
+    // A clean activation establishes the last-known-good snapshot.
+    guard case let .activated(good) = ConfigLoader(workspace: paths).load() else {
+        Issue.record("expected initial activation")
+        return
+    }
+
+    try writeOverride(
+        #"{"schemaVersion":"0.9.0","id":"developer","apps":["vscode"]}"#,
+        to: paths, name: "developer.json"
+    )
+    let loader = ConfigLoader(
+        workspace: paths,
+        migrator: ConfigMigrator(currentVersion: "1.0.0", migrations: [OverrideThrowingMigration()])
+    )
+
+    switch loader.load() {
+    case .activated:
+        Issue.record("a failed migration must not activate")
+    case let .rejected(errors, lastKnownGood):
+        #expect(errors.contains { $0.field == "/schemaVersion" })
+        #expect(lastKnownGood?.modes.count == good.modes.count)
+    }
+}
+
+@Test("activation records settings metadata with the active config version")
+func activationWritesSettingsMetadata() throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: loaderRepositoryRoot())
+    guard case .activated = ConfigLoader(workspace: paths).load() else {
+        Issue.record("expected activation")
+        return
+    }
+
+    let data = try Data(contentsOf: paths.settingsMetadataPath)
+    let metadata = try JSONDecoder().decode(SettingsMetadata.self, from: data)
+    #expect(metadata.activeConfigVersion == "1.0.0")
+}
+
 @Test("the last-known-good snapshot round-trips from disk")
 func lastKnownGoodRoundTrips() throws {
     let paths = try WorkspacePaths.temporary(repositoryRoot: loaderRepositoryRoot())

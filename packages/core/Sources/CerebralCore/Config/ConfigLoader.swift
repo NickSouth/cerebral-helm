@@ -24,9 +24,11 @@ public enum ConfigActivation {
 /// cannot overwrite them (FR-CFG-01).
 public struct ConfigLoader {
     private let workspace: WorkspacePaths
+    private let migrator: ConfigMigrator
 
-    public init(workspace: WorkspacePaths) {
+    public init(workspace: WorkspacePaths, migrator: ConfigMigrator = ConfigMigrations.migrator()) {
         self.workspace = workspace
+        self.migrator = migrator
     }
 
     /// Builds and (if valid) activates the layered configuration, persisting it as
@@ -45,10 +47,23 @@ public struct ConfigLoader {
         // Layer: user overrides (per-mode files under the state root).
         var errors: [CerebralHelmConfigValidationError] = []
         var userOverrides: [CerebralHelmModeOverride] = []
+        var appliedMigrations: [AppliedMigration] = []
         for url in overrideFiles() {
             let label = "overrides/\(url.lastPathComponent)"
-            guard let data = try? Data(contentsOf: url) else {
+            guard let rawData = try? Data(contentsOf: url) else {
                 errors.append(unreadable(file: label))
+                continue
+            }
+            // Upgrade an older supported override to the current schema before
+            // validation (FR-CFG-05). A failed migration is an invalid candidate,
+            // so the last-known-good config stays active (FR-CFG-02).
+            let data: Data
+            switch migrateOverride(rawData, file: label) {
+            case let .ready(migrated, applied):
+                data = migrated
+                appliedMigrations += applied
+            case let .invalid(error):
+                errors.append(error)
                 continue
             }
             let documentErrors = ConfigValidator.overrideDocumentErrors(file: label, data: data)
@@ -71,6 +86,9 @@ public struct ConfigLoader {
             return .rejected(errors: errors, lastKnownGood: lastKnownGood())
         }
 
+        // Capture the version we would roll back to before overwriting the snapshot.
+        let rollbackVersion = lastKnownGood()?.defaults.schemaVersion
+
         let active = ActiveConfig(
             defaults: base.defaults,
             modes: mergedModes,
@@ -78,7 +96,65 @@ public struct ConfigLoader {
             toolIDs: base.toolIDs
         )
         persistLastKnownGood(active)
+        persistSettingsMetadata(SettingsMetadata(
+            activeConfigVersion: base.defaults.schemaVersion,
+            lastKnownGoodVersion: rollbackVersion,
+            appliedMigrations: appliedMigrations
+        ))
         return .activated(active)
+    }
+
+    /// The result of migrating one override document to the current schema.
+    private enum OverrideMigrationResult {
+        case ready(Data, [AppliedMigration])
+        case invalid(CerebralHelmConfigValidationError)
+    }
+
+    private func migrateOverride(_ rawData: Data, file: String) -> OverrideMigrationResult {
+        guard let value = try? JSONValue(data: rawData) else {
+            return .invalid(unreadable(file: file))
+        }
+        switch migrator.migrate(value) {
+        case .upToDate:
+            return .ready(rawData, [])
+        case let .migrated(migrated, applied):
+            guard let data = try? migrated.serialized() else {
+                return .invalid(migrationError(file: file, message: "Migrated override could not be serialized."))
+            }
+            return .ready(data, applied)
+        case let .failed(error, _):
+            return .invalid(migrationError(file: file, message: migrationMessage(error)))
+        }
+    }
+
+    private func migrationMessage(_ error: ConfigMigrationError) -> String {
+        switch error {
+        case .missingVersion:
+            return "Override is missing a schemaVersion."
+        case let .unsupportedVersion(version):
+            return "Override schema version \(version) has no supported migration path."
+        case let .migrationFailed(from, to, reason):
+            return "Migration \(from) to \(to) failed: \(reason)."
+        case let .versionNotAdvanced(from):
+            return "Migration from \(from) did not advance the schema version."
+        }
+    }
+
+    private func migrationError(file: String, message: String) -> CerebralHelmConfigValidationError {
+        CerebralHelmConfigValidationError(
+            expected: "a supported config version",
+            field: "/schemaVersion",
+            file: file,
+            message: message,
+            remediation: "Update the file to a supported version, or restore the previous version.",
+            schemaVersion: ConfigValidator.schemaVersion
+        )
+    }
+
+    private func persistSettingsMetadata(_ metadata: SettingsMetadata) {
+        guard let data = try? JSONEncoder().encode(metadata) else { return }
+        try? FileManager.default.createDirectory(at: workspace.stateRoot, withIntermediateDirectories: true)
+        try? data.write(to: workspace.settingsMetadataPath)
     }
 
     /// Applies per-mode overrides onto modes, matched by id; later overrides win

@@ -14,7 +14,7 @@ public protocol ConfigMigration: Sendable {
 }
 
 /// A migration step that was applied, for audit/rollback metadata.
-public struct AppliedMigration: Equatable, Sendable {
+public struct AppliedMigration: Codable, Equatable, Sendable {
     public let from: String
     public let to: String
 

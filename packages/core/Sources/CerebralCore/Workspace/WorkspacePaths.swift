@@ -45,6 +45,8 @@ public struct WorkspacePaths: Sendable {
     public let overridesDirectory: URL
     /// Last-known-good activated config snapshot (`<stateRoot>/active-config.json`).
     public let activeConfigPath: URL
+    /// Config version / rollback metadata (`<stateRoot>/settings-metadata.json`).
+    public let settingsMetadataPath: URL
     /// Active mode id, persisted separately from context (`<stateRoot>/active-mode.json`).
     public let activeModePath: URL
     /// Active project/context, persisted separately from mode (`<stateRoot>/active-context.json`).
@@ -76,6 +78,7 @@ public struct WorkspacePaths: Sendable {
         self.stateRoot = stateRoot
         self.overridesDirectory = stateRoot.appendingPathComponent("overrides", isDirectory: true)
         self.activeConfigPath = stateRoot.appendingPathComponent("active-config.json")
+        self.settingsMetadataPath = stateRoot.appendingPathComponent("settings-metadata.json")
         self.activeModePath = stateRoot.appendingPathComponent("active-mode.json")
         self.activeContextPath = stateRoot.appendingPathComponent("active-context.json")
         self.modeSessionLogPath = stateRoot
