@@ -5,6 +5,7 @@ import CerebralContracts
 import CerebralCore
 import CerebralKnowledge
 import CerebralShared
+import CerebralStorage
 import CerebralTools
 
 @Test("portable modules expose their repository boundaries")
@@ -13,6 +14,7 @@ func portableModulesAreAvailable() {
     #expect(CerebralCorePackage.boundary == "core")
     #expect(CerebralToolsPackage.boundary == "tools")
     #expect(CerebralKnowledgePackage.boundary == "knowledge")
+    #expect(CerebralStoragePackage.boundary == "storage")
     #expect(CerebralSharedPackage.boundary == "shared")
 }
 

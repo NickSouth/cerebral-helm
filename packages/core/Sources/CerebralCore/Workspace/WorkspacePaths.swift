@@ -53,6 +53,8 @@ public struct WorkspacePaths: Sendable {
     public let activeContextPath: URL
     /// Append-only mode session history (`<stateRoot>/sessions/mode-sessions.ndjson`).
     public let modeSessionLogPath: URL
+    /// Operational SQLite database (`<stateRoot>/database/cerebral.sqlite`).
+    public let operationalDatabasePath: URL
     public let eventLogPath: URL
 
     /// Resolves workspace paths. The environment is selected by `CEREBRAL_ENV`
@@ -84,6 +86,9 @@ public struct WorkspacePaths: Sendable {
         self.modeSessionLogPath = stateRoot
             .appendingPathComponent("sessions", isDirectory: true)
             .appendingPathComponent("mode-sessions.ndjson")
+        self.operationalDatabasePath = stateRoot
+            .appendingPathComponent("database", isDirectory: true)
+            .appendingPathComponent("cerebral.sqlite")
 
         let eventLogPath: URL
         if let configured = processEnvironment["CEREBRAL_EVENT_LOG_PATH"], !configured.isEmpty {
