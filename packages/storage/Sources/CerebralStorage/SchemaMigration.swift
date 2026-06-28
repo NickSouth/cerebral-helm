@@ -107,6 +107,20 @@ public struct SchemaMigrator: Sendable {
         return migrations.filter { !recorded.contains($0.id) }
     }
 
+    /// Ids of already-applied migrations whose recorded checksum no longer matches
+    /// the current definition — drift that startup validation surfaces read-only
+    /// (FR-SHL-05) rather than silently re-applying. Read-only: it only reads
+    /// `schema_migrations`.
+    public func driftedMigrationIDs(_ database: SQLiteDatabase) throws -> [String] {
+        let current = Dictionary(uniqueKeysWithValues: migrations.map { ($0.id, $0.checksum) })
+        return try appliedMigrations(database)
+            .filter { recorded in
+                guard let expected = current[recorded.id] else { return false }
+                return expected != recorded.checksum
+            }
+            .map(\.id)
+    }
+
     /// The migrations recorded as applied, ordered by id.
     public func appliedMigrations(_ database: SQLiteDatabase) throws -> [AppliedSchemaMigration] {
         try database.execute(Self.registryTable)

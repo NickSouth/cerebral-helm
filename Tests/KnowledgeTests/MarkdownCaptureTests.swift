@@ -124,6 +124,31 @@ func captureThenSearchFinds() async throws {
     #expect(result.hits.first?.sensitivity == "private")
 }
 
+@Test("a capture into an unusable root fails with recovery guidance and discards nothing (AC-49.1, AC-49.3)")
+func captureIntoUnusableRootIsStructured() async throws {
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    // Use an existing *file* as the "root", so creating subdirectories under it fails.
+    let fileAsRoot = root.appendingPathComponent("not-a-directory")
+    try Data("user data".utf8).write(to: fileAsRoot)
+    let service = MarkdownKnowledgeService(rootURL: fileAsRoot, clock: FixedClock(t0))
+
+    do {
+        _ = try await service.capture(
+            NoteCaptureRequest(title: "Captured note", body: "y", kind: "note", project: nil, sensitivity: nil)
+        )
+        Issue.record("expected capture into an unusable root to fail")
+    } catch let error as KnowledgeServiceError {
+        let diagnostic = RecoveryDiagnostic.forKnowledge(error)
+        #expect(diagnostic.store == "knowledge")
+        #expect(!diagnostic.guidance.isEmpty) // failures map to recovery guidance (AC-49.1)
+    }
+
+    // The user's existing file is untouched — nothing is silently discarded (AC-49.3).
+    #expect(try String(contentsOf: fileAsRoot, encoding: .utf8) == "user data")
+}
+
 @Test("the frontmatter codec round-trips metadata and body")
 func codecRoundTrips() {
     let metadata = NoteMetadataNormalizer.normalize(
