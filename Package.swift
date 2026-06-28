@@ -70,6 +70,7 @@ let package = Package(
             dependencies: [
                 "CerebralCore",
                 "CerebralTools",
+                "CerebralStorage",
                 "CerebralShared",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],

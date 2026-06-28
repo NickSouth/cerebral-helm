@@ -128,8 +128,16 @@ public struct SchemaMigrator: Sendable {
 /// infrequent relative to the cost.
 enum StorageTimestamp {
     static func iso8601(from date: Date) -> String {
+        formatter().string(from: date)
+    }
+
+    static func date(from string: String) -> Date? {
+        formatter().date(from: string)
+    }
+
+    private static func formatter() -> ISO8601DateFormatter {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        return formatter
     }
 }

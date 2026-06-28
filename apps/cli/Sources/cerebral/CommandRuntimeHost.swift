@@ -2,6 +2,7 @@ import Foundation
 import CerebralContracts
 import CerebralCore
 import CerebralShared
+import CerebralStorage
 import CerebralTools
 
 /// App-layer composition: builds the live ``CommandRuntime`` by wiring the
@@ -28,7 +29,7 @@ func makeCommandRuntime(_ options: GlobalOptions) throws -> CommandRuntime {
 
     return CommandRuntime(
         registry: registry,
-        coordinator: ConfirmationCoordinator(),
+        coordinator: try makeConfirmationCoordinator(paths),
         factory: CommandFactory(clock: SystemClock(), identifiers: UUIDIdentifierGenerator()),
         references: references,
         hookCatalog: hookCatalog,
@@ -37,6 +38,17 @@ func makeCommandRuntime(_ options: GlobalOptions) throws -> CommandRuntime {
         // Already redacted by the runtime; append one JSON line per tool call.
         toolCallSink: { appendLine($0, to: toolCallLogPath) }
     )
+}
+
+/// Builds the confirmation coordinator over the operational SQLite store, opening
+/// and migrating the database so pending confirmations persist across `cerebral`
+/// invocations (NIC-112). This is where the schema migrations first run live; the
+/// database and migrator are idempotent, so every invocation is a cheap no-op once
+/// the schema is current.
+private func makeConfirmationCoordinator(_ paths: WorkspacePaths) throws -> ConfirmationCoordinator {
+    let database = try SQLiteDatabase(location: .file(paths.operationalDatabasePath))
+    try SchemaMigrator().migrate(database)
+    return ConfirmationCoordinator(store: SQLiteConfirmationStore(database: database))
 }
 
 /// Appends one NDJSON line to a development log, creating the directory as needed.
