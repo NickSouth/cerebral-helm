@@ -1,0 +1,129 @@
+/*
+ * CerebralHelm design tokens — the single source of truth for color, surface,
+ * spacing, radius, typography, motion, focus, and layering.
+ *
+ * Authority: .agent/spec/UI-CONSTITUTION.md (distilled from the design spec + PDF).
+ * Values are PROPOSED and owner-tunable; tuning a value never requires touching a
+ * component. Components reference SEMANTIC tokens only (never a #hex, never a mode
+ * primitive directly, never a per-mode conditional). Mode is applied via [data-mode].
+ */
+
+:root {
+  /* --- Mode palette primitives (referenced by config/modes/*.json names) --- */
+  --ch-mode-executive-primary: #e8b765;
+  --ch-mode-executive-secondary: #5fd2e8;
+  --ch-mode-developer-primary: #7fc4dc;
+  --ch-mode-developer-secondary: #afc6d6;
+  --ch-mode-school-primary: #3e7bfa;
+  --ch-mode-school-secondary: #e8b765;
+  --ch-mode-entertainment-primary: #34d38a;
+  --ch-mode-entertainment-secondary: #5fd2e8;
+
+  /* --- Base surfaces (mode-independent) --- */
+  --ch-bg-base: #05080f;
+  --ch-bg-gradient-top: #0a1422;
+  --ch-glow-radial: rgba(95, 210, 232, 0.14);
+  --ch-surface-panel: rgba(15, 23, 38, 0.66);
+  --ch-surface-raised: rgba(18, 26, 42, 0.92);
+  --ch-panel-border: rgba(255, 255, 255, 0.08);
+  --ch-text-primary: #eaf2fb;
+  --ch-text-muted: #9fb0c3;
+  --ch-text-faint: #6b7c90;
+
+  /* --- Status (mode-independent; always paired with text/non-color cue) --- */
+  --ch-status-success: #34d399;
+  --ch-status-warning: #e8b765;
+  --ch-status-info: #5b8def;
+  --ch-status-error: #f2655e;
+  --ch-status-neutral: #7c8ba0;
+
+  /* --- Confirmation (neutral system blue; never inherits mode accent) --- */
+  --ch-confirm-accent: #4d8df6;
+  --ch-confirm-surface: rgba(16, 24, 40, 0.96);
+
+  /* --- Active accent: defaults to Executive until [data-mode] resolves it --- */
+  --ch-accent-primary: var(--ch-mode-executive-primary);
+  --ch-accent-secondary: var(--ch-mode-executive-secondary);
+  --ch-glow-soft: color-mix(in srgb, var(--ch-accent-primary) 45%, var(--ch-accent-secondary));
+
+  /* --- Spacing (4px base) --- */
+  --ch-space-1: 4px;
+  --ch-space-2: 8px;
+  --ch-space-3: 12px;
+  --ch-space-4: 16px;
+  --ch-space-5: 20px;
+  --ch-space-6: 24px;
+  --ch-space-8: 32px;
+  --ch-space-10: 40px;
+  --ch-space-12: 48px;
+  --ch-space-16: 64px;
+
+  /* --- Radii (small; the spec mandates small corner radii) --- */
+  --ch-radius-sm: 8px;
+  --ch-radius-md: 10px;
+  --ch-radius-lg: 12px;
+  --ch-radius-pill: 999px;
+
+  /* --- Typography --- */
+  --ch-font-family: "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --ch-font-size-display: 2.25rem;
+  --ch-font-size-xl: 1.75rem;
+  --ch-font-size-lg: 1.3rem;
+  --ch-font-size-base: 0.95rem;
+  --ch-font-size-sm: 0.85rem;
+  --ch-font-size-label: 0.72rem;
+  --ch-font-weight-light: 300;
+  --ch-font-weight-regular: 400;
+  --ch-font-weight-medium: 500;
+  --ch-font-weight-semibold: 600;
+  --ch-font-label-tracking: 0.12em;
+
+  /* --- Motion --- */
+  --ch-motion-fast: 120ms;
+  --ch-motion-base: 200ms;
+  --ch-motion-slow: 320ms;
+  --ch-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* --- Focus (visible ring + offset; never color alone) --- */
+  --ch-focus-ring-color: #7fb7ff;
+  --ch-focus-ring-width: 2px;
+  --ch-focus-ring-offset: 2px;
+
+  /* --- Layering --- */
+  --ch-z-base: 0;
+  --ch-z-raised: 10;
+  --ch-z-bottombar: 100;
+  --ch-z-scrim: 900;
+  --ch-z-overlay: 1000;
+  --ch-z-tooltip: 1100;
+}
+
+/* --- Mode application: the ONLY place mode chooses a color --- */
+[data-mode="executive"] {
+  --ch-accent-primary: var(--ch-mode-executive-primary);
+  --ch-accent-secondary: var(--ch-mode-executive-secondary);
+}
+
+[data-mode="developer"] {
+  --ch-accent-primary: var(--ch-mode-developer-primary);
+  --ch-accent-secondary: var(--ch-mode-developer-secondary);
+}
+
+[data-mode="school"] {
+  --ch-accent-primary: var(--ch-mode-school-primary);
+  --ch-accent-secondary: var(--ch-mode-school-secondary);
+}
+
+[data-mode="entertainment"] {
+  --ch-accent-primary: var(--ch-mode-entertainment-primary);
+  --ch-accent-secondary: var(--ch-mode-entertainment-secondary);
+}
+
+/* --- Reduced motion: collapse durations; state is carried by text + color --- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ch-motion-fast: 0ms;
+    --ch-motion-base: 0ms;
+    --ch-motion-slow: 0ms;
+  }
+}
