@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { runCommand } from "./helpers.mjs";
 
 runCommand("node", ["./scripts/check-toolchain.mjs", "--require-swift"]);
@@ -15,3 +16,22 @@ runCommand("node", ["--test", "./scripts/fixture-catalog.test.mjs"]);
 runCommand("swift", ["test"]);
 runCommand("corepack", ["pnpm", "--dir", "apps/dashboard", "test", "--run"]);
 runCommand("corepack", ["pnpm", "--dir", "apps/dashboard", "build"]);
+
+// Visual-regression + accessibility guardrail. Skipped gracefully when the
+// Playwright browsers are not installed (e.g. a cold CI or a fresh checkout) so a
+// missing optional binary never hard-fails the whole suite.
+const corepackBinary = process.platform === "win32" ? "corepack.cmd" : "corepack";
+const browsersInstalled = spawnSync(
+  corepackBinary,
+  ["pnpm", "--dir", "apps/dashboard", "visual:available"],
+  { stdio: "ignore", shell: process.platform === "win32" }
+);
+
+if (browsersInstalled.status === 0) {
+  runCommand("corepack", ["pnpm", "--dir", "apps/dashboard", "test:visual"]);
+} else {
+  console.log(
+    "Skipping dashboard visual regression: Playwright browsers not installed " +
+      "(run: corepack pnpm --dir apps/dashboard exec playwright install chromium webkit)."
+  );
+}
