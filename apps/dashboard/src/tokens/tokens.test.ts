@@ -7,6 +7,7 @@ import {
   isRegisteredModeTokenName,
   modeTokenCssVar
 } from "./tokens";
+import manifest from "./tokens.manifest.json";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const tokensCss = readFileSync(path.join(here, "tokens.css"), "utf8");
@@ -18,6 +19,10 @@ function defines(css: string, cssVar: string): boolean {
 }
 
 describe("design tokens", () => {
+  it("keeps the Node-readable manifest in lockstep with the typed registry", () => {
+    expect(manifest.modeThemeTokens).toEqual([...MODE_TOKEN_NAMES]);
+  });
+
   it("defines a CSS custom property for every registered mode token name", () => {
     for (const name of MODE_TOKEN_NAMES) {
       expect(defines(tokensCss, modeTokenCssVar(name))).toBe(true);

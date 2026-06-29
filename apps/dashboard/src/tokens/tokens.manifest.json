@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Node-readable registry of design-token names that config files may reference. Mirror of MODE_TOKEN_NAMES in tokens.ts (kept in lockstep by tokens.test.ts); read by scripts/validate-config.mjs to resolve mode theme tokens.",
+  "modeThemeTokens": [
+    "executive.primary",
+    "executive.secondary",
+    "developer.primary",
+    "developer.secondary",
+    "school.primary",
+    "school.secondary",
+    "entertainment.primary",
+    "entertainment.secondary"
+  ]
+}

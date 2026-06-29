@@ -24,7 +24,43 @@ function validateDefaults(document, relativePath, errors) {
   assert(Array.isArray(document.enabledToolIds), `${relativePath}: enabledToolIds must be an array.`, errors);
 }
 
-function validateMode(document, relativePath, errors) {
+// The registry of design-token names a config may reference lives with the UI that
+// defines their values. Reading it here makes a dangling theme-token reference a
+// build failure (the seed of the NIC-117 single reference-resolution gate).
+export function readRegisteredModeThemeTokens(repositoryRoot) {
+  const manifestPath = path.join(repositoryRoot, "apps", "dashboard", "src", "tokens", "tokens.manifest.json");
+  const manifest = readJson(manifestPath);
+
+  if (!Array.isArray(manifest.modeThemeTokens)) {
+    fail(`${path.relative(repositoryRoot, manifestPath)}: modeThemeTokens must be an array.`);
+  }
+
+  return new Set(manifest.modeThemeTokens);
+}
+
+export function validateModeThemeTokens(document, relativePath, registeredTokenNames, errors) {
+  const theme = document.theme;
+
+  if (typeof theme !== "object" || theme === null || Array.isArray(theme)) {
+    return;
+  }
+
+  for (const field of ["accentPrimary", "accentSecondary"]) {
+    const tokenName = theme[field];
+
+    if (typeof tokenName !== "string") {
+      continue;
+    }
+
+    assert(
+      registeredTokenNames.has(tokenName),
+      `${relativePath}: theme.${field} "${tokenName}" must reference a registered design token (apps/dashboard/src/tokens/tokens.manifest.json).`,
+      errors
+    );
+  }
+}
+
+function validateMode(document, relativePath, errors, registeredTokenNames) {
   assert(typeof document.id === "string", `${relativePath}: id must be a string.`, errors);
   assert(typeof document.label === "string", `${relativePath}: label must be a string.`, errors);
   assert(
@@ -85,6 +121,8 @@ function validateMode(document, relativePath, errors) {
       errors
     );
   }
+
+  validateModeThemeTokens(document, relativePath, registeredTokenNames, errors);
 }
 
 function validateWorkflow(document, relativePath, errors, registeredToolIds) {
@@ -163,8 +201,9 @@ function collectJsonFiles(directoryPath) {
 }
 
 export function validateRepositoryConfig() {
-  const { configRoot, fixtureRoot } = resolvePaths();
+  const { repositoryRoot, configRoot, fixtureRoot } = resolvePaths();
   const errors = [];
+  const registeredTokenNames = readRegisteredModeThemeTokens(repositoryRoot);
 
   const defaultsPath = path.join(configRoot, "defaults", "app.json");
   const modeFiles = collectJsonFiles(path.join(configRoot, "modes"));
@@ -178,7 +217,7 @@ export function validateRepositoryConfig() {
   validateDefaults(readJson(defaultsPath), path.relative(configRoot, defaultsPath), errors);
 
   for (const filePath of modeFiles) {
-    validateMode(readJson(filePath), path.relative(configRoot, filePath), errors);
+    validateMode(readJson(filePath), path.relative(configRoot, filePath), errors, registeredTokenNames);
   }
 
   for (const filePath of agentFiles) {
