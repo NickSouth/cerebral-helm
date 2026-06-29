@@ -60,7 +60,79 @@ export function validateModeThemeTokens(document, relativePath, registeredTokenN
   }
 }
 
-function validateMode(document, relativePath, errors, registeredTokenNames) {
+// The widget registry lives with the UI that renders each slot (one component per id,
+// never a per-mode conditional). Resolving widgets.left / widgets.right against it here
+// makes a dangling widget reference a build failure — the same single reference gate as
+// theme tokens (NIC-117 root decision).
+export function readRegisteredWidgetIds(repositoryRoot) {
+  const manifestPath = path.join(repositoryRoot, "apps", "dashboard", "src", "widgets", "widgets.manifest.json");
+  const manifest = readJson(manifestPath);
+
+  if (!Array.isArray(manifest.widgetIds)) {
+    fail(`${path.relative(repositoryRoot, manifestPath)}: widgetIds must be an array.`);
+  }
+
+  return new Set(manifest.widgetIds);
+}
+
+export function validateModeWidgets(document, relativePath, registeredWidgetIds, errors) {
+  const widgets = document.widgets;
+
+  if (typeof widgets !== "object" || widgets === null || Array.isArray(widgets)) {
+    return;
+  }
+
+  for (const side of ["left", "right"]) {
+    const widgetId = widgets[side];
+
+    if (typeof widgetId !== "string") {
+      continue;
+    }
+
+    assert(
+      registeredWidgetIds.has(widgetId),
+      `${relativePath}: widgets.${side} "${widgetId}" must reference a registered widget (apps/dashboard/src/widgets/widgets.manifest.json).`,
+      errors
+    );
+  }
+}
+
+// The pre-Mac application catalog is the resolution set for quick-app references. A
+// configured app id that is not a known app is a typo/dangling reference (a build
+// failure); runtime "not installed" is a separate, gracefully-degraded concern. On the
+// Mac target the catalog is replaced by real app discovery.
+export function readRegisteredQuickAppIds(repositoryRoot) {
+  const manifestPath = path.join(repositoryRoot, "apps", "dashboard", "src", "appCatalog", "appCatalog.manifest.json");
+  const manifest = readJson(manifestPath);
+
+  if (!Array.isArray(manifest.appIds)) {
+    fail(`${path.relative(repositoryRoot, manifestPath)}: appIds must be an array.`);
+  }
+
+  return new Set(manifest.appIds);
+}
+
+export function validateModeQuickApps(document, relativePath, registeredAppIds, errors) {
+  const quickApps = document.quickApps;
+
+  if (!Array.isArray(quickApps)) {
+    return;
+  }
+
+  for (const appId of quickApps) {
+    if (typeof appId !== "string") {
+      continue;
+    }
+
+    assert(
+      registeredAppIds.has(appId),
+      `${relativePath}: quickApps entry "${appId}" must reference a registered application (apps/dashboard/src/appCatalog/appCatalog.manifest.json).`,
+      errors
+    );
+  }
+}
+
+function validateMode(document, relativePath, errors, registries) {
   assert(typeof document.id === "string", `${relativePath}: id must be a string.`, errors);
   assert(typeof document.label === "string", `${relativePath}: label must be a string.`, errors);
   assert(
@@ -122,7 +194,9 @@ function validateMode(document, relativePath, errors, registeredTokenNames) {
     );
   }
 
-  validateModeThemeTokens(document, relativePath, registeredTokenNames, errors);
+  validateModeThemeTokens(document, relativePath, registries.tokenNames, errors);
+  validateModeWidgets(document, relativePath, registries.widgetIds, errors);
+  validateModeQuickApps(document, relativePath, registries.appIds, errors);
 }
 
 function validateWorkflow(document, relativePath, errors, registeredToolIds) {
@@ -203,7 +277,11 @@ function collectJsonFiles(directoryPath) {
 export function validateRepositoryConfig() {
   const { repositoryRoot, configRoot, fixtureRoot } = resolvePaths();
   const errors = [];
-  const registeredTokenNames = readRegisteredModeThemeTokens(repositoryRoot);
+  const registries = {
+    tokenNames: readRegisteredModeThemeTokens(repositoryRoot),
+    widgetIds: readRegisteredWidgetIds(repositoryRoot),
+    appIds: readRegisteredQuickAppIds(repositoryRoot)
+  };
 
   const defaultsPath = path.join(configRoot, "defaults", "app.json");
   const modeFiles = collectJsonFiles(path.join(configRoot, "modes"));
@@ -217,7 +295,7 @@ export function validateRepositoryConfig() {
   validateDefaults(readJson(defaultsPath), path.relative(configRoot, defaultsPath), errors);
 
   for (const filePath of modeFiles) {
-    validateMode(readJson(filePath), path.relative(configRoot, filePath), errors, registeredTokenNames);
+    validateMode(readJson(filePath), path.relative(configRoot, filePath), errors, registries);
   }
 
   for (const filePath of agentFiles) {
