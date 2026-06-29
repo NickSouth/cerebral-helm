@@ -2224,6 +2224,7 @@ public enum Operation: String, Codable {
     case captureNote = "captureNote"
     case decideConfirmation = "decideConfirmation"
     case getBootstrapState = "getBootstrapState"
+    case getRecentActivity = "getRecentActivity"
     case searchNotes = "searchNotes"
     case submitCommand = "submitCommand"
     case subscribe = "subscribe"

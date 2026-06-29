@@ -423,6 +423,7 @@ export enum Operation {
     CaptureNote = "captureNote",
     DecideConfirmation = "decideConfirmation",
     GetBootstrapState = "getBootstrapState",
+    GetRecentActivity = "getRecentActivity",
     SearchNotes = "searchNotes",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",

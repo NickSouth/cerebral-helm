@@ -28,7 +28,8 @@ const bridgeOperations = new Set([
   "searchNotes",
   "decideConfirmation",
   "updateSettings",
-  "subscribe"
+  "subscribe",
+  "getRecentActivity"
 ]);
 
 function readJson(filePath) {
@@ -140,4 +141,28 @@ test("bridge event fixtures cover command lifecycle and capability change events
 
   assert.ok(eventTypes.has("command.lifecycle.transition"));
   assert.ok(eventTypes.has("bridge.capability.changed"));
+});
+
+test("read-surface operation getRecentActivity is declared and exercised (FR-OBS-04)", () => {
+  const requestSchema = readJson(path.join(schemasRoot, "operation-request.schema.json"));
+  const responseSchema = readJson(path.join(schemasRoot, "operation-response.schema.json"));
+
+  assert.ok(requestSchema.properties.operation.enum.includes("getRecentActivity"), "request enum must include getRecentActivity");
+  assert.ok(responseSchema.properties.operation.enum.includes("getRecentActivity"), "response enum must include getRecentActivity");
+
+  const request = readJson(path.join(fixturesRoot, "operations", "get-recent-activity-request.json"));
+  const response = readJson(path.join(fixturesRoot, "operations", "get-recent-activity-response.json"));
+
+  assert.equal(request.operation, "getRecentActivity");
+  assert.equal(response.operation, "getRecentActivity");
+  assert.equal(response.status, "ok");
+
+  // FR-OBS-04: recent commands, tool activity, confirmations, mode sessions, and structured errors.
+  const activity = response.payload.recentActivity;
+  for (const surface of ["commands", "toolCalls", "confirmations", "modeSessions", "errors"]) {
+    assert.ok(
+      Array.isArray(activity[surface]) && activity[surface].length >= 1,
+      `recentActivity.${surface} must be a non-empty array`
+    );
+  }
 });

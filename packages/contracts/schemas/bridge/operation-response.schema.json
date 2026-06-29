@@ -28,7 +28,8 @@
         "searchNotes",
         "decideConfirmation",
         "updateSettings",
-        "subscribe"
+        "subscribe",
+        "getRecentActivity"
       ]
     },
     "status": {
