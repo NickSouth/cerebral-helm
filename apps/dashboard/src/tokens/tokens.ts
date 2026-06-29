@@ -39,3 +39,16 @@ export function modeTokenCssVar(name: string): string {
 export function isRegisteredModeTokenName(name: string): name is ModeTokenName {
   return (MODE_TOKEN_NAMES as readonly string[]).includes(name);
 }
+
+/**
+ * Map a dashboard mode label (e.g. the `DashboardMode` "Developer" carried in state)
+ * to its lowercase token mode id used by the `data-mode` attribute. Throws on an
+ * unknown mode rather than silently theming nothing.
+ */
+export function toModeId(mode: string): ModeId {
+  const id = mode.toLowerCase();
+  if ((MODE_IDS as readonly string[]).includes(id)) {
+    return id as ModeId;
+  }
+  throw new Error(`Unknown dashboard mode: ${mode}`);
+}

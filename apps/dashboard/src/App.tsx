@@ -1,6 +1,5 @@
-import "./tokens/tokens.css";
-import "./app.css";
 import { MODE_IDS, modeTokenCssVar, type ModeId } from "./tokens/tokens";
+import { Unavailable } from "./components/Unavailable";
 
 const MODE_META: Record<ModeId, { label: string; character: string }> = {
   executive: { label: "Executive", character: "Gold with cyan balance" },
@@ -23,7 +22,7 @@ function cssVar(token: string): string {
 
 export function App() {
   return (
-    <main className="tokens-page">
+    <main id="main" tabIndex={-1} className="tokens-page">
       <header>
         <p className="eyebrow">CerebralHelm / Design tokens</p>
         <h1>Token reference</h1>
@@ -103,9 +102,7 @@ export function App() {
         <div className="focus-demo">
           <button type="button">Focusable control (Tab to see focus ring)</button>
         </div>
-        <span className="unavailable" aria-disabled="true">
-          Not implemented
-        </span>
+        <Unavailable />
       </section>
     </main>
   );
