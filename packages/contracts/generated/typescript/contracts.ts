@@ -3,14 +3,128 @@
 // Do not edit by hand; edit packages/contracts/schemas instead.
 
 export interface CerebralHelmBridgeBootstrapState {
-    activeSurface:        string;
-    commandsToday:        number;
-    mode:                 Mode;
+    /**
+     * The fixed global agent roster, identical in every mode (design spec §5.10). No add-agent
+     * capability.
+     */
+    agents:        DashboardAgentSummary[];
+    commandsToday: number;
+    /**
+     * The agent whose right-column-width workspace panel is open over the right column, or
+     * null. Defaults to null in every mode — Heimlich owns the center and nothing is expanded
+     * by default (design spec §5.10).
+     */
+    expandedAgent: null | string;
+    /**
+     * The center surface — Heimlich's consciousness — present in every mode; the center is
+     * never replaced (design spec §5.7). `conversation` is the translucent chat overlay over
+     * the still-running field, including its docked bottom input.
+     */
+    heimlich: DashboardHeimlich;
+    mode:     Mode;
+    /**
+     * All four resolved mode views, shipped eagerly so a mode switch re-themes instantly
+     * without a bridge round-trip or theme flash (NIC-117 d). The active mode is identified by
+     * the top-level `mode`.
+     */
+    modes:                DashboardModeView[];
     pendingConfirmations: number;
     project:              string;
-    schemaVersion:        string;
-    summary:              string;
-    uiState:              UIState;
+    /**
+     * The active mode's region data (schedule, system health, news, left/right widgets). Heavy
+     * data is resolved on switch, not shipped eagerly for every mode.
+     */
+    regions:       DashboardRegions;
+    schemaVersion: string;
+    summary:       string;
+    uiState:       UIState;
+}
+
+export interface DashboardAgentSummary {
+    /**
+     * The runtime dashboard status (design spec §5.10); event-driven, defaults to idle in
+     * bootstrap.
+     */
+    activity: DashboardAgentActivity;
+    /**
+     * The configured availability flag (agent config `status`); not the runtime dashboard state.
+     */
+    availability: DashboardAgentAvailability;
+    id:           string;
+    label:        string;
+    summary:      string;
+}
+
+/**
+ * The runtime dashboard status (design spec §5.10); event-driven, defaults to idle in
+ * bootstrap.
+ */
+export enum DashboardAgentActivity {
+    Idle = "idle",
+    Ready = "ready",
+    Thinking = "thinking",
+    Waiting = "waiting",
+}
+
+/**
+ * The configured availability flag (agent config `status`); not the runtime dashboard state.
+ */
+export enum DashboardAgentAvailability {
+    Disabled = "disabled",
+    Enabled = "enabled",
+    Mock = "mock",
+    Unavailable = "unavailable",
+}
+
+/**
+ * The center surface — Heimlich's consciousness — present in every mode; the center is
+ * never replaced (design spec §5.7). `conversation` is the translucent chat overlay over
+ * the still-running field, including its docked bottom input.
+ */
+export interface DashboardHeimlich {
+    conversation: DashboardHeimlichConversation;
+    state:        DashboardHeimlichState;
+}
+
+export interface DashboardHeimlichConversation {
+    /**
+     * The in-conversation docked bottom input (distinct from the persistent top-center Ask
+     * Heimlich launcher); shown when the conversation is open, lifts on minimize/close.
+     */
+    input:      DashboardConversationInput;
+    open:       boolean;
+    transcript: DashboardConversationMessage[];
+}
+
+/**
+ * The in-conversation docked bottom input (distinct from the persistent top-center Ask
+ * Heimlich launcher); shown when the conversation is open, lifts on minimize/close.
+ */
+export interface DashboardConversationInput {
+    draft?:      string;
+    placeholder: string;
+}
+
+export interface DashboardConversationMessage {
+    id:   string;
+    role: DashboardConversationRole;
+    text: string;
+}
+
+export enum DashboardConversationRole {
+    Heimlich = "heimlich",
+    User = "user",
+}
+
+export enum DashboardHeimlichState {
+    Acting = "acting",
+    AwaitingConfirmation = "awaiting_confirmation",
+    Error = "error",
+    Idle = "idle",
+    Listening = "listening",
+    Offline = "offline",
+    Success = "success",
+    Thinking = "thinking",
 }
 
 export enum Mode {
@@ -18,6 +132,165 @@ export enum Mode {
     Entertainment = "Entertainment",
     Executive = "Executive",
     School = "School",
+}
+
+export interface DashboardModeView {
+    calendarProfile?: string;
+    greeting?:        DashboardModeGreeting;
+    id:               string;
+    label:            string;
+    newsProfile?:     string;
+    /**
+     * Exactly 8 ordered slots; an id or null for an unconfigured slot (rendered as an honest
+     * disabled placeholder pre-wiring).
+     */
+    quickActions: Array<null | string>;
+    quickApps:    string[];
+    theme:        DashboardModeTheme;
+    widgets:      DashboardModeWidgets;
+}
+
+export interface DashboardModeGreeting {
+    directive?: string;
+    fallback:   string;
+    persona:    string;
+}
+
+export interface DashboardModeTheme {
+    accentPrimary:   string;
+    accentSecondary: string;
+}
+
+export interface DashboardModeWidgets {
+    left:  string;
+    right: string;
+}
+
+/**
+ * The active mode's region data (schedule, system health, news, left/right widgets). Heavy
+ * data is resolved on switch, not shipped eagerly for every mode.
+ */
+export interface DashboardRegions {
+    news:         DashboardNewsRegion;
+    schedule:     DashboardScheduleRegion;
+    systemHealth: DashboardSystemHealthRegion;
+    widgets:      DashboardRegionWidgets;
+}
+
+export interface DashboardNewsRegion {
+    emptyMessage?: string;
+    headlines:     DashboardNewsHeadline[];
+    state:         DashboardRegionState;
+}
+
+export interface DashboardNewsHeadline {
+    id:     string;
+    source: string;
+    title:  string;
+}
+
+export enum DashboardRegionState {
+    Empty = "empty",
+    Ready = "ready",
+    Stale = "stale",
+    Unavailable = "unavailable",
+}
+
+export interface DashboardScheduleRegion {
+    emptyMessage?: string;
+    items:         DashboardScheduleItem[];
+    state:         DashboardRegionState;
+}
+
+export interface DashboardScheduleItem {
+    id:     string;
+    kind:   DashboardScheduleKind;
+    start?: string;
+    title:  string;
+}
+
+export enum DashboardScheduleKind {
+    Today = "today",
+    Tonight = "tonight",
+}
+
+export interface DashboardSystemHealthRegion {
+    battery:        BatteryClass;
+    cpuPercent?:    number;
+    memoryPercent?: number;
+    network?:       NetworkClass;
+    state:          DashboardRegionState;
+}
+
+export interface BatteryClass {
+    label: string;
+    state: DashboardRegionState;
+}
+
+export interface NetworkClass {
+    label: string;
+    state: DashboardRegionState;
+}
+
+export interface DashboardRegionWidgets {
+    /**
+     * The common widget-data envelope (mirrors apps/dashboard/src/widgets/widgetData.ts). The
+     * per-widget payload is the open `data` object.
+     */
+    left: Left;
+    /**
+     * The common widget-data envelope (mirrors apps/dashboard/src/widgets/widgetData.ts). The
+     * per-widget payload is the open `data` object.
+     */
+    right: Right;
+}
+
+/**
+ * The common widget-data envelope (mirrors apps/dashboard/src/widgets/widgetData.ts). The
+ * per-widget payload is the open `data` object.
+ */
+export interface Left {
+    action?:       LeftAction;
+    data?:         { [key: string]: any };
+    emptyMessage?: string;
+    freshness?:    LeftFreshness;
+    headline?:     string;
+    state:         DashboardRegionState;
+    widgetId:      string;
+}
+
+export interface LeftAction {
+    id:    string;
+    label: string;
+}
+
+export interface LeftFreshness {
+    label:      string;
+    observedAt: string;
+}
+
+/**
+ * The common widget-data envelope (mirrors apps/dashboard/src/widgets/widgetData.ts). The
+ * per-widget payload is the open `data` object.
+ */
+export interface Right {
+    action?:       RightAction;
+    data?:         { [key: string]: any };
+    emptyMessage?: string;
+    freshness?:    RightFreshness;
+    headline?:     string;
+    state:         DashboardRegionState;
+    widgetId:      string;
+}
+
+export interface RightAction {
+    id:    string;
+    label: string;
+}
+
+export interface RightFreshness {
+    label:      string;
+    observedAt: string;
 }
 
 export enum UIState {
@@ -325,15 +598,8 @@ export interface CerebralHelmAgentSurfaceConfig {
     extensions?:            { [key: string]: any };
     id:                     string;
     label:                  string;
-    status:                 CerebralHelmAgentSurfaceConfigStatus;
+    status:                 DashboardAgentAvailability;
     summary:                string;
-}
-
-export enum CerebralHelmAgentSurfaceConfigStatus {
-    Disabled = "disabled",
-    Enabled = "enabled",
-    Mock = "mock",
-    Unavailable = "unavailable",
 }
 
 export interface CerebralHelmApplicationDefaults {

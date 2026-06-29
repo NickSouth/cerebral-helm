@@ -127,7 +127,7 @@ test("invalid bridge fixtures represent rejected recovery and operation behavior
 test("bootstrap fixture preserves current dashboard bootstrap surface plus UI state", () => {
   const bootstrap = readJson(path.join(fixturesRoot, "bootstrap", "bootstrap-state.json"));
 
-  for (const field of ["mode", "project", "summary", "commandsToday", "pendingConfirmations", "activeSurface", "uiState"]) {
+  for (const field of ["mode", "project", "summary", "commandsToday", "pendingConfirmations", "uiState", "heimlich", "expandedAgent"]) {
     assert.ok(Object.hasOwn(bootstrap, field), `bootstrap fixture must include ${field}`);
   }
 

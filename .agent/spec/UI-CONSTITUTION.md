@@ -103,7 +103,7 @@ Entertainment = emerald/green + cool cyan.
 | `executive` | `#E8B765` (gold) | `#5FD2E8` (cyan) | Calm, premium; dominant gold |
 | `developer` | `#7FC4DC` (restrained cyan) | `#AFC6D6` (cool white) | Restrained — avoid neon/saturation |
 | `school` | `#3E7BFA` (electric blue) | `#E8B765` (warm gold) | Blue dominant, gold counter-accent |
-| `entertainment` | `#34D38A` (emerald) | `#5FD2E8` (cyan) | Lighter density, leisure feel |
+| `entertainment` | `#34D38A` (emerald) | `#5FD2E8` (cyan) | Leisure feel; **identical density** to other modes (owner course-correction D.2 — palette differs, density is constant) |
 
 `--ch-glow-soft` per mode is a low-alpha blend of that mode's primary→secondary, used
 for the Heimlich field and panel glows. The ambient field recolors from these tokens
@@ -170,6 +170,28 @@ stacks**; edges dense, center spacious; Heimlich is the largest and calmest surf
 text wraps before shrinking and critical values never clip; no region collapses into an
 unexplained blank. Components express intent through `CerebralBridge` and never touch
 the platform directly.
+
+**Interaction invariants (owner course-correction — bound in the bootstrap contract):**
+
+- **Heimlich always owns the center.** Every mode boots with the ambient field centered;
+  nothing is "active" in the center by default. Chat is a translucent overlay over the
+  still-running field (it **never** replaces it), with its own input **docked at the bottom**
+  of the center. The top-center *Ask Heimlich* bar is a **separate persistent global
+  launcher** (always visible, even mid-conversation) — two distinct input loci, not one
+  search, and no floating command-palette modal. (`bootstrap.heimlich`.)
+- **Agent workspaces cover the right column only.** Opening one of the four agents slides
+  in a panel the **width of the right column** that covers the right column's contents and
+  restores them on close. The center (Heimlich) and the **left column are unaffected** and
+  never compress. Default: no agent expanded. (`bootstrap.expandedAgent`, default `null`.)
+- **Mode switching is an animated theme transition** (cross-fade / motion), not an instant
+  flip and not a loading/pending state; all four palettes preload (`bootstrap.modes`).
+- **All modes share identical density** — palette/accent differs, density is constant
+  (Entertainment is *not* lighter).
+- **The 4+4 quick-action grid always renders 8 slots**; unwired actions are greyed,
+  labeled, and disabled ("coming soon") — never hidden, never empty.
+- **Agent status is runtime** (Idle / Waiting / Thinking / Ready, from events;
+  `bootstrap.agents[].activity`), text + non-color cue; the config `status` stays the
+  availability flag (`…availability`). Identity icons are fixed per agent id.
 
 The shell itself is **NIC-53**; NIC-51 only ships the tokens, the container, and a
 token-reference page — not the regions.

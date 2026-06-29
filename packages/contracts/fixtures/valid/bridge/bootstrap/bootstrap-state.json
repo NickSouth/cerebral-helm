@@ -5,6 +5,108 @@
   "summary": "Pre-Mac foundation is running against a mock CerebralBridge.",
   "commandsToday": 4,
   "pendingConfirmations": 0,
-  "activeSurface": "Project Manager",
-  "uiState": "ready"
+  "uiState": "ready",
+  "heimlich": {
+    "state": "idle",
+    "conversation": {
+      "open": false,
+      "transcript": [],
+      "input": { "draft": "", "placeholder": "Message Heimlich…" }
+    }
+  },
+  "expandedAgent": null,
+  "modes": [
+    {
+      "id": "executive",
+      "label": "Executive",
+      "theme": { "accentPrimary": "executive.primary", "accentSecondary": "executive.secondary" },
+      "quickApps": ["chrome", "gmail", "finder", "claude-desktop"],
+      "quickActions": ["daily-brief", "open-calendar", "capture-note", "review-projects", "check-system-status", "open-mail", "start-focus-block", "open-news-brief"],
+      "widgets": { "left": "market-brief", "right": "projects" },
+      "greeting": { "persona": "Friendly Assistant", "directive": "Greet by time of day and surface today's priorities.", "fallback": "Good day." },
+      "calendarProfile": "all",
+      "newsProfile": "broad"
+    },
+    {
+      "id": "developer",
+      "label": "Developer",
+      "theme": { "accentPrimary": "developer.primary", "accentSecondary": "developer.secondary" },
+      "quickApps": ["vscode", "terminal", "github", "docker", "linear"],
+      "quickActions": ["open-developer-layout", "open-workspace", "run-tests", "search-notes", "git-status", "open-terminal", "review-pull-requests", "capture-note"],
+      "widgets": { "left": "project-git-status", "right": "repositories" },
+      "greeting": { "persona": "Development copilot", "directive": "Greet and point to the active project's next task.", "fallback": "Ready to build." },
+      "calendarProfile": "engineering",
+      "newsProfile": "engineering"
+    },
+    {
+      "id": "school",
+      "label": "School",
+      "theme": { "accentPrimary": "school.primary", "accentSecondary": "school.secondary" },
+      "quickApps": ["canvas", "drive", "claude-desktop", "gmail", "quizlet"],
+      "quickActions": ["open-school-layout", "open-schedule", "capture-idea", "search-notes", "review-assignments", "start-study-block", "summarize-notes", "open-courses"],
+      "widgets": { "left": "deadlines", "right": "courses" },
+      "greeting": { "persona": "Academic partner", "directive": "Greet and nudge toward the next deadline.", "fallback": "Time to study." },
+      "calendarProfile": "academic",
+      "newsProfile": "academic"
+    },
+    {
+      "id": "entertainment",
+      "label": "Entertainment",
+      "theme": { "accentPrimary": "entertainment.primary", "accentSecondary": "entertainment.secondary" },
+      "quickApps": ["spotify", "youtube", "steam", "discord", "photos"],
+      "quickActions": ["open-entertainment-layout", "open-media", "capture-note", "check-system-status", "resume-playback", "open-queue", "browse-library", "start-party-mode"],
+      "widgets": { "left": "spotify", "right": "media-list" },
+      "greeting": { "persona": "Downtime concierge", "directive": "Greet and suggest something to unwind with.", "fallback": "Time to unwind." },
+      "calendarProfile": "leisure",
+      "newsProfile": "interest"
+    }
+  ],
+  "agents": [
+    { "id": "research-analyst", "label": "Research Analyst", "summary": "Future scoped research surface with knowledge-first context.", "availability": "mock", "activity": "idle" },
+    { "id": "financial-advisor", "label": "Financial Advisor", "summary": "Future finance planning surface with explicit policy boundaries.", "availability": "mock", "activity": "idle" },
+    { "id": "project-manager", "label": "Project Manager", "summary": "Current planning and progress surface for deterministic workflows.", "availability": "mock", "activity": "idle" },
+    { "id": "system-janitor", "label": "System Janitor", "summary": "Future maintenance surface for narrow recovery and cleanup actions.", "availability": "mock", "activity": "idle" }
+  ],
+  "regions": {
+    "schedule": {
+      "state": "ready",
+      "items": [
+        { "id": "evt-standup", "title": "Team standup", "start": "2026-06-23T16:30:00.000Z", "kind": "today" },
+        { "id": "evt-review", "title": "PR review block", "start": "2026-06-23T19:00:00.000Z", "kind": "today" }
+      ]
+    },
+    "systemHealth": {
+      "state": "ready",
+      "cpuPercent": 22,
+      "memoryPercent": 58,
+      "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" },
+      "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
+    },
+    "news": {
+      "state": "ready",
+      "headlines": [
+        { "id": "news-ts", "title": "TypeScript 5.9 ships incremental project references", "source": "Dev Weekly" },
+        { "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums" },
+        { "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest" }
+      ]
+    },
+    "widgets": {
+      "left": {
+        "widgetId": "project-git-status",
+        "state": "ready",
+        "headline": "dev · checks passing",
+        "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
+        "data": { "branch": "dev", "ahead": 2, "behind": 0, "checks": "passing", "openPullRequests": 1 },
+        "action": { "id": "git-status", "label": "View status" }
+      },
+      "right": {
+        "widgetId": "repositories",
+        "state": "ready",
+        "headline": "1 repository",
+        "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
+        "data": { "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }] },
+        "action": { "id": "open-workspace", "label": "Open workspace" }
+      }
+    }
+  }
 }

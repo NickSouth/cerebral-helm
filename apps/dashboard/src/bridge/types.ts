@@ -1,4 +1,129 @@
+import type { WidgetData } from "../widgets/widgetData";
+
 export type DashboardMode = "Executive" | "Developer" | "School" | "Entertainment";
+
+/** The degraded-aware state a region (or metric channel) can be in. */
+export type RegionState = "ready" | "empty" | "stale" | "unavailable";
+
+export type DashboardUiState =
+  | "loading"
+  | "empty"
+  | "stale"
+  | "unavailable"
+  | "offline"
+  | "error"
+  | "confirmation"
+  | "success"
+  | "cancelled"
+  | "ready";
+
+/** Heimlich consciousness states (design spec §5.8); `listening` is wired but voice-deferred. */
+export type HeimlichState =
+  | "idle"
+  | "listening"
+  | "thinking"
+  | "acting"
+  | "awaiting_confirmation"
+  | "success"
+  | "error"
+  | "offline";
+
+export interface ConversationMessage {
+  readonly id: string;
+  readonly role: "user" | "heimlich";
+  readonly text: string;
+}
+
+/** The in-conversation docked bottom input — distinct from the persistent top Ask Heimlich launcher. */
+export interface ConversationInput {
+  readonly draft?: string;
+  readonly placeholder: string;
+}
+
+export interface HeimlichConversation {
+  readonly open: boolean;
+  readonly transcript: readonly ConversationMessage[];
+  readonly input: ConversationInput;
+}
+
+/** The center surface; always present — chat is a translucent overlay, never a replacement (§5.7). */
+export interface HeimlichSurface {
+  readonly state: HeimlichState;
+  readonly conversation: HeimlichConversation;
+}
+
+/**
+ * A resolved mode view as the bridge delivers it (not the raw config file). All four
+ * are shipped eagerly in the bootstrap state so a mode switch re-themes instantly.
+ */
+export interface ModeView {
+  readonly id: string;
+  readonly label: string;
+  readonly theme: { readonly accentPrimary: string; readonly accentSecondary: string };
+  readonly quickApps: readonly string[];
+  /** Exactly 8 ordered slots; null = an unconfigured slot (honest disabled placeholder). */
+  readonly quickActions: readonly (string | null)[];
+  readonly widgets: { readonly left: string; readonly right: string };
+  readonly greeting?: { readonly persona: string; readonly directive?: string; readonly fallback: string };
+  readonly calendarProfile?: string;
+  readonly newsProfile?: string;
+}
+
+export interface AgentSummary {
+  readonly id: string;
+  readonly label: string;
+  readonly summary: string;
+  /** Configured availability flag (agent config `status`), not the runtime dashboard state. */
+  readonly availability: "mock" | "disabled" | "unavailable" | "enabled";
+  /** Runtime dashboard status (design spec §5.10); event-driven, idle in bootstrap. */
+  readonly activity: "idle" | "waiting" | "thinking" | "ready";
+}
+
+export interface ScheduleItem {
+  readonly id: string;
+  readonly title: string;
+  readonly start?: string;
+  readonly kind: "today" | "tonight";
+}
+
+export interface ScheduleRegion {
+  readonly state: RegionState;
+  readonly items: readonly ScheduleItem[];
+  readonly emptyMessage?: string;
+}
+
+export interface MetricChannel {
+  readonly state: RegionState;
+  readonly label: string;
+}
+
+export interface SystemHealthRegion {
+  readonly state: RegionState;
+  readonly cpuPercent?: number;
+  readonly memoryPercent?: number;
+  readonly network?: MetricChannel;
+  /** Battery is an unavailable capability pre-Mac (NIC-117 j). */
+  readonly battery: MetricChannel;
+}
+
+export interface NewsHeadline {
+  readonly id: string;
+  readonly title: string;
+  readonly source: string;
+}
+
+export interface NewsRegion {
+  readonly state: RegionState;
+  readonly headlines: readonly NewsHeadline[];
+  readonly emptyMessage?: string;
+}
+
+export interface DashboardRegions {
+  readonly schedule: ScheduleRegion;
+  readonly systemHealth: SystemHealthRegion;
+  readonly news: NewsRegion;
+  readonly widgets: { readonly left: WidgetData; readonly right: WidgetData };
+}
 
 export interface DashboardBootstrapState {
   readonly mode: DashboardMode;
@@ -6,6 +131,32 @@ export interface DashboardBootstrapState {
   readonly summary: string;
   readonly commandsToday: number;
   readonly pendingConfirmations: number;
-  readonly activeSurface: string;
-  readonly uiState: "loading" | "empty" | "stale" | "unavailable" | "offline" | "error" | "confirmation" | "success" | "cancelled" | "ready";
+  readonly uiState: DashboardUiState;
+  /** The center surface — Heimlich's consciousness — present in every mode; never replaced. */
+  readonly heimlich: HeimlichSurface;
+  /** The agent whose right-column-width workspace panel is open, or null. Defaults to null. */
+  readonly expandedAgent: string | null;
+  /** All four resolved mode views, eager (animated, no-flash mode switch). */
+  readonly modes: readonly ModeView[];
+  /** The fixed global agent roster, identical in every mode. */
+  readonly agents: readonly AgentSummary[];
+  /** The active mode's region data; degraded-aware. */
+  readonly regions: DashboardRegions;
 }
+
+/**
+ * The eager, mode-independent config bundle (all four mode views + the fixed agent
+ * roster). The bridge resolves it once; the mock composes it with a per-state snapshot
+ * to form a full bootstrap state. NIC-52 makes this event-driven without changing
+ * consumers.
+ */
+export interface DashboardConfigBundle {
+  readonly modes: readonly ModeView[];
+  readonly agents: readonly AgentSummary[];
+}
+
+/**
+ * The per-state slice the canonical-states catalog carries: a bootstrap state minus the
+ * eager config bundle. Composed with a DashboardConfigBundle into a DashboardBootstrapState.
+ */
+export type DashboardStateSnapshot = Omit<DashboardBootstrapState, "modes" | "agents">;
