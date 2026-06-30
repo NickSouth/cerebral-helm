@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1.0.0",
-  "mode": "Developer",
-  "project": "NIC-12 Workspace Bootstrap",
-  "summary": "Pre-Mac foundation is running against a mock CerebralBridge.",
-  "commandsToday": 4,
+  "mode": "Executive",
+  "project": "Daily Command",
+  "summary": "Executive mode is ready with planning, status, and cross-project briefing surfaces.",
+  "commandsToday": 2,
   "pendingConfirmations": 0,
   "uiState": "ready",
   "heimlich": {
@@ -71,41 +71,41 @@
     "schedule": {
       "state": "ready",
       "items": [
-        { "id": "evt-standup", "title": "Team standup", "start": "2026-06-23T16:30:00.000Z", "kind": "today" },
-        { "id": "evt-review", "title": "PR review block", "start": "2026-06-23T19:00:00.000Z", "kind": "today" }
+        { "id": "evt-board", "title": "Board prep review", "start": "2026-06-23T17:00:00.000Z", "kind": "today" },
+        { "id": "evt-investor", "title": "Investor call", "start": "2026-06-23T20:30:00.000Z", "kind": "tonight" }
       ]
     },
     "systemHealth": {
       "state": "ready",
-      "cpuPercent": 22,
-      "memoryPercent": 58,
+      "cpuPercent": 18,
+      "memoryPercent": 50,
       "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" },
       "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
     },
     "news": {
       "state": "ready",
       "headlines": [
-        { "id": "news-ts", "title": "TypeScript 5.9 ships incremental project references", "source": "Dev Weekly" },
-        { "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums" },
-        { "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest" }
+        { "id": "news-market", "title": "Markets edge higher into the close", "source": "Market Wire" },
+        { "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily" },
+        { "id": "news-earnings", "title": "Quarterly earnings season opens", "source": "Briefing" }
       ]
     },
     "widgets": {
       "left": {
-        "widgetId": "project-git-status",
+        "widgetId": "market-brief",
         "state": "ready",
-        "headline": "dev · checks passing",
-        "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
-        "data": { "branch": "dev", "ahead": 2, "behind": 0, "checks": "passing", "openPullRequests": 1 },
-        "action": { "id": "git-status", "label": "View status" }
+        "headline": "Markets up modestly",
+        "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" },
+        "data": { "tickers": [{ "symbol": "SPX", "changePct": 0.6 }, { "symbol": "AAPL", "changePct": -0.3 }, { "symbol": "NVDA", "changePct": 1.4 }] },
+        "action": { "id": "open-market-brief", "label": "Open market brief" }
       },
       "right": {
-        "widgetId": "repositories",
+        "widgetId": "projects",
         "state": "ready",
-        "headline": "1 repository",
-        "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
-        "data": { "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }] },
-        "action": { "id": "open-workspace", "label": "Open workspace" }
+        "headline": "2 active",
+        "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" },
+        "data": { "items": [{ "name": "Quarterly planning", "status": "in-progress" }, { "name": "Board prep", "status": "review" }] },
+        "action": { "id": "review-projects", "label": "Review projects" }
       }
     }
   }

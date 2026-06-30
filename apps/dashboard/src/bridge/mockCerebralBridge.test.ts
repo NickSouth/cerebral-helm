@@ -14,7 +14,7 @@ describe("MockCerebralBridge", () => {
     const bridge = createMockCerebralBridge();
     const state = await bridge.getBootstrapState();
 
-    expect(state.mode).toBe("Developer");
+    expect(state.mode).toBe("Executive"); // Executive is the default mode (ADR-007).
     expect(state.modes).toHaveLength(4);
     expect(state.agents).toHaveLength(4);
     expect(state.expandedAgent).toBeNull();
@@ -24,6 +24,19 @@ describe("MockCerebralBridge", () => {
   it("can boot a different canonical state by key", async () => {
     const bridge = createMockCerebralBridge({ bootstrapKey: "mode.school.ready" });
     expect((await bridge.getBootstrapState()).mode).toBe("School");
+  });
+
+  it("emits a config.changed snapshot when a mode is applied", async () => {
+    const bridge = createMockCerebralBridge();
+    const events: BridgeEvent[] = [];
+    bridge.subscribe((event) => events.push(event));
+
+    const result = await bridge.applyMode({ modeId: "school" });
+
+    expect(result.status).toBe("ok");
+    const configEvent = events.find((event) => event.type === "config.changed");
+    expect(configEvent).toBeDefined();
+    expect((configEvent?.payload as { snapshot: { mode: string } }).snapshot.mode).toBe("School");
   });
 
   it("delivers events to subscribers and stops after unsubscribe", () => {

@@ -7,7 +7,7 @@ describe("expanded bootstrap state", () => {
   it("composes the eager config bundle with the active-mode snapshot", () => {
     const state = loadBootstrapState();
 
-    expect(state.mode).toBe("Developer");
+    expect(state.mode).toBe("Executive"); // Executive is the default mode (ADR-007).
     // Eager: all four resolved mode views ship up front (no-flash switching).
     expect(state.modes).toHaveLength(4);
     expect([...state.modes].map((mode) => mode.id).sort()).toEqual([...MODE_IDS].sort());

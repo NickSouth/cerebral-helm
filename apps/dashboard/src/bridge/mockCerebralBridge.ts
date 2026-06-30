@@ -10,7 +10,8 @@ import { getDashboardConfigBundle, getDashboardFixture, failureStateFixtures } f
 import { capabilityBridgeEvent, lifecycleBridgeEvents } from "./eventFixtures";
 import recentActivityResponse from "../../../../packages/contracts/fixtures/valid/bridge/operations/get-recent-activity-response.json";
 
-const DEFAULT_BOOTSTRAP_KEY = "mode.developer.ready";
+/** Executive is the default mode (config/defaults/app.json `defaultModeId`; ADR-007). */
+const DEFAULT_BOOTSTRAP_KEY = "mode.executive.ready";
 
 const RECENT_ACTIVITY = (recentActivityResponse.payload as { recentActivity: RecentActivity }).recentActivity;
 
@@ -65,7 +66,22 @@ export function createMockCerebralBridge(options: { bootstrapKey?: string } = {}
       return Promise.resolve({ commandId: "cmd_000000000000000000000001", accepted: true });
     },
     applyMode(input) {
-      return Promise.resolve({ modeId: input.modeId, status: "ok" as const });
+      // Eager config is already in state, so a switch needs no round-trip: emit the target
+      // mode's resolved snapshot as a `config.changed` event the store folds in (the theme
+      // re-themes via data-mode; the heavy region data resolves on switch).
+      try {
+        const snapshot = getDashboardFixture(`mode.${input.modeId}.ready`);
+        emit({
+          eventId: `brevt_applymode_${input.modeId}`,
+          type: "config.changed",
+          schemaVersion: "1.0.0",
+          timestamp: "2026-06-23T16:00:00.000Z",
+          payload: { snapshot }
+        });
+        return Promise.resolve({ modeId: input.modeId, status: "ok" as const });
+      } catch {
+        return Promise.resolve({ modeId: input.modeId, status: "error" as const });
+      }
     },
     captureNote() {
       return Promise.resolve({ noteId: "note_000000000000000000000001" });

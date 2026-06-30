@@ -132,7 +132,7 @@ test("bootstrap fixture preserves current dashboard bootstrap surface plus UI st
     assert.ok(Object.hasOwn(bootstrap, field), `bootstrap fixture must include ${field}`);
   }
 
-  assert.equal(bootstrap.mode, "Developer");
+  assert.equal(bootstrap.mode, "Executive");
   assert.equal(bootstrap.uiState, "ready");
 });
 

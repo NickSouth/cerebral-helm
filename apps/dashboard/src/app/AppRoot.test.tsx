@@ -14,8 +14,8 @@ describe("app architecture", () => {
   it("applies the active mode from bootstrap state via data-mode (no per-component conditional)", () => {
     const { container } = render(<AppRoot />);
 
-    // The canonical bootstrap fixture is Developer.
-    expect(container.querySelector('.app-root[data-mode="developer"]')).not.toBeNull();
+    // Executive is the default mode (ADR-007).
+    expect(container.querySelector('.app-root[data-mode="executive"]')).not.toBeNull();
   });
 
   it("renders a skip link targeting the main region", () => {

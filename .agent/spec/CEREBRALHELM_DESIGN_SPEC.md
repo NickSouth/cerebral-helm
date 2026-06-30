@@ -260,6 +260,8 @@ The top-right mode switcher always contains the same four controls in the same o
 3. School
 4. Entertainment
 
+**Executive is the default mode** (ADR-007): the system boots into it on first run and falls back to it when no prior mode is recorded; otherwise the last valid mode is restored. The default lives in `config/defaults/app.json` (`defaultModeId`), never hard-coded in the UI.
+
 The active mode has a strong selected state. Switching mode is an **animated transition** (theme cross-fade / motion) — not an instant flip and not a loading/pending state; all four mode palettes may be preloaded at bootstrap so the transition is smooth. It updates theme tokens and configured content while preserving the grid, focus logic, and component identity. A mode whose application includes app, URL, hook, or layout actions may still surface an action preview for those actions specifically.
 
 ### 5.10 Agents

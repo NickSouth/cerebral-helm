@@ -1,5 +1,5 @@
 import type { BridgeEvent, CerebralBridge } from "../bridge/cerebralBridge";
-import type { HeimlichState } from "../bridge/types";
+import type { DashboardStateSnapshot, HeimlichState } from "../bridge/types";
 import type { DashboardState, DashboardStore } from "./dashboardState";
 
 /** How a command-lifecycle status maps onto Heimlich's consciousness state (design spec §5.8). */
@@ -17,11 +17,20 @@ const LIFECYCLE_TO_HEIMLICH: Readonly<Record<string, HeimlichState>> = {
  * Pure reducer: fold one bridge event into dashboard state. Returns the SAME reference when
  * nothing changes, so useSyncExternalStore does not trigger a needless re-render. Event
  * types whose UI lands later are observed but not yet interpreted: `confirmation.changed`
- * (NIC-62), `system.status.changed` (NIC-64 degraded states), `config.changed` (NIC-54 mode
- * switch).
+ * (NIC-62), `system.status.changed` (NIC-64 degraded states).
  */
 export function reduceDashboardState(state: DashboardState, event: BridgeEvent): DashboardState {
   switch (event.type) {
+    case "config.changed": {
+      // A mode switch (NIC-54/D2): apply the target mode's per-state snapshot over the eager
+      // bundle. Keeps the preloaded `modes`/`agents`; swaps mode/regions/heimlich/expandedAgent
+      // and re-themes via data-mode without remounting the shell.
+      const snapshot = (event.payload as { snapshot?: DashboardStateSnapshot }).snapshot;
+      if (!snapshot || snapshot.mode === state.mode) {
+        return state;
+      }
+      return { ...state, ...snapshot };
+    }
     case "command.lifecycle.transition": {
       const status = String((event.payload as { currentStatus?: unknown }).currentStatus ?? "");
       const next = LIFECYCLE_TO_HEIMLICH[status];

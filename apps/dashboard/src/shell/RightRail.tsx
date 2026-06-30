@@ -1,6 +1,7 @@
 import { Panel } from "./Panel";
 import { WidgetSlot } from "./WidgetSlot";
 import { useDashboardState } from "../state/DashboardStateProvider";
+import { useBridge } from "../state/BridgeProvider";
 import { agentActivityLabel } from "./labels";
 
 /**
@@ -11,6 +12,7 @@ import { agentActivityLabel } from "./labels";
  */
 export function RightRail() {
   const { mode, modes, agents, regions } = useDashboardState();
+  const bridge = useBridge();
 
   return (
     <aside className="shell-rail shell-right" aria-label="Operations">
@@ -25,6 +27,11 @@ export function RightRail() {
                 className="mode-switcher__option"
                 data-active={active}
                 aria-pressed={active}
+                onClick={() => {
+                  if (!active) {
+                    void bridge.applyMode({ modeId: modeView.id });
+                  }
+                }}
               >
                 {modeView.label}
               </button>

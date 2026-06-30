@@ -1,33 +1,32 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import { DashboardShell } from "./DashboardShell";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
+import { BridgeProvider } from "../state/BridgeProvider";
 import { ThemeProvider } from "../app/ThemeProvider";
-import { createBootstrapStore } from "../state/bootstrapStore";
 import { createBridgeStore } from "../state/bridgeStore";
-import { createMockCerebralBridge } from "../bridge/mockCerebralBridge";
+import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
 import { getDashboardConfigBundle, getDashboardFixture } from "../fixtures/canonicalFixtures";
 
-function renderShell() {
+/** Render the shell over a bridge-backed store. With no key, boots the default mode (Executive). */
+function renderShell(canonicalKey?: string) {
+  const bridge = canonicalKey ? createMockCerebralBridge({ bootstrapKey: canonicalKey }) : createMockCerebralBridge();
+  const initial = canonicalKey ? { ...getDashboardConfigBundle(), ...getDashboardFixture(canonicalKey) } : loadBootstrapState();
+  const store = createBridgeStore(bridge, initial);
   return render(
-    <DashboardStateProvider store={createBootstrapStore()}>
-      <ThemeProvider>
-        <DashboardShell />
-      </ThemeProvider>
-    </DashboardStateProvider>
+    <BridgeProvider bridge={bridge}>
+      <DashboardStateProvider store={store}>
+        <ThemeProvider>
+          <DashboardShell />
+        </ThemeProvider>
+      </DashboardStateProvider>
+    </BridgeProvider>
   );
 }
 
-/** Render the shell seeded from a specific canonical mode fixture (the same view, no fork). */
-function renderMode(canonicalKey: string) {
-  const initial = { ...getDashboardConfigBundle(), ...getDashboardFixture(canonicalKey) };
-  const store = createBridgeStore(createMockCerebralBridge({ bootstrapKey: canonicalKey }), initial);
-  return render(
-    <DashboardStateProvider store={store}>
-      <ThemeProvider>
-        <DashboardShell />
-      </ThemeProvider>
-    </DashboardStateProvider>
-  );
+function selectedModeButton() {
+  return within(screen.getByRole("group", { name: "Mode" }))
+    .getAllByRole("button")
+    .find((button) => button.getAttribute("aria-pressed") === "true");
 }
 
 describe("DashboardShell structure", () => {
@@ -45,13 +44,11 @@ describe("DashboardShell structure", () => {
     expect(screen.getByRole("contentinfo", { name: "Status bar" })).toBeInTheDocument();
   });
 
-  it("renders four mode controls with exactly one selected (the active mode)", () => {
+  it("boots Executive (the default mode) with exactly one mode control selected", () => {
     renderShell();
     const options = within(screen.getByRole("group", { name: "Mode" })).getAllByRole("button");
     expect(options).toHaveLength(4);
-    const selected = options.filter((option) => option.getAttribute("aria-pressed") === "true");
-    expect(selected).toHaveLength(1);
-    expect(selected[0]).toHaveTextContent("Developer");
+    expect(selectedModeButton()).toHaveTextContent("Executive");
   });
 
   it("renders the fixed four-agent roster", () => {
@@ -66,7 +63,7 @@ describe("DashboardShell structure", () => {
     const slots = within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole("button");
     expect(slots).toHaveLength(8);
     expect(slots.every((slot) => slot.hasAttribute("disabled"))).toBe(true);
-    expect(screen.getByRole("button", { name: "Run tests" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Daily brief" })).toBeDisabled();
   });
 
   it("exposes the persistent global launcher as a disabled, labelled input", () => {
@@ -77,29 +74,42 @@ describe("DashboardShell structure", () => {
 
 describe("DashboardShell config-driven content (one view, four modes, no per-mode conditional)", () => {
   it("populates Developer mode from its config and region data", () => {
-    renderMode("mode.developer.ready");
+    renderShell("mode.developer.ready");
     expect(screen.getByText("VS Code")).toBeInTheDocument();
-    expect(screen.getByText("Ready to build.")).toBeInTheDocument(); // greeting
-    expect(screen.getByText("dev · checks passing")).toBeInTheDocument(); // left widget headline
-    expect(screen.getByText("cerebral-helm")).toBeInTheDocument(); // right widget (repositories)
-    expect(screen.getByText("Team standup")).toBeInTheDocument(); // schedule
-    expect(screen.getByText(/TypeScript 5.9/)).toBeInTheDocument(); // news
+    expect(screen.getByText("Ready to build.")).toBeInTheDocument();
+    expect(screen.getByText("dev · checks passing")).toBeInTheDocument();
+    expect(screen.getByText("cerebral-helm")).toBeInTheDocument();
+    expect(screen.getByText("Team standup")).toBeInTheDocument();
+    expect(screen.getByText(/TypeScript 5.9/)).toBeInTheDocument();
   });
 
-  it("renders a different mode purely from config (Executive) — no Developer content leaks", () => {
-    renderMode("mode.executive.ready");
+  it("renders Executive purely from config — no Developer content leaks", () => {
+    renderShell("mode.executive.ready");
     expect(screen.getByText("Chrome")).toBeInTheDocument();
     expect(screen.getByText("Good day.")).toBeInTheDocument();
-    expect(screen.getByText("Market Brief")).toBeInTheDocument(); // left widget label
+    expect(screen.getByText("Market Brief")).toBeInTheDocument();
     expect(screen.getByText("Markets up modestly")).toBeInTheDocument();
-    // The shell is one composition: Developer-only content must not appear in Executive.
     expect(screen.queryByText("VS Code")).toBeNull();
     expect(screen.queryByText("Ready to build.")).toBeNull();
   });
 
   it("renders an honest battery-unavailable metric pre-Mac", () => {
-    renderMode("mode.developer.ready");
-    const battery = screen.getByTitle(/Battery — requires the macOS host/);
-    expect(battery).toHaveTextContent("Unavailable");
+    renderShell("mode.developer.ready");
+    expect(screen.getByTitle(/Battery — requires the macOS host/)).toHaveTextContent("Unavailable");
+  });
+});
+
+describe("DashboardShell mode switching (D2)", () => {
+  it("switches mode on click via applyMode — re-themes and re-populates without remounting", () => {
+    renderShell(); // Executive default
+    expect(screen.getByText("Chrome")).toBeInTheDocument();
+    expect(selectedModeButton()).toHaveTextContent("Executive");
+
+    fireEvent.click(screen.getByRole("button", { name: "Developer" }));
+
+    expect(selectedModeButton()).toHaveTextContent("Developer");
+    expect(screen.getByText("VS Code")).toBeInTheDocument();
+    expect(screen.getByText("Ready to build.")).toBeInTheDocument();
+    expect(screen.queryByText("Chrome")).toBeNull();
   });
 });

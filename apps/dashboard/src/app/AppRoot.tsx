@@ -4,25 +4,28 @@ import "../styles/responsive.css";
 import "../shell/shell.css";
 import { DashboardShell } from "../shell/DashboardShell";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
+import { BridgeProvider } from "../state/BridgeProvider";
 import { ThemeProvider } from "./ThemeProvider";
-import { createBootstrapStore } from "../state/bootstrapStore";
+import { createDashboardRuntime } from "../state/bootstrapStore";
 
-const store = createBootstrapStore();
+const { bridge, store } = createDashboardRuntime();
 
 /**
- * The application container: owns state (the store seam), theme application, and the
- * accessibility baseline (skip link), and renders the three-zone shell (NIC-53).
+ * The application container: owns the bridge + state store (the read/write seam), theme
+ * application, and the accessibility baseline (skip link), and renders the three-zone shell.
  */
 export function AppRoot() {
   return (
-    <DashboardStateProvider store={store}>
-      <ThemeProvider>
-        <a className="skip-link" href="#main">
-          Skip to main content
-        </a>
-        <DashboardShell />
-      </ThemeProvider>
-    </DashboardStateProvider>
+    <BridgeProvider bridge={bridge}>
+      <DashboardStateProvider store={store}>
+        <ThemeProvider>
+          <a className="skip-link" href="#main">
+            Skip to main content
+          </a>
+          <DashboardShell />
+        </ThemeProvider>
+      </DashboardStateProvider>
+    </BridgeProvider>
   );
 }
 

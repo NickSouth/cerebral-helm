@@ -333,6 +333,21 @@
   color: var(--ch-text-muted);
 }
 
+/* Animated mode transition (course-correction D.1): the palette cross-fades — not an instant
+   flip, not a loading state — when data-mode changes. CSS custom properties aren't themselves
+   transitionable, so the consuming properties transition. Collapses to instant under
+   prefers-reduced-motion (the safety net in app.css zeroes transition-duration). */
+.heimlich,
+.schedule__time,
+.quick-app__icon,
+.mode-switcher__option,
+.global-search__input {
+  transition:
+    color var(--ch-motion-base) var(--ch-ease-standard),
+    background-color var(--ch-motion-base) var(--ch-ease-standard),
+    border-color var(--ch-motion-base) var(--ch-ease-standard);
+}
+
 /* Responsive (constitution §8): compact stacks the rails (center first), preserving the
    center, mode, and bottom bar with no horizontal page scroll; external caps the width. */
 @media (max-width: 1439px) {
