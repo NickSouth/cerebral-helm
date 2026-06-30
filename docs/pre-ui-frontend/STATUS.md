@@ -1,7 +1,7 @@
 # PRE-UI Frontend — Status (what's been done)
 
 **Epic:** NIC-50 (PRE-UI: the production React dashboard against the mock bridge).
-**As of:** end of increment **D3**. Through **D2 is committed**; **D3 is in the working tree, uncommitted** (pending review). Confirm with `git log --oneline` / `git status`.
+**As of:** end of increment **D4**. Through **D3 is committed** (`4c698d6`); **D4 is in the working tree, uncommitted** (pending review). Confirm with `git log --oneline` / `git status`.
 
 This is the "current reality" doc. For the roadmap see [PLAN.md](PLAN.md); to pick up work see [HANDOFF.md](HANDOFF.md).
 
@@ -48,7 +48,8 @@ The eager `modes`/`agents` bundle + a per-state `regions` snapshot are composed 
 | **C1** | NIC-53 | Three-zone shell + panel primitive + responsive collapse + bottom-bar track (honest-unavailable placeholders) | committed |
 | **D1** | NIC-54 | Config-driven mode view — Quick Apps (category glyphs), 4+4 quick actions (labelled, greyed), schedule/health/news panels, registry-driven widgets, greeting; one view, four modes, no conditionals | committed |
 | **D2** | NIC-54 / 117h | Mode switcher wired to `applyMode` (animated theme cross-fade, no remount); **Executive is the default** (ADR-007) — aligned frontend seed + bootstrap fixture + tests to the already-Executive config | committed |
-| **D3** | NIC-58 | Two command loci (persistent top launcher + in-conversation docked input), capability-aware suggestions, conversation overlay; **no floating modal palette** | **uncommitted** |
+| **D3** | NIC-58 | Two command loci (persistent top launcher + in-conversation docked input), capability-aware suggestions, conversation overlay; **no floating modal palette** | committed |
+| **D4** | NIC-117 b / ex-NIC-113 | Wired the trivial `capture-note` quick action → `bridge.captureNote` (honest acknowledgement via the new `ConversationProvider.acknowledge`); others stay greyed placeholders. Added the **quickActions→workflow resolution gate** (`validateQuickActionWiring` in `validate-config.mjs`) + wired-action manifest (`apps/dashboard/src/shell/quickActions.manifest.json`, **loose**: unknown ids = placeholders) + `scripts/quick-action-wiring.test.mjs` | **uncommitted** |
 
 Cancelled as duplicates (folded into NIC-54): NIC-55/56/57.
 
@@ -67,6 +68,6 @@ Cancelled as duplicates (folded into NIC-54): NIC-55/56/57.
 
 ## Verification state (all green except a known environmental flake)
 
-- Dashboard: **56 unit tests** (9 files) + build; **Playwright 10/10** (Chromium+WebKit × compact/laptop/external + reduced-motion + axe) — baselines are **win32-only** (`apps/dashboard/tests/visual/shell.spec.ts-snapshots/`).
-- Node contract gates: `validate-config`, `validate-contracts` (37 schemas / 72 valid / 39 invalid fixtures), `check-contract-drift`, the `scripts/*.test.mjs` suite — all green.
+- Dashboard: **57 unit tests** (9 files) + build; **Playwright 10/10** (Chromium+WebKit × compact/laptop/external + reduced-motion + axe), re-baselined for the enabled `capture-note` slot — baselines are **win32-only** (`apps/dashboard/tests/visual/shell.spec.ts-snapshots/`).
+- Node contract gates: `validate-config` (now incl. the quick-action wiring gate), `validate-contracts` (37 schemas / 72 valid / 39 invalid fixtures), `check-contract-drift`, the `scripts/*.test.mjs` suite (incl. `quick-action-wiring.test.mjs`) — all green.
 - Swift: compiles; **243/246** `swift test` — the 3 failures are `SchemaMigratorTests` reading `database/migrations/*.sql` as empty, a **OneDrive dehydration** flake unrelated to this work (see [HANDOFF.md](HANDOFF.md) § Gotchas).

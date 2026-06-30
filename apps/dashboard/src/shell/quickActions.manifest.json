@@ -1,0 +1,6 @@
+{
+  "handlers": ["captureNote"],
+  "wiredActions": {
+    "capture-note": { "handler": "captureNote" }
+  }
+}

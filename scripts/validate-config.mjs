@@ -132,6 +132,67 @@ export function validateModeQuickApps(document, relativePath, registeredAppIds, 
   }
 }
 
+// The quick-action wiring manifest is the registry of which quick actions are LIVE (wired to
+// a runtime target) versus placeholders. It lives with the UI that dispatches the slots. The
+// gate "follows the wiring": an action id absent from the manifest is an allowed placeholder,
+// but a *wired* action whose target does not resolve — to a config/workflows/*.json workflow
+// id or a declared bridge handler — is a dangling reference and a build failure, the same
+// single reference-resolution gate as theme tokens / widgets / quick apps.
+export function readQuickActionWiring(repositoryRoot) {
+  const manifestPath = path.join(repositoryRoot, "apps", "dashboard", "src", "shell", "quickActions.manifest.json");
+  const manifest = readJson(manifestPath);
+  const relativePath = path.relative(repositoryRoot, manifestPath);
+
+  if (!Array.isArray(manifest.handlers)) {
+    fail(`${relativePath}: handlers must be an array.`);
+  }
+
+  if (typeof manifest.wiredActions !== "object" || manifest.wiredActions === null || Array.isArray(manifest.wiredActions)) {
+    fail(`${relativePath}: wiredActions must be an object.`);
+  }
+
+  return {
+    relativePath,
+    handlerNames: new Set(manifest.handlers),
+    wiredActions: manifest.wiredActions
+  };
+}
+
+export function validateQuickActionWiring(wiring, registeredWorkflowIds, errors) {
+  for (const [actionId, target] of Object.entries(wiring.wiredActions)) {
+    const ok = target !== null && typeof target === "object" && !Array.isArray(target);
+
+    if (!ok) {
+      errors.push(`${wiring.relativePath}: wired action "${actionId}" must map to an object with a workflow or handler target.`);
+      continue;
+    }
+
+    const hasWorkflow = typeof target.workflow === "string";
+    const hasHandler = typeof target.handler === "string";
+
+    // Exactly one target — a wired action is either workflow-backed or handler-backed, never
+    // both (ambiguous) nor neither (dangling).
+    if (hasWorkflow === hasHandler) {
+      errors.push(`${wiring.relativePath}: wired action "${actionId}" must declare exactly one of workflow or handler.`);
+      continue;
+    }
+
+    if (hasWorkflow) {
+      assert(
+        registeredWorkflowIds.has(target.workflow),
+        `${wiring.relativePath}: wired action "${actionId}" references unknown workflow "${target.workflow}" (config/workflows/*.json).`,
+        errors
+      );
+    } else {
+      assert(
+        wiring.handlerNames.has(target.handler),
+        `${wiring.relativePath}: wired action "${actionId}" references unknown handler "${target.handler}" (handlers list in the same manifest).`,
+        errors
+      );
+    }
+  }
+}
+
 function validateMode(document, relativePath, errors, registries) {
   assert(typeof document.id === "string", `${relativePath}: id must be a string.`, errors);
   assert(typeof document.label === "string", `${relativePath}: label must be a string.`, errors);
@@ -320,6 +381,10 @@ export function validateRepositoryConfig() {
     if (typeof document.id === "string") workflowIds.push(document.id);
   }
   assert(new Set(workflowIds).size === workflowIds.length, `workflows: workflow ids must be unique across files.`, errors);
+
+  // Every wired quick action must resolve to a real workflow id or a declared handler
+  // (ex-NIC-113). Placeholders (ids not in the manifest) are unaffected.
+  validateQuickActionWiring(readQuickActionWiring(repositoryRoot), new Set(workflowIds), errors);
 
   const modeIds = new Set(modeFiles.map((filePath) => readJson(filePath).id));
   const agentIds = new Set(agentFiles.map((filePath) => readJson(filePath).id));

@@ -1,4 +1,4 @@
-# PRE-UI Frontend — Handoff (how to pick up at D4)
+# PRE-UI Frontend — Handoff (how to pick up at D5)
 
 Read this to resume the dashboard work cold. Companion docs: [STATUS.md](STATUS.md) (what's built), [PLAN.md](PLAN.md) (the roadmap).
 
@@ -12,7 +12,7 @@ Read this to resume the dashboard work cold. Companion docs: [STATUS.md](STATUS.
 ## Working cadence (from CLAUDE.md)
 
 - **One commit-sized increment at a time.** Inspect → resolve uncertainty → implement the smallest complete vertical slice → tests + docs → verify → **stop and report**. Do not roll into the next increment without a prompt.
-- **Do not commit unless asked.** The owner reviews each increment, commits it, then prompts the next. (Through **D2 is committed**; **D3 is uncommitted** in the working tree.)
+- **Do not commit unless asked.** The owner reviews each increment, commits it, then prompts the next. (Through **D3 is committed**; **D4 is uncommitted** in the working tree.)
 - **Consume, never re-derive.** Tokens via `data-mode` + the token source; mode color never via a per-mode conditional. State via the `DashboardStore` seam (`useDashboardState`), dispatch via `useBridge`. New values go in the token source + the constitution, never inlined.
 - **Honest-unavailable** for anything not wired; never fake-successful.
 
@@ -62,7 +62,8 @@ node scripts/generate-contracts.mjs
 | Store + reducer | `apps/dashboard/src/state/bridgeStore.ts`; seam `dashboardState.ts`; providers `DashboardStateProvider.tsx` / `BridgeProvider.tsx` / `ConversationProvider.tsx`; runtime factory `bootstrapStore.ts` |
 | Shell | `apps/dashboard/src/shell/DashboardShell.tsx` + `LeftRail`/`CenterStage`/`RightRail`/`PersistentBottomBar` |
 | Active-mode binding | `apps/dashboard/src/shell/useActiveMode.ts` |
-| Quick actions (D4 target) | `apps/dashboard/src/shell/QuickActions.tsx` |
+| Quick actions | `apps/dashboard/src/shell/QuickActions.tsx`; wiring `quickActionHandlers.ts` + `quickActions.manifest.json`; gate `validateQuickActionWiring` in `scripts/validate-config.mjs` (test `scripts/quick-action-wiring.test.mjs`) |
+| Confirmations (D5 target) | state `pendingConfirmations` (`bridge/types.ts`); op `bridge.decideConfirmation`; event `confirmation.changed` (`bridge/eventFixtures.ts`, reducer in `state/bridgeStore.ts`) |
 | Command surfaces | `apps/dashboard/src/shell/CommandSurface.tsx`, `commandSuggestions.ts`, `ConversationOverlay.tsx` |
 | Widgets / apps registries | `apps/dashboard/src/widgets/`, `apps/dashboard/src/appCatalog/` |
 | Config-reference gate | `scripts/validate-config.mjs` (+ `scripts/validate-contracts.mjs`) |
@@ -71,29 +72,29 @@ node scripts/generate-contracts.mjs
 
 ---
 
-## D4 — wire trivial quick actions + the quickActions→workflow gate
+## What D4 settled (so you don't re-derive it)
 
-**Tickets:** NIC-117 (b) / ex-NIC-113. **Scope:** small and incremental — do **not** try to wire all eight actions.
+- **Wired-action model is loose:** `apps/dashboard/src/shell/quickActions.manifest.json` lists only the *wired* ids → a `{ handler }` or `{ workflow }` target. Any id **not** in the manifest is an allowed placeholder (greyed/disabled). Today only `capture-note → { handler: captureNote }` is wired.
+- **The gate** is `validateQuickActionWiring` (`scripts/validate-config.mjs`): each wired target must resolve to a `config/workflows/*.json` id or a declared `handlers[]` entry; exactly one of workflow/handler. It runs inside `validateRepositoryConfig` and is unit-tested in `scripts/quick-action-wiring.test.mjs`. Because the model is loose, a *mode* can't dangle on its own, so there is **no invalid mode fixture** — the negative cases live in the gate's unit test.
+- **Honest acknowledgement channel:** `ConversationProvider.acknowledge(text)` appends a Heimlich-authored message (no user turn, no command dispatch). Reuse it for any action that needs to report a bridge result.
+- To wire another action: add it to the manifest, add a handler impl in `quickActionHandlers.ts` (keyed by handler name) or a workflow file, done. Slot enable/disable in `QuickActions.tsx` follows the manifest automatically.
 
-Today `QuickActions.tsx` renders the active mode's eight `quickActions` ids as labelled, **greyed, disabled** slots. D4 turns the *trivial* ones live and adds a resolution gate so wired action ids can't dangle.
+## D5 — universal confirmation surface
 
-### Part 1 — wire the trivial action(s)
+**Ticket:** NIC-62. **Design authority:** `.agent/spec/CEREBRALHELM_DESIGN_SPEC.md` (the confirmation/review window) + `.agent/spec/UI-CONSTITUTION.md` §2 checklist.
 
-- The cheapest real wiring is `capture-note` → `bridge.captureNote(...)` (the bridge op already exists and the mock acknowledges it). Optionally `search-notes` → `bridge.searchNotes(...)`.
-- Use `useBridge()` to dispatch (same pattern as the mode switcher in `RightRail.tsx`). Keep the result honest — e.g. surface an acknowledgement in the Heimlich conversation (`ConversationProvider`), don't fake a richer result.
-- Every other action **stays greyed/disabled** ("coming soon"). Per NIC-117(b), placeholders are not a blocker; wire incrementally.
+A neutral-blue review window that shows a pending confirmation in full (no truncation of what will happen), with **approve NOT the default-focused control**, a keyboard flow, and visible expiry/invalidation. It submits the decision via `bridge.decideConfirmation({ id, decision })` (op already exists; the mock acks).
 
-### Part 2 — the quickActions→workflow resolution gate (ex-NIC-113)
+### Scope decision to resolve FIRST (it's a contract question)
 
-- **Intent:** a *wired* quick-action id must resolve (to a `config/workflows/*.json` workflow id, or a known handler) — a dangling wired action is a build failure. **Placeholders are allowed** without a workflow (most actions are placeholders today; the gate "follows the wiring, not before").
-- **Design decision to make:** how to mark "wired vs placeholder." Mirror the existing gate idiom in `scripts/validate-config.mjs` (`readRegistered*` + `validateMode*` + a lockstep manifest, exactly like the theme-token / widget / app gates already there). A clean option: a small **wired-action manifest** (action id → workflow id / handler) that the gate resolves; ids not in the manifest are treated as placeholders. Whatever you choose, also wire it into `validate-contracts.mjs` for the invalid-fixture path (see how the theme/widget/app gate is dual-wired there) and add an invalid fixture under `packages/contracts/fixtures/invalid/config/modes/`.
-- Note: `config/workflows/` currently holds only the four mode-entry workflows; `WorkflowActionPlanner` (Swift) resolves an action id to a workflow at runtime and already errors structurally on an unknown action.
+- **The state today carries only a count.** `DashboardBootstrapState.pendingConfirmations` is a `number` (`bridge/types.ts:133`), and the `confirmation.changed` event is currently *observed but not interpreted* (`bridgeStore.ts` comment). To render full disclosure you need the actual confirmation payload — title, the action/tool being confirmed, risk, disclosure fields, expiry.
+- There **is** a contract for the disclosure: `packages/contracts/schemas/tools/confirmation-disclosure.schema.json` (+ valid fixtures under `fixtures/valid/tools/confirmations/`). Decide how it reaches the UI: expand the bootstrap-state contract to carry a `confirmations: ConfirmationDisclosure[]` (and have `confirmation.changed` fold into it), versus a separate read op. **This is a schema change** → the codegen-namespace-collision + OneDrive-dehydration + Swift gotchas above all apply (regenerate, diff `(struct|enum)` names HEAD-vs-new, `swift test`). Settle the shape before building (see the "settle shapes, defer content" memory).
+- If the owner wants to keep D5 purely presentational against a mock for now, an alternative is to drive it from the existing confirmation fixtures via the mock bridge without a bootstrap-state change — confirm which they want.
 
-### Verify D4
+### Verify D5
 
-- Node: `validate-config.mjs` + `validate-contracts.mjs` + `check-contract-drift` + the resolution-gate test (add one mirroring `scripts/config-reference-resolution.test.mjs`).
-- Dashboard: `test --run` + `build`; add a unit test that the wired action dispatches and the unwired ones stay disabled.
-- Visual: re-baseline only if the quick-action appearance changes (a wired action may look enabled vs greyed).
-- Swift: only if you touch a contract schema (you likely won't).
+- Node: `validate-config` + `validate-contracts` + `check-contract-drift` (+ regenerate & Swift if you touch a schema).
+- Dashboard: `test --run` + `build`; unit tests for the keyboard flow, approve-not-default-focus, and `decideConfirmation` dispatch.
+- Visual: re-baseline (new surface) and verify; keep the §2 checklist.
 
-After D4, the next increments are **D5 (NIC-62 confirmation surface)** then **D6 (NIC-59 bottom bar)** — see [PLAN.md](PLAN.md).
+After D5: **D6 (NIC-59 bottom bar)** — see [PLAN.md](PLAN.md).

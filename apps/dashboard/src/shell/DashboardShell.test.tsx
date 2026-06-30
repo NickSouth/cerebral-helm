@@ -61,12 +61,15 @@ describe("DashboardShell structure", () => {
     }
   });
 
-  it("renders eight quick-action slots, all disabled, with config labels", () => {
+  it("renders eight quick-action slots — wired ones enabled, placeholders disabled", () => {
     renderShell();
     const slots = within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole("button");
     expect(slots).toHaveLength(8);
-    expect(slots.every((slot) => slot.hasAttribute("disabled"))).toBe(true);
+    // D4 wires capture-note; the rest remain greyed placeholders.
+    expect(screen.getByRole("button", { name: "Capture note" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Daily brief" })).toBeDisabled();
+    const disabled = slots.filter((slot) => slot.hasAttribute("disabled"));
+    expect(disabled).toHaveLength(7);
   });
 
   it("exposes the persistent global Ask-Heimlich launcher (enabled)", () => {
@@ -144,5 +147,17 @@ describe("DashboardShell command surfaces (D3 / NIC-58)", () => {
     expect(screen.getByRole("button", { name: /Ask Heimlich/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Capture a note/ })).toBeEnabled();
     expect(screen.getByRole("button", { name: /Open an app/ })).toBeDisabled();
+  });
+});
+
+describe("DashboardShell quick actions (D4 / NIC-117 b)", () => {
+  it("dispatches the wired capture-note action and surfaces an honest acknowledgement", async () => {
+    renderShell();
+
+    fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
+
+    // The real bridge op runs; the returned note id is reported (never a fabricated outcome).
+    const dialog = await screen.findByRole("dialog", { name: "Heimlich conversation" });
+    expect(within(dialog).getByText(/Captured a quick note \(note_/)).toBeInTheDocument();
   });
 });

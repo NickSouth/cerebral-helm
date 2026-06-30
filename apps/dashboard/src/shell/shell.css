@@ -122,6 +122,20 @@
   min-height: 56px;
 }
 
+/* A wired (live) quick action reads as actionable — solid border, primary text, pointer. */
+.quick-action--wired {
+  color: var(--ch-text-primary);
+  border-style: solid;
+  border-color: var(--ch-panel-border);
+  background: var(--ch-surface-raised);
+  cursor: pointer;
+  transition: border-color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.quick-action--wired:hover {
+  border-color: var(--ch-accent-primary);
+}
+
 /* R1 — mode switcher: four fixed controls, strong selected state. */
 .mode-switcher {
   display: grid;

@@ -2,7 +2,7 @@
 
 The rest of NIC-50, ordered foundation-first. Each increment is commit-sized, leaves the repo green, and **consumes the constitution** (`.agent/spec/UI-CONSTITUTION.md`) rather than re-deriving tokens/contracts/conventions. See [STATUS.md](STATUS.md) for what's built; [HANDOFF.md](HANDOFF.md) for how to execute.
 
-**Done:** Phases A–C, plus D1, D2, D3. **Next: D4.**
+**Done:** Phases A–C, plus D1, D2, D3, D4. **Next: D5.**
 
 ---
 
@@ -26,8 +26,8 @@ The rest of NIC-50, ordered foundation-first. Each increment is commit-sized, le
 - **D1** (NIC-54) ✅ — config-driven mode view (apps/actions/widgets/schedule/news/health/greeting), one view for all four modes, no per-mode conditionals.
 - **D2** (NIC-54 / 117h) ✅ — mode switcher wired to `applyMode` (animated cross-fade); Executive default (ADR-007).
 - **D3** (NIC-58) ✅ (uncommitted) — two command loci (launcher + docked), capability-aware suggestions, conversation overlay; no floating modal.
-- **D4** (NIC-117 b / ex-NIC-113) — **NEXT.** Wire the trivial quick actions (e.g. `capture-note` → `bridge.captureNote`); add the **quickActions→workflow resolution gate** to `validate-config.mjs`. Unwired actions stay greyed/disabled. See [HANDOFF.md](HANDOFF.md) § D4.
-- **D5** (NIC-62) — universal confirmation surface: neutral-blue review window, full disclosure, approve-not-default-focus, keyboard flow, expiry/invalidation; submits via `decideConfirmation`.
+- **D4** (NIC-117 b / ex-NIC-113) ✅ — wired the trivial `capture-note` quick action → `bridge.captureNote` (honest acknowledgement); added the **quickActions→workflow resolution gate** (`validateQuickActionWiring`) + wired-action manifest (loose: unknown ids = placeholders). Other actions stay greyed/disabled.
+- **D5** (NIC-62) — **NEXT.** Universal confirmation surface: neutral-blue review window, full disclosure, approve-not-default-focus, keyboard flow, expiry/invalidation; submits via `decideConfirmation`. See [HANDOFF.md](HANDOFF.md) § D5.
 - **D6** (NIC-59) — persistent bottom bar: Heimlich state, mode (accent on home only), context, CPU/mem/network/time, settings, emergency; distinct loading/stale/unavailable/disconnected metric states; weather + battery honest-unavailable pre-Mac.
 
 ## Phase E — richer surfaces

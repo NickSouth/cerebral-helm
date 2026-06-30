@@ -8,6 +8,12 @@ interface ConversationContextValue {
   readonly messages: readonly ConversationMessage[];
   /** Submit text from either input locus: opens the conversation and appends the exchange. */
   submit(text: string): void;
+  /**
+   * Append a single Heimlich-authored acknowledgement and open the conversation — the honest
+   * channel for a wired action's result (e.g. a captured note's id). Not a user turn, so it
+   * dispatches no command and fabricates no richer outcome than the bridge actually returned.
+   */
+  acknowledge(text: string): void;
   /** Minimize/close the conversation overlay; the ambient field returns to full idle. */
   close(): void;
 }
@@ -47,12 +53,24 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     void bridge.submitCommand({ rawInput: trimmed, source: "command-surface" });
   }
 
+  function acknowledge(text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return;
+    }
+    const message: ConversationMessage = { id: nextId(), role: "heimlich", text: trimmed };
+    setMessages((previous) => [...previous, message]);
+    setOpen(true);
+  }
+
   function close(): void {
     setOpen(false);
   }
 
   return (
-    <ConversationContext.Provider value={{ open, messages, submit, close }}>{children}</ConversationContext.Provider>
+    <ConversationContext.Provider value={{ open, messages, submit, acknowledge, close }}>
+      {children}
+    </ConversationContext.Provider>
   );
 }
 
