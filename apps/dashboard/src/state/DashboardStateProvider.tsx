@@ -1,13 +1,13 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useSyncExternalStore, type ReactNode } from "react";
 import type { DashboardMode } from "../bridge/types";
 import type { DashboardState, DashboardStore } from "./dashboardState";
 
 const DashboardStateContext = createContext<DashboardState | null>(null);
 
 /**
- * Holds the current dashboard state behind the store seam. Seeded once from the store;
- * NIC-52 replaces the static seed with bridge-backed, event-driven state plus
- * subscription, and consumers (useDashboardState) do not change.
+ * Holds the current dashboard state behind the store seam. Subscribes to the store via
+ * useSyncExternalStore so bridge-driven state changes (NIC-52 B2) re-render consumers;
+ * useDashboardState does not change.
  */
 export function DashboardStateProvider({
   store,
@@ -16,7 +16,7 @@ export function DashboardStateProvider({
   store: DashboardStore;
   children: ReactNode;
 }) {
-  const [state] = useState(() => store.getState());
+  const state = useSyncExternalStore(store.subscribe, store.getState);
 
   return <DashboardStateContext.Provider value={state}>{children}</DashboardStateContext.Provider>;
 }

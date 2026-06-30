@@ -11,9 +11,11 @@ export type DashboardState = DashboardBootstrapState;
 
 /**
  * The state-boundary seam. Components depend on this contract, never on a concrete
- * loader or bridge. NIC-52 implements it over MockCerebralBridge + the event store
- * (adding subscription); the foundation provides a static snapshot.
+ * loader or bridge. NIC-52 B2 implements it over MockCerebralBridge + the event store;
+ * `subscribe` lets the provider re-render via useSyncExternalStore when events arrive.
  */
 export interface DashboardStore {
   getState(): DashboardState;
+  /** Register a change listener; returns an unsubscribe handle. */
+  subscribe(listener: () => void): () => void;
 }
