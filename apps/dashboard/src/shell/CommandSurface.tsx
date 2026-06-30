@@ -1,0 +1,103 @@
+import { useState, type KeyboardEvent } from "react";
+import { rankSuggestions } from "./commandSuggestions";
+
+/**
+ * The shared command/search input, used in two distinct placements (course-correction C):
+ * the persistent top **launcher** (C0 — global, always visible, "Ask Heimlich first") and the
+ * in-conversation **docked** input (continues the current exchange). One input model, two
+ * roles — not two duplicate searches, and no floating command-palette modal. Suggestions are
+ * capability-aware; unknown text always offers "Ask Heimlich"; unavailable actions are shown
+ * disabled (NIC-58).
+ */
+export function CommandSurface({
+  variant,
+  placeholder,
+  ariaLabel,
+  onSubmit
+}: {
+  variant: "launcher" | "docked";
+  placeholder: string;
+  ariaLabel: string;
+  onSubmit: (text: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [focused, setFocused] = useState(false);
+
+  function submit(text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return;
+    }
+    onSubmit(trimmed);
+    setValue("");
+    setFocused(false);
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submit(value);
+    } else if (event.key === "Escape") {
+      setFocused(false);
+    }
+  }
+
+  // Only the global launcher surfaces the suggestion list; the docked input continues the
+  // current exchange directly.
+  const showSuggestions = focused && variant === "launcher";
+  const suggestions = rankSuggestions(value);
+  const trimmed = value.trim();
+
+  return (
+    <div className={`command-surface command-surface--${variant}`}>
+      <input
+        type="text"
+        className={variant === "launcher" ? "global-search__input" : "docked-input__input"}
+        value={value}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        onChange={(event) => setValue(event.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={onKeyDown}
+      />
+      {showSuggestions ? (
+        <ul className="command-suggestions" aria-label="Command suggestions">
+          <li>
+            {/* Ask Heimlich is always first, even when an action matches (design spec §5.5). */}
+            <button
+              type="button"
+              className="command-suggestion command-suggestion--ask"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                submit(value);
+              }}
+            >
+              Ask Heimlich{trimmed ? ` using “${trimmed}”` : ""}
+            </button>
+          </li>
+          {suggestions.map((suggestion) => (
+            <li key={suggestion.id}>
+              <button
+                type="button"
+                className="command-suggestion"
+                disabled={!suggestion.available}
+                aria-disabled={!suggestion.available}
+                title={suggestion.hint}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  if (suggestion.available) {
+                    submit(suggestion.label);
+                  }
+                }}
+              >
+                {suggestion.label}
+                {suggestion.available ? null : <span className="command-suggestion__badge">unavailable</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}

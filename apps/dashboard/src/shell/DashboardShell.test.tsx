@@ -2,6 +2,7 @@ import { render, screen, within, fireEvent } from "@testing-library/react";
 import { DashboardShell } from "./DashboardShell";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
+import { ConversationProvider } from "../state/ConversationProvider";
 import { ThemeProvider } from "../app/ThemeProvider";
 import { createBridgeStore } from "../state/bridgeStore";
 import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
@@ -16,7 +17,9 @@ function renderShell(canonicalKey?: string) {
     <BridgeProvider bridge={bridge}>
       <DashboardStateProvider store={store}>
         <ThemeProvider>
-          <DashboardShell />
+          <ConversationProvider>
+            <DashboardShell />
+          </ConversationProvider>
         </ThemeProvider>
       </DashboardStateProvider>
     </BridgeProvider>
@@ -66,9 +69,9 @@ describe("DashboardShell structure", () => {
     expect(screen.getByRole("button", { name: "Daily brief" })).toBeDisabled();
   });
 
-  it("exposes the persistent global launcher as a disabled, labelled input", () => {
+  it("exposes the persistent global Ask-Heimlich launcher (enabled)", () => {
     renderShell();
-    expect(screen.getByLabelText("Ask Heimlich or type a command")).toBeDisabled();
+    expect(screen.getByLabelText("Ask Heimlich or type a command")).toBeEnabled();
   });
 });
 
@@ -111,5 +114,35 @@ describe("DashboardShell mode switching (D2)", () => {
     expect(screen.getByText("VS Code")).toBeInTheDocument();
     expect(screen.getByText("Ready to build.")).toBeInTheDocument();
     expect(screen.queryByText("Chrome")).toBeNull();
+  });
+});
+
+describe("DashboardShell command surfaces (D3 / NIC-58)", () => {
+  it("opens a Heimlich conversation from the launcher and continues from the docked input", () => {
+    renderShell();
+    const launcher = screen.getByLabelText("Ask Heimlich or type a command");
+
+    fireEvent.change(launcher, { target: { value: "what's on today?" } });
+    fireEvent.keyDown(launcher, { key: "Enter" });
+
+    const dialog = screen.getByRole("dialog", { name: "Heimlich conversation" });
+    expect(within(dialog).getByText("what's on today?")).toBeInTheDocument();
+
+    const docked = within(dialog).getByLabelText("Continue the conversation");
+    fireEvent.change(docked, { target: { value: "and tomorrow?" } });
+    fireEvent.keyDown(docked, { key: "Enter" });
+    expect(within(dialog).getByText("and tomorrow?")).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Minimize" }));
+    expect(screen.queryByRole("dialog", { name: "Heimlich conversation" })).toBeNull();
+  });
+
+  it("offers capability-aware suggestions — unavailable actions are visibly disabled", () => {
+    renderShell();
+    fireEvent.focus(screen.getByLabelText("Ask Heimlich or type a command"));
+
+    expect(screen.getByRole("button", { name: /Ask Heimlich/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Capture a note/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Open an app/ })).toBeDisabled();
   });
 });
