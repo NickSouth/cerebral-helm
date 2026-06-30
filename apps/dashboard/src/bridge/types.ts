@@ -160,3 +160,75 @@ export interface DashboardConfigBundle {
  * eager config bundle. Composed with a DashboardConfigBundle into a DashboardBootstrapState.
  */
 export type DashboardStateSnapshot = Omit<DashboardBootstrapState, "modes" | "agents">;
+
+// --- Confirmation disclosure (mirror of packages/contracts/schemas/tools/confirmation-disclosure.schema.json) ---
+
+/** Risk classes — owned by deterministic policy (ADR-003); the UI renders, never classifies. */
+export type ConfirmationRisk =
+  | "read_only"
+  | "local_write"
+  | "external_write"
+  | "destructive"
+  | "shell"
+  | "financial"
+  | "purchase_or_booking";
+
+export type ConfirmationDataLeavingDevice = "none" | "metadata_only" | "content" | "unknown";
+export type ConfirmationReversibility = "reversible" | "partially_reversible" | "not_reversible" | "unknown";
+
+export interface ConfirmationTool {
+  readonly id: string;
+  readonly version: string;
+  readonly purpose: string;
+}
+
+export interface ConfirmationArgument {
+  readonly name: string;
+  readonly value: string;
+  /** Sensitive values are masked in the disclosure, never shown verbatim. */
+  readonly sensitive: boolean;
+}
+
+export interface ConfirmationChoice {
+  readonly label: string;
+}
+
+export interface ConfirmationChoices {
+  readonly approve: ConfirmationChoice;
+  readonly review: ConfirmationChoice;
+  readonly cancel: ConfirmationChoice;
+  /** Approve is NEVER the default-focused control — policy constrains this to review/cancel. */
+  readonly defaultFocusedChoice: "review" | "cancel";
+}
+
+export interface ConfirmationInvalidation {
+  readonly expires: boolean;
+  readonly invalidAfterPlanChange: boolean;
+  readonly singleUseToken: boolean;
+}
+
+/**
+ * The policy-owned confirmation disclosure. Delivered to the UI at runtime via the
+ * `confirmation.changed` event (never part of the static bootstrap config). The dashboard
+ * renders every field verbatim and submits a decision via `decideConfirmation`; it never
+ * classifies risk, bypasses policy, or executes the underlying action (design spec §9).
+ */
+export interface ConfirmationDisclosure {
+  readonly schemaVersion: string;
+  readonly id: string;
+  readonly commandId: string;
+  readonly planHash: string;
+  readonly actionSummary: string;
+  readonly tool: ConfirmationTool;
+  readonly risk: ConfirmationRisk;
+  readonly destination: string | null;
+  readonly arguments: readonly ConfirmationArgument[];
+  readonly dataLeavingDevice: ConfirmationDataLeavingDevice;
+  readonly accountOrService: string | null;
+  readonly reversibility: ConfirmationReversibility;
+  readonly policyReason: string;
+  readonly choices: ConfirmationChoices;
+  readonly expiresAt: string;
+  readonly invalidation: ConfirmationInvalidation;
+  readonly executionNotice: string;
+}

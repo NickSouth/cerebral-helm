@@ -1,13 +1,16 @@
-import type { DashboardBootstrapState, DashboardMode } from "../bridge/types";
+import type { ConfirmationDisclosure, DashboardBootstrapState, DashboardMode } from "../bridge/types";
 
 export type { DashboardMode };
 
 /**
- * The slice of dashboard state the UI renders. For this pre-bridge foundation it is
- * exactly the bootstrap snapshot; NIC-52 widens it (NIC-117 d) and makes it
- * event-driven without changing how consumers read it.
+ * The slice of dashboard state the UI renders: the bootstrap snapshot plus runtime-only state
+ * folded in from the bridge event stream. `activeConfirmation` is the policy-owned confirmation
+ * disclosure delivered by `confirmation.changed` (NIC-62) — absent until one arrives, and never
+ * part of the static bootstrap config.
  */
-export type DashboardState = DashboardBootstrapState;
+export type DashboardState = DashboardBootstrapState & {
+  readonly activeConfirmation?: ConfirmationDisclosure | null;
+};
 
 /**
  * The state-boundary seam. Components depend on this contract, never on a concrete

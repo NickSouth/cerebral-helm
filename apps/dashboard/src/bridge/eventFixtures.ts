@@ -9,6 +9,7 @@ import runningToSucceeded from "../../../../packages/contracts/fixtures/valid/li
 import runningToFailed from "../../../../packages/contracts/fixtures/valid/lifecycle/running-to-failed-event.json";
 import runningToCancelled from "../../../../packages/contracts/fixtures/valid/lifecycle/running-to-cancelled-event.json";
 import capabilityChangedEvent from "../../../../packages/contracts/fixtures/valid/bridge/events/capability-changed-event.json";
+import confirmationDisclosure from "../../../../packages/contracts/fixtures/valid/tools/confirmations/shell-confirmation-disclosure.json";
 
 /** The nine canonical command-lifecycle transitions, in state-machine order. */
 const lifecycleTransitionFixtures = [
@@ -42,4 +43,17 @@ export const capabilityBridgeEvent: BridgeEvent = {
   schemaVersion: capabilityChangedEvent.schemaVersion,
   timestamp: capabilityChangedEvent.timestamp,
   payload: capabilityChangedEvent.payload as Readonly<Record<string, unknown>>
+};
+
+/**
+ * A `confirmation.changed` event carrying the canonical confirmation disclosure (the event
+ * payload is open, so the real bridge delivers the disclosure object directly). The decision
+ * flow clears it by emitting the same event type with `confirmation: null`.
+ */
+export const confirmationBridgeEvent: BridgeEvent = {
+  eventId: "brevt_confchanged01",
+  type: "confirmation.changed",
+  schemaVersion: confirmationDisclosure.schemaVersion,
+  timestamp: "2026-06-23T16:00:30.000Z",
+  payload: { confirmation: confirmationDisclosure as Readonly<Record<string, unknown>> }
 };

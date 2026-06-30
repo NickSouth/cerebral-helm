@@ -2,7 +2,7 @@
 
 The rest of NIC-50, ordered foundation-first. Each increment is commit-sized, leaves the repo green, and **consumes the constitution** (`.agent/spec/UI-CONSTITUTION.md`) rather than re-deriving tokens/contracts/conventions. See [STATUS.md](STATUS.md) for what's built; [HANDOFF.md](HANDOFF.md) for how to execute.
 
-**Done:** Phases A–C, plus D1, D2, D3, D4. **Next: D5.**
+**Done:** Phases A–C, plus D1, D2, D3, D4, D5. **Next: D6.**
 
 ---
 
@@ -27,8 +27,8 @@ The rest of NIC-50, ordered foundation-first. Each increment is commit-sized, le
 - **D2** (NIC-54 / 117h) ✅ — mode switcher wired to `applyMode` (animated cross-fade); Executive default (ADR-007).
 - **D3** (NIC-58) ✅ (uncommitted) — two command loci (launcher + docked), capability-aware suggestions, conversation overlay; no floating modal.
 - **D4** (NIC-117 b / ex-NIC-113) ✅ — wired the trivial `capture-note` quick action → `bridge.captureNote` (honest acknowledgement); added the **quickActions→workflow resolution gate** (`validateQuickActionWiring`) + wired-action manifest (loose: unknown ids = placeholders). Other actions stay greyed/disabled.
-- **D5** (NIC-62) — **NEXT.** Universal confirmation surface: neutral-blue review window, full disclosure, approve-not-default-focus, keyboard flow, expiry/invalidation; submits via `decideConfirmation`. See [HANDOFF.md](HANDOFF.md) § D5.
-- **D6** (NIC-59) — persistent bottom bar: Heimlich state, mode (accent on home only), context, CPU/mem/network/time, settings, emergency; distinct loading/stale/unavailable/disconnected metric states; weather + battery honest-unavailable pre-Mac.
+- **D5** (NIC-62) ✅ — universal confirmation surface: neutral system-blue review window, full disclosure, approve-not-default-focus, Escape-cancels, expiry/invalidation; submits via `decideConfirmation`. **Event-driven** (no bootstrap-state schema change) — disclosure arrives on `confirmation.changed`, folded into a runtime-only `activeConfirmation`.
+- **D6** (NIC-59) — **NEXT.** Persistent bottom bar: Heimlich state, mode (accent on home only), context, CPU/mem/network/time, settings, emergency; distinct loading/stale/unavailable/disconnected metric states; weather + battery honest-unavailable pre-Mac. See [HANDOFF.md](HANDOFF.md) § D6.
 
 ## Phase E — richer surfaces
 

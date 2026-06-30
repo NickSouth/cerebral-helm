@@ -7,7 +7,7 @@ import type {
   Unsubscribe
 } from "./cerebralBridge";
 import { getDashboardConfigBundle, getDashboardFixture, failureStateFixtures } from "../fixtures/canonicalFixtures";
-import { capabilityBridgeEvent, lifecycleBridgeEvents } from "./eventFixtures";
+import { capabilityBridgeEvent, confirmationBridgeEvent, lifecycleBridgeEvents } from "./eventFixtures";
 import recentActivityResponse from "../../../../packages/contracts/fixtures/valid/bridge/operations/get-recent-activity-response.json";
 
 /** Executive is the default mode (config/defaults/app.json `defaultModeId`; ADR-007). */
@@ -42,6 +42,8 @@ export interface MockCerebralBridge extends CerebralBridge {
   replayLifecycle(): void;
   /** Replay the capability change plus every canonical failure / degraded state. */
   replayFailures(): void;
+  /** Surface the canonical policy-owned confirmation (a `confirmation.changed` disclosure). */
+  replayConfirmation(): void;
 }
 
 export function createMockCerebralBridge(options: { bootstrapKey?: string } = {}): MockCerebralBridge {
@@ -90,6 +92,16 @@ export function createMockCerebralBridge(options: { bootstrapKey?: string } = {}
       return Promise.resolve({ results: [] });
     },
     decideConfirmation(input) {
+      // The UI submits the decision; the bridge owns the resulting state change. Clearing the
+      // active confirmation is an event, not a UI-local mutation (the real bridge would also
+      // drive the command lifecycle forward) — keeps the surface event-driven and honest.
+      emit({
+        eventId: "brevt_confcleared01",
+        type: "confirmation.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-06-23T16:00:45.000Z",
+        payload: { confirmation: null }
+      });
       return Promise.resolve({ confirmationId: input.id, decision: input.decision });
     },
     updateSettings() {
@@ -118,6 +130,9 @@ export function createMockCerebralBridge(options: { bootstrapKey?: string } = {}
           payload: { canonicalKey: fixture.canonicalKey, category: fixture.category, state: fixture.state }
         });
       }
+    },
+    replayConfirmation() {
+      emit(confirmationBridgeEvent);
     }
   };
 }

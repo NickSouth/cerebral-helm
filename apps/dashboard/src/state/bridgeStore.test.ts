@@ -1,5 +1,5 @@
 import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
-import { lifecycleBridgeEvents } from "../bridge/eventFixtures";
+import { confirmationBridgeEvent, lifecycleBridgeEvents } from "../bridge/eventFixtures";
 import { getDashboardFixture } from "../fixtures/canonicalFixtures";
 import type { BridgeEvent } from "../bridge/cerebralBridge";
 import { createBridgeStore, reduceDashboardState } from "./bridgeStore";
@@ -47,6 +47,25 @@ describe("reduceDashboardState", () => {
       payload: { capability: { id: "system.metrics", available: false } }
     };
     expect(reduceDashboardState(base, event).regions.systemHealth.state).toBe("stale");
+  });
+
+  it("folds a confirmation disclosure in on confirmation.changed and back out on null", () => {
+    const base = loadBootstrapState();
+    expect(base.activeConfirmation ?? null).toBeNull();
+
+    const withConfirmation = reduceDashboardState(base, confirmationBridgeEvent);
+    expect(withConfirmation.activeConfirmation?.id).toBe("conf_000000000000000000000001");
+
+    const cleared = reduceDashboardState(withConfirmation, {
+      eventId: "brevt_confcleared99",
+      type: "confirmation.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:45.000Z",
+      payload: { confirmation: null }
+    });
+    expect(cleared.activeConfirmation ?? null).toBeNull();
+    // Clearing an already-absent confirmation is a no-op (same reference, no re-render).
+    expect(reduceDashboardState(cleared, { ...confirmationBridgeEvent, payload: { confirmation: null } })).toBe(cleared);
   });
 
   it("applies a mode-switch snapshot on config.changed, preserving the eager bundle", () => {

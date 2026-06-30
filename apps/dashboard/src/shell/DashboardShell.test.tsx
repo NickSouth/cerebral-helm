@@ -1,4 +1,4 @@
-import { render, screen, within, fireEvent } from "@testing-library/react";
+import { render, screen, within, fireEvent, act } from "@testing-library/react";
 import { DashboardShell } from "./DashboardShell";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
@@ -13,17 +13,20 @@ function renderShell(canonicalKey?: string) {
   const bridge = canonicalKey ? createMockCerebralBridge({ bootstrapKey: canonicalKey }) : createMockCerebralBridge();
   const initial = canonicalKey ? { ...getDashboardConfigBundle(), ...getDashboardFixture(canonicalKey) } : loadBootstrapState();
   const store = createBridgeStore(bridge, initial);
-  return render(
-    <BridgeProvider bridge={bridge}>
-      <DashboardStateProvider store={store}>
-        <ThemeProvider>
-          <ConversationProvider>
-            <DashboardShell />
-          </ConversationProvider>
-        </ThemeProvider>
-      </DashboardStateProvider>
-    </BridgeProvider>
-  );
+  return {
+    bridge,
+    ...render(
+      <BridgeProvider bridge={bridge}>
+        <DashboardStateProvider store={store}>
+          <ThemeProvider>
+            <ConversationProvider>
+              <DashboardShell />
+            </ConversationProvider>
+          </ThemeProvider>
+        </DashboardStateProvider>
+      </BridgeProvider>
+    )
+  };
 }
 
 function selectedModeButton() {
@@ -147,6 +150,50 @@ describe("DashboardShell command surfaces (D3 / NIC-58)", () => {
     expect(screen.getByRole("button", { name: /Ask Heimlich/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Capture a note/ })).toBeEnabled();
     expect(screen.getByRole("button", { name: /Open an app/ })).toBeDisabled();
+  });
+});
+
+describe("DashboardShell confirmation surface (D5 / NIC-62)", () => {
+  function renderWithConfirmation() {
+    const rendered = renderShell();
+    act(() => rendered.bridge.replayConfirmation());
+    return rendered;
+  }
+
+  it("discloses the exact action in full when a confirmation arrives", () => {
+    renderWithConfirmation();
+    const dialog = screen.getByRole("dialog", { name: "Confirm action" });
+    expect(within(dialog).getByText("Run allowlisted hook ondraft-dev.")).toBeInTheDocument();
+    expect(within(dialog).getByText("hook.run v1.0.0 — Execute a configured allowlisted hook without accepting arbitrary shell text.")).toBeInTheDocument();
+    // The explicit "nothing has happened yet" statement is always present (design spec §9).
+    expect(within(dialog).getByText("Execution has not happened yet.")).toBeInTheDocument();
+  });
+
+  it("does not default-focus Approve — the safe Review/Cancel choice is focused (contract)", () => {
+    renderWithConfirmation();
+    // The canonical fixture's defaultFocusedChoice is "review".
+    expect(screen.getByRole("button", { name: "Review" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Approve" })).not.toHaveFocus();
+  });
+
+  it("submits the decision via the bridge and the surface clears (never UI-local)", () => {
+    renderWithConfirmation();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(screen.queryByRole("dialog", { name: "Confirm action" })).toBeNull();
+  });
+
+  it("cancels on Escape", () => {
+    renderWithConfirmation();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Confirm action" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Confirm action" })).toBeNull();
+  });
+
+  it("reveals technical detail (plan hash) only after Review is pressed", () => {
+    renderWithConfirmation();
+    const dialog = screen.getByRole("dialog", { name: "Confirm action" });
+    expect(within(dialog).queryByText(/sha256:/)).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Review" }));
+    expect(within(dialog).getByText(/sha256:/)).toBeInTheDocument();
   });
 });
 

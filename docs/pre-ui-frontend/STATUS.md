@@ -1,7 +1,7 @@
 # PRE-UI Frontend — Status (what's been done)
 
 **Epic:** NIC-50 (PRE-UI: the production React dashboard against the mock bridge).
-**As of:** end of increment **D4**. Through **D3 is committed** (`4c698d6`); **D4 is in the working tree, uncommitted** (pending review). Confirm with `git log --oneline` / `git status`.
+**As of:** end of increment **D5**. Through **D4 is committed** (`dc1f0b1`); **D5 is in the working tree, uncommitted** (pending review). Confirm with `git log --oneline` / `git status`.
 
 This is the "current reality" doc. For the roadmap see [PLAN.md](PLAN.md); to pick up work see [HANDOFF.md](HANDOFF.md).
 
@@ -32,6 +32,8 @@ This is the "current reality" doc. For the roadmap see [PLAN.md](PLAN.md); to pi
 
 The eager `modes`/`agents` bundle + a per-state `regions` snapshot are composed by the mock; switching emits a `config.changed` event the reducer folds in (keeps the bundle, swaps the snapshot).
 
+**Runtime-only widening (D5):** `DashboardState = DashboardBootstrapState & { activeConfirmation?: ConfirmationDisclosure | null }`. `activeConfirmation` is **not** part of the bootstrap config — it arrives at runtime via the `confirmation.changed` event (open payload) and is folded into state by the reducer. This is the pattern for future runtime-only fields: widen `DashboardState`, fold the event, leave the bootstrap contract alone.
+
 ---
 
 ## Increments delivered
@@ -49,7 +51,8 @@ The eager `modes`/`agents` bundle + a per-state `regions` snapshot are composed 
 | **D1** | NIC-54 | Config-driven mode view — Quick Apps (category glyphs), 4+4 quick actions (labelled, greyed), schedule/health/news panels, registry-driven widgets, greeting; one view, four modes, no conditionals | committed |
 | **D2** | NIC-54 / 117h | Mode switcher wired to `applyMode` (animated theme cross-fade, no remount); **Executive is the default** (ADR-007) — aligned frontend seed + bootstrap fixture + tests to the already-Executive config | committed |
 | **D3** | NIC-58 | Two command loci (persistent top launcher + in-conversation docked input), capability-aware suggestions, conversation overlay; **no floating modal palette** | committed |
-| **D4** | NIC-117 b / ex-NIC-113 | Wired the trivial `capture-note` quick action → `bridge.captureNote` (honest acknowledgement via the new `ConversationProvider.acknowledge`); others stay greyed placeholders. Added the **quickActions→workflow resolution gate** (`validateQuickActionWiring` in `validate-config.mjs`) + wired-action manifest (`apps/dashboard/src/shell/quickActions.manifest.json`, **loose**: unknown ids = placeholders) + `scripts/quick-action-wiring.test.mjs` | **uncommitted** |
+| **D4** | NIC-117 b / ex-NIC-113 | Wired the trivial `capture-note` quick action → `bridge.captureNote` (honest acknowledgement via the new `ConversationProvider.acknowledge`); others stay greyed placeholders. Added the **quickActions→workflow resolution gate** (`validateQuickActionWiring` in `validate-config.mjs`) + wired-action manifest (`apps/dashboard/src/shell/quickActions.manifest.json`, **loose**: unknown ids = placeholders) + `scripts/quick-action-wiring.test.mjs` | committed |
+| **D5** | NIC-62 | Universal **confirmation surface** (`ConfirmationOverlay.tsx`): neutral system-blue review window (mode-invariant `--ch-confirm-*` tokens), full disclosure, **approve never default-focused** (focuses the contract's `defaultFocusedChoice` ∈ review/cancel), Escape→cancel, Review reveals technical detail, expiry/invalidation shown. Submits via `decideConfirmation`. **Event-driven, no bootstrap-state schema change** — disclosure arrives on `confirmation.changed` (open payload), folded into a runtime-only `activeConfirmation` on `DashboardState`; mock replays the canonical fixture and clears on decision | **uncommitted** |
 
 Cancelled as duplicates (folded into NIC-54): NIC-55/56/57.
 
@@ -68,6 +71,6 @@ Cancelled as duplicates (folded into NIC-54): NIC-55/56/57.
 
 ## Verification state (all green except a known environmental flake)
 
-- Dashboard: **57 unit tests** (9 files) + build; **Playwright 10/10** (Chromium+WebKit × compact/laptop/external + reduced-motion + axe), re-baselined for the enabled `capture-note` slot — baselines are **win32-only** (`apps/dashboard/tests/visual/shell.spec.ts-snapshots/`).
-- Node contract gates: `validate-config` (now incl. the quick-action wiring gate), `validate-contracts` (37 schemas / 72 valid / 39 invalid fixtures), `check-contract-drift`, the `scripts/*.test.mjs` suite (incl. `quick-action-wiring.test.mjs`) — all green.
+- Dashboard: **64 unit tests** (9 files) + build; **Playwright 10/10** (Chromium+WebKit × compact/laptop/external + reduced-motion + axe) — baselines unchanged (the confirmation overlay renders only on event, so the idle shell is visually identical); **win32-only** (`apps/dashboard/tests/visual/shell.spec.ts-snapshots/`).
+- Node contract gates: `validate-config` (incl. the quick-action wiring gate), `validate-contracts` (37 schemas / 72 valid / 39 invalid fixtures), `check-contract-drift`, the `scripts/*.test.mjs` suite (incl. `quick-action-wiring.test.mjs`) — all green. **No contract schema changed in D5** (confirmation is event-driven), so no codegen/Swift.
 - Swift: compiles; **243/246** `swift test` — the 3 failures are `SchemaMigratorTests` reading `database/migrations/*.sql` as empty, a **OneDrive dehydration** flake unrelated to this work (see [HANDOFF.md](HANDOFF.md) § Gotchas).

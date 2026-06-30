@@ -1,4 +1,4 @@
-# PRE-UI Frontend — Handoff (how to pick up at D5)
+# PRE-UI Frontend — Handoff (how to pick up at D6)
 
 Read this to resume the dashboard work cold. Companion docs: [STATUS.md](STATUS.md) (what's built), [PLAN.md](PLAN.md) (the roadmap).
 
@@ -12,7 +12,7 @@ Read this to resume the dashboard work cold. Companion docs: [STATUS.md](STATUS.
 ## Working cadence (from CLAUDE.md)
 
 - **One commit-sized increment at a time.** Inspect → resolve uncertainty → implement the smallest complete vertical slice → tests + docs → verify → **stop and report**. Do not roll into the next increment without a prompt.
-- **Do not commit unless asked.** The owner reviews each increment, commits it, then prompts the next. (Through **D3 is committed**; **D4 is uncommitted** in the working tree.)
+- **Do not commit unless asked.** The owner reviews each increment, commits it, then prompts the next. (Through **D4 is committed**; **D5 is uncommitted** in the working tree.)
 - **Consume, never re-derive.** Tokens via `data-mode` + the token source; mode color never via a per-mode conditional. State via the `DashboardStore` seam (`useDashboardState`), dispatch via `useBridge`. New values go in the token source + the constitution, never inlined.
 - **Honest-unavailable** for anything not wired; never fake-successful.
 
@@ -63,7 +63,8 @@ node scripts/generate-contracts.mjs
 | Shell | `apps/dashboard/src/shell/DashboardShell.tsx` + `LeftRail`/`CenterStage`/`RightRail`/`PersistentBottomBar` |
 | Active-mode binding | `apps/dashboard/src/shell/useActiveMode.ts` |
 | Quick actions | `apps/dashboard/src/shell/QuickActions.tsx`; wiring `quickActionHandlers.ts` + `quickActions.manifest.json`; gate `validateQuickActionWiring` in `scripts/validate-config.mjs` (test `scripts/quick-action-wiring.test.mjs`) |
-| Confirmations (D5 target) | state `pendingConfirmations` (`bridge/types.ts`); op `bridge.decideConfirmation`; event `confirmation.changed` (`bridge/eventFixtures.ts`, reducer in `state/bridgeStore.ts`) |
+| Confirmation surface | `apps/dashboard/src/shell/ConfirmationOverlay.tsx`; disclosure type + runtime `activeConfirmation` in `bridge/types.ts` / `state/dashboardState.ts`; reducer `confirmation.changed` in `state/bridgeStore.ts`; replay + clear in `bridge/mockCerebralBridge.ts`; fixture event `confirmationBridgeEvent` (`bridge/eventFixtures.ts`) |
+| Bottom bar (D6 target) | `apps/dashboard/src/shell/PersistentBottomBar.tsx`; metrics source `regions.systemHealth` (`bridge/types.ts`); region/metric states are `ready/empty/stale/unavailable` |
 | Command surfaces | `apps/dashboard/src/shell/CommandSurface.tsx`, `commandSuggestions.ts`, `ConversationOverlay.tsx` |
 | Widgets / apps registries | `apps/dashboard/src/widgets/`, `apps/dashboard/src/appCatalog/` |
 | Config-reference gate | `scripts/validate-config.mjs` (+ `scripts/validate-contracts.mjs`) |
@@ -72,29 +73,36 @@ node scripts/generate-contracts.mjs
 
 ---
 
-## What D4 settled (so you don't re-derive it)
+## What D5 settled (so you don't re-derive it)
 
-- **Wired-action model is loose:** `apps/dashboard/src/shell/quickActions.manifest.json` lists only the *wired* ids → a `{ handler }` or `{ workflow }` target. Any id **not** in the manifest is an allowed placeholder (greyed/disabled). Today only `capture-note → { handler: captureNote }` is wired.
-- **The gate** is `validateQuickActionWiring` (`scripts/validate-config.mjs`): each wired target must resolve to a `config/workflows/*.json` id or a declared `handlers[]` entry; exactly one of workflow/handler. It runs inside `validateRepositoryConfig` and is unit-tested in `scripts/quick-action-wiring.test.mjs`. Because the model is loose, a *mode* can't dangle on its own, so there is **no invalid mode fixture** — the negative cases live in the gate's unit test.
-- **Honest acknowledgement channel:** `ConversationProvider.acknowledge(text)` appends a Heimlich-authored message (no user turn, no command dispatch). Reuse it for any action that needs to report a bridge result.
-- To wire another action: add it to the manifest, add a handler impl in `quickActionHandlers.ts` (keyed by handler name) or a workflow file, done. Slot enable/disable in `QuickActions.tsx` follows the manifest automatically.
+- **Confirmations are event-driven runtime state, not bootstrap config** (owner decision). The disclosure arrives via the `confirmation.changed` event (its payload is open — `additionalProperties: true` — so no event-schema change), and the reducer folds it into a **runtime-only** `activeConfirmation` field. `DashboardState = DashboardBootstrapState & { activeConfirmation?: ConfirmationDisclosure | null }`. The bootstrap-state contract was **not** changed (no codegen/Swift). This is the template for any future runtime-only field.
+- **The disclosure type is hand-mirrored** in `bridge/types.ts` (`ConfirmationDisclosure` + nested types), the same convention as the bootstrap-state mirror — it is **not** imported from generated contracts. If the disclosure schema changes, update this mirror too.
+- **Neutral system blue is mandatory** (§9): the window uses the mode-invariant `--ch-confirm-accent` / `--ch-confirm-surface` tokens and **never** `--ch-accent-*`. Don't theme it per mode.
+- **Approve is never default-focused** — the contract constrains `choices.defaultFocusedChoice` to `review`/`cancel`, and that button gets initial focus. Keep this invariant.
+- **The bridge owns clearing.** The UI dispatches `decideConfirmation`; the *mock* emits a `confirmation.changed` with `confirmation: null` to clear (and the real bridge would also drive the lifecycle forward). The overlay never clears itself UI-locally. `replayConfirmation()` on the mock surfaces the canonical fixture for tests/demos.
 
-## D5 — universal confirmation surface
+## D6 — persistent bottom bar
 
-**Ticket:** NIC-62. **Design authority:** `.agent/spec/CEREBRALHELM_DESIGN_SPEC.md` (the confirmation/review window) + `.agent/spec/UI-CONSTITUTION.md` §2 checklist.
+**Ticket:** NIC-59. **Design authority:** `.agent/spec/CEREBRALHELM_DESIGN_SPEC.md` (§ bottom bar — note §8 "the bar changes accent with the active mode **on the home dashboard only**; confirmation surfaces do not inherit mode color") + `.agent/spec/UI-CONSTITUTION.md` §2.
 
-A neutral-blue review window that shows a pending confirmation in full (no truncation of what will happen), with **approve NOT the default-focused control**, a keyboard flow, and visible expiry/invalidation. It submits the decision via `bridge.decideConfirmation({ id, decision })` (op already exists; the mock acks).
+Today `PersistentBottomBar.tsx` is a reserved track with a single honest "Metrics — not implemented" placeholder. D6 builds the real bar: Heimlich state, mode (accent on home only), context, CPU/mem/network/time, settings, emergency — with **distinct loading/stale/unavailable/disconnected** metric states, and **weather + battery honest-unavailable pre-Mac**.
 
-### Scope decision to resolve FIRST (it's a contract question)
+### What's already wired (consume, don't re-derive)
 
-- **The state today carries only a count.** `DashboardBootstrapState.pendingConfirmations` is a `number` (`bridge/types.ts:133`), and the `confirmation.changed` event is currently *observed but not interpreted* (`bridgeStore.ts` comment). To render full disclosure you need the actual confirmation payload — title, the action/tool being confirmed, risk, disclosure fields, expiry.
-- There **is** a contract for the disclosure: `packages/contracts/schemas/tools/confirmation-disclosure.schema.json` (+ valid fixtures under `fixtures/valid/tools/confirmations/`). Decide how it reaches the UI: expand the bootstrap-state contract to carry a `confirmations: ConfirmationDisclosure[]` (and have `confirmation.changed` fold into it), versus a separate read op. **This is a schema change** → the codegen-namespace-collision + OneDrive-dehydration + Swift gotchas above all apply (regenerate, diff `(struct|enum)` names HEAD-vs-new, `swift test`). Settle the shape before building (see the "settle shapes, defer content" memory).
-- If the owner wants to keep D5 purely presentational against a mock for now, an alternative is to drive it from the existing confirmation fixtures via the mock bridge without a bootstrap-state change — confirm which they want.
+- **Metric data** is in state at `regions.systemHealth` (`bridge/types.ts` `SystemHealthRegion`): `state` (`ready/empty/stale/unavailable`), `cpuPercent?`, `memoryPercent?`, `network` (`MetricChannel { state, label }`), and `battery` (`MetricChannel` — already `unavailable` pre-Mac, see the existing `mode.developer.ready` test for the "Battery — requires the macOS host" assertion).
+- **Capability degradation:** the reducer already flips `regions.systemHealth.state` to `stale` on a `bridge.capability.changed` (system.metrics unavailable) event (`bridgeStore.ts`). Render the `stale`/`unavailable` channel states distinctly — don't invent new state.
+- **Heimlich state** label via `heimlichStateLabel` (`shell/labels.ts`); **mode** from `useDashboardState().mode`.
+- **No `Date.now()` in render paths** that feed screenshots — the visual fixture is deterministic (fixed clocks). If you show a clock, drive it from state/props, not a live timer, or the Playwright baselines will flake.
 
-### Verify D5
+### Decisions to settle FIRST
 
-- Node: `validate-config` + `validate-contracts` + `check-contract-drift` (+ regenerate & Swift if you touch a schema).
-- Dashboard: `test --run` + `build`; unit tests for the keyboard flow, approve-not-default-focus, and `decideConfirmation` dispatch.
-- Visual: re-baseline (new surface) and verify; keep the §2 checklist.
+- **Time/weather source.** There's no `time` or `weather` field in the bootstrap state today. Weather + battery are honest-unavailable pre-Mac (just render the unavailable channel). For the clock: decide whether time comes from state (preferred — keeps screenshots deterministic) or is explicitly excluded from the visual snapshot. Don't add a live `Date` timer that breaks visual determinism.
+- **Emergency control.** Confirm what "emergency" does pre-Mac — almost certainly an honest-disabled control (no capability to wire yet), consistent with the honest-unavailable rule.
 
-After D5: **D6 (NIC-59 bottom bar)** — see [PLAN.md](PLAN.md).
+### Verify D6
+
+- Node: `validate-config` + `validate-contracts` + `check-contract-drift` (no schema change expected).
+- Dashboard: `test --run` + `build`; unit tests for the distinct metric states (ready vs stale vs unavailable) and mode-accent-on-home-only.
+- Visual: **re-baseline and verify** — the bottom bar changes appearance, so the idle-shell screenshots WILL change. Keep the §2 checklist.
+
+After D6, Phase D is complete; next is **Phase E (E1 NIC-60 Heimlich WebGL field, …)** — see [PLAN.md](PLAN.md).

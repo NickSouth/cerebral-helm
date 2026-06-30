@@ -81,6 +81,22 @@ describe("MockCerebralBridge", () => {
     expect(events.some((event) => event.type === "system.status.changed")).toBe(true);
   });
 
+  it("replays a confirmation disclosure and clears it on a decision", async () => {
+    const bridge = createMockCerebralBridge();
+    const events: BridgeEvent[] = [];
+    bridge.subscribe((event) => events.push(event));
+
+    bridge.replayConfirmation();
+    const shown = events.find((event) => event.type === "confirmation.changed");
+    expect((shown?.payload as { confirmation?: { id: string } }).confirmation?.id).toBe(
+      "conf_000000000000000000000001"
+    );
+
+    await bridge.decideConfirmation({ id: "conf_000000000000000000000001", decision: "approve" });
+    const last = events.filter((event) => event.type === "confirmation.changed").at(-1);
+    expect((last?.payload as { confirmation: unknown }).confirmation).toBeNull();
+  });
+
   it("returns fixture-shaped operation responses", async () => {
     const bridge = createMockCerebralBridge();
 

@@ -528,3 +528,150 @@
     margin-inline: auto;
   }
 }
+
+/* Confirmation window (design spec §9): the universal policy-owned safety surface. NEUTRAL
+   SYSTEM BLUE regardless of active mode — it references the mode-invariant --ch-confirm-*
+   tokens and never the mode accent. Lives in the overlay layer over a dimming scrim. */
+.confirmation-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ch-z-scrim);
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.confirmation-window {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: var(--ch-z-overlay);
+  width: min(560px, calc(100vw - var(--ch-space-8)));
+  max-height: calc(100vh - var(--ch-space-12));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-4);
+  padding: var(--ch-space-6);
+  border-radius: var(--ch-radius-lg);
+  border: 1px solid var(--ch-confirm-accent);
+  background: var(--ch-confirm-surface);
+  color: var(--ch-text-primary);
+}
+
+.confirmation-window__eyebrow {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  letter-spacing: var(--ch-font-label-tracking);
+  text-transform: uppercase;
+  color: var(--ch-confirm-accent);
+}
+
+.confirmation-window__summary {
+  margin: 0;
+  font-size: var(--ch-font-size-lg);
+  font-weight: var(--ch-font-weight-semibold);
+}
+
+.confirmation-window__label {
+  margin: 0 0 var(--ch-space-1);
+  font-size: var(--ch-font-size-label);
+  letter-spacing: var(--ch-font-label-tracking);
+  text-transform: uppercase;
+  color: var(--ch-text-faint);
+}
+
+.confirmation-detail {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.confirmation-detail__row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--ch-space-3);
+}
+
+.confirmation-detail__row dt {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+.confirmation-detail__row dd {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+}
+
+.confirmation-detail--technical {
+  padding-top: var(--ch-space-3);
+  border-top: 1px solid var(--ch-panel-border);
+}
+
+.confirmation-detail__mono {
+  font-family: ui-monospace, "SF Mono", monospace;
+  word-break: break-all;
+}
+
+.confirmation-arguments ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.confirmation-arguments li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+  font-size: var(--ch-font-size-sm);
+}
+
+.confirmation-arguments__name {
+  color: var(--ch-text-muted);
+}
+
+.confirmation-window__expiry {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+.confirmation-window__notice {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  font-weight: var(--ch-font-weight-medium);
+  color: var(--ch-confirm-accent);
+}
+
+.confirmation-window__choices {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+}
+
+.confirmation-choice {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-2) var(--ch-space-4);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.confirmation-choice--approve {
+  border-color: var(--ch-confirm-accent);
+  background: var(--ch-confirm-accent);
+  color: var(--ch-bg-base);
+  font-weight: var(--ch-font-weight-semibold);
+}
+
+.confirmation-choice:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
