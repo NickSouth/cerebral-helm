@@ -9,6 +9,8 @@ interface CanonicalFixture {
   readonly clock: string;
   readonly modeId: string;
   readonly dashboardState?: DashboardStateSnapshot;
+  /** Present on non-dashboard fixtures (adapter/storage/bridge/metrics/update failures). */
+  readonly state?: Readonly<Record<string, unknown>>;
 }
 
 interface CanonicalFixtureCatalog {
@@ -21,6 +23,12 @@ export const canonicalFixtureCatalog = catalog as CanonicalFixtureCatalog;
 export const dashboardStoryFixtures = canonicalFixtureCatalog.fixtures.filter(
   (fixture): fixture is CanonicalFixture & { readonly dashboardState: DashboardStateSnapshot } =>
     fixture.dashboardState !== undefined
+);
+
+/** Canonical failure / degraded-state fixtures (those carrying a `state` payload). */
+export const failureStateFixtures = canonicalFixtureCatalog.fixtures.filter(
+  (fixture): fixture is CanonicalFixture & { readonly state: Readonly<Record<string, unknown>> } =>
+    fixture.state !== undefined
 );
 
 /**

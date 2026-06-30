@@ -1,15 +1,107 @@
 import type { DashboardBootstrapState } from "./types";
-import { getDashboardConfigBundle, getDashboardFixture } from "../fixtures/canonicalFixtures";
+import type {
+  BridgeEvent,
+  BridgeEventListener,
+  CerebralBridge,
+  RecentActivity,
+  Unsubscribe
+} from "./cerebralBridge";
+import { getDashboardConfigBundle, getDashboardFixture, failureStateFixtures } from "../fixtures/canonicalFixtures";
+import { capabilityBridgeEvent, lifecycleBridgeEvents } from "./eventFixtures";
+import recentActivityResponse from "../../../../packages/contracts/fixtures/valid/bridge/operations/get-recent-activity-response.json";
 
-/**
- * Compose a full bootstrap state from the eager config bundle (all four mode views +
- * agent roster) and the active mode's per-state snapshot — the shape the real bridge
- * delivers (eager config, on-switch region data). NIC-52 replaces this static
- * composition with an event-driven MockCerebralBridge without changing consumers.
- */
-export function loadBootstrapState(): DashboardBootstrapState {
+const DEFAULT_BOOTSTRAP_KEY = "mode.developer.ready";
+
+const RECENT_ACTIVITY = (recentActivityResponse.payload as { recentActivity: RecentActivity }).recentActivity;
+
+/** Compose a full bootstrap state from the eager config bundle and a per-state snapshot. */
+function composeBootstrapState(canonicalKey: string): DashboardBootstrapState {
   return {
     ...getDashboardConfigBundle(),
-    ...getDashboardFixture("mode.developer.ready")
+    ...getDashboardFixture(canonicalKey)
+  };
+}
+
+/**
+ * The static seed used by the pre-bridge state store. NIC-52 B2 replaces the static store
+ * with one backed by `createMockCerebralBridge()` without changing consumers.
+ */
+export function loadBootstrapState(): DashboardBootstrapState {
+  return composeBootstrapState(DEFAULT_BOOTSTRAP_KEY);
+}
+
+/**
+ * A `CerebralBridge` plus replay controls so stories and tests can drive the canonical
+ * lifecycle and failure fixtures through the same contract the components consume.
+ */
+export interface MockCerebralBridge extends CerebralBridge {
+  /** Emit one event to all current subscribers. */
+  emit(event: BridgeEvent): void;
+  /** Replay every canonical command-lifecycle transition as bridge events. */
+  replayLifecycle(): void;
+  /** Replay the capability change plus every canonical failure / degraded state. */
+  replayFailures(): void;
+}
+
+export function createMockCerebralBridge(options: { bootstrapKey?: string } = {}): MockCerebralBridge {
+  const bootstrapKey = options.bootstrapKey ?? DEFAULT_BOOTSTRAP_KEY;
+  const listeners = new Set<BridgeEventListener>();
+
+  function emit(event: BridgeEvent): void {
+    // Snapshot so a listener that unsubscribes mid-dispatch can't mutate the live set.
+    for (const listener of [...listeners]) {
+      listener(event);
+    }
+  }
+
+  return {
+    getBootstrapState() {
+      return Promise.resolve(composeBootstrapState(bootstrapKey));
+    },
+    getRecentActivity() {
+      return Promise.resolve(RECENT_ACTIVITY);
+    },
+    submitCommand() {
+      return Promise.resolve({ commandId: "cmd_000000000000000000000001", accepted: true });
+    },
+    applyMode(input) {
+      return Promise.resolve({ modeId: input.modeId, status: "ok" as const });
+    },
+    captureNote() {
+      return Promise.resolve({ noteId: "note_000000000000000000000001" });
+    },
+    searchNotes() {
+      return Promise.resolve({ results: [] });
+    },
+    decideConfirmation(input) {
+      return Promise.resolve({ confirmationId: input.id, decision: input.decision });
+    },
+    updateSettings() {
+      return Promise.resolve({ accepted: true });
+    },
+    subscribe(listener): Unsubscribe {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    emit,
+    replayLifecycle() {
+      for (const event of lifecycleBridgeEvents) {
+        emit(event);
+      }
+    },
+    replayFailures() {
+      emit(capabilityBridgeEvent);
+      for (const fixture of failureStateFixtures) {
+        emit({
+          eventId: `brevt_${fixture.id}`,
+          type: "system.status.changed",
+          schemaVersion: "1.0.0",
+          timestamp: fixture.clock,
+          payload: { canonicalKey: fixture.canonicalKey, category: fixture.category, state: fixture.state }
+        });
+      }
+    }
   };
 }
