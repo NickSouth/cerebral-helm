@@ -1,0 +1,210 @@
+/* The shared three-zone shell. All values come from semantic tokens (constitution §2.1);
+   mode color enters only through data-mode-resolved accents. */
+
+.dashboard-shell {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2.4fr) minmax(240px, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "left center right"
+    "bottombar bottombar bottombar";
+  gap: var(--ch-space-4);
+  min-height: 100vh;
+  padding: var(--ch-space-4);
+  box-sizing: border-box;
+}
+
+.shell-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-4);
+  min-width: 0;
+}
+
+.shell-left {
+  grid-area: left;
+}
+
+.shell-right {
+  grid-area: right;
+}
+
+.shell-center {
+  grid-area: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-4);
+  min-width: 0;
+}
+
+.shell-bottombar {
+  grid-area: bottombar;
+}
+
+.shell-panel {
+  margin: 0;
+}
+
+/* C0 — persistent global Ask-Heimlich launcher (a distinct surface from the in-conversation
+   bottom input, course-correction C). */
+.global-search__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--ch-space-3) var(--ch-space-4);
+  border-radius: var(--ch-radius-pill);
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-muted);
+  font: inherit;
+  font-size: var(--ch-font-size-base);
+}
+
+/* C2 — Heimlich center: the largest and calmest surface, always present. */
+.heimlich {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--ch-space-6);
+  min-height: 320px;
+  padding: var(--ch-space-6);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-lg);
+  background:
+    radial-gradient(circle at 50% 35%, var(--ch-glow-soft, transparent), transparent 70%),
+    var(--ch-surface-panel);
+}
+
+.heimlich__ambient {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-2);
+  text-align: center;
+}
+
+.heimlich__state {
+  margin: 0;
+  font-size: var(--ch-font-size-display);
+  font-weight: var(--ch-font-weight-light);
+  color: var(--ch-text-primary);
+}
+
+/* The binding 4 + 4 quick-action geometry. */
+.quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.quick-actions__bars,
+.quick-actions__boxes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--ch-space-2);
+}
+
+.quick-action {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-status-neutral);
+  border: 1px dashed var(--ch-status-neutral);
+  border-radius: var(--ch-radius-md);
+  background: transparent;
+  padding: var(--ch-space-2);
+  text-align: center;
+  cursor: not-allowed;
+}
+
+.quick-action--box {
+  min-height: 56px;
+}
+
+/* R1 — mode switcher: four fixed controls, strong selected state. */
+.mode-switcher {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ch-space-2);
+}
+
+.mode-switcher__option {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-muted);
+  cursor: pointer;
+  transition: border-color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.mode-switcher__option[data-active="true"] {
+  border-color: var(--ch-accent-primary);
+  background: var(--ch-surface-panel);
+  color: var(--ch-text-primary);
+}
+
+/* R2 — agent roster. */
+.agent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.agent-list__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+  font-size: var(--ch-font-size-sm);
+}
+
+.agent-list__status {
+  color: var(--ch-text-muted);
+}
+
+/* Persistent bottom bar. */
+.bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-4);
+  padding: var(--ch-space-2) var(--ch-space-4);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-raised);
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+.bottom-bar__item {
+  white-space: nowrap;
+}
+
+.bottom-bar__settings {
+  margin-left: auto;
+}
+
+/* Responsive (constitution §8): compact stacks the rails (center first), preserving the
+   center, mode, and bottom bar with no horizontal page scroll; external caps the width. */
+@media (max-width: 1439px) {
+  .dashboard-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "center"
+      "left"
+      "right"
+      "bottombar";
+  }
+}
+
+@media (min-width: 1920px) {
+  .dashboard-shell {
+    max-width: 1800px;
+    margin-inline: auto;
+  }
+}
