@@ -1,5 +1,5 @@
 import { Panel } from "./Panel";
-import { Unavailable } from "../components/Unavailable";
+import { WidgetSlot } from "./WidgetSlot";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { agentActivityLabel } from "./labels";
 
@@ -10,7 +10,7 @@ import { agentActivityLabel } from "./labels";
  * workspace that covers this rail on expand is NIC-61 (course-correction A.2).
  */
 export function RightRail() {
-  const { mode, modes, agents } = useDashboardState();
+  const { mode, modes, agents, regions } = useDashboardState();
 
   return (
     <aside className="shell-rail shell-right" aria-label="Operations">
@@ -44,9 +44,7 @@ export function RightRail() {
         </ul>
       </Panel>
 
-      <Panel label="Widget" labelId="region-widget-right">
-        <Unavailable />
-      </Panel>
+      <WidgetSlot data={regions.widgets.right} labelId="region-widget-right" />
     </aside>
   );
 }

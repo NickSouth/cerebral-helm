@@ -1,26 +1,23 @@
-import { Panel } from "./Panel";
-import { Unavailable } from "../components/Unavailable";
+import { SchedulePanel } from "./SchedulePanel";
+import { SystemHealthPanel } from "./SystemHealthPanel";
+import { NewsPanel } from "./NewsPanel";
+import { WidgetSlot } from "./WidgetSlot";
+import { useDashboardState } from "../state/DashboardStateProvider";
 
 /**
- * The left information rail (constitution §6 / design spec §5.3): L1 Today, L2 System
- * Health, L3 free widget, L4 News. C1 ships the labelled region containers; their data
- * binding is NIC-54. Unwired bodies render honest-unavailable (constitution §2.5).
+ * The left information rail (constitution §6 / design spec §5.3): L1 Today, L2 System Health,
+ * L3 free widget, L4 News — all bound to the active mode's region data from bootstrap, with
+ * no per-mode conditional (NIC-54). The widget slot is registry-driven by widget id.
  */
 export function LeftRail() {
+  const { regions } = useDashboardState();
+
   return (
     <aside className="shell-rail shell-left" aria-label="Information">
-      <Panel label="Today" labelId="region-today">
-        <Unavailable />
-      </Panel>
-      <Panel label="System Health" labelId="region-health">
-        <Unavailable />
-      </Panel>
-      <Panel label="Widget" labelId="region-widget-left">
-        <Unavailable />
-      </Panel>
-      <Panel label="News" labelId="region-news">
-        <Unavailable />
-      </Panel>
+      <SchedulePanel />
+      <SystemHealthPanel />
+      <WidgetSlot data={regions.widgets.left} labelId="region-widget-left" />
+      <NewsPanel />
     </aside>
   );
 }

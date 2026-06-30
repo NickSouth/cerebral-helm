@@ -189,6 +189,150 @@
   margin-left: auto;
 }
 
+/* C1 Quick Apps — configured shortcuts with placeholder category glyphs. */
+.quick-apps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2);
+}
+
+.quick-app {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-muted);
+  cursor: not-allowed;
+}
+
+.quick-app__icon {
+  display: inline-flex;
+  color: var(--ch-accent-secondary);
+}
+
+.quick-app--more .quick-app__icon {
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-base);
+}
+
+/* Mode-aware Heimlich greeting — the calm center text. */
+.heimlich__greeting {
+  margin: 0;
+  font-size: var(--ch-font-size-display);
+  font-weight: var(--ch-font-weight-light);
+  color: var(--ch-text-primary);
+  text-align: center;
+}
+
+/* Region lists. */
+.schedule,
+.metrics,
+.news {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.schedule__item {
+  display: flex;
+  gap: var(--ch-space-3);
+  font-size: var(--ch-font-size-sm);
+}
+
+.schedule__time {
+  color: var(--ch-accent-primary);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.2em;
+}
+
+.schedule__title {
+  color: var(--ch-text-primary);
+}
+
+.metrics__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+  font-size: var(--ch-font-size-sm);
+}
+
+.metrics__item > span:first-child {
+  color: var(--ch-text-muted);
+}
+
+.metrics__item > span:last-child {
+  color: var(--ch-text-primary);
+}
+
+.news__item {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--ch-font-size-sm);
+}
+
+.news__title {
+  color: var(--ch-text-primary);
+}
+
+.news__source {
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-label);
+}
+
+/* Free-widget slots. */
+.widget {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.widget__headline {
+  margin: 0;
+  font-size: var(--ch-font-size-base);
+  color: var(--ch-text-primary);
+}
+
+.widget-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.widget-list__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+  font-size: var(--ch-font-size-sm);
+}
+
+.widget-list__primary {
+  color: var(--ch-text-primary);
+}
+
+.widget-list__secondary {
+  color: var(--ch-text-muted);
+}
+
+.widget__freshness {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
 /* Responsive (constitution §8): compact stacks the rails (center first), preserving the
    center, mode, and bottom bar with no horizontal page scroll; external caps the width. */
 @media (max-width: 1439px) {
