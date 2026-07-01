@@ -1,6 +1,7 @@
 import { Panel } from "./Panel";
 import { PanelGlyph } from "./PanelGlyph";
 import { ModeGlyph } from "./ModeGlyph";
+import { AgentGlyph } from "./AgentGlyph";
 import { WidgetSlot } from "./WidgetSlot";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useBridge } from "../state/BridgeProvider";
@@ -49,8 +50,14 @@ export function RightRail() {
         <ul className="agent-list">
           {agents.map((agent) => (
             <li key={agent.id} className="agent-list__item">
+              <span className="agent-avatar" aria-hidden="true">
+                <AgentGlyph agentId={agent.id} />
+              </span>
               <span className="agent-list__name">{agent.label}</span>
-              <span className="agent-list__status">{agentActivityLabel(agent.activity)}</span>
+              <span className="agent-list__status">
+                <span className="agent-status-dot" data-activity={agent.activity} aria-hidden="true" />
+                {agentActivityLabel(agent.activity)}
+              </span>
             </li>
           ))}
         </ul>
