@@ -1,4 +1,5 @@
 import { useDashboardState } from "../state/DashboardStateProvider";
+import { useSettings } from "../state/SettingsProvider";
 import { heimlichStateLabel } from "./labels";
 import { BatteryGlyph } from "./BatteryGlyph";
 import { WeatherGlyph } from "./WeatherGlyph";
@@ -68,6 +69,7 @@ const HEIMLICH_STATE_DOT: Readonly<Record<string, string>> = {
  */
 export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
   const state = useDashboardState();
+  const { openSettings } = useSettings();
   const { mode, heimlich, weather } = state;
   const battery = state.regions.systemHealth.battery;
 
@@ -129,7 +131,10 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
 
         <Divider />
 
-        <span className="bottom-bar__item bottom-bar__clock" aria-label="Date and time">
+        {/* No aria-label: the visible text ("Wed 04:25 PM") is already the accessible name.
+            aria-label on a role-less <span> is prohibited (WCAG 4.1.2) and would replace the
+            actual time value with a vaguer label for assistive tech. */}
+        <span className="bottom-bar__item bottom-bar__clock">
           {formatClock(now)}
         </span>
 
@@ -138,10 +143,9 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
         <button
           type="button"
           className="bottom-bar__control bottom-bar__control--icon"
-          disabled
-          aria-disabled="true"
           aria-label="Settings"
-          title="The settings window arrives in a later increment"
+          title="Open settings"
+          onClick={() => openSettings()}
         >
           <SettingsGlyph />
         </button>

@@ -8,6 +8,7 @@ import type {
 } from "./cerebralBridge";
 import { getDashboardConfigBundle, getDashboardFixture, failureStateFixtures } from "../fixtures/canonicalFixtures";
 import { capabilityBridgeEvent, confirmationBridgeEvent, lifecycleBridgeEvents } from "./eventFixtures";
+import { validateSettingsChanges } from "../shell/settings/settingsPatch";
 import recentActivityResponse from "../../../../packages/contracts/fixtures/valid/bridge/operations/get-recent-activity-response.json";
 
 /** Executive is the default mode (config/defaults/app.json `defaultModeId`; ADR-007). */
@@ -105,8 +106,13 @@ export function createMockCerebralBridge(options: { bootstrapKey?: string } = {}
       });
       return Promise.resolve({ confirmationId: input.id, decision: input.decision });
     },
-    updateSettings() {
-      return Promise.resolve({ accepted: true });
+    updateSettings(input) {
+      // Stand in for the bridge's config validation path (FR-CFG-04): validate the patch's changes
+      // against the settings-patch allowlist. A disallowed change (e.g. a risk override) is rejected
+      // here exactly as the schema would reject it — the UI never gets a bespoke, weaker path.
+      const changes = (input.patch as { changes?: unknown }).changes;
+      const { valid } = validateSettingsChanges(changes);
+      return Promise.resolve({ accepted: valid });
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);

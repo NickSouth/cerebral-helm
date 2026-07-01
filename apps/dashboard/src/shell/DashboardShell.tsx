@@ -3,6 +3,7 @@ import { CenterStage } from "./CenterStage";
 import { RightRail } from "./RightRail";
 import { PersistentBottomBar } from "./PersistentBottomBar";
 import { ConfirmationOverlay } from "./ConfirmationOverlay";
+import { SettingsOverlay } from "./settings/SettingsOverlay";
 import { CommandSurface } from "./CommandSurface";
 import { SystemStatusBanner } from "./SystemStatusBanner";
 import { DashboardSkeleton } from "./DashboardSkeleton";
@@ -57,6 +58,7 @@ export function DashboardShell() {
       )}
       <PersistentBottomBar />
       <ConfirmationOverlay />
+      <SettingsOverlay />
     </div>
   );
 }

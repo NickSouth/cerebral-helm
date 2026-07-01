@@ -1,17 +1,19 @@
 import type { ReactNode } from "react";
 import { toModeId } from "../tokens/tokens";
 import { useDashboardMode } from "../state/DashboardStateProvider";
+import { useAppearance } from "../state/AppearanceProvider";
 
 /**
- * The single place mode becomes a visual theme: reads the active mode from dashboard
- * state and applies it once via `data-mode`. No component re-derives mode color, which
- * is the structural guarantee behind NIC-51 AC-1 (no scattered mode-color conditionals).
+ * The single place mode + appearance become visual theme: reads the active mode and applies it once
+ * via `data-mode`, and applies the reduced-motion override via `data-reduced-motion`. No component
+ * re-derives mode color or motion state (NIC-51 AC-1; NIC-63).
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const modeId = toModeId(useDashboardMode());
+  const { reducedMotion } = useAppearance();
 
   return (
-    <div className="app-root" data-mode={modeId}>
+    <div className="app-root" data-mode={modeId} data-reduced-motion={reducedMotion || undefined}>
       {children}
     </div>
   );

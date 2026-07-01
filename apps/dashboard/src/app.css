@@ -7,9 +7,9 @@
      separate concern: the columns cap-and-center, the bottom bar spans the full width. */
   font-size: clamp(12px, 1.5vh, 20px);
   font-family: var(--ch-font-family);
-  background:
-    radial-gradient(circle at top, var(--ch-glow-radial), transparent 40%),
-    linear-gradient(180deg, var(--ch-bg-gradient-top) 0%, var(--ch-bg-base) 100%);
+  /* Solid fallback only. The mode-tinted gradient lives on `.app-root` (which carries `data-mode`),
+     because custom properties set on that element are not visible up here on the root. */
+  background: var(--ch-bg-base);
   color: var(--ch-text-primary);
 }
 
@@ -21,6 +21,18 @@ body {
 
 #root {
   min-height: 100vh;
+}
+
+/* The themed root (ThemeProvider) carries the per-mode background. The base color transitions on a
+   mode switch for a smooth cross-fade; the soft top glow + gradient lift swap under it (low enough
+   to read as part of the same fade). Reduced motion zeroes the transition via the safety net above. */
+.app-root {
+  min-height: 100vh;
+  background-color: var(--ch-bg-base);
+  background-image:
+    radial-gradient(circle at top, var(--ch-glow-radial), transparent 45%),
+    linear-gradient(180deg, var(--ch-bg-gradient-top) 0%, transparent 55%);
+  transition: background-color var(--ch-motion-slow) var(--ch-ease-standard);
 }
 
 .tokens-page {
@@ -267,4 +279,15 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+/* User "Reduce motion" override (NIC-63 Customization): the same neutralization applied on demand
+   from settings, independent of the OS preference. Either the media query or this attribute stills
+   motion. Scoped under the themed root so it travels with the app. */
+[data-reduced-motion="true"] *,
+[data-reduced-motion="true"] *::before,
+[data-reduced-motion="true"] *::after {
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
 }

@@ -54,6 +54,8 @@ export function HeimlichConsciousness({ interactive = false }: HeimlichConscious
   const params = PARAMS[toRibbonState(heimlich.state)];
   const hostRef = useRef<HTMLDivElement>(null);
   const [colors, setColors] = useState<{ a: Rgb; b: Rgb }>({ a: DEFAULT_GOLD, b: DEFAULT_CYAN });
+  const reducedMotion = usePrefersReducedMotion();
+  const animate = hasWebGL() && !reducedMotion;
 
   // Re-read the accent after mount and on mode switch (wait a frame for the data-mode cross-fade).
   useEffect(() => {
@@ -75,7 +77,7 @@ export function HeimlichConsciousness({ interactive = false }: HeimlichConscious
       aria-hidden="true"
       style={{ pointerEvents: interactive ? "auto" : "none" }}
     >
-      {hasWebGL() ? (
+      {animate ? (
         <Threads
           color={colors.a}
           color2={colors.b}
@@ -88,6 +90,28 @@ export function HeimlichConsciousness({ interactive = false }: HeimlichConscious
       )}
     </div>
   );
+}
+
+/**
+ * Track `prefers-reduced-motion: reduce`. When set, the caller renders the static gradient instead
+ * of the animated field. Guards for environments without `matchMedia` (jsdom) — defaults to false.
+ */
+function usePrefersReducedMotion(): boolean {
+  const query = "(prefers-reduced-motion: reduce)";
+  const [reduced, setReduced] = useState(() =>
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia(query).matches
+      : false,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia(query);
+    const onChange = () => setReduced(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return reduced;
 }
 
 let webglSupport: boolean | undefined;

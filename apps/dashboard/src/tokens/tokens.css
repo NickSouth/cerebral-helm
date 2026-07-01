@@ -126,12 +126,21 @@
   --ch-z-tooltip: 1100;
 }
 
-/* --- Mode application: the ONLY place mode chooses a color --- */
+/* --- Mode application: the ONLY place mode chooses a color ---
+   Each mode also sets its own background trio (base / gradient-top / top glow), sampled from the
+   visual design reference PDF (per-mode dashboards). Roles stay consistent across modes — primary
+   = borders/buttons/most icons, secondary = faint accents — only the color VALUES change. The
+   background is deliberately dark-with-a-hue (subtle but clear), applied on `.app-root` (see
+   app.css) so it shifts with the mode; translucent panels pick up the tint through their alpha. */
 [data-mode="executive"] {
   --ch-accent-primary: var(--ch-mode-executive-primary);
   --ch-accent-secondary: var(--ch-mode-executive-secondary);
   --ch-heimlich-primary: var(--ch-heimlich-executive-primary);
   --ch-heimlich-secondary: var(--ch-heimlich-executive-secondary);
+  /* Deep blue-black — the gold identity lives only in accents/the Heimlich field, not the base. */
+  --ch-bg-base: #04101d;
+  --ch-bg-gradient-top: #0a1a2b;
+  --ch-glow-radial: rgba(95, 210, 232, 0.10);
 }
 
 [data-mode="developer"] {
@@ -139,6 +148,10 @@
   --ch-accent-secondary: var(--ch-mode-developer-secondary);
   --ch-heimlich-primary: var(--ch-heimlich-developer-primary);
   --ch-heimlich-secondary: var(--ch-heimlich-developer-secondary);
+  /* Neutral cool slate — the most restrained/desaturated of the four, and the darkest (near-black). */
+  --ch-bg-base: #03060b;
+  --ch-bg-gradient-top: #070d15;
+  --ch-glow-radial: rgba(127, 196, 220, 0.06);
 }
 
 [data-mode="school"] {
@@ -146,6 +159,10 @@
   --ch-accent-secondary: var(--ch-mode-school-secondary);
   --ch-heimlich-primary: var(--ch-heimlich-school-primary);
   --ch-heimlich-secondary: var(--ch-heimlich-school-secondary);
+  /* Richer navy blue — the bluest background (electric-blue identity). */
+  --ch-bg-base: #050f28;
+  --ch-bg-gradient-top: #0b1d40;
+  --ch-glow-radial: rgba(62, 123, 250, 0.14);
 }
 
 [data-mode="entertainment"] {
@@ -153,6 +170,10 @@
   --ch-accent-secondary: var(--ch-mode-entertainment-secondary);
   --ch-heimlich-primary: var(--ch-heimlich-entertainment-primary);
   --ch-heimlich-secondary: var(--ch-heimlich-entertainment-secondary);
+  /* Dark teal/green-black — emerald downtime character. */
+  --ch-bg-base: #03110f;
+  --ch-bg-gradient-top: #08201a;
+  --ch-glow-radial: rgba(52, 211, 138, 0.11);
 }
 
 /* --- Reduced motion: collapse durations; state is carried by text + color --- */

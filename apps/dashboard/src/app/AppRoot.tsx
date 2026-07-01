@@ -2,10 +2,13 @@ import "../tokens/tokens.css";
 import "../app.css";
 import "../styles/responsive.css";
 import "../shell/shell.css";
+import "../shell/settings/settings.css";
 import { DashboardShell } from "../shell/DashboardShell";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
 import { ConversationProvider } from "../state/ConversationProvider";
+import { SettingsProvider } from "../state/SettingsProvider";
+import { AppearanceProvider } from "../state/AppearanceProvider";
 import { ThemeProvider } from "./ThemeProvider";
 import { createDashboardRuntime, readStateNameFromLocation } from "../state/bootstrapStore";
 
@@ -21,14 +24,18 @@ export function AppRoot() {
   return (
     <BridgeProvider bridge={bridge}>
       <DashboardStateProvider store={store}>
-        <ThemeProvider>
+        <AppearanceProvider>
+          <ThemeProvider>
           <ConversationProvider>
-            <a className="skip-link" href="#main">
-              Skip to main content
-            </a>
-            <DashboardShell />
+            <SettingsProvider>
+              <a className="skip-link" href="#main">
+                Skip to main content
+              </a>
+              <DashboardShell />
+            </SettingsProvider>
           </ConversationProvider>
-        </ThemeProvider>
+          </ThemeProvider>
+        </AppearanceProvider>
       </DashboardStateProvider>
     </BridgeProvider>
   );

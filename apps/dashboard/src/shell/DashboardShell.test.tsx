@@ -3,6 +3,8 @@ import { DashboardShell } from "./DashboardShell";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
 import { ConversationProvider } from "../state/ConversationProvider";
+import { SettingsProvider } from "../state/SettingsProvider";
+import { AppearanceProvider } from "../state/AppearanceProvider";
 import { ThemeProvider } from "../app/ThemeProvider";
 import { createBridgeStore } from "../state/bridgeStore";
 import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
@@ -13,11 +15,15 @@ function renderProviders(bridge: ReturnType<typeof createMockCerebralBridge>, st
   return render(
     <BridgeProvider bridge={bridge}>
       <DashboardStateProvider store={store}>
-        <ThemeProvider>
-          <ConversationProvider>
-            <DashboardShell />
-          </ConversationProvider>
-        </ThemeProvider>
+        <AppearanceProvider>
+          <ThemeProvider>
+            <ConversationProvider>
+              <SettingsProvider>
+                <DashboardShell />
+              </SettingsProvider>
+            </ConversationProvider>
+          </ThemeProvider>
+        </AppearanceProvider>
       </DashboardStateProvider>
     </BridgeProvider>
   );
@@ -198,11 +204,14 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     expect(container.querySelector(".bottom-bar__mode")).toHaveTextContent("Executive");
   });
 
-  it("keeps Settings honest-disabled and no longer surfaces Emergency", () => {
+  it("opens the settings window from the gear and no longer surfaces Emergency (E3 / NIC-63)", () => {
     renderShell();
     const bar = statusBar();
-    expect(bar.getByRole("button", { name: "Settings" })).toBeDisabled();
+    const settings = bar.getByRole("button", { name: "Settings" });
+    expect(settings).toBeEnabled();
     expect(bar.queryByRole("button", { name: "Emergency" })).toBeNull();
+    fireEvent.click(settings);
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
   });
 
   it("shows honest-unavailable weather and battery when the dashboard is offline", () => {
