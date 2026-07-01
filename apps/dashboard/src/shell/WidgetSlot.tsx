@@ -1,11 +1,24 @@
 import type { ReactNode } from "react";
 import { Panel } from "./Panel";
+import { PanelGlyph, type PanelGlyphName } from "./PanelGlyph";
 import { Unavailable } from "../components/Unavailable";
 import { WIDGET_REGISTRY } from "../widgets/widgets";
 import type { WidgetData } from "../widgets/widgetData";
 import { formatDay } from "./format";
 
 const WIDGET_LABELS: ReadonlyMap<string, string> = new Map(WIDGET_REGISTRY.map((widget) => [widget.id, widget.label]));
+
+/** Icon-first annotation per widget id (visual reference); unknown ids fall back to a generic glyph. */
+const WIDGET_ICONS: Readonly<Record<string, PanelGlyphName>> = {
+  "market-brief": "market",
+  "project-git-status": "git",
+  repositories: "git",
+  projects: "projects",
+  deadlines: "deadlines",
+  spotify: "music",
+  courses: "courses",
+  "media-list": "media"
+};
 
 function row(primary: ReactNode, secondary: ReactNode, key: string | number) {
   return (
@@ -66,7 +79,7 @@ export function WidgetSlot({ data, labelId }: { data: WidgetData; labelId: strin
   const live = data.state === "ready" || data.state === "stale";
 
   return (
-    <Panel label={label} labelId={labelId}>
+    <Panel label={label} labelId={labelId} icon={<PanelGlyph name={WIDGET_ICONS[data.widgetId] ?? "widget"} />}>
       {live ? (
         <div className="widget">
           {data.headline ? <p className="widget__headline">{data.headline}</p> : null}

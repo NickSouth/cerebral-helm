@@ -1,4 +1,5 @@
 import { Panel } from "./Panel";
+import { PanelGlyph } from "./PanelGlyph";
 import { Unavailable } from "../components/Unavailable";
 import { useDashboardState } from "../state/DashboardStateProvider";
 
@@ -8,7 +9,7 @@ export function NewsPanel() {
   const live = news.state === "ready" || news.state === "stale";
 
   return (
-    <Panel label="News" labelId="region-news">
+    <Panel label="News" labelId="region-news" icon={<PanelGlyph name="news" />}>
       {live && news.headlines.length > 0 ? (
         <ul className="news">
           {news.headlines.map((headline) => (

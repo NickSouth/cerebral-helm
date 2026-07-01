@@ -3,15 +3,25 @@
 
 .dashboard-shell {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(0, 2.4fr) minmax(240px, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
+  /* Thin, capped side rails; the center takes the remaining (dominant) width (design spec
+     §4.1 — "side columns use stable min/max widths", center is the largest flexible width). */
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr) minmax(220px, 300px);
+  /* The global search sits in its own header row over the center only; the rails begin at the
+     Quick Apps line below it and run down to the bottom bar (visual reference, Plate 01). */
+  grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    "left center right"
+    ".         search  ."
+    "left      center  right"
     "bottombar bottombar bottombar";
   gap: var(--ch-space-4);
   min-height: 100vh;
   padding: var(--ch-space-4);
   box-sizing: border-box;
+}
+
+.shell-search {
+  grid-area: search;
+  min-width: 0;
 }
 
 .shell-rail {
@@ -43,6 +53,37 @@
 
 .shell-panel {
   margin: 0;
+  /* Each component box is outlined faintly in the active mode's accent (visual reference); the
+     accent enters only via the data-mode-resolved token — never a per-mode literal. The border
+     is soft and the box carries a low outer + inner accent glow so the edge reads as luminous
+     rather than a hard solid outline. */
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 18%, var(--ch-panel-border));
+  box-shadow:
+    0 0 24px -10px color-mix(in srgb, var(--ch-accent-primary) 45%, transparent),
+    inset 0 0 18px -12px color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+}
+
+/* Panel eyebrow row: label on the left, a small category glyph pinned top-right (visual
+   reference — every rail panel carries an icon-first annotation). The header owns the
+   eyebrow's bottom spacing so the row stays baseline-aligned. */
+.panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+  margin-bottom: var(--ch-space-3);
+}
+
+/* The panel title takes the mode's primary color (visual reference). */
+.panel__header .eyebrow {
+  margin: 0;
+  color: var(--ch-accent-primary);
+}
+
+.panel__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--ch-accent-primary);
 }
 
 /* C0 — persistent global Ask-Heimlich launcher (a distinct surface from the in-conversation
@@ -61,6 +102,7 @@
 
 /* C2 — Heimlich center: the largest and calmest surface, always present. */
 .heimlich {
+  position: relative;
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -68,28 +110,68 @@
   gap: var(--ch-space-6);
   min-height: 320px;
   padding: var(--ch-space-6);
-  border: 1px solid var(--ch-panel-border);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 18%, var(--ch-panel-border));
   border-radius: var(--ch-radius-lg);
+  overflow: hidden;
+  /* Flat panel surface; the WebGL field supplies all glow (NIC-60) — no background gradient.
+     A low accent glow softens the edge to match the rail panels. */
+  background: var(--ch-surface-panel);
+  box-shadow:
+    0 0 24px -10px color-mix(in srgb, var(--ch-accent-primary) 45%, transparent),
+    inset 0 0 18px -12px color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+}
+
+/* The Heimlich ribbon (NIC-60): an embedded external WebGL motion asset that fills the panel and
+   sits beneath the greeting/actions and the conversation overlay. Non-interactive by default;
+   carries no semantics (aria-hidden on the element). The embed visual lives in the external asset. */
+.heimlich__ribbon {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.heimlich__ribbon-embed,
+.heimlich__ribbon-fallback {
+  position: absolute;
+  inset: 0;
+}
+
+/* Static gradient shown until the embed is ready, or if it has no scene yet / fails to load.
+   Gold (left) → cyan (right) from the active mode accent — themed via data-mode, never inlined. */
+.heimlich__ribbon-fallback {
   background:
-    radial-gradient(circle at 50% 35%, var(--ch-glow-soft, transparent), transparent 70%),
+    radial-gradient(120% 120% at 18% 45%, color-mix(in srgb, var(--ch-accent-primary) 26%, transparent), transparent 60%),
+    radial-gradient(120% 120% at 82% 55%, color-mix(in srgb, var(--ch-accent-secondary) 24%, transparent), transparent 60%),
     var(--ch-surface-panel);
 }
 
-.heimlich__ambient {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--ch-space-2);
-  text-align: center;
+/* Keep the panel content above the ribbon. The state label anchors the top-left; the foot
+   group (greeting + quick actions) sits at the bottom — `.heimlich` uses space-between so the
+   two ends pin apart with the ribbon breathing in between (visual reference). */
+.heimlich__state,
+.heimlich__foot {
+  position: relative;
+  z-index: 1;
 }
 
+/* Heimlich status moves to the top-left and takes the mode accent (was a centered eyebrow). */
 .heimlich__state {
   margin: 0;
-  font-size: var(--ch-font-size-display);
-  font-weight: var(--ch-font-weight-light);
-  color: var(--ch-text-primary);
+  align-self: flex-start;
+  text-align: left;
+  font-size: var(--ch-font-size-label);
+  font-weight: var(--ch-font-weight-medium);
+  letter-spacing: var(--ch-font-label-tracking);
+  text-transform: uppercase;
+  color: var(--ch-accent-primary);
+}
+
+.heimlich__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-4);
 }
 
 /* The binding 4 + 4 quick-action geometry. */
@@ -143,22 +225,41 @@
   gap: var(--ch-space-2);
 }
 
+/* Each option is a box: mode icon stacked over its label (visual reference — a 2×2 boxy
+   toggle). */
 .mode-switcher__option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-2);
+  min-height: 72px;
   font: inherit;
   font-size: var(--ch-font-size-sm);
-  padding: var(--ch-space-2) var(--ch-space-3);
+  padding: var(--ch-space-3) var(--ch-space-2);
   border-radius: var(--ch-radius-md);
-  border: 1px solid var(--ch-panel-border);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 20%, var(--ch-panel-border));
   background: var(--ch-surface-raised);
   color: var(--ch-text-muted);
   cursor: pointer;
-  transition: border-color var(--ch-motion-fast) var(--ch-ease-standard);
+  transition:
+    color var(--ch-motion-fast) var(--ch-ease-standard),
+    background-color var(--ch-motion-fast) var(--ch-ease-standard),
+    border-color var(--ch-motion-fast) var(--ch-ease-standard);
 }
 
+/* Solid-filled mode glyph; inherits the option's currentColor (muted when idle, mode accent
+   when selected). */
+.mode-switcher__icon {
+  display: inline-flex;
+  color: inherit;
+}
+
+/* Selected mode: entirely shaded in its mode color, with a solid-filled accent icon. */
 .mode-switcher__option[data-active="true"] {
   border-color: var(--ch-accent-primary);
-  background: var(--ch-surface-panel);
-  color: var(--ch-text-primary);
+  background: color-mix(in srgb, var(--ch-accent-primary) 22%, transparent);
+  color: var(--ch-accent-primary);
 }
 
 /* R2 — agent roster. */
@@ -251,28 +352,39 @@
   cursor: not-allowed;
 }
 
-/* C1 Quick Apps — configured shortcuts with placeholder category glyphs. */
+/* C1 Quick Apps — six fixed boxes (5 app slots + More Apps) spanning the panel edge-to-edge,
+   equal columns, perfectly aligned. Each box stacks its glyph over its label like the mode
+   toggle, a touch larger and squarer. */
 .quick-apps {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
   gap: var(--ch-space-2);
+}
+
+.quick-apps > li {
+  display: flex;
 }
 
 .quick-app {
   display: flex;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--ch-space-2);
+  width: 100%;
+  min-height: 92px;
   font: inherit;
   font-size: var(--ch-font-size-sm);
-  padding: var(--ch-space-2) var(--ch-space-3);
-  border: 1px solid var(--ch-panel-border);
+  padding: var(--ch-space-3) var(--ch-space-2);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 20%, var(--ch-panel-border));
   border-radius: var(--ch-radius-md);
   background: var(--ch-surface-raised);
   color: var(--ch-text-muted);
   cursor: not-allowed;
+  text-align: center;
 }
 
 .quick-app__icon {
@@ -280,17 +392,34 @@
   color: var(--ch-accent-secondary);
 }
 
+.quick-app__icon .app-glyph {
+  width: 24px;
+  height: 24px;
+}
+
+.quick-app__label {
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+/* Empty slots read as addable placeholders; the pin + more-apps glyphs stay neutral. */
+.quick-app--pin {
+  border-style: dashed;
+}
+
+.quick-app--pin .quick-app__icon,
 .quick-app--more .quick-app__icon {
   color: var(--ch-text-muted);
-  font-size: var(--ch-font-size-base);
 }
 
 /* Mode-aware Heimlich greeting — the calm center text. */
+/* The greeting sits directly above the quick actions (in the foot group) and takes the mode
+   accent (visual reference). */
 .heimlich__greeting {
   margin: 0;
   font-size: var(--ch-font-size-display);
   font-weight: var(--ch-font-weight-light);
-  color: var(--ch-text-primary);
+  color: var(--ch-accent-primary);
   text-align: center;
 }
 
@@ -547,15 +676,22 @@
    transitionable, so the consuming properties transition. Collapses to instant under
    prefers-reduced-motion (the safety net in app.css zeroes transition-duration). */
 .heimlich,
+.heimlich__state,
+.heimlich__greeting,
+.shell-panel,
+.panel__header .eyebrow,
+.panel__icon,
 .schedule__time,
 .quick-app__icon,
 .mode-switcher__option,
+.mode-switcher__icon,
 .bottom-bar__mode,
 .global-search__input {
   transition:
     color var(--ch-motion-base) var(--ch-ease-standard),
     background-color var(--ch-motion-base) var(--ch-ease-standard),
-    border-color var(--ch-motion-base) var(--ch-ease-standard);
+    border-color var(--ch-motion-base) var(--ch-ease-standard),
+    box-shadow var(--ch-motion-base) var(--ch-ease-standard);
 }
 
 /* Responsive (constitution §8): compact stacks the rails (center first), preserving the
@@ -563,7 +699,9 @@
 @media (max-width: 1439px) {
   .dashboard-shell {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(5, auto);
     grid-template-areas:
+      "search"
       "center"
       "left"
       "right"

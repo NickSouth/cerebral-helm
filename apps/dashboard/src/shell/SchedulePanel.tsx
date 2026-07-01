@@ -1,4 +1,5 @@
 import { Panel } from "./Panel";
+import { PanelGlyph } from "./PanelGlyph";
 import { Unavailable } from "../components/Unavailable";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { formatClock } from "./format";
@@ -9,7 +10,7 @@ export function SchedulePanel() {
   const live = schedule.state === "ready" || schedule.state === "stale";
 
   return (
-    <Panel label="Today" labelId="region-today">
+    <Panel label="Today" labelId="region-today" icon={<PanelGlyph name="today" />}>
       {live && schedule.items.length > 0 ? (
         <ul className="schedule">
           {schedule.items.map((item) => (

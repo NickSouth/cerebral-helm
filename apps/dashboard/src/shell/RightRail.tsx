@@ -1,4 +1,6 @@
 import { Panel } from "./Panel";
+import { PanelGlyph } from "./PanelGlyph";
+import { ModeGlyph } from "./ModeGlyph";
 import { WidgetSlot } from "./WidgetSlot";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useBridge } from "../state/BridgeProvider";
@@ -16,7 +18,7 @@ export function RightRail() {
 
   return (
     <aside className="shell-rail shell-right" aria-label="Operations">
-      <Panel label="Mode" labelId="region-mode">
+      <Panel label="Mode" labelId="region-mode" icon={<PanelGlyph name="mode" />}>
         <div className="mode-switcher" role="group" aria-labelledby="region-mode">
           {modes.map((modeView) => {
             const active = modeView.label === mode;
@@ -33,14 +35,17 @@ export function RightRail() {
                   }
                 }}
               >
-                {modeView.label}
+                <span className="mode-switcher__icon">
+                  <ModeGlyph mode={modeView.id} />
+                </span>
+                <span className="mode-switcher__label">{modeView.label}</span>
               </button>
             );
           })}
         </div>
       </Panel>
 
-      <Panel label="Agents" labelId="region-agents">
+      <Panel label="Agents" labelId="region-agents" icon={<PanelGlyph name="agents" />}>
         <ul className="agent-list">
           {agents.map((agent) => (
             <li key={agent.id} className="agent-list__item">

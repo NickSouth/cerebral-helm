@@ -1,4 +1,5 @@
 import { Panel } from "./Panel";
+import { PanelGlyph } from "./PanelGlyph";
 import { Unavailable } from "../components/Unavailable";
 import { useDashboardState } from "../state/DashboardStateProvider";
 
@@ -8,7 +9,7 @@ export function SystemHealthPanel() {
   const live = systemHealth.state === "ready" || systemHealth.state === "stale";
 
   return (
-    <Panel label="System Health" labelId="region-health">
+    <Panel label="System Health" labelId="region-health" icon={<PanelGlyph name="system-health" />}>
       {live ? (
         <ul className="metrics">
           {typeof systemHealth.cpuPercent === "number" ? (
