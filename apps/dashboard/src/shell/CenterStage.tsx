@@ -6,7 +6,6 @@ import { toRibbonState } from "./heimlichRibbon";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useConversation } from "../state/ConversationProvider";
 import { useActiveMode } from "./useActiveMode";
-import { heimlichStateLabel } from "./labels";
 
 /**
  * The calm, dominant center (constitution §6): Quick Apps and the Heimlich consciousness
@@ -27,7 +26,7 @@ export function CenterStage() {
 
       <section className="heimlich" aria-label="Heimlich">
         <HeimlichRibbonEmbed state={toRibbonState(heimlich.state)} />
-        <p className="heimlich__state">Heimlich · {heimlichStateLabel(heimlich.state)}</p>
+        <p className="heimlich__state">Heimlich</p>
         <div className="heimlich__foot">
           {greeting ? <p className="heimlich__greeting">{greeting.fallback}</p> : null}
           <QuickActions />

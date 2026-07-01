@@ -32,6 +32,23 @@
     "summary": { "type": "string" },
     "commandsToday": { "type": "integer", "minimum": 0 },
     "pendingConfirmations": { "type": "integer", "minimum": 0 },
+    "weather": {
+      "title": "DashboardWeatherChannel",
+      "description": "Ambient weather for the persistent bottom bar. Optional (a Mac-only capability; mocked pre-Mac).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "label"],
+      "properties": {
+        "state": {
+          "title": "DashboardRegionState",
+          "type": "string",
+          "enum": ["ready", "empty", "stale", "unavailable"]
+        },
+        "label": { "type": "string" },
+        "temperatureF": { "type": "number", "description": "Temperature in °F, when known." },
+        "condition": { "type": "string", "description": "Short condition phrase, e.g. \"Partly Cloudy\"." }
+      }
+    },
     "uiState": {
       "title": "UIState",
       "type": "string",
@@ -231,7 +248,7 @@
             "cpuPercent": { "type": "number" },
             "memoryPercent": { "type": "number" },
             "network": {
-              "title": "DashboardMetricChannel",
+              "title": "DashboardNetworkChannel",
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "label"],
@@ -241,11 +258,13 @@
                   "type": "string",
                   "enum": ["ready", "empty", "stale", "unavailable"]
                 },
-                "label": { "type": "string" }
+                "label": { "type": "string" },
+                "uploadMbps": { "type": "number", "description": "Uplink throughput in Mbps, when known." },
+                "downloadMbps": { "type": "number", "description": "Downlink throughput in Mbps, when known." }
               }
             },
             "battery": {
-              "title": "DashboardMetricChannel",
+              "title": "DashboardBatteryChannel",
               "type": "object",
               "additionalProperties": false,
               "required": ["state", "label"],
@@ -255,7 +274,8 @@
                   "type": "string",
                   "enum": ["ready", "empty", "stale", "unavailable"]
                 },
-                "label": { "type": "string" }
+                "label": { "type": "string" },
+                "percent": { "type": "number", "minimum": 0, "maximum": 100, "description": "Charge level 0–100, when known (Mac-only capability)." }
               }
             }
           }

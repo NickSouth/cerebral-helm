@@ -38,6 +38,11 @@ export interface CerebralHelmBridgeBootstrapState {
     schemaVersion: string;
     summary:       string;
     uiState:       UIState;
+    /**
+     * Ambient weather for the persistent bottom bar. Optional (a Mac-only capability; mocked
+     * pre-Mac).
+     */
+    weather?: DashboardWeatherChannel;
 }
 
 export interface DashboardAgentSummary {
@@ -215,21 +220,33 @@ export enum DashboardScheduleKind {
 }
 
 export interface DashboardSystemHealthRegion {
-    battery:        BatteryClass;
+    battery:        DashboardBatteryChannel;
     cpuPercent?:    number;
     memoryPercent?: number;
-    network?:       NetworkClass;
+    network?:       DashboardNetworkChannel;
     state:          DashboardRegionState;
 }
 
-export interface BatteryClass {
+export interface DashboardBatteryChannel {
     label: string;
-    state: DashboardRegionState;
+    /**
+     * Charge level 0–100, when known (Mac-only capability).
+     */
+    percent?: number;
+    state:    DashboardRegionState;
 }
 
-export interface NetworkClass {
-    label: string;
-    state: DashboardRegionState;
+export interface DashboardNetworkChannel {
+    /**
+     * Downlink throughput in Mbps, when known.
+     */
+    downloadMbps?: number;
+    label:         string;
+    state:         DashboardRegionState;
+    /**
+     * Uplink throughput in Mbps, when known.
+     */
+    uploadMbps?: number;
 }
 
 export interface DashboardRegionWidgets {
@@ -304,6 +321,23 @@ export enum UIState {
     Stale = "stale",
     Success = "success",
     Unavailable = "unavailable",
+}
+
+/**
+ * Ambient weather for the persistent bottom bar. Optional (a Mac-only capability; mocked
+ * pre-Mac).
+ */
+export interface DashboardWeatherChannel {
+    /**
+     * Short condition phrase, e.g. "Partly Cloudy".
+     */
+    condition?: string;
+    label:      string;
+    state:      DashboardRegionState;
+    /**
+     * Temperature in °F, when known.
+     */
+    temperatureF?: number;
 }
 
 export interface CerebralHelmBridgeCapabilityState {

@@ -41,31 +41,45 @@
   --ch-confirm-accent: #4d8df6;
   --ch-confirm-surface: rgba(16, 24, 40, 0.96);
 
+  /* --- Agent identity colors (fixed per agent; do NOT change with mode) --- */
+  --ch-agent-research: #5fb0e8;
+  --ch-agent-financial: #34d38a;
+  --ch-agent-project: #a78bfa;
+  --ch-agent-system: #e8b765;
+
+  /* --- Weather colors (natural, condition-driven; NOT the mode accent) --- */
+  --ch-weather-sun: #f4c95d;
+  --ch-weather-cloud: #d6e0ec;
+  --ch-weather-rain: #5f9bf0;
+
   /* --- Active accent: defaults to Executive until [data-mode] resolves it --- */
   --ch-accent-primary: var(--ch-mode-executive-primary);
   --ch-accent-secondary: var(--ch-mode-executive-secondary);
   --ch-glow-soft: color-mix(in srgb, var(--ch-accent-primary) 45%, var(--ch-accent-secondary));
 
-  /* --- Spacing (4px base) --- */
-  --ch-space-1: 4px;
-  --ch-space-2: 8px;
-  --ch-space-3: 12px;
-  --ch-space-4: 16px;
-  --ch-space-5: 20px;
-  --ch-space-6: 24px;
-  --ch-space-8: 32px;
-  --ch-space-10: 40px;
-  --ch-space-12: 48px;
-  --ch-space-16: 64px;
+  /* --- Spacing (4px base at the reference root; rem so it scales with the viewport-height-driven
+     root font-size — the whole layout scales as one unit, §fluid invariant) --- */
+  --ch-space-1: 0.25rem;
+  --ch-space-2: 0.5rem;
+  --ch-space-3: 0.75rem;
+  --ch-space-4: 1rem;
+  --ch-space-5: 1.25rem;
+  --ch-space-6: 1.5rem;
+  --ch-space-8: 2rem;
+  --ch-space-10: 2.5rem;
+  --ch-space-12: 3rem;
+  --ch-space-16: 4rem;
 
-  /* --- Radii (small; the spec mandates small corner radii) --- */
-  --ch-radius-sm: 8px;
-  --ch-radius-md: 10px;
-  --ch-radius-lg: 12px;
+  /* --- Radii (small; the spec mandates small corner radii) — rem so they scale too --- */
+  --ch-radius-sm: 0.5rem;
+  --ch-radius-md: 0.625rem;
+  --ch-radius-lg: 0.75rem;
   --ch-radius-pill: 999px;
 
   /* --- Typography --- */
   --ch-font-family: "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  /* Monospace display face for panel titles, the Heimlich wordmark, and the clock. */
+  --ch-font-mono: "Cascadia Code", "Cascadia Mono", ui-monospace, "SF Mono", "Segoe UI Mono", "Roboto Mono", monospace;
   --ch-font-size-display: 2.25rem;
   --ch-font-size-xl: 1.75rem;
   --ch-font-size-lg: 1.3rem;

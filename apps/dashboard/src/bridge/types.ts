@@ -97,13 +97,29 @@ export interface MetricChannel {
   readonly label: string;
 }
 
+/** Network channel with optional up/down throughput split (mirrors DashboardNetworkChannel). */
+export interface NetworkChannel extends MetricChannel {
+  readonly uploadMbps?: number;
+  readonly downloadMbps?: number;
+}
+
+/** Battery channel with an optional charge percentage (Mac-only capability; mocked pre-Mac). */
+export interface BatteryChannel extends MetricChannel {
+  readonly percent?: number;
+}
+
+/** Weather channel for the bottom bar (mirrors DashboardWeatherChannel). */
+export interface WeatherChannel extends MetricChannel {
+  readonly temperatureF?: number;
+  readonly condition?: string;
+}
+
 export interface SystemHealthRegion {
   readonly state: RegionState;
   readonly cpuPercent?: number;
   readonly memoryPercent?: number;
-  readonly network?: MetricChannel;
-  /** Battery is an unavailable capability pre-Mac (NIC-117 j). */
-  readonly battery: MetricChannel;
+  readonly network?: NetworkChannel;
+  readonly battery: BatteryChannel;
 }
 
 export interface NewsHeadline {
@@ -131,6 +147,8 @@ export interface DashboardBootstrapState {
   readonly summary: string;
   readonly commandsToday: number;
   readonly pendingConfirmations: number;
+  /** Ambient weather for the bottom bar; optional (Mac-only capability, mocked pre-Mac). */
+  readonly weather?: WeatherChannel;
   readonly uiState: DashboardUiState;
   /** The center surface — Heimlich's consciousness — present in every mode; never replaced. */
   readonly heimlich: HeimlichSurface;

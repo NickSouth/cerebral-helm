@@ -18,7 +18,8 @@ describe("MockCerebralBridge", () => {
     expect(state.modes).toHaveLength(4);
     expect(state.agents).toHaveLength(4);
     expect(state.expandedAgent).toBeNull();
-    expect(state.regions.systemHealth.battery.state).toBe("unavailable");
+    expect(state.regions.systemHealth.battery.state).toBe("ready");
+    expect(state.regions.systemHealth.battery.percent).toBe(82);
   });
 
   it("can boot a different canonical state by key", async () => {

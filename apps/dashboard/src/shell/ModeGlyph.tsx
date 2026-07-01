@@ -12,12 +12,12 @@ import type { ReactNode } from "react";
 const GLYPHS: Readonly<Record<string, ReactNode>> = {
   // Crown — Executive.
   executive: <path d="M3 8l3.5 4L12 6l5.5 6L21 8v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5z" />,
-  // Angle brackets with a slash between — Developer (`</>`).
+  // Angle brackets with a larger slash between, spaced so they don't touch — Developer (`</>`).
   developer: (
     <>
-      <path d="M8.8 7l1.5 1.5L7 12l3.3 3.5L8.8 17l-5-5z" />
-      <path d="M15.2 7l-1.5 1.5L17 12l-3.3 3.5 1.5 1.5 5-5z" />
-      <path d="M13.4 6.3l1.5.5-4 11.4-1.5-.5z" />
+      <path d="M7.6 6.6l1.5 1.5L6 12l3.1 3.9-1.5 1.5L3 12z" />
+      <path d="M16.4 6.6l-1.5 1.5L18 12l-3.1 3.9 1.5 1.5L21 12z" />
+      <path d="M13.9 5.6l1.7.6-5 12.2-1.7-.6z" />
     </>
   ),
   // Mortarboard — School.

@@ -12,6 +12,7 @@
         "mode": "Executive",
         "project": "Daily Command",
         "summary": "Executive mode is ready with planning, status, and cross-project briefing surfaces.",
+        "weather": { "state": "ready", "label": "72°F · Partly Cloudy", "temperatureF": 72, "condition": "Partly Cloudy" },
         "commandsToday": 2,
         "pendingConfirmations": 0,
         "uiState": "ready",
@@ -29,8 +30,8 @@
             "state": "ready",
             "cpuPercent": 18,
             "memoryPercent": 50,
-            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" },
-            "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
+            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "uploadMbps": 20, "downloadMbps": 120 },
+            "battery": { "state": "ready", "label": "82%", "percent": 82 }
           },
           "news": {
             "state": "ready",
@@ -72,6 +73,7 @@
         "mode": "Developer",
         "project": "NIC-12 Workspace Bootstrap",
         "summary": "Pre-Mac foundation is running against a mock CerebralBridge.",
+        "weather": { "state": "ready", "label": "66°F · Cloudy", "temperatureF": 66, "condition": "Cloudy" },
         "commandsToday": 4,
         "pendingConfirmations": 0,
         "uiState": "ready",
@@ -89,8 +91,8 @@
             "state": "ready",
             "cpuPercent": 22,
             "memoryPercent": 58,
-            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" },
-            "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
+            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "uploadMbps": 22, "downloadMbps": 118 },
+            "battery": { "state": "ready", "label": "47%", "percent": 47 }
           },
           "news": {
             "state": "ready",
@@ -135,6 +137,7 @@
         "mode": "School",
         "project": "Coursework Focus",
         "summary": "School mode is ready with deadlines, study shortcuts, and research support.",
+        "weather": { "state": "ready", "label": "75°F · Sunny", "temperatureF": 75, "condition": "Sunny" },
         "commandsToday": 1,
         "pendingConfirmations": 0,
         "uiState": "ready",
@@ -152,8 +155,8 @@
             "state": "ready",
             "cpuPercent": 16,
             "memoryPercent": 44,
-            "network": { "state": "ready", "label": "Wi-Fi · 90 Mbps" },
-            "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
+            "network": { "state": "ready", "label": "Wi-Fi · 90 Mbps", "uploadMbps": 15, "downloadMbps": 90 },
+            "battery": { "state": "ready", "label": "88%", "percent": 88 }
           },
           "news": {
             "state": "ready",
@@ -195,6 +198,7 @@
         "mode": "Entertainment",
         "project": "Evening Downtime",
         "summary": "Entertainment mode is ready with lighter density and non-work shortcuts.",
+        "weather": { "state": "ready", "label": "70°F · Clear", "temperatureF": 70, "condition": "Clear" },
         "commandsToday": 1,
         "pendingConfirmations": 0,
         "uiState": "ready",
@@ -211,8 +215,8 @@
             "state": "ready",
             "cpuPercent": 12,
             "memoryPercent": 40,
-            "network": { "state": "ready", "label": "Wi-Fi · 200 Mbps" },
-            "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
+            "network": { "state": "ready", "label": "Wi-Fi · 200 Mbps", "uploadMbps": 30, "downloadMbps": 200 },
+            "battery": { "state": "ready", "label": "15%", "percent": 15 }
           },
           "news": {
             "state": "ready",

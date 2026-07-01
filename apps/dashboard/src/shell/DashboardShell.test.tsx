@@ -6,7 +6,6 @@ import { ConversationProvider } from "../state/ConversationProvider";
 import { ThemeProvider } from "../app/ThemeProvider";
 import { createBridgeStore } from "../state/bridgeStore";
 import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
-import { capabilityBridgeEvent } from "../bridge/eventFixtures";
 import { getDashboardConfigBundle, getDashboardFixture } from "../fixtures/canonicalFixtures";
 
 /** Render the shell over a bridge-backed store. With no key, boots the default mode (Executive). */
@@ -103,10 +102,16 @@ describe("DashboardShell config-driven content (one view, four modes, no per-mod
     expect(screen.queryByText("Ready to build.")).toBeNull();
   });
 
-  it("renders an honest battery-unavailable metric pre-Mac", () => {
+  it("renders a threshold-tinted battery bar when a charge percentage is available", () => {
+    // Developer mocks a 47% battery — the health panel shows the percentage (bottom bar too).
     renderShell("mode.developer.ready");
-    // Scoped to the left information rail's health panel — the bottom bar (D6) carries its own
-    // battery item with the same honest tooltip.
+    const information = screen.getByRole("complementary", { name: "Information" });
+    expect(within(information).getByText("47%")).toBeInTheDocument();
+  });
+
+  it("still renders an honest battery-unavailable metric when no percentage is delivered", () => {
+    // The agent-expanded fixture keeps battery honestly unavailable while system health is live.
+    renderShell("agent.research-analyst.expanded");
     const information = screen.getByRole("complementary", { name: "Information" });
     expect(within(information).getByTitle(/Battery — requires the macOS host/)).toHaveTextContent("Unavailable");
   });
@@ -162,17 +167,20 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     return within(screen.getByRole("contentinfo", { name: "Status bar" }));
   }
 
-  it("shows Heimlich state, the mode, live metrics, and honest-unavailable weather/battery", () => {
+  it("shows Heimlich state, the mode, and glanceable weather + battery (CPU/mem/net live in the widget)", () => {
     const { container } = renderShell(); // Executive ready
     const bar = statusBar();
-    expect(bar.getByText(/Heimlich · Idle/)).toBeInTheDocument();
+    expect(bar.getByText("Heimlich")).toBeInTheDocument();
+    expect(bar.getByText("Idle")).toBeInTheDocument();
     expect(bar.getByText("Executive")).toBeInTheDocument();
-    expect(bar.getByText("CPU 18%")).toBeInTheDocument();
-    expect(bar.getByText("Wi-Fi · 120 Mbps")).toBeInTheDocument();
-    expect(bar.getByText("Weather · Unavailable")).toBeInTheDocument();
-    expect(bar.getByTitle(/Battery — requires the macOS host/)).toHaveTextContent("Unavailable");
+    // Executive mocks 72°F Partly Cloudy weather (shown as icon + temperature) and an 82% battery.
+    expect(bar.getByText("72°F")).toBeInTheDocument();
+    expect(bar.getByLabelText("Battery 82%")).toBeInTheDocument();
     // The clock is present but its value is masked in visual snapshots (determinism).
     expect(container.querySelector(".bottom-bar__clock")).not.toBeNull();
+    // Detailed CPU/memory/network metrics moved out of the bar into the System Health widget.
+    expect(bar.queryByText(/CPU/)).toBeNull();
+    expect(bar.queryByText(/Wi-Fi/)).toBeNull();
   });
 
   it("tints the mode label with the active mode accent (home dashboard only)", () => {
@@ -180,25 +188,18 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     expect(container.querySelector(".bottom-bar__mode")).toHaveTextContent("Executive");
   });
 
-  it("keeps Settings and Emergency honest-disabled until their surfaces land", () => {
+  it("keeps Settings honest-disabled and no longer surfaces Emergency", () => {
     renderShell();
     const bar = statusBar();
     expect(bar.getByRole("button", { name: "Settings" })).toBeDisabled();
-    expect(bar.getByRole("button", { name: "Emergency" })).toBeDisabled();
+    expect(bar.queryByRole("button", { name: "Emergency" })).toBeNull();
   });
 
-  it("renders a distinct disconnected metric state when the dashboard is offline", () => {
+  it("shows honest-unavailable weather and battery when the dashboard is offline", () => {
     renderShell("failure.dashboard_offline");
     const bar = statusBar();
-    expect(bar.getByText(/Metrics · Disconnected/)).toBeInTheDocument();
-    expect(bar.getByText(/Network metrics unavailable while offline/)).toBeInTheDocument();
-  });
-
-  it("marks metrics stale when the metrics capability degrades", () => {
-    const { bridge } = renderShell();
-    act(() => bridge.emit(capabilityBridgeEvent));
-    const bar = statusBar();
-    expect(bar.getByText(/CPU 18% · stale/)).toBeInTheDocument();
+    expect(bar.getByText("Weather · Unavailable")).toBeInTheDocument();
+    expect(bar.getByText("Battery · Unavailable")).toBeInTheDocument();
   });
 });
 

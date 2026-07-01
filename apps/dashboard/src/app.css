@@ -1,5 +1,11 @@
 :root {
   color-scheme: dark;
+  /* The root font-size scales with viewport HEIGHT, and the whole design is expressed in rem
+     (spacing, radii, box heights, icon sizes, fonts). So the dashboard scales as one unit with
+     the screen height — up on taller screens, down on shorter — always keeping proportions and
+     (because it fits at the reference size) always fitting without a page scroll. Width is a
+     separate concern: the columns cap-and-center, the bottom bar spans the full width. */
+  font-size: clamp(12px, 1.5vh, 20px);
   font-family: var(--ch-font-family);
   background:
     radial-gradient(circle at top, var(--ch-glow-radial), transparent 40%),

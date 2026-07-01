@@ -1,6 +1,28 @@
 import { useState, type KeyboardEvent } from "react";
 import { rankSuggestions } from "./commandSuggestions";
 
+/** Magnifying-glass glyph for the persistent launcher. */
+function SearchGlyph() {
+  return (
+    <svg
+      className="global-search__glyph"
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M20 20l-4.3-4.3" />
+    </svg>
+  );
+}
+
 /**
  * The shared command/search input, used in two distinct placements (course-correction C):
  * the persistent top **launcher** (C0 — global, always visible, "Ask Heimlich first") and the
@@ -50,6 +72,11 @@ export function CommandSurface({
 
   return (
     <div className={`command-surface command-surface--${variant}`}>
+      {variant === "launcher" ? (
+        <span className="global-search__icon" aria-hidden="true">
+          <SearchGlyph />
+        </span>
+      ) : null}
       <input
         type="text"
         className={variant === "launcher" ? "global-search__input" : "docked-input__input"}

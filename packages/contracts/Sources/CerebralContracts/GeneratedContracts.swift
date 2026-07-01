@@ -72,8 +72,11 @@ public struct CerebralHelmBridgeBootstrapState: Codable {
     public let schemaVersion: String
     public let summary: String
     public let uiState: UIState
+    /// Ambient weather for the persistent bottom bar. Optional (a Mac-only capability; mocked
+    /// pre-Mac).
+    public let weather: DashboardWeatherChannel?
 
-    public init(agents: [DashboardAgentSummary], commandsToday: Int, expandedAgent: String?, heimlich: DashboardHeimlich, mode: Mode, modes: [DashboardModeView], pendingConfirmations: Int, project: String, regions: DashboardRegions, schemaVersion: String, summary: String, uiState: UIState) {
+    public init(agents: [DashboardAgentSummary], commandsToday: Int, expandedAgent: String?, heimlich: DashboardHeimlich, mode: Mode, modes: [DashboardModeView], pendingConfirmations: Int, project: String, regions: DashboardRegions, schemaVersion: String, summary: String, uiState: UIState, weather: DashboardWeatherChannel?) {
         self.agents = agents
         self.commandsToday = commandsToday
         self.expandedAgent = expandedAgent
@@ -86,6 +89,7 @@ public struct CerebralHelmBridgeBootstrapState: Codable {
         self.schemaVersion = schemaVersion
         self.summary = summary
         self.uiState = uiState
+        self.weather = weather
     }
 }
 
@@ -119,7 +123,8 @@ public extension CerebralHelmBridgeBootstrapState {
         regions: DashboardRegions? = nil,
         schemaVersion: String? = nil,
         summary: String? = nil,
-        uiState: UIState? = nil
+        uiState: UIState? = nil,
+        weather: DashboardWeatherChannel?? = nil
     ) -> CerebralHelmBridgeBootstrapState {
         return CerebralHelmBridgeBootstrapState(
             agents: agents ?? self.agents,
@@ -133,7 +138,8 @@ public extension CerebralHelmBridgeBootstrapState {
             regions: regions ?? self.regions,
             schemaVersion: schemaVersion ?? self.schemaVersion,
             summary: summary ?? self.summary,
-            uiState: uiState ?? self.uiState
+            uiState: uiState ?? self.uiState,
+            weather: weather ?? self.weather
         )
     }
 
@@ -1028,12 +1034,12 @@ public enum DashboardScheduleKind: String, Codable {
 
 // MARK: - DashboardSystemHealthRegion
 public struct DashboardSystemHealthRegion: Codable {
-    public let battery: BatteryClass
+    public let battery: DashboardBatteryChannel
     public let cpuPercent, memoryPercent: Double?
-    public let network: NetworkClass?
+    public let network: DashboardNetworkChannel?
     public let state: DashboardRegionState
 
-    public init(battery: BatteryClass, cpuPercent: Double?, memoryPercent: Double?, network: NetworkClass?, state: DashboardRegionState) {
+    public init(battery: DashboardBatteryChannel, cpuPercent: Double?, memoryPercent: Double?, network: DashboardNetworkChannel?, state: DashboardRegionState) {
         self.battery = battery
         self.cpuPercent = cpuPercent
         self.memoryPercent = memoryPercent
@@ -1061,10 +1067,10 @@ public extension DashboardSystemHealthRegion {
     }
 
     func with(
-        battery: BatteryClass? = nil,
+        battery: DashboardBatteryChannel? = nil,
         cpuPercent: Double?? = nil,
         memoryPercent: Double?? = nil,
-        network: NetworkClass?? = nil,
+        network: DashboardNetworkChannel?? = nil,
         state: DashboardRegionState? = nil
     ) -> DashboardSystemHealthRegion {
         return DashboardSystemHealthRegion(
@@ -1089,22 +1095,25 @@ public extension DashboardSystemHealthRegion {
 
 // Do not edit by hand; edit packages/contracts/schemas instead.
 
-// MARK: - BatteryClass
-public struct BatteryClass: Codable {
+// MARK: - DashboardBatteryChannel
+public struct DashboardBatteryChannel: Codable {
     public let label: String
+    /// Charge level 0–100, when known (Mac-only capability).
+    public let percent: Double?
     public let state: DashboardRegionState
 
-    public init(label: String, state: DashboardRegionState) {
+    public init(label: String, percent: Double?, state: DashboardRegionState) {
         self.label = label
+        self.percent = percent
         self.state = state
     }
 }
 
-// MARK: BatteryClass convenience initializers and mutators
+// MARK: DashboardBatteryChannel convenience initializers and mutators
 
-public extension BatteryClass {
+public extension DashboardBatteryChannel {
     init(data: Data) throws {
-        self = try newJSONDecoder().decode(BatteryClass.self, from: data)
+        self = try newJSONDecoder().decode(DashboardBatteryChannel.self, from: data)
     }
 
     init(_ json: String, using encoding: String.Encoding = .utf8) throws {
@@ -1120,10 +1129,12 @@ public extension BatteryClass {
 
     func with(
         label: String? = nil,
+        percent: Double?? = nil,
         state: DashboardRegionState? = nil
-    ) -> BatteryClass {
-        return BatteryClass(
+    ) -> DashboardBatteryChannel {
+        return DashboardBatteryChannel(
             label: label ?? self.label,
+            percent: percent ?? self.percent,
             state: state ?? self.state
         )
     }
@@ -1141,22 +1152,28 @@ public extension BatteryClass {
 
 // Do not edit by hand; edit packages/contracts/schemas instead.
 
-// MARK: - NetworkClass
-public struct NetworkClass: Codable {
+// MARK: - DashboardNetworkChannel
+public struct DashboardNetworkChannel: Codable {
+    /// Downlink throughput in Mbps, when known.
+    public let downloadMbps: Double?
     public let label: String
     public let state: DashboardRegionState
+    /// Uplink throughput in Mbps, when known.
+    public let uploadMbps: Double?
 
-    public init(label: String, state: DashboardRegionState) {
+    public init(downloadMbps: Double?, label: String, state: DashboardRegionState, uploadMbps: Double?) {
+        self.downloadMbps = downloadMbps
         self.label = label
         self.state = state
+        self.uploadMbps = uploadMbps
     }
 }
 
-// MARK: NetworkClass convenience initializers and mutators
+// MARK: DashboardNetworkChannel convenience initializers and mutators
 
-public extension NetworkClass {
+public extension DashboardNetworkChannel {
     init(data: Data) throws {
-        self = try newJSONDecoder().decode(NetworkClass.self, from: data)
+        self = try newJSONDecoder().decode(DashboardNetworkChannel.self, from: data)
     }
 
     init(_ json: String, using encoding: String.Encoding = .utf8) throws {
@@ -1171,12 +1188,16 @@ public extension NetworkClass {
     }
 
     func with(
+        downloadMbps: Double?? = nil,
         label: String? = nil,
-        state: DashboardRegionState? = nil
-    ) -> NetworkClass {
-        return NetworkClass(
+        state: DashboardRegionState? = nil,
+        uploadMbps: Double?? = nil
+    ) -> DashboardNetworkChannel {
+        return DashboardNetworkChannel(
+            downloadMbps: downloadMbps ?? self.downloadMbps,
             label: label ?? self.label,
-            state: state ?? self.state
+            state: state ?? self.state,
+            uploadMbps: uploadMbps ?? self.uploadMbps
         )
     }
 
@@ -1623,6 +1644,70 @@ public enum UIState: String, Codable {
     case stale = "stale"
     case success = "success"
     case unavailable = "unavailable"
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+/// Ambient weather for the persistent bottom bar. Optional (a Mac-only capability; mocked
+/// pre-Mac).
+// MARK: - DashboardWeatherChannel
+public struct DashboardWeatherChannel: Codable {
+    /// Short condition phrase, e.g. "Partly Cloudy".
+    public let condition: String?
+    public let label: String
+    public let state: DashboardRegionState
+    /// Temperature in °F, when known.
+    public let temperatureF: Double?
+
+    public init(condition: String?, label: String, state: DashboardRegionState, temperatureF: Double?) {
+        self.condition = condition
+        self.label = label
+        self.state = state
+        self.temperatureF = temperatureF
+    }
+}
+
+// MARK: DashboardWeatherChannel convenience initializers and mutators
+
+public extension DashboardWeatherChannel {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(DashboardWeatherChannel.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        condition: String?? = nil,
+        label: String? = nil,
+        state: DashboardRegionState? = nil,
+        temperatureF: Double?? = nil
+    ) -> DashboardWeatherChannel {
+        return DashboardWeatherChannel(
+            condition: condition ?? self.condition,
+            label: label ?? self.label,
+            state: state ?? self.state,
+            temperatureF: temperatureF ?? self.temperatureF
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
 }
 
 // Generated by scripts/generate-contracts.mjs.

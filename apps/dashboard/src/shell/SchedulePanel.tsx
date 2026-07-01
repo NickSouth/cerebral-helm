@@ -1,30 +1,63 @@
 import { Panel } from "./Panel";
 import { PanelGlyph } from "./PanelGlyph";
-import { Unavailable } from "../components/Unavailable";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { formatClock } from "./format";
 
-/** L1 Today/Tonight (design spec §5.3): the active mode's schedule, degraded-aware. */
-export function SchedulePanel() {
+/** The calendar reserves a fixed four-row event area so the widget height never changes. */
+const EVENT_SLOTS = 4;
+
+/** Big current time (digital feel). Masked in visual snapshots (see shell.spec.ts) for determinism. */
+function formatNowTime(now: Date): string {
+  return now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/** Full current date under the clock. */
+function formatNowDate(now: Date): string {
+  return now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+}
+
+/**
+ * L1 Today / Tonight (design spec §5.1): the live clock and date, up to four upcoming events
+ * (color dot · title · right-aligned start), and a "View full schedule" control. The event area
+ * always reserves four rows so the widget keeps a constant height regardless of event count.
+ */
+export function SchedulePanel({ now = new Date() }: { now?: Date } = {}) {
   const { schedule } = useDashboardState().regions;
   const live = schedule.state === "ready" || schedule.state === "stale";
+  const events = live ? schedule.items.slice(0, EVENT_SLOTS) : [];
 
   return (
     <Panel label="Today" labelId="region-today" icon={<PanelGlyph name="today" />}>
-      {live && schedule.items.length > 0 ? (
-        <ul className="schedule">
-          {schedule.items.map((item) => (
-            <li key={item.id} className="schedule__item">
-              <span className="schedule__time" data-kind={item.kind}>
-                {formatClock(item.start)}
-              </span>
-              <span className="schedule__title">{item.title}</span>
-            </li>
-          ))}
+      <div className="calendar">
+        <p className="calendar__time">{formatNowTime(now)}</p>
+        <p className="calendar__date">{formatNowDate(now)}</p>
+
+        <ul className="calendar__events">
+          {Array.from({ length: EVENT_SLOTS }, (_, index) => {
+            const event = events[index];
+            if (!event) {
+              return <li key={`empty-${index}`} className="calendar__event calendar__event--empty" aria-hidden="true" />;
+            }
+            return (
+              <li key={event.id} className="calendar__event">
+                <span className="calendar__dot" data-kind={event.kind} aria-hidden="true" />
+                <span className="calendar__event-title">{event.title}</span>
+                <span className="calendar__event-time">{formatClock(event.start)}</span>
+              </li>
+            );
+          })}
         </ul>
-      ) : (
-        <Unavailable label={schedule.emptyMessage ?? "Nothing scheduled."} />
-      )}
+
+        <button
+          type="button"
+          className="calendar__view"
+          disabled
+          aria-disabled="true"
+          title="The full calendar opens on the macOS host"
+        >
+          View full schedule<span aria-hidden="true"> →</span>
+        </button>
+      </div>
     </Panel>
   );
 }

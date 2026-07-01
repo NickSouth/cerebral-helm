@@ -50,7 +50,7 @@ export function RightRail() {
         <ul className="agent-list">
           {agents.map((agent) => (
             <li key={agent.id} className="agent-list__item">
-              <span className="agent-avatar" aria-hidden="true">
+              <span className="agent-avatar" data-agent={agent.id} aria-hidden="true">
                 <AgentGlyph agentId={agent.id} />
               </span>
               <span className="agent-list__name">{agent.label}</span>

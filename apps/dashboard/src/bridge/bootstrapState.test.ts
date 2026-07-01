@@ -31,8 +31,9 @@ describe("expanded bootstrap state", () => {
 
     expect(regions.schedule.state).toBe("ready");
     expect(regions.news.headlines.length).toBeLessThanOrEqual(3);
-    // Battery is an honest unavailable capability pre-Mac.
-    expect(regions.systemHealth.battery.state).toBe("unavailable");
+    // Battery carries a mocked charge percentage (Executive default → 82%).
+    expect(regions.systemHealth.battery.state).toBe("ready");
+    expect(regions.systemHealth.battery.percent).toBe(82);
     expect(isRegisteredWidgetId(regions.widgets.left.widgetId)).toBe(true);
     expect(isRegisteredWidgetId(regions.widgets.right.widgetId)).toBe(true);
   });
