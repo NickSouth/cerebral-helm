@@ -1,9 +1,5 @@
 # PRE-UI Frontend — Plan (the roadmap)
 
-The rest of NIC-50, ordered foundation-first. Each increment is commit-sized, leaves the repo green, and **consumes the constitution** (`.agent/spec/UI-CONSTITUTION.md`) rather than re-deriving tokens/contracts/conventions. See [STATUS.md](STATUS.md) for what's built; [HANDOFF.md](HANDOFF.md) for how to execute.
-
-**Done:** Phases A–D (D1–D6); E1 (Heimlich WebGL field), E2 (agents), **E4 (degraded states)**. **Next: E3** (settings window) — skipped in the E1→E2→E4 run.
-
 ---
 
 ## Phase A — data-contract foundation ✅
@@ -32,15 +28,15 @@ The rest of NIC-50, ordered foundation-first. Each increment is commit-sized, le
 
 ## Phase E — richer surfaces
 
-- **E1** (NIC-60) — **NEXT.** Heimlich state presentation: the generative **WebGL ribbon/spark field** (OGL) behind a `{ state, palette, audioLevel }` interface; presets + interpolation; ≥30fps with offscreen pause; reduced-motion clamp; **polish the conversation overlay/scrim** D3 stubbed (and optionally migrate the conversation to bridge-driven state). See [HANDOFF.md](HANDOFF.md) § E1.
-- **E2** (NIC-61) — four expandable agent workspaces as a **right-column-width overlay** (covers the right column only); runtime status; honest-disabled inputs; access boundaries from agent config; no add-agent control.
+- **E1** (NIC-60) —✅ Heimlich state presentation: the generative **WebGL ribbon/spark field** (OGL) behind a `{ state, palette, audioLevel }` interface; presets + interpolation; ≥30fps with offscreen pause; reduced-motion clamp; **polish the conversation overlay/scrim** D3 stubbed (and optionally migrate the conversation to bridge-driven state). See [HANDOFF.md](HANDOFF.md) § E1.
+- **E2** (NIC-61) DELAYED — four expandable agent workspaces as a **right-column-width overlay** (covers the right column only); runtime status; honest-disabled inputs; access boundaries from agent config; no add-agent control.
 - **E3** (NIC-63) — floating settings window: all sections, implemented controls enabled, read-only contract inspection, unavailable future capabilities, edits via the same `updateSettings` validation path, shutdown action; doesn't replace the dashboard.
 - **E4** (NIC-64) ✅ — degraded states everywhere. A single posture seam (`useUiPosture` — `{ loading, offline, error, recovering, readOnly }`) derived from top-level `uiState` + a runtime-only `recovery` widening (folded from `system.status.changed`, D5 pattern). Top-level treatments: loading **skeleton**, offline/error/recovery **banner** with a specific non-mutating recovery action (full-width sibling of the canvas — never replaces the shell). **Read-only recovery suppresses every mutating control** (mode switch, quick actions, command submit, confirmation approve). Region matrix: new `EmptyState` + `StaleMarker` primitives, so `empty` (healthy zero-result) reads distinct from `unavailable` (disabled capability) and `stale` (amber) across News/Schedule/Widgets/Health. Canonical `system.dashboard.loading` + `failure.dashboard_error` fixtures added; `?state=offline|loading|error|recovery` previews each via HMR. Pure frontend — no contract/Swift change. **80 unit tests green** (+11), build green, node gates green.
 
 ## Phase F — hardening + assets
 
-- **F1** (NIC-65) — comprehensive cross-browser visual-regression + a11y matrix (every canonical mode + state × Chromium/WebKit × 3 viewports). Note: cross-platform/CI baselines are the open gap (current baselines are win32-only).
-- **F2** (NIC-118) — identity & asset kit: logo/wordmark, the four fixed agent icons (by id, mode-invariant), mode iconography, Heimlich per-mode tuning. Swap placeholders with no layout change. Do this **after** the shell + Heimlich field exist.
+- **F1** (NIC-65) ✅— comprehensive cross-browser visual-regression + a11y matrix (every canonical mode + state × Chromium/WebKit × 3 viewports). Note: cross-platform/CI baselines are the open gap (current baselines are win32-only).
+- **F2** (NIC-118) ✅— identity & asset kit: logo/wordmark, the four fixed agent icons (by id, mode-invariant), mode iconography, Heimlich per-mode tuning. Swap placeholders with no layout change. Do this **after** the shell + Heimlich field exist.
 
 ---
 
