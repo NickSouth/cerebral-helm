@@ -195,12 +195,60 @@
   color: var(--ch-text-muted);
 }
 
+/* Three groups: left identity/weather · centered mode · right metrics/controls. */
+.bottom-bar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-4);
+  min-width: 0;
+}
+
+.bottom-bar__group--left {
+  flex: 1;
+}
+
+.bottom-bar__group--center {
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
+.bottom-bar__group--right {
+  flex: 1;
+  justify-content: flex-end;
+}
+
 .bottom-bar__item {
   white-space: nowrap;
 }
 
-.bottom-bar__settings {
-  margin-left: auto;
+/* Mode accent (home dashboard only) — themed via data-mode, never inlined per mode. */
+.bottom-bar__mode {
+  color: var(--ch-accent-primary);
+  font-weight: var(--ch-font-weight-medium);
+}
+
+/* Distinct degraded metric treatments (state is carried by text + color, never color alone). */
+.bottom-bar__metric--stale {
+  color: var(--ch-status-warning);
+}
+
+.bottom-bar__metric--loading {
+  color: var(--ch-text-faint);
+}
+
+.bottom-bar__control {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-1) var(--ch-space-3);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-surface-panel);
+  color: var(--ch-text-muted);
+  cursor: pointer;
+}
+
+.bottom-bar__control:disabled {
+  cursor: not-allowed;
 }
 
 /* C1 Quick Apps — configured shortcuts with placeholder category glyphs. */
@@ -502,6 +550,7 @@
 .schedule__time,
 .quick-app__icon,
 .mode-switcher__option,
+.bottom-bar__mode,
 .global-search__input {
   transition:
     color var(--ch-motion-base) var(--ch-ease-standard),

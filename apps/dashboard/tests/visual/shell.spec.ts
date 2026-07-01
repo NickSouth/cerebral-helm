@@ -17,7 +17,11 @@ for (const viewport of VIEWPORTS) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Heimlich" })).toBeVisible();
-    await expect(page).toHaveScreenshot(`shell-${viewport.name}.png`, { fullPage: true });
+    // The bottom-bar clock is live wall-time; mask it so the deterministic baseline never flakes.
+    await expect(page).toHaveScreenshot(`shell-${viewport.name}.png`, {
+      fullPage: true,
+      mask: [page.locator(".bottom-bar__clock")]
+    });
   });
 }
 
@@ -26,7 +30,10 @@ test("dashboard shell is stable under reduced motion", async ({ page }) => {
   await page.setViewportSize({ width: 1512, height: 982 });
   await page.goto("/");
   await expect(page.getByRole("region", { name: "Heimlich" })).toBeVisible();
-  await expect(page).toHaveScreenshot("shell-reduced-motion.png", { fullPage: true });
+  await expect(page).toHaveScreenshot("shell-reduced-motion.png", {
+    fullPage: true,
+    mask: [page.locator(".bottom-bar__clock")]
+  });
 });
 
 test("dashboard shell has no critical or serious accessibility violations", async ({ page }) => {

@@ -6,6 +6,7 @@ import { ConversationProvider } from "../state/ConversationProvider";
 import { ThemeProvider } from "../app/ThemeProvider";
 import { createBridgeStore } from "../state/bridgeStore";
 import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
+import { capabilityBridgeEvent } from "../bridge/eventFixtures";
 import { getDashboardConfigBundle, getDashboardFixture } from "../fixtures/canonicalFixtures";
 
 /** Render the shell over a bridge-backed store. With no key, boots the default mode (Executive). */
@@ -104,7 +105,10 @@ describe("DashboardShell config-driven content (one view, four modes, no per-mod
 
   it("renders an honest battery-unavailable metric pre-Mac", () => {
     renderShell("mode.developer.ready");
-    expect(screen.getByTitle(/Battery — requires the macOS host/)).toHaveTextContent("Unavailable");
+    // Scoped to the left information rail's health panel — the bottom bar (D6) carries its own
+    // battery item with the same honest tooltip.
+    const information = screen.getByRole("complementary", { name: "Information" });
+    expect(within(information).getByTitle(/Battery — requires the macOS host/)).toHaveTextContent("Unavailable");
   });
 });
 
@@ -150,6 +154,51 @@ describe("DashboardShell command surfaces (D3 / NIC-58)", () => {
     expect(screen.getByRole("button", { name: /Ask Heimlich/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Capture a note/ })).toBeEnabled();
     expect(screen.getByRole("button", { name: /Open an app/ })).toBeDisabled();
+  });
+});
+
+describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
+  function statusBar() {
+    return within(screen.getByRole("contentinfo", { name: "Status bar" }));
+  }
+
+  it("shows Heimlich state, the mode, live metrics, and honest-unavailable weather/battery", () => {
+    const { container } = renderShell(); // Executive ready
+    const bar = statusBar();
+    expect(bar.getByText(/Heimlich · Idle/)).toBeInTheDocument();
+    expect(bar.getByText("Executive")).toBeInTheDocument();
+    expect(bar.getByText("CPU 18%")).toBeInTheDocument();
+    expect(bar.getByText("Wi-Fi · 120 Mbps")).toBeInTheDocument();
+    expect(bar.getByText("Weather · Unavailable")).toBeInTheDocument();
+    expect(bar.getByTitle(/Battery — requires the macOS host/)).toHaveTextContent("Unavailable");
+    // The clock is present but its value is masked in visual snapshots (determinism).
+    expect(container.querySelector(".bottom-bar__clock")).not.toBeNull();
+  });
+
+  it("tints the mode label with the active mode accent (home dashboard only)", () => {
+    const { container } = renderShell();
+    expect(container.querySelector(".bottom-bar__mode")).toHaveTextContent("Executive");
+  });
+
+  it("keeps Settings and Emergency honest-disabled until their surfaces land", () => {
+    renderShell();
+    const bar = statusBar();
+    expect(bar.getByRole("button", { name: "Settings" })).toBeDisabled();
+    expect(bar.getByRole("button", { name: "Emergency" })).toBeDisabled();
+  });
+
+  it("renders a distinct disconnected metric state when the dashboard is offline", () => {
+    renderShell("failure.dashboard_offline");
+    const bar = statusBar();
+    expect(bar.getByText(/Metrics · Disconnected/)).toBeInTheDocument();
+    expect(bar.getByText(/Network metrics unavailable while offline/)).toBeInTheDocument();
+  });
+
+  it("marks metrics stale when the metrics capability degrades", () => {
+    const { bridge } = renderShell();
+    act(() => bridge.emit(capabilityBridgeEvent));
+    const bar = statusBar();
+    expect(bar.getByText(/CPU 18% · stale/)).toBeInTheDocument();
   });
 });
 

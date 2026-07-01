@@ -1,4 +1,4 @@
-# PRE-UI Frontend — Handoff (how to pick up at D6)
+# PRE-UI Frontend — Handoff (how to pick up at E1)
 
 Read this to resume the dashboard work cold. Companion docs: [STATUS.md](STATUS.md) (what's built), [PLAN.md](PLAN.md) (the roadmap).
 
@@ -12,7 +12,7 @@ Read this to resume the dashboard work cold. Companion docs: [STATUS.md](STATUS.
 ## Working cadence (from CLAUDE.md)
 
 - **One commit-sized increment at a time.** Inspect → resolve uncertainty → implement the smallest complete vertical slice → tests + docs → verify → **stop and report**. Do not roll into the next increment without a prompt.
-- **Do not commit unless asked.** The owner reviews each increment, commits it, then prompts the next. (Through **D4 is committed**; **D5 is uncommitted** in the working tree.)
+- **Do not commit unless asked.** The owner reviews each increment, commits it, then prompts the next. (Through **D5 is committed**; **D6 is uncommitted** in the working tree.)
 - **Consume, never re-derive.** Tokens via `data-mode` + the token source; mode color never via a per-mode conditional. State via the `DashboardStore` seam (`useDashboardState`), dispatch via `useBridge`. New values go in the token source + the constitution, never inlined.
 - **Honest-unavailable** for anything not wired; never fake-successful.
 
@@ -64,7 +64,8 @@ node scripts/generate-contracts.mjs
 | Active-mode binding | `apps/dashboard/src/shell/useActiveMode.ts` |
 | Quick actions | `apps/dashboard/src/shell/QuickActions.tsx`; wiring `quickActionHandlers.ts` + `quickActions.manifest.json`; gate `validateQuickActionWiring` in `scripts/validate-config.mjs` (test `scripts/quick-action-wiring.test.mjs`) |
 | Confirmation surface | `apps/dashboard/src/shell/ConfirmationOverlay.tsx`; disclosure type + runtime `activeConfirmation` in `bridge/types.ts` / `state/dashboardState.ts`; reducer `confirmation.changed` in `state/bridgeStore.ts`; replay + clear in `bridge/mockCerebralBridge.ts`; fixture event `confirmationBridgeEvent` (`bridge/eventFixtures.ts`) |
-| Bottom bar (D6 target) | `apps/dashboard/src/shell/PersistentBottomBar.tsx`; metrics source `regions.systemHealth` (`bridge/types.ts`); region/metric states are `ready/empty/stale/unavailable` |
+| Bottom bar | `apps/dashboard/src/shell/PersistentBottomBar.tsx`; metrics source `regions.systemHealth`; live clock masked in `tests/visual/shell.spec.ts` (`.bottom-bar__clock`) |
+| Heimlich center (E1 target) | `apps/dashboard/src/shell/CenterStage.tsx` (ambient field placeholder + greeting); state `heimlich.state` (`bridge/types.ts` `HeimlichState`); overlay `ConversationOverlay.tsx` (scrim to polish); reduced-motion is zeroed in `app.css` + the tokens `@media` block |
 | Command surfaces | `apps/dashboard/src/shell/CommandSurface.tsx`, `commandSuggestions.ts`, `ConversationOverlay.tsx` |
 | Widgets / apps registries | `apps/dashboard/src/widgets/`, `apps/dashboard/src/appCatalog/` |
 | Config-reference gate | `scripts/validate-config.mjs` (+ `scripts/validate-contracts.mjs`) |
@@ -73,36 +74,37 @@ node scripts/generate-contracts.mjs
 
 ---
 
-## What D5 settled (so you don't re-derive it)
+## What D6 settled (so you don't re-derive it)
 
-- **Confirmations are event-driven runtime state, not bootstrap config** (owner decision). The disclosure arrives via the `confirmation.changed` event (its payload is open — `additionalProperties: true` — so no event-schema change), and the reducer folds it into a **runtime-only** `activeConfirmation` field. `DashboardState = DashboardBootstrapState & { activeConfirmation?: ConfirmationDisclosure | null }`. The bootstrap-state contract was **not** changed (no codegen/Swift). This is the template for any future runtime-only field.
-- **The disclosure type is hand-mirrored** in `bridge/types.ts` (`ConfirmationDisclosure` + nested types), the same convention as the bootstrap-state mirror — it is **not** imported from generated contracts. If the disclosure schema changes, update this mirror too.
-- **Neutral system blue is mandatory** (§9): the window uses the mode-invariant `--ch-confirm-accent` / `--ch-confirm-surface` tokens and **never** `--ch-accent-*`. Don't theme it per mode.
-- **Approve is never default-focused** — the contract constrains `choices.defaultFocusedChoice` to `review`/`cancel`, and that button gets initial focus. Keep this invariant.
-- **The bridge owns clearing.** The UI dispatches `decideConfirmation`; the *mock* emits a `confirmation.changed` with `confirmation: null` to clear (and the real bridge would also drive the lifecycle forward). The overlay never clears itself UI-locally. `replayConfirmation()` on the mock surfaces the canonical fixture for tests/demos.
+- **The bottom bar is built** (`PersistentBottomBar.tsx`): three flex groups (left identity/weather · centered mode · right metrics/controls). Metrics read `regions.systemHealth`; degraded states are distinct (`stale` → amber marker, `unavailable`/offline → "Disconnected", `loading` → "Sampling…"). Weather + battery are honest-unavailable; Settings + Emergency are honest-disabled buttons (their surfaces are NIC-63 / later).
+- **Mode accent on home only:** the centered mode label uses `--ch-accent-primary` (themed by `data-mode`) and is in the mode cross-fade transition set. There is no layout mode pre-Mac, so it always applies now — keep the "home only" caveat in mind when layout mode lands.
+- **The clock is live `new Date()`** but **masked** in the visual spec (`mask: [.bottom-bar__clock]`) so the deterministic baseline never flakes. `PersistentBottomBar` takes an optional `now` prop for testability. No live timer/interval — it renders the time at render time (ticking is a later polish if wanted).
+- **Visual tolerance gotcha:** the bottom-bar redesign came in **under the spec's `maxDiffPixelRatio: 0.02`** (full-page), so the baselines didn't actually change. Don't be surprised if a bottom-bar tweak shows no snapshot diff — per-region visual coverage is NIC-65/F1. Behavior is covered by unit tests instead.
 
-## D6 — persistent bottom bar
+## E1 — Heimlich state presentation (the generative field)
 
-**Ticket:** NIC-59. **Design authority:** `.agent/spec/CEREBRALHELM_DESIGN_SPEC.md` (§ bottom bar — note §8 "the bar changes accent with the active mode **on the home dashboard only**; confirmation surfaces do not inherit mode color") + `.agent/spec/UI-CONSTITUTION.md` §2.
+**Ticket:** NIC-60. **Design authority:** `.agent/spec/CEREBRALHELM_DESIGN_SPEC.md` §5.8 (Heimlich states + the per-state motion table around lines 219–234) + `.agent/spec/UI-CONSTITUTION.md` §2. This is the first **Phase E** increment.
 
-Today `PersistentBottomBar.tsx` is a reserved track with a single honest "Metrics — not implemented" placeholder. D6 builds the real bar: Heimlich state, mode (accent on home only), context, CPU/mem/network/time, settings, emergency — with **distinct loading/stale/unavailable/disconnected** metric states, and **weather + battery honest-unavailable pre-Mac**.
+Build the generative **WebGL ribbon/spark field** (OGL — already the approved lib per the bootstrap memory) behind a small `{ state, palette, audioLevel }` interface, with per-state presets + interpolation, **≥30fps with an offscreen/visibility pause**, and a **reduced-motion clamp**. Also **polish the conversation overlay/scrim** that D3 stubbed.
 
 ### What's already wired (consume, don't re-derive)
 
-- **Metric data** is in state at `regions.systemHealth` (`bridge/types.ts` `SystemHealthRegion`): `state` (`ready/empty/stale/unavailable`), `cpuPercent?`, `memoryPercent?`, `network` (`MetricChannel { state, label }`), and `battery` (`MetricChannel` — already `unavailable` pre-Mac, see the existing `mode.developer.ready` test for the "Battery — requires the macOS host" assertion).
-- **Capability degradation:** the reducer already flips `regions.systemHealth.state` to `stale` on a `bridge.capability.changed` (system.metrics unavailable) event (`bridgeStore.ts`). Render the `stale`/`unavailable` channel states distinctly — don't invent new state.
-- **Heimlich state** label via `heimlichStateLabel` (`shell/labels.ts`); **mode** from `useDashboardState().mode`.
-- **No `Date.now()` in render paths** that feed screenshots — the visual fixture is deterministic (fixed clocks). If you show a clock, drive it from state/props, not a live timer, or the Playwright baselines will flake.
+- **The center** is `CenterStage.tsx` — `section.heimlich` currently shows an eyebrow (`Heimlich · {state}`) + greeting as the ambient placeholder; the field renders *here, beneath* the conversation overlay (the center is never replaced — course-correction A.1).
+- **State** is `useDashboardState().heimlich.state` (`HeimlichState`: idle/listening/thinking/acting/awaiting_confirmation/success/error/offline). Map each to a preset; interpolate on change. State label text stays (state is carried by text, never motion/color alone — §5.8).
+- **Palette** is the active mode accent (`--ch-accent-*`, resolved by `data-mode`). The field should read the resolved accent, not hard-code per-mode colors.
+- **Reduced motion** is already zeroed for CSS transitions (`app.css` + the tokens `@media (prefers-reduced-motion)` block). The WebGL field must honor `prefers-reduced-motion` too — clamp to a still/near-still frame.
+- **Conversation overlay** (`ConversationOverlay.tsx`) composites over the field with a scrim; D3 left the scrim minimal. Polish it here.
 
 ### Decisions to settle FIRST
 
-- **Time/weather source.** There's no `time` or `weather` field in the bootstrap state today. Weather + battery are honest-unavailable pre-Mac (just render the unavailable channel). For the clock: decide whether time comes from state (preferred — keeps screenshots deterministic) or is explicitly excluded from the visual snapshot. Don't add a live `Date` timer that breaks visual determinism.
-- **Emergency control.** Confirm what "emergency" does pre-Mac — almost certainly an honest-disabled control (no capability to wire yet), consistent with the honest-unavailable rule.
+- **Visual determinism.** A live animating canvas will break the Playwright fullPage baselines. Decide the approach up front: mask the canvas (`mask: [...]`, like the clock), and/or freeze the field to a deterministic first frame under a test flag / `prefers-reduced-motion` (the visual spec already runs a reduced-motion case). Don't ship an unmasked animating canvas into the snapshot.
+- **OGL dependency.** Confirm OGL is added to `apps/dashboard` deps (it isn't yet) and that the bundle/build stays green. Keep the WebGL behind a small typed module so the field is swappable and unit-testable without a real GL context (jsdom has no WebGL — guard construction).
+- **Optional scope:** migrating the conversation from client-only `ConversationProvider` state to bridge-driven state is listed as optional — confirm with the owner before doing it (it's a separable change).
 
-### Verify D6
+### Verify E1
 
-- Node: `validate-config` + `validate-contracts` + `check-contract-drift` (no schema change expected).
-- Dashboard: `test --run` + `build`; unit tests for the distinct metric states (ready vs stale vs unavailable) and mode-accent-on-home-only.
-- Visual: **re-baseline and verify** — the bottom bar changes appearance, so the idle-shell screenshots WILL change. Keep the §2 checklist.
+- Dashboard: `test --run` + `build`; unit tests for state→preset mapping and the reduced-motion clamp (mock/guard the GL context). Don't assert pixels in unit tests.
+- Visual: re-baseline + verify with the canvas masked or frozen; keep the §2 checklist and the reduced-motion case.
+- Node/Swift: only if you touch a contract (you shouldn't).
 
-After D6, Phase D is complete; next is **Phase E (E1 NIC-60 Heimlich WebGL field, …)** — see [PLAN.md](PLAN.md).
+After E1: **E2 (NIC-61 agent workspaces)** — see [PLAN.md](PLAN.md).

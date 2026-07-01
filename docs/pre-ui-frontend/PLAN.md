@@ -2,7 +2,7 @@
 
 The rest of NIC-50, ordered foundation-first. Each increment is commit-sized, leaves the repo green, and **consumes the constitution** (`.agent/spec/UI-CONSTITUTION.md`) rather than re-deriving tokens/contracts/conventions. See [STATUS.md](STATUS.md) for what's built; [HANDOFF.md](HANDOFF.md) for how to execute.
 
-**Done:** Phases A–C, plus D1, D2, D3, D4, D5. **Next: D6.**
+**Done:** Phases A–D (D1–D6). **Next: E1.**
 
 ---
 
@@ -28,11 +28,11 @@ The rest of NIC-50, ordered foundation-first. Each increment is commit-sized, le
 - **D3** (NIC-58) ✅ (uncommitted) — two command loci (launcher + docked), capability-aware suggestions, conversation overlay; no floating modal.
 - **D4** (NIC-117 b / ex-NIC-113) ✅ — wired the trivial `capture-note` quick action → `bridge.captureNote` (honest acknowledgement); added the **quickActions→workflow resolution gate** (`validateQuickActionWiring`) + wired-action manifest (loose: unknown ids = placeholders). Other actions stay greyed/disabled.
 - **D5** (NIC-62) ✅ — universal confirmation surface: neutral system-blue review window, full disclosure, approve-not-default-focus, Escape-cancels, expiry/invalidation; submits via `decideConfirmation`. **Event-driven** (no bootstrap-state schema change) — disclosure arrives on `confirmation.changed`, folded into a runtime-only `activeConfirmation`.
-- **D6** (NIC-59) — **NEXT.** Persistent bottom bar: Heimlich state, mode (accent on home only), context, CPU/mem/network/time, settings, emergency; distinct loading/stale/unavailable/disconnected metric states; weather + battery honest-unavailable pre-Mac. See [HANDOFF.md](HANDOFF.md) § D6.
+- **D6** (NIC-59) ✅ — persistent bottom bar: Heimlich state, mode (accent on home only), CPU/mem/network/time, settings, emergency; distinct ready/stale/disconnected metric states; weather + battery honest-unavailable, Settings/Emergency honest-disabled. Live clock masked for visual determinism.
 
 ## Phase E — richer surfaces
 
-- **E1** (NIC-60) — Heimlich state presentation: the generative **WebGL ribbon/spark field** (OGL) behind a `{ state, palette, audioLevel }` interface; presets + interpolation; ≥30fps with offscreen pause; reduced-motion clamp; **polish the conversation overlay/scrim** D3 stubbed (and optionally migrate the conversation to bridge-driven state).
+- **E1** (NIC-60) — **NEXT.** Heimlich state presentation: the generative **WebGL ribbon/spark field** (OGL) behind a `{ state, palette, audioLevel }` interface; presets + interpolation; ≥30fps with offscreen pause; reduced-motion clamp; **polish the conversation overlay/scrim** D3 stubbed (and optionally migrate the conversation to bridge-driven state). See [HANDOFF.md](HANDOFF.md) § E1.
 - **E2** (NIC-61) — four expandable agent workspaces as a **right-column-width overlay** (covers the right column only); runtime status; honest-disabled inputs; access boundaries from agent config; no add-agent control.
 - **E3** (NIC-63) — floating settings window: all sections, implemented controls enabled, read-only contract inspection, unavailable future capabilities, edits via the same `updateSettings` validation path, shutdown action; doesn't replace the dashboard.
 - **E4** (NIC-64) — degraded states everywhere: loading/empty/offline/unavailable/error/recovery from the canonical failure fixtures; no blank screens; read-only recovery exposes no mutating controls.
