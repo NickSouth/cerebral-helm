@@ -19,6 +19,12 @@
   --ch-mode-entertainment-primary: #34d38a;
   --ch-mode-entertainment-secondary: #5fd2e8;
 
+  /* --- Heimlich stream palette (owner decision): SEPARATE from the theme accent so the
+     consciousness stream can differ from each page's colors. Executive is owner-tuned; the other
+     modes currently follow their accent (tune later via the same picker). --- */
+  --ch-heimlich-executive-primary: #e3a531;
+  --ch-heimlich-executive-secondary: #2e93c9;
+
   /* --- Base surfaces (mode-independent) --- */
   --ch-bg-base: #05080f;
   --ch-bg-gradient-top: #0a1422;
@@ -56,6 +62,8 @@
   --ch-accent-primary: var(--ch-mode-executive-primary);
   --ch-accent-secondary: var(--ch-mode-executive-secondary);
   --ch-glow-soft: color-mix(in srgb, var(--ch-accent-primary) 45%, var(--ch-accent-secondary));
+  --ch-heimlich-primary: var(--ch-heimlich-executive-primary);
+  --ch-heimlich-secondary: var(--ch-heimlich-executive-secondary);
 
   /* --- Spacing (4px base at the reference root; rem so it scales with the viewport-height-driven
      root font-size — the whole layout scales as one unit, §fluid invariant) --- */
@@ -116,21 +124,29 @@
 [data-mode="executive"] {
   --ch-accent-primary: var(--ch-mode-executive-primary);
   --ch-accent-secondary: var(--ch-mode-executive-secondary);
+  --ch-heimlich-primary: var(--ch-heimlich-executive-primary);
+  --ch-heimlich-secondary: var(--ch-heimlich-executive-secondary);
 }
 
 [data-mode="developer"] {
   --ch-accent-primary: var(--ch-mode-developer-primary);
   --ch-accent-secondary: var(--ch-mode-developer-secondary);
+  --ch-heimlich-primary: var(--ch-mode-developer-primary);
+  --ch-heimlich-secondary: var(--ch-mode-developer-secondary);
 }
 
 [data-mode="school"] {
   --ch-accent-primary: var(--ch-mode-school-primary);
   --ch-accent-secondary: var(--ch-mode-school-secondary);
+  --ch-heimlich-primary: var(--ch-mode-school-primary);
+  --ch-heimlich-secondary: var(--ch-mode-school-secondary);
 }
 
 [data-mode="entertainment"] {
   --ch-accent-primary: var(--ch-mode-entertainment-primary);
   --ch-accent-secondary: var(--ch-mode-entertainment-secondary);
+  --ch-heimlich-primary: var(--ch-mode-entertainment-primary);
+  --ch-heimlich-secondary: var(--ch-mode-entertainment-secondary);
 }
 
 /* --- Reduced motion: collapse durations; state is carried by text + color --- */

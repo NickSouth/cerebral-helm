@@ -64,7 +64,13 @@ export interface ModeView {
   /** Exactly 8 ordered slots; null = an unconfigured slot (honest disabled placeholder). */
   readonly quickActions: readonly (string | null)[];
   readonly widgets: { readonly left: string; readonly right: string };
-  readonly greeting?: { readonly persona: string; readonly directive?: string; readonly fallback: string };
+  readonly greeting?: {
+    readonly persona: string;
+    readonly directive?: string;
+    readonly fallback: string;
+    /** User-facing tagline shown under the greeting (design reference §5.7). */
+    readonly subtitle?: string;
+  };
   readonly calendarProfile?: string;
   readonly newsProfile?: string;
 }

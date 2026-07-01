@@ -282,12 +282,16 @@
   z-index: 0;
   border-radius: inherit;
   overflow: hidden;
+  /* Sit the consciousness stream higher in the panel so the greeting reads below it (design ref). */
+  transform: translateY(-12%);
 }
 
-.heimlich__ribbon-embed,
+.heimlich__ribbon-canvas,
 .heimlich__ribbon-fallback {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* Static gradient shown until the embed is ready, or if it has no scene yet / fails to load.
@@ -303,6 +307,7 @@
    group (greeting + quick actions) sits at the bottom — `.heimlich` uses space-between so the
    two ends pin apart with the ribbon breathing in between (visual reference). */
 .heimlich__state,
+.heimlich__greeting-block,
 .heimlich__foot {
   position: relative;
   z-index: 1;
@@ -859,11 +864,29 @@
 /* Mode-aware Heimlich greeting — the calm center text. */
 /* The greeting sits directly above the quick actions (in the foot group) and takes the mode
    accent (visual reference). */
+/* Catchphrase + tagline, centered as a block below the stream (design reference §5.7). */
+.heimlich__greeting-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ch-space-2);
+  text-align: center;
+}
+
 .heimlich__greeting {
   margin: 0;
   font-size: var(--ch-font-size-display);
   font-weight: var(--ch-font-weight-light);
   color: var(--ch-accent-primary);
+  text-align: center;
+}
+
+/* Smaller tagline under the catchphrase. */
+.heimlich__subgreeting {
+  margin: 0;
+  font-size: var(--ch-font-size-base);
+  font-weight: var(--ch-font-weight-light);
+  color: var(--ch-text-muted);
   text-align: center;
 }
 

@@ -1,8 +1,7 @@
 import { QuickApps } from "./QuickApps";
 import { QuickActions } from "./QuickActions";
 import { ConversationOverlay } from "./ConversationOverlay";
-import { HeimlichRibbonEmbed } from "./HeimlichRibbonEmbed";
-import { toRibbonState } from "./heimlichRibbon";
+import { HeimlichConsciousness } from "./HeimlichConsciousness";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useConversation } from "../state/ConversationProvider";
 import { useActiveMode } from "./useActiveMode";
@@ -25,10 +24,15 @@ export function CenterStage() {
       <QuickApps />
 
       <section className="heimlich" aria-label="Heimlich">
-        <HeimlichRibbonEmbed state={toRibbonState(heimlich.state)} />
+        <HeimlichConsciousness />
         <p className="heimlich__state">Heimlich</p>
         <div className="heimlich__foot">
-          {greeting ? <p className="heimlich__greeting">{greeting.fallback}</p> : null}
+          {greeting ? (
+            <div className="heimlich__greeting-block">
+              <p className="heimlich__greeting">{greeting.fallback}</p>
+              {greeting.subtitle ? <p className="heimlich__subgreeting">{greeting.subtitle}</p> : null}
+            </div>
+          ) : null}
           <QuickActions />
         </div>
         {conversation.open ? <ConversationOverlay /> : null}

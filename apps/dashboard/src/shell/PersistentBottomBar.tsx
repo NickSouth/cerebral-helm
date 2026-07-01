@@ -113,12 +113,12 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
       </div>
 
       <div className="bottom-bar__group bottom-bar__group--right">
-        <span className="bottom-bar__item bottom-bar__wifi" title="Wi-Fi connected" aria-label="Wi-Fi connected">
+        <span className="bottom-bar__item bottom-bar__wifi" role="img" title="Wi-Fi connected" aria-label="Wi-Fi connected">
           <HealthGlyph name="network" />
         </span>
 
         {batteryLive ? (
-          <span className="bottom-bar__item bottom-bar__battery" title={battery.label} aria-label={`Battery ${battery.percent}%`}>
+          <span className="bottom-bar__item bottom-bar__battery" role="img" title={battery.label} aria-label={`Battery ${battery.percent}%`}>
             <BatteryGlyph percent={battery.percent as number} />
           </span>
         ) : (

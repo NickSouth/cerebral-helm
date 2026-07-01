@@ -21,7 +21,8 @@
       "greeting": {
         "persona": "Friendly Assistant",
         "directive": "Greet by time of day and surface today's priorities.",
-        "fallback": "Good day."
+        "fallback": "Good day.",
+        "subtitle": "Here to help you lead, decide, and deliver."
       },
       "calendarProfile": "all",
       "newsProfile": "broad"
@@ -45,7 +46,8 @@
       "greeting": {
         "persona": "Development copilot",
         "directive": "Greet and point to the active project's next task.",
-        "fallback": "Ready to build."
+        "fallback": "Ready to build.",
+        "subtitle": "Let's ship something great today."
       },
       "calendarProfile": "engineering",
       "newsProfile": "engineering"
@@ -69,7 +71,8 @@
       "greeting": {
         "persona": "Academic partner",
         "directive": "Greet and nudge toward the next deadline.",
-        "fallback": "Time to study."
+        "fallback": "Time to study.",
+        "subtitle": "Let's learn, plan, and get ahead."
       },
       "calendarProfile": "academic",
       "newsProfile": "academic"
@@ -93,7 +96,8 @@
       "greeting": {
         "persona": "Downtime concierge",
         "directive": "Greet and suggest something to unwind with.",
-        "fallback": "Time to unwind."
+        "fallback": "Time to unwind.",
+        "subtitle": "Let's find something worth your time."
       },
       "calendarProfile": "leisure",
       "newsProfile": "interest"

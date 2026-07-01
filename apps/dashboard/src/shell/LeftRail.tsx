@@ -12,8 +12,10 @@ import { useDashboardState } from "../state/DashboardStateProvider";
 export function LeftRail() {
   const { regions } = useDashboardState();
 
+  // tabIndex makes the scrollable rail keyboard-reachable (it has no focusable children of its own,
+  // unlike the operations rail); the rail only scrolls as a fallback on very short screens.
   return (
-    <aside className="shell-rail shell-left" aria-label="Information">
+    <aside className="shell-rail shell-left" aria-label="Information" tabIndex={0}>
       <SchedulePanel />
       <SystemHealthPanel />
       <WidgetSlot data={regions.widgets.left} labelId="region-widget-left" />
