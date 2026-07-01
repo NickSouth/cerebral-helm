@@ -35,6 +35,44 @@ body {
   transition: background-color var(--ch-motion-slow) var(--ch-ease-standard);
 }
 
+/* Mode wave (shell/modeWave.ts): a clicked mode switch runs as a view transition — the old
+   render is held while the new one is revealed by a circle expanding from the clicked control
+   (a scripted clip-path on the new snapshot). The browser's default snapshot cross-fade is
+   disabled: the reveal IS the transition. Reduced motion never gets here (modeWave falls back
+   to a plain commit, which keeps the token cross-fade). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* While the wave runs, revealed pixels must already wear the final palette — suspend the
+   per-property mode cross-fades (shell.css) so the wavefront itself carries the change. */
+html.mode-wave .app-root,
+html.mode-wave .app-root *,
+html.mode-wave .app-root *::before,
+html.mode-wave .app-root *::after {
+  transition-duration: 0ms !important;
+}
+
+/* The wave's glowing leading edge, positioned/animated by modeWave.ts. It lives under
+   `.app-root` (inside the revealed snapshot), so it inherits the TARGET mode's accent and its
+   own radius tracks the reveal edge. Decorative only. */
+.mode-wave-ring {
+  position: fixed;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+  /* A true circle at any radius — the pill token caps at 999px, wave radii exceed it. */
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--ch-accent-primary) 85%, transparent);
+  box-shadow:
+    0 0 28px 6px color-mix(in srgb, var(--ch-accent-primary) 40%, transparent),
+    inset 0 0 42px color-mix(in srgb, var(--ch-accent-primary) 30%, transparent);
+  pointer-events: none;
+  z-index: 1400;
+}
+
 .tokens-page {
   box-sizing: border-box;
   min-height: 100vh;

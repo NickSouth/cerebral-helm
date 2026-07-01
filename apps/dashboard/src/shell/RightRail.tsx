@@ -7,6 +7,7 @@ import { useDashboardState } from "../state/DashboardStateProvider";
 import { useBridge } from "../state/BridgeProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { agentActivityLabel } from "./labels";
+import { armModeWave } from "./modeWave";
 
 /**
  * The right operational rail (constitution §6 / design spec §5.9–§5.11): R1 Mode Switcher
@@ -35,8 +36,12 @@ export function RightRail() {
                 disabled={readOnly}
                 aria-disabled={readOnly || undefined}
                 title={readOnly ? "Mode switching is paused while the dashboard is read-only" : undefined}
-                onClick={() => {
+                onClick={(event) => {
                   if (!active && !readOnly) {
+                    // Arm the mode wave from this control's center: the theme change propagates
+                    // outward from where the user clicked (shell/modeWave.ts).
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    armModeWave(rect.left + rect.width / 2, rect.top + rect.height / 2);
                     void bridge.applyMode({ modeId: modeView.id });
                   }
                 }}

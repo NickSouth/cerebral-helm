@@ -4,6 +4,7 @@ import { heimlichStateLabel } from "./labels";
 import { BatteryGlyph } from "./BatteryGlyph";
 import { WeatherGlyph } from "./WeatherGlyph";
 import { HealthGlyph } from "./HealthGlyph";
+import { HeimlichAvatar } from "./HeimlichAvatar";
 
 /** Format the wall clock for display. Masked in visual snapshots (see shell.spec.ts) so the
  *  live value never makes the deterministic baseline flake. */
@@ -22,17 +23,6 @@ function SettingsGlyph() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
-/** Circular Heimlich identity mark — a helm/ship's-wheel placeholder (NIC-118 supplies the final logo). */
-function HeimlichMark() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="12" r="9" />
-      <circle cx="12" cy="12" r="2.6" />
-      <path d="M12 3v3.6M12 17.4V21M3 12h3.6M17.4 12H21M5.64 5.64l2.55 2.55M15.81 15.81l2.55 2.55M18.36 5.64l-2.55 2.55M8.19 15.81l-2.55 2.55" />
     </svg>
   );
 }
@@ -81,7 +71,7 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
       <div className="bottom-bar__group bottom-bar__group--left">
         <span className="bottom-bar__identity">
           <span className="bottom-bar__avatar" aria-hidden="true">
-            <HeimlichMark />
+            <HeimlichAvatar />
           </span>
           <span className="bottom-bar__identity-text">
             <span className="bottom-bar__name">Heimlich</span>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type AnimationEvent, type KeyboardEvent } from "react";
 import { useSettings } from "../../state/SettingsProvider";
 import { SETTINGS_CATEGORIES } from "./categories";
 import { SETTINGS_PANELS } from "./SettingsPanels";
@@ -21,7 +21,10 @@ function PowerGlyph() {
  * the close control. Shutdown is pinned bottom-left, honest-disabled pre-Mac (a macOS lifecycle
  * capability). Every panel control is editable / read-only-inspection / unavailable — never fake.
  */
-function SettingsWindow() {
+/** Safety net for the exit phase: force the unmount if `animationend` never arrives. */
+const EXIT_FALLBACK_MS = 400;
+
+function SettingsWindow({ closing, onExited }: { closing: boolean; onExited: () => void }) {
   const { activeCategory, setCategory, closeSettings } = useSettings();
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -30,10 +33,31 @@ function SettingsWindow() {
     dialogRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    if (!closing) {
+      return;
+    }
+    const dialog = dialogRef.current;
+    // No Web Animations (jsdom) — unmount synchronously; close stays instant there.
+    if (!dialog || typeof dialog.getAnimations !== "function") {
+      onExited();
+      return;
+    }
+    const fallback = window.setTimeout(onExited, EXIT_FALLBACK_MS);
+    return () => window.clearTimeout(fallback);
+  }, [closing, onExited]);
+
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
       closeSettings();
+    }
+  }
+
+  function onAnimationEnd(event: AnimationEvent<HTMLDivElement>) {
+    // Only the window's own exit animation unmounts — never a child's or the entrance's.
+    if (closing && event.target === event.currentTarget && event.animationName === "ch-settings-out") {
+      onExited();
     }
   }
 
@@ -42,15 +66,17 @@ function SettingsWindow() {
 
   return (
     <>
-      <div className="settings-scrim" onClick={closeSettings} />
+      <div className="settings-scrim" data-closing={closing || undefined} onClick={closeSettings} />
       <div
         className="settings-window"
+        data-closing={closing || undefined}
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
         tabIndex={-1}
         ref={dialogRef}
         onKeyDown={onKeyDown}
+        onAnimationEnd={onAnimationEnd}
       >
         <nav className="settings-sidebar" aria-label="Settings categories">
           <div className="settings-sidebar__list" role="tablist" aria-orientation="vertical">
@@ -105,10 +131,26 @@ function SettingsWindow() {
   );
 }
 
-/** Overlay host slot: renders the settings window only while it is open (view state). */
+/**
+ * Overlay host slot: renders the settings window while it is open (view state), and keeps it
+ * mounted through the exit animation — the window slides back into the bottom-right corner it
+ * emerged from (settings.css) before unmounting. Environments without Web Animations unmount
+ * immediately (SettingsWindow's exit effect), so close stays synchronous in tests.
+ */
 export function SettingsOverlay() {
   const { open } = useSettings();
-  return open ? <SettingsWindow /> : null;
+  const [present, setPresent] = useState(open);
+
+  if (open && !present) {
+    // Render-phase sync so the window appears the same frame the gear is clicked.
+    setPresent(true);
+  }
+
+  if (!open && !present) {
+    return null;
+  }
+
+  return <SettingsWindow closing={!open} onExited={() => setPresent(false)} />;
 }
 
 export default SettingsOverlay;

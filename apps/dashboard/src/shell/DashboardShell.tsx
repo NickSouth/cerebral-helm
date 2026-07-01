@@ -6,6 +6,7 @@ import { ConfirmationOverlay } from "./ConfirmationOverlay";
 import { SettingsOverlay } from "./settings/SettingsOverlay";
 import { CommandSurface } from "./CommandSurface";
 import { SystemStatusBanner } from "./SystemStatusBanner";
+import { BrandMark, BrandWordmark } from "./BrandMark";
 import { DashboardSkeleton } from "./DashboardSkeleton";
 import { useConversation } from "../state/ConversationProvider";
 import { useUiPosture } from "../state/useUiPosture";
@@ -50,6 +51,12 @@ export function DashboardShell() {
               onSubmit={conversation.submit}
               disabled={posture.readOnly}
             />
+          </div>
+          {/* Product brand pinned to the top-right corner of the header row: wordmark, then the
+              helm mark in the corner itself. Re-tints with the mode via the accent tokens. */}
+          <div className="shell-brand" role="img" aria-label="CerebralHelm">
+            <BrandWordmark />
+            <BrandMark />
           </div>
           <LeftRail />
           <CenterStage />

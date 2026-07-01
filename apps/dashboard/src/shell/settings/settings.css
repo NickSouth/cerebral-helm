@@ -8,6 +8,65 @@
   z-index: 890;
   background: rgba(3, 6, 12, 0.55);
   backdrop-filter: blur(2px);
+  animation: ch-settings-scrim-in var(--ch-motion-base) var(--ch-ease-standard) both;
+}
+
+.settings-scrim[data-closing="true"] {
+  animation: ch-settings-scrim-out var(--ch-motion-base) var(--ch-ease-standard) both;
+}
+
+.settings-window[data-closing="true"] {
+  animation: ch-settings-out var(--ch-motion-base) var(--ch-ease-standard) both;
+}
+
+@keyframes ch-settings-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(44vw, 42vh) scale(0.04);
+    filter: blur(12px);
+  }
+  55% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+    filter: blur(0);
+  }
+}
+
+@keyframes ch-settings-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+    filter: blur(0);
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(44vw, 42vh) scale(0.04);
+    filter: blur(12px);
+  }
+}
+
+@keyframes ch-settings-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ch-settings-scrim-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }
 
 .settings-window {
@@ -25,6 +84,12 @@
   background: var(--ch-surface-raised);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
   overflow: hidden;
+  /* Open motion: the window emerges from the bottom-right corner — where the bottom bar's
+     settings control lives — sliding up the diagonal while it expands and sharpens from a
+     blur. Closing reverses back into the corner, faster (motion-base); SettingsOverlay
+     unmounts on `ch-settings-out`'s animationend. Reduced motion collapses both via the
+     app.css safety net, so open/close become instant. */
+  animation: ch-settings-in var(--ch-motion-slow) var(--ch-ease-standard) both;
 }
 
 .settings-window:focus {

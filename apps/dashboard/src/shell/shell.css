@@ -96,10 +96,11 @@
      §4.1 — "side columns use stable min/max widths", center is the largest flexible width). */
   grid-template-columns: minmax(190px, 250px) minmax(0, 1fr) minmax(190px, 250px);
   /* The global search sits in its own header row over the center only; the rails begin at the
-     Quick Apps line below it and run down to the bottom (visual reference, Plate 01). */
+     Quick Apps line below it and run down to the bottom (visual reference, Plate 01). The
+     product brand takes the header row's right cell (top-right corner). */
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
-    ".    search ."
+    ".    search brand"
     "left center right";
   gap: var(--ch-space-3);
 }
@@ -107,6 +108,59 @@
 .shell-search {
   grid-area: search;
   min-width: 0;
+}
+
+/* Top-right product brand: the CerebralHelm wordmark with the helm mark in the corner itself.
+   Both re-tint with the active mode through the brand-* classes below (accent tokens only). */
+.shell-brand {
+  grid-area: brand;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ch-space-3);
+  min-width: 0;
+}
+
+/* Sized in rem so the brand scales with the viewport-height root font-size as one unit with the
+   rest of the shell. The wordmark yields (shrinks) before the mark if the rail column runs tight. */
+.brand-mark {
+  height: 2.6rem;
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.brand-wordmark {
+  width: 9.5rem;
+  max-width: calc(100% - 3.4rem);
+  height: auto;
+  flex: 0 1 auto;
+}
+
+/* Brand color enters only here, via the data-mode-resolved accents (constitution §2). */
+.brand-mark__frame {
+  stroke: var(--ch-accent-secondary);
+}
+
+.brand-mark__accent {
+  fill: var(--ch-accent-primary);
+}
+
+/* Dark ground behind the brain so it reads over the spokes, matching the page's top gradient. */
+.brand-mark__hub {
+  fill: var(--ch-bg-gradient-top);
+  stroke: var(--ch-accent-secondary);
+}
+
+.brand-mark__brain {
+  stroke: var(--ch-accent-primary);
+}
+
+.brand-wordmark__primary {
+  fill: var(--ch-accent-primary);
+}
+
+.brand-wordmark__secondary {
+  fill: var(--ch-accent-secondary);
 }
 
 .shell-rail {
@@ -631,8 +685,8 @@
 }
 
 .bottom-bar__control--icon svg {
-  width: 1.375rem;
-  height: 1.375rem;
+  width: 1.55rem;
+  height: 1.55rem;
 }
 
 /* Weather (accent icon + temperature), Wi-Fi (accent-secondary icon), battery (tinted fill icon). */
@@ -646,8 +700,8 @@
 
 /* Natural, condition-driven color (not the mode accent). Filled glyphs, a touch larger. */
 .weather-glyph {
-  width: 1.375rem;
-  height: 1.375rem;
+  width: 1.55rem;
+  height: 1.55rem;
   color: var(--ch-weather-cloud);
 }
 
@@ -681,14 +735,14 @@
 }
 
 .bottom-bar__wifi .health-glyph {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.4rem;
+  height: 1.4rem;
 }
 
 /* Battery: a good amount bigger; the whole icon (outline + fill) is tinted by the charge
    threshold (green > 60, yellow ≥ 20, red < 20). */
 .battery-glyph {
-  width: 1.9rem;
+  width: 2.1rem;
   height: auto;
 }
 
@@ -723,7 +777,7 @@
 .bottom-bar__divider {
   flex: 0 0 auto;
   width: 1px;
-  height: 1.6rem;
+  height: 1.8rem;
   background: var(--ch-panel-border);
 }
 
@@ -736,12 +790,29 @@
 
 .bottom-bar__avatar {
   display: inline-flex;
-  color: var(--ch-accent-primary);
 }
 
 .bottom-bar__avatar svg {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+/* Heimlich's portrait follows the mode-repointed Heimlich stream palette (NOT the page accent):
+   organic structure takes the primary, cyborg hardware the secondary (constitution §2). */
+.heimlich-avatar__line {
+  stroke: var(--ch-heimlich-primary);
+}
+
+.heimlich-avatar__fill {
+  fill: var(--ch-heimlich-primary);
+}
+
+.heimlich-avatar__cyber-line {
+  stroke: var(--ch-heimlich-secondary);
+}
+
+.heimlich-avatar__cyber-fill {
+  fill: var(--ch-heimlich-secondary);
 }
 
 .bottom-bar__wave {
@@ -750,8 +821,8 @@
 }
 
 .bottom-bar__wave svg {
-  width: 1.6rem;
-  height: 1.6rem;
+  width: 1.8rem;
+  height: 1.8rem;
 }
 
 .bottom-bar__identity-text {
@@ -1327,6 +1398,23 @@
     box-shadow var(--ch-motion-base) var(--ch-ease-standard);
 }
 
+/* The brand and the Heimlich portrait recolor via SVG fill/stroke, so they join the same mode
+   cross-fade with those properties (the wave path suspends this like everything else). */
+.brand-mark__frame,
+.brand-mark__accent,
+.brand-mark__hub,
+.brand-mark__brain,
+.brand-wordmark__primary,
+.brand-wordmark__secondary,
+.heimlich-avatar__line,
+.heimlich-avatar__fill,
+.heimlich-avatar__cyber-line,
+.heimlich-avatar__cyber-fill {
+  transition:
+    fill var(--ch-motion-base) var(--ch-ease-standard),
+    stroke var(--ch-motion-base) var(--ch-ease-standard);
+}
+
 /* Responsive (constitution §8): compact stacks the rails (center first), preserving the
    center, mode, and bottom bar with no horizontal page scroll; external caps the width. */
 @media (max-width: 1439px) {
@@ -1341,6 +1429,12 @@
     /* Stacked content can exceed the height at narrow widths — scroll the canvas (the bottom bar,
        a sibling below, stays pinned). */
     overflow-y: auto;
+  }
+
+  /* Compact keeps the essentials; the corner brand (decorative chrome with no grid cell in the
+     stacked layout) steps aside rather than taking a row from content. */
+  .shell-brand {
+    display: none;
   }
 }
 

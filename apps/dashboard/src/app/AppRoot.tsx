@@ -11,9 +11,14 @@ import { SettingsProvider } from "../state/SettingsProvider";
 import { AppearanceProvider } from "../state/AppearanceProvider";
 import { ThemeProvider } from "./ThemeProvider";
 import { createDashboardRuntime, readStateNameFromLocation } from "../state/bootstrapStore";
+import { withModeWave } from "../shell/modeWave";
 
 // `?state=offline|loading|error|recovery` seeds a degraded state for preview/screenshots (NIC-64).
-const { bridge, store } = createDashboardRuntime({ stateName: readStateNameFromLocation() });
+const runtime = createDashboardRuntime({ stateName: readStateNameFromLocation() });
+const bridge = runtime.bridge;
+// Mode switches commit inside the wave's view transition (shell/modeWave.ts); everything else
+// notifies straight through. Composed here — the app layer — so state/bridge stay DOM-free.
+const store = withModeWave(runtime.store);
 
 /**
  * The application container: owns the bridge + state store (the read/write seam), the Heimlich

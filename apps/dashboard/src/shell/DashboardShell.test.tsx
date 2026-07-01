@@ -95,6 +95,16 @@ describe("DashboardShell structure", () => {
     renderShell();
     expect(screen.getByLabelText("Ask Heimlich or type a command")).toBeEnabled();
   });
+
+  it("shows the CerebralHelm brand (wordmark + helm mark) in the header row", () => {
+    const { container } = renderShell();
+    const brand = screen.getByRole("img", { name: "CerebralHelm" });
+    expect(brand).toBeInTheDocument();
+    expect(brand.querySelector(".brand-wordmark")).not.toBeNull();
+    expect(brand.querySelector(".brand-mark")).not.toBeNull();
+    // Heimlich's portrait replaced the placeholder wheel in the bottom bar's avatar slot.
+    expect(container.querySelector(".bottom-bar__avatar .heimlich-avatar")).not.toBeNull();
+  });
 });
 
 describe("DashboardShell config-driven content (one view, four modes, no per-mode conditional)", () => {
