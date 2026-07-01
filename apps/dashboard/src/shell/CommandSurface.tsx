@@ -35,17 +35,23 @@ export function CommandSurface({
   variant,
   placeholder,
   ariaLabel,
-  onSubmit
+  onSubmit,
+  disabled = false
 }: {
   variant: "launcher" | "docked";
   placeholder: string;
   ariaLabel: string;
   onSubmit: (text: string) => void;
+  /** Suppress the command locus while the surface is read-only (offline/recovery — NIC-64). */
+  disabled?: boolean;
 }) {
   const [value, setValue] = useState("");
   const [focused, setFocused] = useState(false);
 
   function submit(text: string): void {
+    if (disabled) {
+      return;
+    }
     const trimmed = text.trim();
     if (!trimmed) {
       return;
@@ -65,13 +71,13 @@ export function CommandSurface({
   }
 
   // Only the global launcher surfaces the suggestion list; the docked input continues the
-  // current exchange directly.
-  const showSuggestions = focused && variant === "launcher";
+  // current exchange directly. A read-only surface never shows actionable suggestions.
+  const showSuggestions = focused && variant === "launcher" && !disabled;
   const suggestions = rankSuggestions(value);
   const trimmed = value.trim();
 
   return (
-    <div className={`command-surface command-surface--${variant}`}>
+    <div className={`command-surface command-surface--${variant}`} data-disabled={disabled || undefined}>
       {variant === "launcher" ? (
         <span className="global-search__icon" aria-hidden="true">
           <SearchGlyph />
@@ -81,8 +87,9 @@ export function CommandSurface({
         type="text"
         className={variant === "launcher" ? "global-search__input" : "docked-input__input"}
         value={value}
-        placeholder={placeholder}
+        placeholder={disabled ? "Paused — the dashboard is read-only" : placeholder}
         aria-label={ariaLabel}
+        disabled={disabled}
         onChange={(event) => setValue(event.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}

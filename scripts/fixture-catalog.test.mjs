@@ -25,6 +25,8 @@ const expectedCanonicalKeys = new Set([
   "failure.sqlite_locked",
   "failure.bridge_major_version_mismatch",
   "failure.dashboard_offline",
+  "system.dashboard.loading",
+  "failure.dashboard_error",
   "system.metrics.loading",
   "system.metrics.stale",
   "system.metrics.unavailable",

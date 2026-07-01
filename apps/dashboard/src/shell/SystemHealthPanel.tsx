@@ -1,6 +1,7 @@
 import { Panel } from "./Panel";
 import { PanelGlyph } from "./PanelGlyph";
 import { HealthGlyph } from "./HealthGlyph";
+import { StaleMarker } from "../components/StaleMarker";
 import { Unavailable } from "../components/Unavailable";
 import { useDashboardState } from "../state/DashboardStateProvider";
 
@@ -49,6 +50,7 @@ export function SystemHealthPanel() {
 
   return (
     <Panel label="System Health" labelId="region-health" icon={<PanelGlyph name="system-health" />}>
+      {systemHealth.state === "stale" ? <StaleMarker label="Metrics may be out of date" /> : null}
       {live ? (
         <ul className="metrics">
           {typeof systemHealth.cpuPercent === "number" ? (

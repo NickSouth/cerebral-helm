@@ -7,9 +7,10 @@ import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
 import { ConversationProvider } from "../state/ConversationProvider";
 import { ThemeProvider } from "./ThemeProvider";
-import { createDashboardRuntime } from "../state/bootstrapStore";
+import { createDashboardRuntime, readStateNameFromLocation } from "../state/bootstrapStore";
 
-const { bridge, store } = createDashboardRuntime();
+// `?state=offline|loading|error|recovery` seeds a degraded state for preview/screenshots (NIC-64).
+const { bridge, store } = createDashboardRuntime({ stateName: readStateNameFromLocation() });
 
 /**
  * The application container: owns the bridge + state store (the read/write seam), the Heimlich

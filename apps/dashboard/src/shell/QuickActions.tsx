@@ -3,6 +3,7 @@ import { humanizeId } from "./labels";
 import { resolveQuickAction } from "./quickActionHandlers";
 import { useBridge } from "../state/BridgeProvider";
 import { useConversation } from "../state/ConversationProvider";
+import { useUiPosture } from "../state/useUiPosture";
 
 /**
  * The binding 4 + 4 quick-action geometry (§5.7): four bars over four boxes, ALWAYS eight
@@ -39,9 +40,12 @@ export function QuickActions() {
   const { quickActions } = useActiveMode();
   const bridge = useBridge();
   const { acknowledge } = useConversation();
+  const { readOnly } = useUiPosture();
   const deps = { bridge, acknowledge };
 
-  const resolve = (action: string | null) => (action ? resolveQuickAction(action, deps) : null);
+  // Read-only recovery exposes no mutating controls: every action stays disabled (NIC-64 AC).
+  const resolve = (action: string | null) =>
+    action && !readOnly ? resolveQuickAction(action, deps) : null;
   const bars = quickActions.slice(0, 4);
   const boxes = quickActions.slice(4, 8);
 

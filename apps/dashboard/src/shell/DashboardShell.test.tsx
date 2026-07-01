@@ -7,26 +7,36 @@ import { ThemeProvider } from "../app/ThemeProvider";
 import { createBridgeStore } from "../state/bridgeStore";
 import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
 import { getDashboardConfigBundle, getDashboardFixture } from "../fixtures/canonicalFixtures";
+import type { DashboardState } from "../state/dashboardState";
+
+function renderProviders(bridge: ReturnType<typeof createMockCerebralBridge>, store: ReturnType<typeof createBridgeStore>) {
+  return render(
+    <BridgeProvider bridge={bridge}>
+      <DashboardStateProvider store={store}>
+        <ThemeProvider>
+          <ConversationProvider>
+            <DashboardShell />
+          </ConversationProvider>
+        </ThemeProvider>
+      </DashboardStateProvider>
+    </BridgeProvider>
+  );
+}
 
 /** Render the shell over a bridge-backed store. With no key, boots the default mode (Executive). */
 function renderShell(canonicalKey?: string) {
   const bridge = canonicalKey ? createMockCerebralBridge({ bootstrapKey: canonicalKey }) : createMockCerebralBridge();
   const initial = canonicalKey ? { ...getDashboardConfigBundle(), ...getDashboardFixture(canonicalKey) } : loadBootstrapState();
   const store = createBridgeStore(bridge, initial);
-  return {
-    bridge,
-    ...render(
-      <BridgeProvider bridge={bridge}>
-        <DashboardStateProvider store={store}>
-          <ThemeProvider>
-            <ConversationProvider>
-              <DashboardShell />
-            </ConversationProvider>
-          </ThemeProvider>
-        </DashboardStateProvider>
-      </BridgeProvider>
-    )
-  };
+  return { bridge, ...renderProviders(bridge, store) };
+}
+
+/** Render the shell with an arbitrary state override (for degraded-state coverage, NIC-64). */
+function renderShellWithState(mutate: (base: DashboardState) => DashboardState) {
+  const bridge = createMockCerebralBridge();
+  const base: DashboardState = { ...getDashboardConfigBundle(), ...getDashboardFixture("mode.executive.ready") };
+  const store = createBridgeStore(bridge, mutate(base));
+  return { bridge, ...renderProviders(bridge, store) };
 }
 
 function selectedModeButton() {
@@ -244,6 +254,89 @@ describe("DashboardShell confirmation surface (D5 / NIC-62)", () => {
     expect(within(dialog).queryByText(/sha256:/)).toBeNull();
     fireEvent.click(within(dialog).getByRole("button", { name: "Review" }));
     expect(within(dialog).getByText(/sha256:/)).toBeInTheDocument();
+  });
+});
+
+describe("DashboardShell degraded states (E4 / NIC-64)", () => {
+  it("first-paint loading shows a skeleton, never a blank screen, and hides the live rails", () => {
+    renderShell("system.dashboard.loading");
+    expect(screen.getByText("Loading your dashboard…")).toBeInTheDocument();
+    // The populated three-zone rails are not mounted while loading — the skeleton stands in.
+    expect(screen.queryByRole("complementary", { name: "Information" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Mode" })).toBeNull();
+  });
+
+  it("offline shows a specific recovery banner and suppresses every mutating control (AC #3)", () => {
+    renderShell("failure.dashboard_offline");
+    const banner = screen.getByRole("status");
+    expect(within(banner).getByText("Dashboard is offline")).toBeInTheDocument();
+    expect(within(banner).getByRole("button", { name: "Retry connection" })).toBeInTheDocument();
+
+    // Mode switch, quick actions, and the command launcher are all read-only.
+    for (const option of within(screen.getByRole("group", { name: "Mode" })).getAllByRole("button")) {
+      expect(option).toBeDisabled();
+    }
+    for (const slot of within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole("button")) {
+      expect(slot).toBeDisabled();
+    }
+    expect(screen.getByLabelText("Ask Heimlich or type a command")).toBeDisabled();
+  });
+
+  it("error shows a specific top-level banner while keeping last-known data visible", () => {
+    renderShell("failure.dashboard_error");
+    const banner = screen.getByRole("status");
+    expect(within(banner).getByText("Something went wrong")).toBeInTheDocument();
+    // Not blank: the last-known stale git widget is still shown.
+    expect(screen.getByText("dev · last known")).toBeInTheDocument();
+  });
+
+  it("folds a bridge read-only recovery event into a recovery banner and read-only controls", () => {
+    const { bridge } = renderShell();
+    expect(screen.queryByText("Read-only recovery")).toBeNull();
+
+    act(() =>
+      bridge.emit({
+        eventId: "brevt_test_recovery",
+        type: "system.status.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-06-23T16:29:00.000Z",
+        payload: {
+          category: "bridge_failure",
+          state: { startupMode: "recovery", status: "read_only", message: "Bridge major version is incompatible." }
+        }
+      })
+    );
+
+    expect(screen.getByText("Read-only recovery")).toBeInTheDocument();
+    expect(screen.getByText("Bridge major version is incompatible.")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "Mode" })).getAllByRole("button")[0]).toBeDisabled();
+  });
+
+  it("renders a resolved-but-empty region as a calm empty state, distinct from unavailable", () => {
+    renderShellWithState((base) => ({
+      ...base,
+      regions: {
+        ...base.regions,
+        news: { state: "empty", headlines: [], emptyMessage: "No headlines right now" }
+      }
+    }));
+    const empty = screen.getByText("No headlines right now");
+    // Empty is NOT the dashed/disabled unavailable treatment.
+    expect(empty).toHaveClass("empty-state");
+    expect(empty).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("renders an unavailable region as the honest disabled treatment (not an empty state)", () => {
+    renderShellWithState((base) => ({
+      ...base,
+      regions: {
+        ...base.regions,
+        news: { state: "unavailable", headlines: [], emptyMessage: "News is unavailable" }
+      }
+    }));
+    const unavailable = screen.getByText("News is unavailable");
+    expect(unavailable).toHaveClass("unavailable");
+    expect(unavailable).toHaveAttribute("aria-disabled", "true");
   });
 });
 

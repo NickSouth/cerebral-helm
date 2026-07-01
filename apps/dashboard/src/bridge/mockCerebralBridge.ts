@@ -25,10 +25,11 @@ function composeBootstrapState(canonicalKey: string): DashboardBootstrapState {
 
 /**
  * The static seed used by the pre-bridge state store. NIC-52 B2 replaces the static store
- * with one backed by `createMockCerebralBridge()` without changing consumers.
+ * with one backed by `createMockCerebralBridge()` without changing consumers. A caller may
+ * seed a non-default canonical state (e.g. a degraded state for preview/tests — NIC-64).
  */
-export function loadBootstrapState(): DashboardBootstrapState {
-  return composeBootstrapState(DEFAULT_BOOTSTRAP_KEY);
+export function loadBootstrapState(bootstrapKey: string = DEFAULT_BOOTSTRAP_KEY): DashboardBootstrapState {
+  return composeBootstrapState(bootstrapKey);
 }
 
 /**

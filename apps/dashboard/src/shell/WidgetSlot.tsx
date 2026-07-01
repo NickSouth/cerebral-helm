@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { Panel } from "./Panel";
 import { PanelGlyph, type PanelGlyphName } from "./PanelGlyph";
+import { StaleMarker } from "../components/StaleMarker";
 import { Unavailable } from "../components/Unavailable";
+import { EmptyState } from "../components/EmptyState";
 import { WIDGET_REGISTRY } from "../widgets/widgets";
 import type { WidgetData } from "../widgets/widgetData";
 import { formatDay } from "./format";
@@ -82,10 +84,14 @@ export function WidgetSlot({ data, labelId }: { data: WidgetData; labelId: strin
     <Panel label={label} labelId={labelId} icon={<PanelGlyph name={WIDGET_ICONS[data.widgetId] ?? "widget"} />}>
       {live ? (
         <div className="widget">
+          {data.state === "stale" ? <StaleMarker /> : null}
           {data.headline ? <p className="widget__headline">{data.headline}</p> : null}
           <WidgetBody widgetId={data.widgetId} data={data.data} />
           {data.freshness ? <p className="widget__freshness">{data.freshness.label}</p> : null}
         </div>
+      ) : data.state === "empty" ? (
+        // Resolved with no data — a healthy zero-result, not a missing capability.
+        <EmptyState label={data.emptyMessage ?? "Nothing to show yet"} />
       ) : (
         <Unavailable label={data.emptyMessage ?? "Unavailable"} />
       )}

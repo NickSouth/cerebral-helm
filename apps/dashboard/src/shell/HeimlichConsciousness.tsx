@@ -31,7 +31,7 @@ function toRibbonState(state: HeimlichState): RibbonState {
 
 /** Per-state flow character (Threads props). Provisional — tune once the base look is approved. */
 const PARAMS: Record<RibbonState, { amplitude: number; distance: number; speed: number }> = {
-  idle: { amplitude: 1.0, distance: 0, speed: 0.85 },
+  idle: { amplitude: 1.0, distance: 0, speed: 0.25 }, // ~70% slower than before, calm idle drift
   listening: { amplitude: 1.2, distance: 0.1, speed: 1.3 },
   thinking: { amplitude: 1.6, distance: 0.2, speed: 1.8 },
   speaking: { amplitude: 1.4, distance: 0.15, speed: 1.5 },

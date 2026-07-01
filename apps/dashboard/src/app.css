@@ -178,6 +178,38 @@ body {
   font-size: var(--ch-font-size-sm);
 }
 
+/* Empty state (NIC-64): a healthy zero-result — calm and borderless, deliberately NOT the
+   dashed/disabled treatment of `.unavailable`, so "nothing right now" never reads as "broken". */
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ch-space-10);
+  padding: var(--ch-space-3) var(--ch-space-4);
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+  text-align: center;
+}
+
+/* Stale marker (NIC-64): content is shown but older than its freshness window. Status is carried
+   by the text; the amber dot only reinforces it (constitution §2 — never color alone). */
+.stale-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  margin-bottom: var(--ch-space-2);
+  color: var(--ch-status-warning);
+  font-size: var(--ch-font-size-sm);
+}
+
+.stale-marker__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-status-warning);
+  flex: none;
+}
+
 /* --- Accessibility baseline --- */
 
 /* Keyboard focus ring for every interactive element. Zero-specificity :where() so a

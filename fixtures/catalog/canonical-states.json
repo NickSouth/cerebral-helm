@@ -703,6 +703,72 @@
         }
       },
       "sourceFixtures": []
+    },
+    {
+      "id": "fx_dashboard_loading",
+      "canonicalKey": "system.dashboard.loading",
+      "category": "dashboard",
+      "clock": "2026-06-23T16:45:00.000Z",
+      "modeId": "executive",
+      "dashboardState": {
+        "mode": "Executive",
+        "project": "Daily Command",
+        "summary": "The dashboard is loading its live surfaces.",
+        "commandsToday": 0,
+        "pendingConfirmations": 0,
+        "uiState": "loading",
+        "expandedAgent": null,
+        "heimlich": { "state": "thinking", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": { "state": "unavailable", "items": [], "emptyMessage": "Loading today’s schedule…" },
+          "systemHealth": {
+            "state": "unavailable",
+            "network": { "state": "unavailable", "label": "Sampling network metrics…" },
+            "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
+          },
+          "news": { "state": "unavailable", "headlines": [], "emptyMessage": "Loading headlines…" },
+          "widgets": {
+            "left": { "widgetId": "market-brief", "state": "unavailable", "emptyMessage": "Loading…" },
+            "right": { "widgetId": "projects", "state": "unavailable", "emptyMessage": "Loading…" }
+          }
+        }
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_dashboard_error",
+      "canonicalKey": "failure.dashboard_error",
+      "category": "dashboard_failure",
+      "clock": "2026-06-23T16:46:00.000Z",
+      "modeId": "developer",
+      "dashboardState": {
+        "mode": "Developer",
+        "project": "NIC-12 Workspace Bootstrap",
+        "summary": "The dashboard hit an error loading live data and is showing the last-known safe state.",
+        "commandsToday": 4,
+        "pendingConfirmations": 0,
+        "uiState": "error",
+        "expandedAgent": null,
+        "heimlich": { "state": "error", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": {
+            "state": "stale",
+            "items": [{ "id": "evt-standup", "title": "Team standup", "start": "2026-06-23T16:30:00.000Z", "kind": "today" }],
+            "emptyMessage": "Schedule may be out of date after the error."
+          },
+          "systemHealth": {
+            "state": "unavailable",
+            "network": { "state": "unavailable", "label": "Network metrics unavailable after the error" },
+            "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
+          },
+          "news": { "state": "unavailable", "headlines": [], "emptyMessage": "News is unavailable after the error." },
+          "widgets": {
+            "left": { "widgetId": "project-git-status", "state": "stale", "headline": "dev · last known", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "before the error" }, "data": { "branch": "dev", "checks": "passing" } },
+            "right": { "widgetId": "repositories", "state": "unavailable", "emptyMessage": "Repository data is unavailable after the error." }
+          }
+        }
+      },
+      "sourceFixtures": []
     }
   ]
 }

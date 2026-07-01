@@ -6,6 +6,7 @@ import type {
 } from "../bridge/types";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useBridge } from "../state/BridgeProvider";
+import { useUiPosture } from "../state/useUiPosture";
 
 /** Risk classes as plain text (policy owns the classification; the UI only labels it, §9). */
 const RISK_LABELS: Readonly<Record<ConfirmationRisk, string>> = {
@@ -49,6 +50,7 @@ function argumentValue(argument: ConfirmationArgument): string {
  */
 function ConfirmationWindow({ confirmation }: { confirmation: ConfirmationDisclosure }) {
   const bridge = useBridge();
+  const { readOnly } = useUiPosture();
   const [reviewing, setReviewing] = useState(false);
   const defaultChoiceRef = useRef<HTMLButtonElement>(null);
 
@@ -58,6 +60,10 @@ function ConfirmationWindow({ confirmation }: { confirmation: ConfirmationDisclo
   }, []);
 
   function decide(decision: "approve" | "cancel"): void {
+    // Read-only recovery never executes a gated action; approve is inert (NIC-64 AC).
+    if (decision === "approve" && readOnly) {
+      return;
+    }
     void bridge.decideConfirmation({ id: confirmation.id, decision });
   }
 
@@ -176,6 +182,9 @@ function ConfirmationWindow({ confirmation }: { confirmation: ConfirmationDisclo
           <button
             type="button"
             className="confirmation-choice confirmation-choice--approve"
+            disabled={readOnly}
+            aria-disabled={readOnly || undefined}
+            title={readOnly ? "Approval is disabled while the dashboard is read-only" : undefined}
             onClick={() => decide("approve")}
           >
             {choices.approve.label}

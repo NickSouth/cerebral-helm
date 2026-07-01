@@ -1490,3 +1490,190 @@
   outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
   outline-offset: var(--ch-focus-ring-offset);
 }
+
+/* --- NIC-64: degraded / empty / offline / recovery / error states --- */
+
+/* Any disabled control (mutating controls suppressed under a read-only posture, AC #3) reads as
+   clearly inert — dimmed with a not-allowed cursor. Text/labels remain legible (never color alone). */
+.mode-switcher__option:disabled,
+.confirmation-choice:disabled,
+.command-surface[data-disabled] .global-search__input,
+.command-surface[data-disabled] .docked-input__input {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Top-level degraded ribbon: a full-width sibling above the capped canvas. Never replaces the
+   shell (AC "no blank screens"). Tone is set by data-tone; the left rule + text carry meaning. */
+.system-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-4);
+  padding: var(--ch-space-3) var(--ch-space-4);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  border-left-width: 3px;
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-primary);
+}
+
+.system-banner[data-tone="offline"] {
+  border-left-color: var(--ch-status-neutral);
+}
+
+.system-banner[data-tone="recovery"] {
+  border-left-color: var(--ch-status-info);
+}
+
+.system-banner[data-tone="error"] {
+  border-left-color: var(--ch-status-error);
+}
+
+.system-banner__mark {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: var(--ch-radius-pill);
+  flex: none;
+  background: var(--ch-status-neutral);
+}
+
+.system-banner[data-tone="recovery"] .system-banner__mark {
+  background: var(--ch-status-info);
+}
+
+.system-banner[data-tone="error"] .system-banner__mark {
+  background: var(--ch-status-error);
+}
+
+.system-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.system-banner__title {
+  font-weight: var(--ch-font-weight-semibold);
+}
+
+.system-banner__detail {
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+}
+
+.system-banner__action {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  flex: none;
+  padding: var(--ch-space-2) var(--ch-space-4);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-accent-primary);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.system-banner__action:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
+/* Degraded calendar body (unavailable / empty) replaces the four-row event list. */
+.calendar__events--degraded {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* First-paint loading skeleton: mirrors the three-zone grid so there is never a blank screen. */
+.dashboard-canvas--loading {
+  display: block;
+}
+
+.dashboard-skeleton {
+  display: grid;
+  grid-template-columns: minmax(190px, 250px) minmax(0, 1fr) minmax(190px, 250px);
+  gap: var(--ch-space-3);
+  height: 100%;
+  min-height: 0;
+}
+
+.skeleton-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  min-height: 0;
+}
+
+.skeleton-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-4);
+  border-radius: var(--ch-radius-lg);
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-panel);
+}
+
+.skeleton-center {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-4);
+  padding: var(--ch-space-4);
+}
+
+/* Shimmer bone: a moving highlight over a muted base. Stilled under reduced motion (below). */
+.skeleton-bone {
+  display: block;
+  border-radius: var(--ch-radius-sm);
+  height: 0.75rem;
+  background: linear-gradient(
+    90deg,
+    var(--ch-surface-panel) 0%,
+    var(--ch-surface-raised) 50%,
+    var(--ch-surface-panel) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s var(--ch-ease-standard) infinite;
+}
+
+.skeleton-bone--label {
+  width: 40%;
+  height: 0.6rem;
+}
+
+.skeleton-bone--row {
+  width: 100%;
+}
+
+.skeleton-bone--apps {
+  height: 3rem;
+}
+
+.skeleton-bone--field {
+  flex: 1 1 auto;
+  min-height: 8rem;
+}
+
+.skeleton-bone--greeting {
+  height: 2rem;
+  width: 60%;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Reduced motion: still the shimmer to a flat base — the skeleton stays, only the motion goes. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-bone {
+    animation: none;
+    background: var(--ch-surface-panel);
+  }
+}

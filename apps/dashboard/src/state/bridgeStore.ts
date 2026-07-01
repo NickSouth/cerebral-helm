@@ -15,9 +15,7 @@ const LIFECYCLE_TO_HEIMLICH: Readonly<Record<string, HeimlichState>> = {
 
 /**
  * Pure reducer: fold one bridge event into dashboard state. Returns the SAME reference when
- * nothing changes, so useSyncExternalStore does not trigger a needless re-render. Event
- * types whose UI lands later are observed but not yet interpreted: `system.status.changed`
- * (NIC-64 degraded states).
+ * nothing changes, so useSyncExternalStore does not trigger a needless re-render.
  */
 export function reduceDashboardState(state: DashboardState, event: BridgeEvent): DashboardState {
   switch (event.type) {
@@ -62,6 +60,20 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
           systemHealth: { ...state.regions.systemHealth, state: "stale" }
         }
       };
+    }
+    case "system.status.changed": {
+      // The only status change the shell interprets today (NIC-64): an incompatible bridge
+      // major version forces read-only recovery. Folded into the runtime-only `recovery` widening
+      // (never the bootstrap config), so the posture seam can suppress every mutating control.
+      const payload = event.payload as { category?: string; state?: Record<string, unknown> };
+      if (payload.category !== "bridge_failure" || payload.state?.status !== "read_only") {
+        return state;
+      }
+      const reason = String(payload.state.message ?? "Bridge is in read-only recovery.");
+      if (state.recovery?.reason === reason) {
+        return state;
+      }
+      return { ...state, recovery: { reason, startupMode: "recovery" } };
     }
     default:
       return state;

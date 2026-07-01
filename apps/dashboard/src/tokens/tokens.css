@@ -24,6 +24,12 @@
      modes currently follow their accent (tune later via the same picker). --- */
   --ch-heimlich-executive-primary: #e3a531;
   --ch-heimlich-executive-secondary: #2e93c9;
+  --ch-heimlich-developer-primary: #ffffff;
+  --ch-heimlich-developer-secondary: #61d0ff;
+  --ch-heimlich-school-primary: #3e7bfa;
+  --ch-heimlich-school-secondary: #e0a840;
+  --ch-heimlich-entertainment-primary: #00753f;
+  --ch-heimlich-entertainment-secondary: #4fc8dc;
 
   /* --- Base surfaces (mode-independent) --- */
   --ch-bg-base: #05080f;
@@ -131,22 +137,22 @@
 [data-mode="developer"] {
   --ch-accent-primary: var(--ch-mode-developer-primary);
   --ch-accent-secondary: var(--ch-mode-developer-secondary);
-  --ch-heimlich-primary: var(--ch-mode-developer-primary);
-  --ch-heimlich-secondary: var(--ch-mode-developer-secondary);
+  --ch-heimlich-primary: var(--ch-heimlich-developer-primary);
+  --ch-heimlich-secondary: var(--ch-heimlich-developer-secondary);
 }
 
 [data-mode="school"] {
   --ch-accent-primary: var(--ch-mode-school-primary);
   --ch-accent-secondary: var(--ch-mode-school-secondary);
-  --ch-heimlich-primary: var(--ch-mode-school-primary);
-  --ch-heimlich-secondary: var(--ch-mode-school-secondary);
+  --ch-heimlich-primary: var(--ch-heimlich-school-primary);
+  --ch-heimlich-secondary: var(--ch-heimlich-school-secondary);
 }
 
 [data-mode="entertainment"] {
   --ch-accent-primary: var(--ch-mode-entertainment-primary);
   --ch-accent-secondary: var(--ch-mode-entertainment-secondary);
-  --ch-heimlich-primary: var(--ch-mode-entertainment-primary);
-  --ch-heimlich-secondary: var(--ch-mode-entertainment-secondary);
+  --ch-heimlich-primary: var(--ch-heimlich-entertainment-primary);
+  --ch-heimlich-secondary: var(--ch-heimlich-entertainment-secondary);
 }
 
 /* --- Reduced motion: collapse durations; state is carried by text + color --- */

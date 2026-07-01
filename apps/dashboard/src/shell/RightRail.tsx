@@ -5,6 +5,7 @@ import { AgentGlyph } from "./AgentGlyph";
 import { WidgetSlot } from "./WidgetSlot";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useBridge } from "../state/BridgeProvider";
+import { useUiPosture } from "../state/useUiPosture";
 import { agentActivityLabel } from "./labels";
 
 /**
@@ -16,6 +17,7 @@ import { agentActivityLabel } from "./labels";
 export function RightRail() {
   const { mode, modes, agents, regions } = useDashboardState();
   const bridge = useBridge();
+  const { readOnly } = useUiPosture();
 
   return (
     <aside className="shell-rail shell-right" aria-label="Operations">
@@ -30,8 +32,11 @@ export function RightRail() {
                 className="mode-switcher__option"
                 data-active={active}
                 aria-pressed={active}
+                disabled={readOnly}
+                aria-disabled={readOnly || undefined}
+                title={readOnly ? "Mode switching is paused while the dashboard is read-only" : undefined}
                 onClick={() => {
-                  if (!active) {
+                  if (!active && !readOnly) {
                     void bridge.applyMode({ modeId: modeView.id });
                   }
                 }}

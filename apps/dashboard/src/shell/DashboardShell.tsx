@@ -4,7 +4,10 @@ import { RightRail } from "./RightRail";
 import { PersistentBottomBar } from "./PersistentBottomBar";
 import { ConfirmationOverlay } from "./ConfirmationOverlay";
 import { CommandSurface } from "./CommandSurface";
+import { SystemStatusBanner } from "./SystemStatusBanner";
+import { DashboardSkeleton } from "./DashboardSkeleton";
 import { useConversation } from "../state/ConversationProvider";
+import { useUiPosture } from "../state/useUiPosture";
 import { useAmbientBeam } from "./useAmbientBeam";
 import { useRef } from "react";
 
@@ -24,24 +27,34 @@ import { useRef } from "react";
  */
 export function DashboardShell() {
   const conversation = useConversation();
+  const posture = useUiPosture();
   const shellRef = useRef<HTMLDivElement>(null);
   useAmbientBeam(shellRef);
 
   return (
-    <div className="dashboard-shell" ref={shellRef}>
-      <div className="dashboard-canvas">
-        <div className="shell-search">
-          <CommandSurface
-            variant="launcher"
-            placeholder="Ask Heimlich or type a command…"
-            ariaLabel="Ask Heimlich or type a command"
-            onSubmit={conversation.submit}
-          />
+    <div className="dashboard-shell" ref={shellRef} data-read-only={posture.readOnly || undefined}>
+      {/* Full-width degraded ribbon (sibling of the capped canvas), never replacing the shell. */}
+      <SystemStatusBanner />
+      {posture.loading ? (
+        <div className="dashboard-canvas dashboard-canvas--loading">
+          <DashboardSkeleton />
         </div>
-        <LeftRail />
-        <CenterStage />
-        <RightRail />
-      </div>
+      ) : (
+        <div className="dashboard-canvas">
+          <div className="shell-search">
+            <CommandSurface
+              variant="launcher"
+              placeholder="Ask Heimlich or type a command…"
+              ariaLabel="Ask Heimlich or type a command"
+              onSubmit={conversation.submit}
+              disabled={posture.readOnly}
+            />
+          </div>
+          <LeftRail />
+          <CenterStage />
+          <RightRail />
+        </div>
+      )}
       <PersistentBottomBar />
       <ConfirmationOverlay />
     </div>

@@ -1,5 +1,8 @@
 import { Panel } from "./Panel";
 import { PanelGlyph } from "./PanelGlyph";
+import { StaleMarker } from "../components/StaleMarker";
+import { Unavailable } from "../components/Unavailable";
+import { EmptyState } from "../components/EmptyState";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { formatClock } from "./format";
 
@@ -32,21 +35,33 @@ export function SchedulePanel({ now = new Date() }: { now?: Date } = {}) {
         <p className="calendar__time">{formatNowTime(now)}</p>
         <p className="calendar__date">{formatNowDate(now)}</p>
 
-        <ul className="calendar__events">
-          {Array.from({ length: EVENT_SLOTS }, (_, index) => {
-            const event = events[index];
-            if (!event) {
-              return <li key={`empty-${index}`} className="calendar__event calendar__event--empty" aria-hidden="true" />;
-            }
-            return (
-              <li key={event.id} className="calendar__event">
-                <span className="calendar__dot" data-kind={event.kind} aria-hidden="true" />
-                <span className="calendar__event-title">{event.title}</span>
-                <span className="calendar__event-time">{formatClock(event.start)}</span>
-              </li>
-            );
-          })}
-        </ul>
+        {schedule.state === "stale" ? <StaleMarker /> : null}
+
+        {schedule.state === "unavailable" ? (
+          <div className="calendar__events calendar__events--degraded">
+            <Unavailable label={schedule.emptyMessage ?? "Schedule is unavailable"} />
+          </div>
+        ) : live && events.length === 0 ? (
+          <div className="calendar__events calendar__events--degraded">
+            <EmptyState label={schedule.emptyMessage ?? "Nothing scheduled"} />
+          </div>
+        ) : (
+          <ul className="calendar__events">
+            {Array.from({ length: EVENT_SLOTS }, (_, index) => {
+              const event = events[index];
+              if (!event) {
+                return <li key={`empty-${index}`} className="calendar__event calendar__event--empty" aria-hidden="true" />;
+              }
+              return (
+                <li key={event.id} className="calendar__event">
+                  <span className="calendar__dot" data-kind={event.kind} aria-hidden="true" />
+                  <span className="calendar__event-title">{event.title}</span>
+                  <span className="calendar__event-time">{formatClock(event.start)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
 
         <button
           type="button"
