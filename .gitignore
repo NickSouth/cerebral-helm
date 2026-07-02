@@ -5,8 +5,16 @@
 .env.*
 !.env.example
 DerivedData/
+# Xcode build output and per-user state (shared schemes under xcshareddata are kept)
+build/
+.swiftpm/
+xcuserdata/
+*.xcuserstate
 node_modules/
 .pnpm-store/
+# pnpm-only repo: never track an npm lockfile (guards against a stray `npm install`)
+package-lock.json
+npm-shrinkwrap.json
 dist/
 coverage/
 playwright-report/
