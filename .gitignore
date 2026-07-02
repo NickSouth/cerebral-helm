@@ -10,6 +10,9 @@ build/
 .swiftpm/
 xcuserdata/
 *.xcuserstate
+# Generated macOS dashboard bundle (built by apps/mac/scripts/build-dashboard-bundle.sh)
+apps/mac/DashboardBundle/*
+!apps/mac/DashboardBundle/.gitkeep
 node_modules/
 .pnpm-store/
 # pnpm-only repo: never track an npm lockfile (guards against a stray `npm install`)

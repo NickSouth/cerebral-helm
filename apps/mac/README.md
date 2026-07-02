@@ -13,14 +13,30 @@ package under `packages/` may depend on it.
   paths. The app launches offline and resolves its writable state root *outside*
   the bundle at `~/Library/Application Support/CerebralHelm` via the portable core
   (`WorkspacePaths.forApplication`); read-only config resolves from the bundle
-  Resources. Currently shows a placeholder window reporting the resolved paths.
-- **Next:** startup validation + read-only recovery view (NIC-72 part 2), then
-  dashboard hosting (NIC-73) and the bridge (NIC-74).
+  Resources.
+- **NIC-72 part 2 (done):** read-only startup pre-flight (`Bootstrap` →
+  `StartupValidation`) that validates data paths, bundled config schemas, and the
+  operational database *before any write*; failures open a read-only recovery
+  window and mutate nothing.
+- **NIC-73 (done):** the bundled production dashboard is hosted in a `WKWebView`,
+  loaded offline over the private `cerebral://app/` scheme (`CerebralSchemeHandler`)
+  above an `NSVisualEffectView`. Config **and** the dashboard build are bundled into
+  Resources; a missing dashboard bundle surfaces as a visible diagnostic.
+- **Next:** the native bridge transport + handshake (NIC-74). Until then the
+  dashboard runs against its in-webview mock bridge.
 
 ## Build & run
 
-The app target links the local Swift package (`../..`) for `CerebralCore`. Build
-through the shared scheme (package-dependency builds need a scheme, not `-target`):
+The dashboard is a **generated** input: build and stage it before building the app
+(no dev server is used — the app serves the static bundle offline):
+
+```sh
+apps/mac/scripts/build-dashboard-bundle.sh   # → apps/mac/DashboardBundle/ (gitignored)
+```
+
+Then build the app. It links the local Swift package (`../..`) for `CerebralCore`
+and `CerebralStorage`; build through the shared scheme (package-dependency builds
+need a scheme, not `-target`):
 
 ```sh
 cd apps/mac
@@ -28,7 +44,9 @@ xcodebuild -project CerebralHelm.xcodeproj -scheme CerebralHelm \
   -configuration Debug -destination 'platform=macOS' build
 ```
 
-Or open `CerebralHelm.xcodeproj` in Xcode and Run. Signing is not required for a
-local run (code-signing, entitlements/sandbox, notarization, and packaging are a
-later epic). The portable Swift packages continue to build and test with plain
-`swift test` at the repo root — the Xcode project is macOS-only and additive.
+Or open `CerebralHelm.xcodeproj` in Xcode and Run. If `DashboardBundle/` is empty
+(script not run), the app launches into a "dashboard bundle missing" diagnostic
+rather than a blank window. Signing is not required for a local run (code-signing,
+entitlements/sandbox, notarization, and packaging are a later epic). The portable
+Swift packages continue to build and test with plain `swift test` at the repo
+root — the Xcode project is macOS-only and additive.
