@@ -198,11 +198,11 @@ public struct ToolExecutor: Sendable {
 
     // MARK: - Error mapping
 
-    private func structured(_ category: Category, _ code: String, _ message: String) -> StructuredError {
+    private func structured(_ category: CerebralContracts.Category, _ code: String, _ message: String) -> StructuredError {
         StructuredError(category: category, code: code, details: nil, message: message, remediation: nil)
     }
 
-    private static func classify(_ error: ToolHandlerError) -> (ToolResultStatus, Category) {
+    private static func classify(_ error: ToolHandlerError) -> (ToolResultStatus, CerebralContracts.Category) {
         switch error {
         case .invalidInput: return (.failure, .invalidInput)
         case .invalidOutput: return (.failure, .adapterContractFailure)

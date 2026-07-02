@@ -8,7 +8,7 @@ import CerebralContracts
 /// success (PRD §4.6, §8.2).
 public enum CommandOutcome {
     case succeeded(summary: String)
-    case failed(code: String, message: String, category: Category)
+    case failed(code: String, message: String, category: CerebralContracts.Category)
     case unavailable(summary: String)
 }
 

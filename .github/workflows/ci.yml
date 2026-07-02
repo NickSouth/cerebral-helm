@@ -159,15 +159,19 @@ jobs:
     # proven by the redaction/disclosure tests in the core-swift jobs.
     steps:
       - uses: actions/checkout@v4
-        with:
-          # Full history so gitleaks scans commits, not just the tip.
-          fetch-depth: 0
 
+      # Run the gitleaks binary directly against the working tree rather than the
+      # gitleaks-action: the action calls the GitHub PR API (which needs elevated
+      # permissions and couples the gate to PR-comment plumbing), whereas a `--no-git`
+      # filesystem scan is deterministic, needs no token, and matches "scan repository
+      # content" (AC-8). The pinned version can be bumped as gitleaks releases.
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: ${{ github.workspace }}/.gitleaks.toml
+        run: |
+          version=8.24.3
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks version
+          /tmp/gitleaks detect --no-git --source . --config .gitleaks.toml --redact --verbose
 
       # Node-only sweep (no dependencies); the ubuntu runner's preinstalled Node is fine.
       - name: Canary leak sweep

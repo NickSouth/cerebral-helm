@@ -229,7 +229,7 @@ public final class CommandBus: @unchecked Sendable {
         }
     }
 
-    private func lifecycleError(category: Category, code: String, message: String) -> CerebralHelmCommandLifecycleEventError {
+    private func lifecycleError(category: CerebralContracts.Category, code: String, message: String) -> CerebralHelmCommandLifecycleEventError {
         CerebralHelmCommandLifecycleEventError(
             category: category,
             code: code,
