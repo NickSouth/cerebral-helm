@@ -10,6 +10,10 @@
 		CE0000000000000000000014 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000010 /* main.swift */; };
 		CE0000000000000000000015 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000011 /* AppDelegate.swift */; };
 		CE0000000000000000000016 /* CerebralCore in Frameworks */ = {isa = PBXBuildFile; productRef = CE0000000000000000000018 /* CerebralCore */; };
+		CE000000000000000000001B /* Bootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000019 /* Bootstrap.swift */; };
+		CE000000000000000000001C /* RecoveryWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000001A /* RecoveryWindowController.swift */; };
+		CE0000000000000000000021 /* config in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000020 /* config */; };
+		CE0000000000000000000023 /* CerebralStorage in Frameworks */ = {isa = PBXBuildFile; productRef = CE0000000000000000000022 /* CerebralStorage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -17,6 +21,9 @@
 		CE0000000000000000000010 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		CE0000000000000000000011 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		CE0000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		CE0000000000000000000019 /* Bootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bootstrap.swift; sourceTree = "<group>"; };
+		CE000000000000000000001A /* RecoveryWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryWindowController.swift; sourceTree = "<group>"; };
+		CE0000000000000000000020 /* config */ = {isa = PBXFileReference; lastKnownFileType = folder; name = config; path = ../../config; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -25,6 +32,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CE0000000000000000000016 /* CerebralCore in Frameworks */,
+				CE0000000000000000000023 /* CerebralStorage in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -36,6 +44,7 @@
 			children = (
 				CE0000000000000000000004 /* CerebralHelm */,
 				CE0000000000000000000012 /* Info.plist */,
+				CE0000000000000000000020 /* config */,
 				CE0000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -53,6 +62,8 @@
 			children = (
 				CE0000000000000000000010 /* main.swift */,
 				CE0000000000000000000011 /* AppDelegate.swift */,
+				CE0000000000000000000019 /* Bootstrap.swift */,
+				CE000000000000000000001A /* RecoveryWindowController.swift */,
 			);
 			path = CerebralHelm;
 			sourceTree = "<group>";
@@ -75,6 +86,7 @@
 			name = CerebralHelm;
 			packageProductDependencies = (
 				CE0000000000000000000018 /* CerebralCore */,
+				CE0000000000000000000022 /* CerebralStorage */,
 			);
 			productName = CerebralHelm;
 			productReference = CE0000000000000000000006 /* CerebralHelm.app */;
@@ -121,6 +133,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CE0000000000000000000021 /* config in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -133,6 +146,8 @@
 			files = (
 				CE0000000000000000000014 /* main.swift in Sources */,
 				CE0000000000000000000015 /* AppDelegate.swift in Sources */,
+				CE000000000000000000001B /* Bootstrap.swift in Sources */,
+				CE000000000000000000001C /* RecoveryWindowController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -255,6 +270,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CE0000000000000000000017 /* XCLocalSwiftPackageReference "../.." */;
 			productName = CerebralCore;
+		};
+		CE0000000000000000000022 /* CerebralStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE0000000000000000000017 /* XCLocalSwiftPackageReference "../.." */;
+			productName = CerebralStorage;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

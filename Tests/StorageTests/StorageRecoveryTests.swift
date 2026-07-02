@@ -134,3 +134,51 @@ func lockedDatabaseIsStructured() throws {
         #expect(RecoveryDiagnostic.forStorage(error).code == "sqlite_locked")
     }
 }
+
+// MARK: - Config-schema preflight (NIC-72 / FR-SHL-05)
+
+private func repositoryConfigDirectory() -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("config", isDirectory: true)
+}
+
+@Test("valid bundled config plus first-run storage validates as ready (FR-SHL-05)")
+func validConfigValidatesReady() {
+    let root = temporaryRoot()
+    let dbURL = root.appendingPathComponent("database/cerebral.sqlite") // never created
+    let check = StartupValidation.validate(
+        operationalDatabasePath: dbURL,
+        knowledgeRoot: root.appendingPathComponent("knowledge"),
+        configDirectory: repositoryConfigDirectory()
+    )
+    #expect(check == .ready)
+}
+
+@Test("an invalid config directory enters recovery with config_invalid (FR-SHL-05)")
+func invalidConfigEntersRecovery() {
+    let root = temporaryRoot()
+    let dbURL = root.appendingPathComponent("database/cerebral.sqlite")
+    // Point config at an empty directory: the required documents are missing.
+    let emptyConfig = root.appendingPathComponent("no-config", isDirectory: true)
+    let check = StartupValidation.validate(
+        operationalDatabasePath: dbURL,
+        knowledgeRoot: root.appendingPathComponent("knowledge"),
+        configDirectory: emptyConfig
+    )
+    guard case let .recovery(diagnostics) = check else {
+        Issue.record("expected recovery, got \(check)")
+        return
+    }
+    #expect(diagnostics.contains { $0.code == "config_invalid" })
+}
+
+@Test("omitting the config directory preserves the storage-only preflight (doctor path)")
+func omittedConfigSkipsConfigValidation() {
+    let root = temporaryRoot()
+    let dbURL = root.appendingPathComponent("database/cerebral.sqlite") // never created
+    #expect(StartupValidation.validate(
+        operationalDatabasePath: dbURL,
+        knowledgeRoot: root.appendingPathComponent("knowledge")
+    ) == .ready)
+}

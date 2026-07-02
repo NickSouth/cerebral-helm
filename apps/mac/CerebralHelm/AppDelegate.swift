@@ -1,19 +1,25 @@
 import AppKit
 import CerebralCore
 
-/// The macOS application lifecycle owner (NIC-72 / FR-SHL-01).
+/// The macOS application lifecycle owner (NIC-72 / FR-SHL-01, FR-SHL-05).
 ///
-/// For this first increment the shell launches offline, resolves the explicit
-/// personal-production state root *outside* the app bundle via the portable core
-/// (`WorkspacePaths.forApplication`), ensures that root exists, and shows a
-/// placeholder window reporting the resolved locations. Startup validation and the
-/// read-only recovery view arrive in NIC-72 part 2; dashboard hosting and the
-/// bridge follow in NIC-73/NIC-74.
+/// On launch the shell runs a read-only startup pre-flight (`Bootstrap.run`) that
+/// validates data paths, the bundled config schemas, and the operational database
+/// *before any write*. A clean pre-flight creates the writable state root and shows
+/// the main window; a failed pre-flight opens the read-only recovery window and
+/// mutates nothing (PRD §8.1). Dashboard hosting and the bridge follow in
+/// NIC-73/NIC-74.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var window: NSWindow?
+    private var mainWindow: NSWindow?
+    private var recoveryWindow: RecoveryWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        showWindow(with: resolveWorkspace())
+        switch Bootstrap.run() {
+        case let .ready(paths):
+            enterReady(paths)
+        case let .recovery(recovery):
+            enterRecovery(recovery)
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -21,42 +27,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
-    /// Resolves workspace paths through the portable core and creates the writable
-    /// state root. Read-only config resolves from the app bundle's Resources; user
-    /// state lives at `~/Library/Application Support/CerebralHelm`, never inside the
-    /// `.app` (NIC-72). Returns a human-readable report for the placeholder window.
-    private func resolveWorkspace() -> String {
-        guard let resources = Bundle.main.resourceURL else {
-            return "Startup error: could not locate the app bundle Resources directory."
-        }
+    /// A clean pre-flight: create the writable state root (the first legitimate
+    /// write) and show the main window. If even the state root cannot be created,
+    /// fall back to recovery rather than run over a broken location.
+    private func enterReady(_ paths: WorkspacePaths) {
         do {
-            let paths = try WorkspacePaths.forApplication(bundleResourcesRoot: resources)
             try FileManager.default.createDirectory(
                 at: paths.stateRoot, withIntermediateDirectories: true
             )
-            return """
-            CerebralHelm — native shell
-            NIC-72 · MAC-SHELL-1
-
-            Launched offline. User data lives outside the app bundle.
-
-            Environment:  \(paths.environment.rawValue)
-
-            State root (writable):
-              \(paths.stateRoot.path)
-
-            Config (read-only, bundled):
-              \(paths.configDirectory.path)
-
-            Operational database:
-              \(paths.operationalDatabasePath.path)
-            """
         } catch {
-            return "Startup error: failed to resolve workspace paths.\n\n\(error)"
+            enterRecovery(Bootstrap.Recovery(
+                reason: "startup_validation_failed",
+                diagnosticCode: "state_root_uncreatable",
+                remediation: "Grant write access to ~/Library/Application Support, then relaunch.",
+                details: ["Could not create the state root at \(paths.stateRoot.path): \(error)"]
+            ))
+            return
         }
+        showMainWindow(with: readyReport(paths))
     }
 
-    private func showWindow(with text: String) {
+    private func enterRecovery(_ recovery: Bootstrap.Recovery) {
+        let controller = RecoveryWindowController(recovery)
+        controller.show()
+        recoveryWindow = controller
+    }
+
+    private func readyReport(_ paths: WorkspacePaths) -> String {
+        """
+        CerebralHelm — native shell
+        NIC-72 · MAC-SHELL-1
+
+        Startup validation passed. Launched offline; user data lives outside the app bundle.
+
+        Environment:  \(paths.environment.rawValue)
+
+        State root (writable):
+          \(paths.stateRoot.path)
+
+        Config (read-only, bundled):
+          \(paths.configDirectory.path)
+
+        Operational database:
+          \(paths.operationalDatabasePath.path)
+        """
+    }
+
+    private func showMainWindow(with text: String) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 400),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -81,6 +98,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         window.contentView = content
         window.makeKeyAndOrderFront(nil)
-        self.window = window
+        self.mainWindow = window
     }
 }
