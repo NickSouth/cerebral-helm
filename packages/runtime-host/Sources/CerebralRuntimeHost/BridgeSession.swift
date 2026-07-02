@@ -32,7 +32,14 @@ public final class BridgeSession: @unchecked Sendable {
             return await submitCommand(request)
         case .applyMode:
             return await applyMode(request)
+        case .searchNotes:
+            return await searchNotes(request)
+        case .getRecentActivity:
+            return getRecentActivity(request)
         default:
+            // captureNote is confirmation-gated (local_write) and lands with the
+            // confirmation flow (decideConfirmation + confirmation events);
+            // updateSettings and subscribe follow later.
             return unimplemented(request)
         }
     }
@@ -71,6 +78,36 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: ApplyModeResult(modeId: input.modeId, status: status))
     }
 
+    private func searchNotes(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: SearchNotesInput = decodePayload(request), !input.text.isEmpty else {
+            // An empty query yields no results rather than an error (empty search box).
+            return ok(request, payload: SearchNotesResult(results: []))
+        }
+        let outcome = await runtime.submit("search \(input.text)", source: .dashboard)
+        guard
+            case let .completed(_, _, result) = outcome,
+            let data = result?.output,
+            let output = try? CerebralHelmNoteSearchOutput(data: data)
+        else {
+            return ok(request, payload: SearchNotesResult(results: []))
+        }
+        let hits = output.results.map {
+            NoteHit(noteId: $0.noteID, title: $0.title, excerpt: $0.excerpt)
+        }
+        return ok(request, payload: SearchNotesResult(results: hits))
+    }
+
+    /// The recent-activity read surface. A fresh session has no activity; the durable
+    /// DB-backed history read is a follow-on increment, so this returns the honest
+    /// empty envelope (the dashboard renders an empty feed rather than fabricated rows).
+    private func getRecentActivity(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) -> CerebralHelmBridgeOperationResponse {
+        ok(request, payload: RecentActivityEnvelope())
+    }
+
     // MARK: - Payload mapping
 
     private struct SubmitCommandInput: Decodable {
@@ -87,6 +124,29 @@ public final class BridgeSession: @unchecked Sendable {
     private struct ApplyModeResult: Encodable {
         let modeId: String
         let status: String
+    }
+    private struct SearchNotesInput: Decodable {
+        let text: String
+        let limit: Int?
+    }
+    private struct NoteHit: Encodable {
+        let noteId: String
+        let title: String
+        let excerpt: String
+    }
+    private struct SearchNotesResult: Encodable {
+        let results: [NoteHit]
+    }
+    /// Mirrors the bridge `getRecentActivity` payload wrapper `{ recentActivity: … }`.
+    private struct RecentActivityEnvelope: Encodable {
+        let recentActivity = Activity()
+        struct Activity: Encodable {
+            let commands: [String] = []
+            let toolCalls: [String] = []
+            let confirmations: [String] = []
+            let modeSessions: [String] = []
+            let errors: [String] = []
+        }
     }
 
     private func receipt(for outcome: CommandRuntimeOutcome) -> CommandReceipt {

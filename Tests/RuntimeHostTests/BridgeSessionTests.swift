@@ -123,12 +123,54 @@ func bootstrapComposesFromConfig() async throws {
     #expect(state.weather == nil)
 }
 
+// MARK: - Knowledge operations
+
+private struct SearchResult: Decodable { struct Hit: Decodable { let noteId: String; let title: String; let excerpt: String }; let results: [Hit] }
+
+@Test("searchNotes finds a note captured through the runtime")
+func searchFindsSeededNote() async throws {
+    // note.capture is confirmation-gated (local_write), so seed a note by driving the
+    // runtime's submit → approve flow directly, then search through the bridge session.
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let runtime = try makeCommandRuntime(paths: paths)
+    let pending = await runtime.submit("note Quarterly planning deck", source: .dashboard)
+    guard case let .awaitingConfirmation(_, _, token) = pending else {
+        Issue.record("expected note.capture to await confirmation, got \(pending)")
+        return
+    }
+    _ = await runtime.decide(token: token, decision: .approve)
+
+    let session = BridgeSession(runtime: runtime, configDirectory: paths.configDirectory)
+    let searched = await session.execute(operationRequest(.searchNotes, #"{"text":"quarterly"}"#))
+    #expect(searched.status == .ok)
+    let results = try decode(searched, as: SearchResult.self)
+    // The search reaches the live index and returns the seeded note with an id.
+    #expect(!results.results.isEmpty)
+    #expect(results.results.allSatisfy { !$0.noteId.isEmpty })
+}
+
+@Test("an empty search query returns no results (not an error)")
+func emptySearchReturnsEmpty() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.searchNotes, #"{"text":""}"#))
+    #expect(response.status == .ok)
+    #expect(try decode(response, as: SearchResult.self).results.isEmpty)
+}
+
+@Test("getRecentActivity returns the honest empty envelope for a fresh session")
+func recentActivityEmptyEnvelope() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.getRecentActivity, "{}"))
+    #expect(response.status == .ok)
+    #expect(response.payload["recentActivity"] != nil)
+}
+
 // MARK: - Unwired operations
 
 @Test("an operation not yet wired returns a structured unavailable error, never a hang")
 func unwiredOperationIsUnavailable() async throws {
     let session = try makeSession()
-    let response = await session.execute(operationRequest(.getRecentActivity, "{}"))
+    let response = await session.execute(operationRequest(.updateSettings, "{}"))
     #expect(response.status == .error)
     #expect(response.error?.category == .unavailableCapability)
     #expect(response.error?.code == "bridge_operation_unimplemented")

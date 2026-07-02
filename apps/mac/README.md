@@ -36,11 +36,13 @@ package under `packages/` may depend on it.
   from the real config (`BootstrapComposer`), with regions/Heimlich in their honest
   pre-adapter degraded state. The runtime **event stream** is forwarded too: every
   command lifecycle event is pushed to the dashboard as a `command.lifecycle.transition`
-  bridge event (`BridgeEventFactory` + a shared ISO-8601 encoder). Remaining:
-  `captureNote`, `searchNotes`, `decideConfirmation`, `updateSettings`,
-  `getRecentActivity`.
-- **Next:** finish the operation set, then NIC-74c adds the dashboard-side transport
-  and selects it. Until then the dashboard still runs its in-webview mock bridge.
+  bridge event (`BridgeEventFactory` + a shared ISO-8601 encoder). `searchNotes`
+  runs through the bus and returns live index hits; `getRecentActivity` returns the
+  honest empty envelope (durable history read is a follow-on). Remaining: the
+  **confirmation flow** — `captureNote` (confirmation-gated `local_write`) +
+  `decideConfirmation` + confirmation events — and `updateSettings`.
+- **Next:** the confirmation flow, then NIC-74c adds the dashboard-side transport and
+  selects it. Until then the dashboard still runs its in-webview mock bridge.
 
 ## Build & run
 
