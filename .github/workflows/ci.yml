@@ -1,0 +1,116 @@
+name: CI
+
+# Portable-foundation continuous verification (NIC-67 / PRD G-08, NFR-01).
+# Each surface is a separately named job so a red check names the package that owns
+# the failure (AC-3) and every job name is a stable branch-protection target (AC-1).
+#
+# This workflow currently covers the core Swift package (Linux + macOS) and the
+# dashboard. Contracts/config/migration gates (NIC-68), secret scanning (NIC-69), and
+# documentation checks (NIC-70) are added as further named jobs in later increments.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev
+      - prod
+
+# Superseded runs on the same ref are cancelled so the latest push is what gates.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard:
+    name: dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Corepack activates the pnpm version pinned in package.json (packageManager).
+      # Enabled before setup-node so its pnpm cache can resolve the store path.
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      # --frozen-lockfile fails if pnpm-lock.yaml is out of sync with any package.json,
+      # independent of the pnpm store cache — so a warm cache can never hide lockfile
+      # drift (AC-2).
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm --dir apps/dashboard lint
+
+      - name: Typecheck
+        run: pnpm --dir apps/dashboard typecheck
+
+      - name: Unit tests
+        run: pnpm --dir apps/dashboard test --run
+
+      - name: Production build
+        run: pnpm --dir apps/dashboard build
+
+  core-swift-linux:
+    name: core-swift-linux
+    runs-on: ubuntu-latest
+    # Proves the portable core builds and tests on a non-Mac environment (NFR-01).
+    # The official Swift image is the toolchain entrypoint; bump the tag to raise the
+    # Swift floor. Linux has none of the Windows dev-box symlink / OneDrive constraints.
+    container:
+      image: swift:6.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: swiftpm-linux-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: |
+            swiftpm-linux-
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Swift tests
+        run: swift test
+
+  core-swift-macos:
+    name: core-swift-macos
+    runs-on: macos-15
+    # A macOS CI build proves portable compilation on Apple's toolchain — not real
+    # AppKit window behavior (that is validated on target hardware, NIC-15).
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: swiftpm-macos-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: |
+            swiftpm-macos-
+
+      # Fail loudly if the runner's default toolchain is older than the package floor
+      # rather than surfacing a confusing mid-compile error.
+      - name: Verify Swift toolchain (>= 6.0)
+        run: |
+          swift --version
+          major=$(swift --version 2>&1 | grep -oE 'Swift version [0-9]+' | grep -oE '[0-9]+$' | head -n1)
+          if [ "${major:-0}" -lt 6 ]; then
+            echo "Swift 6.0+ is required; found major version ${major:-unknown}." >&2
+            exit 1
+          fi
+
+      - name: Swift tests
+        run: swift test
