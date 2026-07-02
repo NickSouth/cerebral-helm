@@ -129,6 +129,50 @@ jobs:
       - name: Swift tests
         run: swift test
 
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    # Documentation and compatibility gate (NIC-70 / NFR-10). Required decision docs
+    # must exist and relative links must resolve (AC-10), the compatibility manifest
+    # must validate as machine-readable (AC-11), and every changelog entry must declare
+    # config + migration impact (AC-12).
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate required docs, links, and changelog
+        run: node ./scripts/validate-docs.mjs
+
+      - name: Validate compatibility manifest
+        run: node ./scripts/validate-compatibility.mjs
+
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    # Secret scanning + privacy regression gate (NIC-69 / FR-OBS-03, FR-CFG-03).
+    # gitleaks proves no real credentials are committed, including in fixtures/config
+    # (AC-8); the canary sweep proves the redaction test markers never leak into
+    # shipped artifacts or build output (AC-7). Diagnostic-export redaction (AC-9) is
+    # proven by the redaction/disclosure tests in the core-swift jobs.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so gitleaks scans commits, not just the tip.
+          fetch-depth: 0
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: ${{ github.workspace }}/.gitleaks.toml
+
+      # Node-only sweep (no dependencies); the ubuntu runner's preinstalled Node is fine.
+      - name: Canary leak sweep
+        run: node ./scripts/secret-canary-sweep.mjs
+
   core-swift-macos:
     name: core-swift-macos
     runs-on: macos-15

@@ -26,14 +26,26 @@ branch-protection rule for `prod` (and `dev`, if protected).
 | `dashboard` | `ubuntu-latest` | `apps/dashboard` | install (frozen lockfile) → lint → typecheck → unit tests → production build |
 | `core-swift-linux` | `ubuntu-latest` (Swift container) | portable Swift core (`packages/*`, `apps/cli`) on non-Mac | `swift test` |
 | `core-swift-macos` | `macos-15` | portable Swift core on Apple's toolchain | verify Swift ≥ 6.0 → `swift test` |
+| `secrets` | `ubuntu-latest` | no committed credentials; no leaked redaction canaries | gitleaks (working tree + history) → `secret-canary-sweep` |
+| `docs` | `ubuntu-latest` | required decision docs, link integrity, changelog convention, compatibility manifest | `validate-docs` → `validate-compatibility` |
 
 Migration behaviour (empty install, forward upgrade, checksum verification) is gated
 by `swift test` in the `core-swift-*` jobs via `Tests/StorageTests`, not a separate
 job. `contracts-config` gates the artifacts those contracts and migrations are
 generated from.
 
-Later increments add named jobs to the same workflow: `secrets` (NIC-69) and `docs`
-(NIC-70). Add each to the required set as it lands.
+Diagnostic-export and log redaction (a canary never reaches a log, fixture, or
+diagnostic) is proven by the redaction/disclosure tests in the `core-swift-*` jobs
+(`Tests/CoreModelTests`, `Tests/ToolsTests`); the `secrets` job's `secret-canary-sweep`
+is the output-side complement, failing if any `CANARY-` marker reaches a shipped
+artifact or build output. Canary values live in
+[`scripts/canary-registry.json`](../../scripts/canary-registry.json) and are allowlisted
+in [`.gitleaks.toml`](../../.gitleaks.toml) so the intentional fakes never trip gitleaks.
+
+The required decision documents are listed in
+[`docs/required-docs.json`](../required-docs.json); the changelog convention (every
+entry declares config and migration impact) is documented in
+[`CHANGELOG.md`](../../CHANGELOG.md).
 
 ## Design notes
 

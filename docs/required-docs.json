@@ -1,0 +1,22 @@
+{
+  "description": "The decision and compatibility documents that must exist for a release-ready foundation (NIC-70 / NFR-10, AC-10). CI fails if any listed path is missing, so a required ADR or spec cannot be deleted or renamed without updating this manifest. Add a document here when it becomes load-bearing.",
+  "requiredDocs": [
+    "docs/adr/ADR-001-appkit-wkwebview-shell.md",
+    "docs/adr/ADR-002-single-command-lifecycle.md",
+    "docs/adr/ADR-003-internal-tool-registry-and-risk-policy.md",
+    "docs/adr/ADR-004-versioned-cerebral-bridge.md",
+    "docs/adr/ADR-005-vendored-sqlite-engine.md",
+    "docs/adr/ADR-006-sqlite-single-source-of-truth.md",
+    "docs/adr/ADR-007-executive-default-mode.md",
+    ".agent/spec/MVP-PRD.md",
+    ".agent/spec/TECH-STACK.md",
+    ".agent/spec/UI-CONSTITUTION.md",
+    ".agent/spec/CEREBRALHELM_DESIGN_SPEC.md",
+    "docs/architecture/repository-boundaries.md",
+    "docs/operations/first-mac-bootstrap-checklist.md",
+    "docs/compatibility/compatibility-manifest.json",
+    "docs/compatibility/compatibility-manifest.schema.json",
+    "wiki/NORTH-STAR.md",
+    "CHANGELOG.md"
+  ]
+}

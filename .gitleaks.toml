@@ -1,0 +1,17 @@
+title = "CerebralHelm secret scanning"
+
+# Inherit gitleaks' built-in rule set; this repo only adds an allowlist so the
+# intentional, fake redaction test canaries never trip the scan. Real credentials
+# are still caught (NIC-69 AC-8 / FR-CFG-03).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Intentional fake redaction-test canaries — never real secrets. The CANARY- prefix is the shared marker (see scripts/canary-registry.json)."
+regexes = [
+  '''CANARY-[A-Za-z0-9._-]+'''
+]
+paths = [
+  '''scripts/canary-registry\.json''',
+  '''scripts/secret-canary-sweep\.mjs'''
+]
