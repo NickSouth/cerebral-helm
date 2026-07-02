@@ -24,6 +24,50 @@ permissions:
   contents: read
 
 jobs:
+  contracts-config:
+    name: contracts-config
+    runs-on: ubuntu-latest
+    # Deterministic contract, config, mode/agent/tool, and fixture gates (NIC-68 /
+    # FR-CFG-02, FR-OBS-01). A single invalid artifact fails the job (AC-4). Migration
+    # empty/upgrade/checksum behaviour is verified in the core-swift jobs (StorageTests);
+    # this job gates the artifacts those migrations and contracts are generated from.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No --require-swift: this Node-only job has no Swift toolchain.
+      - name: Toolchain versions
+        run: node ./scripts/check-toolchain.mjs
+
+      - name: Validate config
+        run: node ./scripts/validate-config.mjs
+
+      - name: Validate compatibility manifest
+        run: node ./scripts/validate-compatibility.mjs
+
+      - name: Validate contracts
+        run: node ./scripts/validate-contracts.mjs
+
+      - name: Check generated-contract drift
+        run: node ./scripts/check-contract-drift.mjs
+
+      # Schemas, generated types, examples, the four modes, four agents, tools, and
+      # fixtures — one bad artifact fails strict decoding here (AC-4).
+      - name: Contract, config, and fixture tests
+        run: node --test scripts/*.test.mjs
+
   dashboard:
     name: dashboard
     runs-on: ubuntu-latest

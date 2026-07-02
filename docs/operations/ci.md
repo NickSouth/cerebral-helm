@@ -22,12 +22,18 @@ branch-protection rule for `prod` (and `dev`, if protected).
 
 | Job name | Runner | Owns | Steps |
 |---|---|---|---|
+| `contracts-config` | `ubuntu-latest` | contracts, config, modes/agents/tools, fixtures | validators (`validate-config`, `validate-compatibility`, `validate-contracts`, `check-contract-drift`) → `node --test scripts/*.test.mjs` |
 | `dashboard` | `ubuntu-latest` | `apps/dashboard` | install (frozen lockfile) → lint → typecheck → unit tests → production build |
 | `core-swift-linux` | `ubuntu-latest` (Swift container) | portable Swift core (`packages/*`, `apps/cli`) on non-Mac | `swift test` |
 | `core-swift-macos` | `macos-15` | portable Swift core on Apple's toolchain | verify Swift ≥ 6.0 → `swift test` |
 
-Later increments add named jobs to the same workflow: `contracts-config` (NIC-68),
-`secrets` (NIC-69), and `docs` (NIC-70). Add each to the required set as it lands.
+Migration behaviour (empty install, forward upgrade, checksum verification) is gated
+by `swift test` in the `core-swift-*` jobs via `Tests/StorageTests`, not a separate
+job. `contracts-config` gates the artifacts those contracts and migrations are
+generated from.
+
+Later increments add named jobs to the same workflow: `secrets` (NIC-69) and `docs`
+(NIC-70). Add each to the required set as it lands.
 
 ## Design notes
 
