@@ -1,4 +1,8 @@
-import type { ConfirmationDisclosure, DashboardBootstrapState, DashboardMode } from "../bridge/types";
+import type {
+  ConfirmationDisclosure,
+  DashboardBootstrapState,
+  DashboardMode
+} from "../bridge/types";
 
 export type { DashboardMode };
 

@@ -31,14 +31,14 @@ export function AppRoot() {
       <DashboardStateProvider store={store}>
         <AppearanceProvider>
           <ThemeProvider>
-          <ConversationProvider>
-            <SettingsProvider>
-              <a className="skip-link" href="#main">
-                Skip to main content
-              </a>
-              <DashboardShell />
-            </SettingsProvider>
-          </ConversationProvider>
+            <ConversationProvider>
+              <SettingsProvider>
+                <a className="skip-link" href="#main">
+                  Skip to main content
+                </a>
+                <DashboardShell />
+              </SettingsProvider>
+            </ConversationProvider>
           </ThemeProvider>
         </AppearanceProvider>
       </DashboardStateProvider>

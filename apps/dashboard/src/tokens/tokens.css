@@ -93,7 +93,9 @@
   /* --- Typography --- */
   --ch-font-family: "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   /* Monospace display face for panel titles, the Heimlich wordmark, and the clock. */
-  --ch-font-mono: "Cascadia Code", "Cascadia Mono", ui-monospace, "SF Mono", "Segoe UI Mono", "Roboto Mono", monospace;
+  --ch-font-mono:
+    "Cascadia Code", "Cascadia Mono", ui-monospace, "SF Mono", "Segoe UI Mono", "Roboto Mono",
+    monospace;
   --ch-font-size-display: 2.25rem;
   --ch-font-size-xl: 1.75rem;
   --ch-font-size-lg: 1.3rem;
@@ -140,7 +142,7 @@
   /* Deep blue-black — the gold identity lives only in accents/the Heimlich field, not the base. */
   --ch-bg-base: #04101d;
   --ch-bg-gradient-top: #0a1a2b;
-  --ch-glow-radial: rgba(95, 210, 232, 0.10);
+  --ch-glow-radial: rgba(95, 210, 232, 0.1);
 }
 
 [data-mode="developer"] {

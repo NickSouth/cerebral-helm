@@ -1,5 +1,9 @@
 import type { BridgeEvent, CerebralBridge } from "../bridge/cerebralBridge";
-import type { ConfirmationDisclosure, DashboardStateSnapshot, HeimlichState } from "../bridge/types";
+import type {
+  ConfirmationDisclosure,
+  DashboardStateSnapshot,
+  HeimlichState
+} from "../bridge/types";
 import type { DashboardState, DashboardStore } from "./dashboardState";
 
 /** How a command-lifecycle status maps onto Heimlich's consciousness state (design spec §5.8). */
@@ -22,7 +26,8 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
     case "confirmation.changed": {
       // A policy-owned confirmation arrived (a disclosure) or was resolved/invalidated (null).
       // Runtime-only state — never folded into the bootstrap config (NIC-62).
-      const next = (event.payload as { confirmation?: ConfirmationDisclosure | null }).confirmation ?? null;
+      const next =
+        (event.payload as { confirmation?: ConfirmationDisclosure | null }).confirmation ?? null;
       const current = state.activeConfirmation ?? null;
       if (next === current) {
         return state;
@@ -48,7 +53,8 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
       return { ...state, heimlich: { ...state.heimlich, state: next } };
     }
     case "bridge.capability.changed": {
-      const capability = (event.payload as { capability?: { id?: string; available?: boolean } }).capability;
+      const capability = (event.payload as { capability?: { id?: string; available?: boolean } })
+        .capability;
       const metricsDown = capability?.id === "system.metrics" && capability.available === false;
       if (!metricsDown || state.regions.systemHealth.state === "stale") {
         return state;
@@ -88,7 +94,10 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
  * bridge — and would additionally `await bridge.getBootstrapState()` for its seed — without
  * touching components.
  */
-export function createBridgeStore(bridge: CerebralBridge, initialState: DashboardState): DashboardStore {
+export function createBridgeStore(
+  bridge: CerebralBridge,
+  initialState: DashboardState
+): DashboardStore {
   let state = initialState;
   const listeners = new Set<() => void>();
 

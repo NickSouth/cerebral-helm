@@ -35,7 +35,9 @@ export function RightRail() {
                 aria-pressed={active}
                 disabled={readOnly}
                 aria-disabled={readOnly || undefined}
-                title={readOnly ? "Mode switching is paused while the dashboard is read-only" : undefined}
+                title={
+                  readOnly ? "Mode switching is paused while the dashboard is read-only" : undefined
+                }
                 onClick={(event) => {
                   if (!active && !readOnly) {
                     // Arm the mode wave from this control's center: the theme change propagates
@@ -65,7 +67,11 @@ export function RightRail() {
               </span>
               <span className="agent-list__name">{agent.label}</span>
               <span className="agent-list__status">
-                <span className="agent-status-dot" data-activity={agent.activity} aria-hidden="true" />
+                <span
+                  className="agent-status-dot"
+                  data-activity={agent.activity}
+                  aria-hidden="true"
+                />
                 {agentActivityLabel(agent.activity)}
               </span>
             </li>

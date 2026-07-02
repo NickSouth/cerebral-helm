@@ -67,5 +67,12 @@ test("dashboard shell has no critical or serious accessibility violations", asyn
     (violation) => violation.impact === "critical" || violation.impact === "serious"
   );
 
-  expect(blocking, JSON.stringify(blocking.map((v) => v.id), null, 2)).toEqual([]);
+  expect(
+    blocking,
+    JSON.stringify(
+      blocking.map((v) => v.id),
+      null,
+      2
+    )
+  ).toEqual([]);
 });

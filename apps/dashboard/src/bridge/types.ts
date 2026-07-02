@@ -198,7 +198,8 @@ export type ConfirmationRisk =
   | "purchase_or_booking";
 
 export type ConfirmationDataLeavingDevice = "none" | "metadata_only" | "content" | "unknown";
-export type ConfirmationReversibility = "reversible" | "partially_reversible" | "not_reversible" | "unknown";
+export type ConfirmationReversibility =
+  "reversible" | "partially_reversible" | "not_reversible" | "unknown";
 
 export interface ConfirmationTool {
   readonly id: string;

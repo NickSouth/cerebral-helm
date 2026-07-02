@@ -77,7 +77,10 @@ export function CommandSurface({
   const trimmed = value.trim();
 
   return (
-    <div className={`command-surface command-surface--${variant}`} data-disabled={disabled || undefined}>
+    <div
+      className={`command-surface command-surface--${variant}`}
+      data-disabled={disabled || undefined}
+    >
       {variant === "launcher" ? (
         <span className="global-search__icon" aria-hidden="true">
           <SearchGlyph />
@@ -126,7 +129,9 @@ export function CommandSurface({
                 }}
               >
                 {suggestion.label}
-                {suggestion.available ? null : <span className="command-suggestion__badge">unavailable</span>}
+                {suggestion.available ? null : (
+                  <span className="command-suggestion__badge">unavailable</span>
+                )}
               </button>
             </li>
           ))}

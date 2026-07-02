@@ -33,4 +33,3 @@ export function humanizeId(id: string): string {
   const text = id.replace(/[-_]/g, " ").trim();
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : id;
 }
-

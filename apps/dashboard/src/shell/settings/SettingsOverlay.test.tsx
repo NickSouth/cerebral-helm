@@ -62,7 +62,15 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
   it("lists all seven categories and pins an honest-disabled shutdown", () => {
     renderApp();
     const dialog = openSettings();
-    for (const label of ["General", "Permissions", "Modes", "Actions", "Customization", "Setup", "Knowledge"]) {
+    for (const label of [
+      "General",
+      "Permissions",
+      "Modes",
+      "Actions",
+      "Customization",
+      "Setup",
+      "Knowledge"
+    ]) {
       expect(within(dialog).getByRole("tab", { name: label })).toBeInTheDocument();
     }
     expect(within(dialog).getByRole("button", { name: /Shut down CerebralHelm/ })).toBeDisabled();

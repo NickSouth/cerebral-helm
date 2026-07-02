@@ -35,7 +35,7 @@ const PARAMS: Record<RibbonState, { amplitude: number; distance: number; speed: 
   listening: { amplitude: 1.2, distance: 0.1, speed: 1.3 },
   thinking: { amplitude: 1.6, distance: 0.2, speed: 1.8 },
   speaking: { amplitude: 1.4, distance: 0.15, speed: 1.5 },
-  focus: { amplitude: 0.9, distance: 0.05, speed: 0.8 },
+  focus: { amplitude: 0.9, distance: 0.05, speed: 0.8 }
 };
 
 const DEFAULT_GOLD: Rgb = [0.89, 0.647, 0.192]; // #e3a531 (owner-tuned Heimlich gold)
@@ -64,8 +64,8 @@ export function HeimlichConsciousness({ interactive = false }: HeimlichConscious
     const id = requestAnimationFrame(() =>
       setColors({
         a: readVarAsRgb(host, "--ch-heimlich-primary", DEFAULT_GOLD),
-        b: readVarAsRgb(host, "--ch-heimlich-secondary", DEFAULT_CYAN),
-      }),
+        b: readVarAsRgb(host, "--ch-heimlich-secondary", DEFAULT_CYAN)
+      })
     );
     return () => cancelAnimationFrame(id);
   }, [mode]);
@@ -101,7 +101,7 @@ function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(() =>
     typeof window !== "undefined" && typeof window.matchMedia === "function"
       ? window.matchMedia(query).matches
-      : false,
+      : false
   );
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;

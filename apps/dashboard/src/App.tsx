@@ -27,9 +27,9 @@ export function App() {
         <p className="eyebrow">CerebralHelm / Design tokens</p>
         <h1>Token reference</h1>
         <p className="lede">
-          The foundation surface for the PRE-UI dashboard. Every value here comes from a
-          semantic token; mode color is applied only through <code>data-mode</code>. This
-          page is the first visual-regression fixture.
+          The foundation surface for the PRE-UI dashboard. Every value here comes from a semantic
+          token; mode color is applied only through <code>data-mode</code>. This page is the first
+          visual-regression fixture.
         </p>
       </header>
 
@@ -91,7 +91,9 @@ export function App() {
           <span className="type-display">Good morning</span>
           <span className="type-xl">Extra large heading</span>
           <span className="type-lg">Panel value</span>
-          <span className="type-base">Body text reads at base size and wraps before shrinking.</span>
+          <span className="type-base">
+            Body text reads at base size and wraps before shrinking.
+          </span>
           <span className="type-sm">Secondary text</span>
           <span className="eyebrow">Eyebrow label</span>
         </div>

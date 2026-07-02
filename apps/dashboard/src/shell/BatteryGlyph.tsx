@@ -27,7 +27,15 @@ export function BatteryGlyph({ percent }: { percent: number }) {
     >
       <rect x="2" y="8" width="17" height="8" rx="2" stroke="currentColor" strokeWidth="1.4" />
       <rect x="20" y="10.5" width="1.8" height="3" rx="0.6" fill="currentColor" />
-      <rect className="battery-glyph__fill" data-tone={tone} x="3.5" y="9.5" width={fillWidth} height="5" rx="1" />
+      <rect
+        className="battery-glyph__fill"
+        data-tone={tone}
+        x="3.5"
+        y="9.5"
+        width={fillWidth}
+        height="5"
+        rx="1"
+      />
     </svg>
   );
 }

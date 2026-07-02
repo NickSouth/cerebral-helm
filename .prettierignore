@@ -1,0 +1,22 @@
+# Build and dependency output
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.build/
+.pnpm-store/
+*.tsbuildinfo
+
+# Generated contract artifacts (owned by the codegen pipeline, not hand-formatted)
+packages/contracts/generated/
+
+# Playwright visual baselines
+**/*-snapshots/
+
+# Lockfiles
+pnpm-lock.yaml
+Package.resolved
+
+# Repo-root generated page
+system-map.html

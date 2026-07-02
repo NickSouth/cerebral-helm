@@ -352,8 +352,16 @@
    Gold (left) → cyan (right) from the active mode accent — themed via data-mode, never inlined. */
 .heimlich__ribbon-fallback {
   background:
-    radial-gradient(120% 120% at 18% 45%, color-mix(in srgb, var(--ch-accent-primary) 26%, transparent), transparent 60%),
-    radial-gradient(120% 120% at 82% 55%, color-mix(in srgb, var(--ch-accent-secondary) 24%, transparent), transparent 60%),
+    radial-gradient(
+      120% 120% at 18% 45%,
+      color-mix(in srgb, var(--ch-accent-primary) 26%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      120% 120% at 82% 55%,
+      color-mix(in srgb, var(--ch-accent-secondary) 24%, transparent),
+      transparent 60%
+    ),
     var(--ch-surface-panel);
 }
 

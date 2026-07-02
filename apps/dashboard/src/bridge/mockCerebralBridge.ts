@@ -6,15 +6,24 @@ import type {
   RecentActivity,
   Unsubscribe
 } from "./cerebralBridge";
-import { getDashboardConfigBundle, getDashboardFixture, failureStateFixtures } from "../fixtures/canonicalFixtures";
-import { capabilityBridgeEvent, confirmationBridgeEvent, lifecycleBridgeEvents } from "./eventFixtures";
+import {
+  getDashboardConfigBundle,
+  getDashboardFixture,
+  failureStateFixtures
+} from "../fixtures/canonicalFixtures";
+import {
+  capabilityBridgeEvent,
+  confirmationBridgeEvent,
+  lifecycleBridgeEvents
+} from "./eventFixtures";
 import { validateSettingsChanges } from "../shell/settings/settingsPatch";
 import recentActivityResponse from "../../../../packages/contracts/fixtures/valid/bridge/operations/get-recent-activity-response.json";
 
 /** Executive is the default mode (config/defaults/app.json `defaultModeId`; ADR-007). */
 const DEFAULT_BOOTSTRAP_KEY = "mode.executive.ready";
 
-const RECENT_ACTIVITY = (recentActivityResponse.payload as { recentActivity: RecentActivity }).recentActivity;
+const RECENT_ACTIVITY = (recentActivityResponse.payload as { recentActivity: RecentActivity })
+  .recentActivity;
 
 /** Compose a full bootstrap state from the eager config bundle and a per-state snapshot. */
 function composeBootstrapState(canonicalKey: string): DashboardBootstrapState {
@@ -29,7 +38,9 @@ function composeBootstrapState(canonicalKey: string): DashboardBootstrapState {
  * with one backed by `createMockCerebralBridge()` without changing consumers. A caller may
  * seed a non-default canonical state (e.g. a degraded state for preview/tests — NIC-64).
  */
-export function loadBootstrapState(bootstrapKey: string = DEFAULT_BOOTSTRAP_KEY): DashboardBootstrapState {
+export function loadBootstrapState(
+  bootstrapKey: string = DEFAULT_BOOTSTRAP_KEY
+): DashboardBootstrapState {
   return composeBootstrapState(bootstrapKey);
 }
 
@@ -48,7 +59,9 @@ export interface MockCerebralBridge extends CerebralBridge {
   replayConfirmation(): void;
 }
 
-export function createMockCerebralBridge(options: { bootstrapKey?: string } = {}): MockCerebralBridge {
+export function createMockCerebralBridge(
+  options: { bootstrapKey?: string } = {}
+): MockCerebralBridge {
   const bootstrapKey = options.bootstrapKey ?? DEFAULT_BOOTSTRAP_KEY;
   const listeners = new Set<BridgeEventListener>();
 
@@ -134,7 +147,11 @@ export function createMockCerebralBridge(options: { bootstrapKey?: string } = {}
           type: "system.status.changed",
           schemaVersion: "1.0.0",
           timestamp: fixture.clock,
-          payload: { canonicalKey: fixture.canonicalKey, category: fixture.category, state: fixture.state }
+          payload: {
+            canonicalKey: fixture.canonicalKey,
+            category: fixture.category,
+            state: fixture.state
+          }
         });
       }
     },

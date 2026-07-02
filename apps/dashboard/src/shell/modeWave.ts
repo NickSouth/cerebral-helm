@@ -144,7 +144,11 @@ function runModeWave(notify: () => void): void {
             `circle(${radius}px at ${origin.x}px ${origin.y}px)`
           ]
         },
-        { duration: WAVE_DURATION_MS, easing: WAVE_EASING, pseudoElement: "::view-transition-new(root)" }
+        {
+          duration: WAVE_DURATION_MS,
+          easing: WAVE_EASING,
+          pseudoElement: "::view-transition-new(root)"
+        }
       );
       spawnWaveRing(origin.x, origin.y, radius);
     })

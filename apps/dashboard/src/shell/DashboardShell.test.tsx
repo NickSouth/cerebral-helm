@@ -11,7 +11,10 @@ import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCere
 import { getDashboardConfigBundle, getDashboardFixture } from "../fixtures/canonicalFixtures";
 import type { DashboardState } from "../state/dashboardState";
 
-function renderProviders(bridge: ReturnType<typeof createMockCerebralBridge>, store: ReturnType<typeof createBridgeStore>) {
+function renderProviders(
+  bridge: ReturnType<typeof createMockCerebralBridge>,
+  store: ReturnType<typeof createBridgeStore>
+) {
   return render(
     <BridgeProvider bridge={bridge}>
       <DashboardStateProvider store={store}>
@@ -31,8 +34,12 @@ function renderProviders(bridge: ReturnType<typeof createMockCerebralBridge>, st
 
 /** Render the shell over a bridge-backed store. With no key, boots the default mode (Executive). */
 function renderShell(canonicalKey?: string) {
-  const bridge = canonicalKey ? createMockCerebralBridge({ bootstrapKey: canonicalKey }) : createMockCerebralBridge();
-  const initial = canonicalKey ? { ...getDashboardConfigBundle(), ...getDashboardFixture(canonicalKey) } : loadBootstrapState();
+  const bridge = canonicalKey
+    ? createMockCerebralBridge({ bootstrapKey: canonicalKey })
+    : createMockCerebralBridge();
+  const initial = canonicalKey
+    ? { ...getDashboardConfigBundle(), ...getDashboardFixture(canonicalKey) }
+    : loadBootstrapState();
   const store = createBridgeStore(bridge, initial);
   return { bridge, ...renderProviders(bridge, store) };
 }
@@ -40,7 +47,10 @@ function renderShell(canonicalKey?: string) {
 /** Render the shell with an arbitrary state override (for degraded-state coverage, NIC-64). */
 function renderShellWithState(mutate: (base: DashboardState) => DashboardState) {
   const bridge = createMockCerebralBridge();
-  const base: DashboardState = { ...getDashboardConfigBundle(), ...getDashboardFixture("mode.executive.ready") };
+  const base: DashboardState = {
+    ...getDashboardConfigBundle(),
+    ...getDashboardFixture("mode.executive.ready")
+  };
   const store = createBridgeStore(bridge, mutate(base));
   return { bridge, ...renderProviders(bridge, store) };
 }
@@ -56,7 +66,9 @@ describe("DashboardShell structure", () => {
     renderShell();
     const main = document.getElementById("main");
     expect(main).not.toBeNull();
-    expect(within(main as HTMLElement).getByRole("region", { name: "Heimlich" })).toBeInTheDocument();
+    expect(
+      within(main as HTMLElement).getByRole("region", { name: "Heimlich" })
+    ).toBeInTheDocument();
   });
 
   it("renders the three zones plus the persistent bottom bar", () => {
@@ -75,14 +87,21 @@ describe("DashboardShell structure", () => {
 
   it("renders the fixed four-agent roster", () => {
     renderShell();
-    for (const name of ["Research Analyst", "Financial Advisor", "Project Manager", "System Janitor"]) {
+    for (const name of [
+      "Research Analyst",
+      "Financial Advisor",
+      "Project Manager",
+      "System Janitor"
+    ]) {
       expect(screen.getByText(name)).toBeInTheDocument();
     }
   });
 
   it("renders eight quick-action slots — wired ones enabled, placeholders disabled", () => {
     renderShell();
-    const slots = within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole("button");
+    const slots = within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole(
+      "button"
+    );
     expect(slots).toHaveLength(8);
     // D4 wires capture-note; the rest remain greyed placeholders.
     expect(screen.getByRole("button", { name: "Capture note" })).toBeEnabled();
@@ -139,7 +158,9 @@ describe("DashboardShell config-driven content (one view, four modes, no per-mod
     // The agent-expanded fixture keeps battery honestly unavailable while system health is live.
     renderShell("agent.research-analyst.expanded");
     const information = screen.getByRole("complementary", { name: "Information" });
-    expect(within(information).getByTitle(/Battery — requires the macOS host/)).toHaveTextContent("Unavailable");
+    expect(within(information).getByTitle(/Battery — requires the macOS host/)).toHaveTextContent(
+      "Unavailable"
+    );
   });
 });
 
@@ -243,7 +264,11 @@ describe("DashboardShell confirmation surface (D5 / NIC-62)", () => {
     renderWithConfirmation();
     const dialog = screen.getByRole("dialog", { name: "Confirm action" });
     expect(within(dialog).getByText("Run allowlisted hook ondraft-dev.")).toBeInTheDocument();
-    expect(within(dialog).getByText("hook.run v1.0.0 — Execute a configured allowlisted hook without accepting arbitrary shell text.")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        "hook.run v1.0.0 — Execute a configured allowlisted hook without accepting arbitrary shell text."
+      )
+    ).toBeInTheDocument();
     // The explicit "nothing has happened yet" statement is always present (design spec §9).
     expect(within(dialog).getByText("Execution has not happened yet.")).toBeInTheDocument();
   });
@@ -292,10 +317,14 @@ describe("DashboardShell degraded states (E4 / NIC-64)", () => {
     expect(within(banner).getByRole("button", { name: "Retry connection" })).toBeInTheDocument();
 
     // Mode switch, quick actions, and the command launcher are all read-only.
-    for (const option of within(screen.getByRole("group", { name: "Mode" })).getAllByRole("button")) {
+    for (const option of within(screen.getByRole("group", { name: "Mode" })).getAllByRole(
+      "button"
+    )) {
       expect(option).toBeDisabled();
     }
-    for (const slot of within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole("button")) {
+    for (const slot of within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole(
+      "button"
+    )) {
       expect(slot).toBeDisabled();
     }
     expect(screen.getByLabelText("Ask Heimlich or type a command")).toBeDisabled();
@@ -321,14 +350,20 @@ describe("DashboardShell degraded states (E4 / NIC-64)", () => {
         timestamp: "2026-06-23T16:29:00.000Z",
         payload: {
           category: "bridge_failure",
-          state: { startupMode: "recovery", status: "read_only", message: "Bridge major version is incompatible." }
+          state: {
+            startupMode: "recovery",
+            status: "read_only",
+            message: "Bridge major version is incompatible."
+          }
         }
       })
     );
 
     expect(screen.getByText("Read-only recovery")).toBeInTheDocument();
     expect(screen.getByText("Bridge major version is incompatible.")).toBeInTheDocument();
-    expect(within(screen.getByRole("group", { name: "Mode" })).getAllByRole("button")[0]).toBeDisabled();
+    expect(
+      within(screen.getByRole("group", { name: "Mode" })).getAllByRole("button")[0]
+    ).toBeDisabled();
   });
 
   it("renders a resolved-but-empty region as a calm empty state, distinct from unavailable", () => {

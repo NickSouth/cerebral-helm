@@ -1,12 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  MODE_IDS,
-  MODE_TOKEN_NAMES,
-  isRegisteredModeTokenName,
-  modeTokenCssVar
-} from "./tokens";
+import { MODE_IDS, MODE_TOKEN_NAMES, isRegisteredModeTokenName, modeTokenCssVar } from "./tokens";
 import manifest from "./tokens.manifest.json";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -53,7 +48,11 @@ describe("design tokens", () => {
   });
 
   it("defines keyboard-focus tokens", () => {
-    for (const token of ["--ch-focus-ring-color", "--ch-focus-ring-width", "--ch-focus-ring-offset"]) {
+    for (const token of [
+      "--ch-focus-ring-color",
+      "--ch-focus-ring-width",
+      "--ch-focus-ring-offset"
+    ]) {
       expect(defines(tokensCss, token)).toBe(true);
     }
   });

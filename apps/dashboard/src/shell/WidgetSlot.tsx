@@ -8,7 +8,9 @@ import { WIDGET_REGISTRY } from "../widgets/widgets";
 import type { WidgetData } from "../widgets/widgetData";
 import { formatDay } from "./format";
 
-const WIDGET_LABELS: ReadonlyMap<string, string> = new Map(WIDGET_REGISTRY.map((widget) => [widget.id, widget.label]));
+const WIDGET_LABELS: ReadonlyMap<string, string> = new Map(
+  WIDGET_REGISTRY.map((widget) => [widget.id, widget.label])
+);
 
 /** Icon-first annotation per widget id (visual reference); unknown ids fall back to a generic glyph. */
 const WIDGET_ICONS: Readonly<Record<string, PanelGlyphName>> = {
@@ -39,32 +41,51 @@ function list(children: ReactNode) {
  * Per-widget body renderers, keyed by widget id — the registry-driven slot (design spec
  * §5.3): a widget id resolves to its own renderer, never a per-mode conditional. Each reads
  * its slice of the WidgetData payload.
+ *
+ * The payload is intentionally heterogeneous: each renderer knows only its own widget's
+ * shape, so `data` is untyped at this dispatch boundary (WidgetBody hands it in as an
+ * unknown-derived record). Typed per-widget payloads are deferred to the widget-data
+ * contract work; the explicit-any allowance is scoped to this registry only.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 const WIDGET_BODIES: Readonly<Record<string, (data: any) => ReactNode>> = {
   "market-brief": (data) =>
-    list((data.tickers ?? []).map((ticker: any, index: number) =>
-      row(ticker.symbol, `${ticker.changePct > 0 ? "+" : ""}${ticker.changePct}%`, index)
-    )),
+    list(
+      (data.tickers ?? []).map((ticker: any, index: number) =>
+        row(ticker.symbol, `${ticker.changePct > 0 ? "+" : ""}${ticker.changePct}%`, index)
+      )
+    ),
   "project-git-status": (data) =>
     list(
       <>
         {row("Branch", data.branch, "branch")}
         {row("Checks", data.checks, "checks")}
-        {typeof data.openPullRequests === "number" ? row("Open PRs", data.openPullRequests, "prs") : null}
+        {typeof data.openPullRequests === "number"
+          ? row("Open PRs", data.openPullRequests, "prs")
+          : null}
       </>
     ),
   deadlines: (data) =>
-    list((data.items ?? []).map((item: any, index: number) => row(item.title, formatDay(item.dueAt), index))),
+    list(
+      (data.items ?? []).map((item: any, index: number) =>
+        row(item.title, formatDay(item.dueAt), index)
+      )
+    ),
   spotify: (data) => list(row(data.track, data.artist, "track")),
   projects: (data) =>
     list((data.items ?? []).map((item: any, index: number) => row(item.name, item.status, index))),
   repositories: (data) =>
-    list((data.items ?? []).map((item: any, index: number) => row(item.name, `${item.branch} · ${item.state}`, index))),
+    list(
+      (data.items ?? []).map((item: any, index: number) =>
+        row(item.name, `${item.branch} · ${item.state}`, index)
+      )
+    ),
   courses: (data) =>
     list((data.items ?? []).map((item: any, index: number) => row(item.name, item.next, index))),
   "media-list": (data) =>
     list((data.items ?? []).map((item: any, index: number) => row(item.title, item.kind, index)))
 };
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
   const render = WIDGET_BODIES[widgetId];
@@ -81,7 +102,11 @@ export function WidgetSlot({ data, labelId }: { data: WidgetData; labelId: strin
   const live = data.state === "ready" || data.state === "stale";
 
   return (
-    <Panel label={label} labelId={labelId} icon={<PanelGlyph name={WIDGET_ICONS[data.widgetId] ?? "widget"} />}>
+    <Panel
+      label={label}
+      labelId={labelId}
+      icon={<PanelGlyph name={WIDGET_ICONS[data.widgetId] ?? "widget"} />}
+    >
       {live ? (
         <div className="widget">
           {data.state === "stale" ? <StaleMarker /> : null}

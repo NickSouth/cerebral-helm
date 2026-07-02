@@ -118,7 +118,10 @@ function ModesPanel() {
   const { modes } = useDashboardState();
   return (
     <Section title="Configured modes">
-      <p className="settings-note">Switch modes from the dashboard. Configuration is defined in files; this is a read-only view.</p>
+      <p className="settings-note">
+        Switch modes from the dashboard. Configuration is defined in files; this is a read-only
+        view.
+      </p>
       <ul className="settings-list">
         {modes.map((modeView) => (
           <li key={modeView.id} className="settings-list__item">
@@ -144,7 +147,9 @@ function ModesPanel() {
 
 // --- Actions --------------------------------------------------------------
 
-const WIRED_ACTION_IDS = new Set(Object.keys((wiredManifest as { wiredActions?: Record<string, unknown> }).wiredActions ?? {}));
+const WIRED_ACTION_IDS = new Set(
+  Object.keys((wiredManifest as { wiredActions?: Record<string, unknown> }).wiredActions ?? {})
+);
 
 function ActionsPanel() {
   const { modes, mode } = useDashboardState();
@@ -153,15 +158,24 @@ function ActionsPanel() {
 
   return (
     <Section title={`Quick actions — ${active?.label ?? ""}`}>
-      <p className="settings-note">The eight quick-action slots for the active mode, and whether each is wired to a workflow yet.</p>
+      <p className="settings-note">
+        The eight quick-action slots for the active mode, and whether each is wired to a workflow
+        yet.
+      </p>
       <ul className="settings-list">
         {actions.map((action, index) => (
           <li key={`${action ?? "empty"}-${index}`} className="settings-list__item">
             <div className="settings-list__text">
-              <span className="settings-list__title">{action ? humanizeId(action) : "Empty slot"}</span>
+              <span className="settings-list__title">
+                {action ? humanizeId(action) : "Empty slot"}
+              </span>
             </div>
             <span className="settings-list__policy">
-              {action && WIRED_ACTION_IDS.has(action) ? "Wired" : action ? "Not wired yet" : "Unconfigured"}
+              {action && WIRED_ACTION_IDS.has(action)
+                ? "Wired"
+                : action
+                  ? "Not wired yet"
+                  : "Unconfigured"}
             </span>
           </li>
         ))}
@@ -183,7 +197,10 @@ function CustomizationPanel() {
 
   return (
     <Section title="Motion">
-      <Field label="Reduce motion" hint="Stills ambient and transition animations across the dashboard.">
+      <Field
+        label="Reduce motion"
+        hint="Stills ambient and transition animations across the dashboard."
+      >
         <label className="settings-switch">
           <input
             type="checkbox"
@@ -233,7 +250,10 @@ function KnowledgePanel() {
   return (
     <>
       <Section title="Knowledge root">
-        <Field label="Root reference" hint="Where durable Markdown knowledge lives. Editable now; browsing arrives with the knowledge system.">
+        <Field
+          label="Root reference"
+          hint="Where durable Markdown knowledge lives. Editable now; browsing arrives with the knowledge system."
+        >
           <input
             type="text"
             className="settings-input"

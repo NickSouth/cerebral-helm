@@ -8,7 +8,13 @@ const BridgeContext = createContext<CerebralBridge | null>(null);
  * calling `applyMode`). Reading state stays on the DashboardStore seam (useDashboardState);
  * this is the write side. Transport-agnostic — the same provider wraps the native bridge.
  */
-export function BridgeProvider({ bridge, children }: { bridge: CerebralBridge; children: ReactNode }) {
+export function BridgeProvider({
+  bridge,
+  children
+}: {
+  bridge: CerebralBridge;
+  children: ReactNode;
+}) {
   return <BridgeContext.Provider value={bridge}>{children}</BridgeContext.Provider>;
 }
 

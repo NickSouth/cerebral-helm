@@ -19,7 +19,8 @@ const SettingsContext = createContext<SettingsController | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>(DEFAULT_SETTINGS_CATEGORY);
+  const [activeCategory, setActiveCategory] =
+    useState<SettingsCategoryId>(DEFAULT_SETTINGS_CATEGORY);
 
   const value = useMemo<SettingsController>(
     () => ({

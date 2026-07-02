@@ -9,7 +9,10 @@
 
 export interface SettingsPatchChanges {
   readonly defaultModeId?: string;
-  readonly appearance?: { readonly density?: "comfortable" | "compact"; readonly reducedMotion?: boolean };
+  readonly appearance?: {
+    readonly density?: "comfortable" | "compact";
+    readonly reducedMotion?: boolean;
+  };
   readonly hotkeys?: { readonly commandPalette?: string };
   readonly knowledge?: { readonly rootReference?: string };
   readonly extensions?: Readonly<Record<string, unknown>>;
@@ -29,7 +32,13 @@ export interface PatchValidation {
 const SCHEMA_VERSION = "1.0.0";
 const MODE_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const DENSITY_VALUES = new Set(["comfortable", "compact"]);
-const ALLOWED_CHANGE_KEYS = new Set(["defaultModeId", "appearance", "hotkeys", "knowledge", "extensions"]);
+const ALLOWED_CHANGE_KEYS = new Set([
+  "defaultModeId",
+  "appearance",
+  "hotkeys",
+  "knowledge",
+  "extensions"
+]);
 const ALLOWED_APPEARANCE_KEYS = new Set(["density", "reducedMotion"]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -80,14 +89,20 @@ export function validateSettingsChanges(changes: unknown): PatchValidation {
 
   if ("knowledge" in changes) {
     const knowledge = changes.knowledge;
-    if (!isPlainObject(knowledge) || (("rootReference" in knowledge) && typeof knowledge.rootReference !== "string")) {
+    if (
+      !isPlainObject(knowledge) ||
+      ("rootReference" in knowledge && typeof knowledge.rootReference !== "string")
+    ) {
       errors.push("knowledge.rootReference must be a string");
     }
   }
 
   if ("hotkeys" in changes) {
     const hotkeys = changes.hotkeys;
-    if (!isPlainObject(hotkeys) || (("commandPalette" in hotkeys) && typeof hotkeys.commandPalette !== "string")) {
+    if (
+      !isPlainObject(hotkeys) ||
+      ("commandPalette" in hotkeys && typeof hotkeys.commandPalette !== "string")
+    ) {
       errors.push("hotkeys.commandPalette must be a string");
     }
   }

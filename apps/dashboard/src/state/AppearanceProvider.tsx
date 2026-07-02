@@ -16,7 +16,10 @@ const AppearanceContext = createContext<AppearanceController | null>(null);
 
 export function AppearanceProvider({ children }: { children: ReactNode }) {
   const [reducedMotion, setReducedMotion] = useState(false);
-  const value = useMemo<AppearanceController>(() => ({ reducedMotion, setReducedMotion }), [reducedMotion]);
+  const value = useMemo<AppearanceController>(
+    () => ({ reducedMotion, setReducedMotion }),
+    [reducedMotion]
+  );
   return <AppearanceContext.Provider value={value}>{children}</AppearanceContext.Provider>;
 }
 

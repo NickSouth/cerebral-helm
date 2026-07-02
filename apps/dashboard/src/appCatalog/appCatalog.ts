@@ -58,7 +58,9 @@ export type AppId = (typeof APP_CATALOG)[number]["id"];
 /** The registered application ids, in catalog order (mirrored by appCatalog.manifest.json). */
 export const APP_IDS: readonly AppId[] = APP_CATALOG.map((app) => app.id);
 
-const APP_BY_ID: ReadonlyMap<string, AppDefinition> = new Map(APP_CATALOG.map((app) => [app.id, app]));
+const APP_BY_ID: ReadonlyMap<string, AppDefinition> = new Map(
+  APP_CATALOG.map((app) => [app.id, app])
+);
 
 export function isRegisteredAppId(id: string): id is AppId {
   return APP_BY_ID.has(id);

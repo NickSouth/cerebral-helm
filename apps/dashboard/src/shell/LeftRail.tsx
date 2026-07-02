@@ -13,8 +13,11 @@ export function LeftRail() {
   const { regions } = useDashboardState();
 
   // tabIndex makes the scrollable rail keyboard-reachable (it has no focusable children of its own,
-  // unlike the operations rail); the rail only scrolls as a fallback on very short screens.
+  // unlike the operations rail); the rail only scrolls as a fallback on very short screens. This is
+  // the WCAG-recommended pattern for a scrollable region, so the non-interactive-tabindex rule is
+  // intentionally suppressed here.
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
     <aside className="shell-rail shell-left" aria-label="Information" tabIndex={0}>
       <SchedulePanel />
       <SystemHealthPanel />

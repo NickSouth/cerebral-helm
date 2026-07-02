@@ -10,7 +10,11 @@
     "test": "vitest",
     "test:visual": "vite build && playwright test",
     "visual:available": "node scripts/visual-available.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{mjs,ts,json}\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{mjs,ts,json}\" \"tests/**/*.ts\""
   },
   "dependencies": {
     "ogl": "^1.0.11",
@@ -19,14 +23,22 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
+    "@eslint/js": "^9.17.0",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.1",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.3.1",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "globals": "^15.14.0",
     "jsdom": "^25.0.1",
+    "prettier": "^3.4.2",
     "typescript": "^5.8.3",
+    "typescript-eslint": "^8.19.0",
     "vite": "^5.4.10",
     "vitest": "^2.1.2"
   }

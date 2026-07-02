@@ -10,10 +10,18 @@
  */
 export function HeimlichAvatar() {
   return (
-    <svg className="heimlich-avatar" viewBox="-104 -176 208 316" aria-hidden="true" focusable="false">
+    <svg
+      className="heimlich-avatar"
+      viewBox="-104 -176 208 316"
+      aria-hidden="true"
+      focusable="false"
+    >
       {/* Horns (organic fill). */}
       <g className="heimlich-avatar__fill">
-        <path id="heimlich-avatar-horn" d="M16 -86 C 28 -122, 46 -152, 84 -170 C 62 -146, 50 -118, 38 -80 Z" />
+        <path
+          id="heimlich-avatar-horn"
+          d="M16 -86 C 28 -122, 46 -152, 84 -170 C 62 -146, 50 -118, 38 -80 Z"
+        />
         <use href="#heimlich-avatar-horn" transform="scale(-1,1)" />
       </g>
 
@@ -30,11 +38,21 @@ export function HeimlichAvatar() {
       </g>
 
       {/* Left eye: organic almond with the horizontal goat-bar pupil. */}
-      <path className="heimlich-avatar__line" d="M-40 -30 Q-28 -39 -16 -30 Q-28 -21 -40 -30 Z" fill="none" strokeWidth={3} />
+      <path
+        className="heimlich-avatar__line"
+        d="M-40 -30 Q-28 -39 -16 -30 Q-28 -21 -40 -30 Z"
+        fill="none"
+        strokeWidth={3}
+      />
       <rect className="heimlich-avatar__fill" x={-34} y={-33} width={12} height={6} rx={2} />
 
       {/* Right eye: cyborg lens + brow plate + cheek circuit trace + jaw seam (secondary). */}
-      <g className="heimlich-avatar__cyber-line" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <g
+        className="heimlich-avatar__cyber-line"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <circle cx={28} cy={-30} r={13} strokeWidth={3.5} />
         <g strokeWidth={2}>
           <line x1={28} y1={-47} x2={28} y2={-41} />

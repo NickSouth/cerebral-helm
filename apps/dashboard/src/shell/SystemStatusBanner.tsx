@@ -20,7 +20,9 @@ function contentFor(posture: UiPosture): BannerContent | null {
     return {
       tone: "recovery",
       title: "Read-only recovery",
-      detail: posture.recoveryReason ?? "Startup entered read-only recovery; your data is preserved and unchanged.",
+      detail:
+        posture.recoveryReason ??
+        "Startup entered read-only recovery; your data is preserved and unchanged.",
       actionLabel: "Reload dashboard"
     };
   }
@@ -28,7 +30,8 @@ function contentFor(posture: UiPosture): BannerContent | null {
     return {
       tone: "offline",
       title: "Dashboard is offline",
-      detail: "Showing the last-known information. Live actions are paused until the connection returns.",
+      detail:
+        "Showing the last-known information. Live actions are paused until the connection returns.",
       actionLabel: "Retry connection"
     };
   }

@@ -20,7 +20,8 @@ interface ConversationContextValue {
 
 const ConversationContext = createContext<ConversationContextValue | null>(null);
 
-const MOCK_REPLY = "Heimlich is a mock pre-Mac — live reasoning arrives with the model integration.";
+const MOCK_REPLY =
+  "Heimlich is a mock pre-Mac — live reasoning arrives with the model integration.";
 
 /**
  * The Heimlich conversation as interactive session state. Seeded from
@@ -33,7 +34,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const bridge = useBridge();
   const seed = useDashboardState().heimlich.conversation;
   const [open, setOpen] = useState(seed.open);
-  const [messages, setMessages] = useState<readonly ConversationMessage[]>(() => [...seed.transcript]);
+  const [messages, setMessages] = useState<readonly ConversationMessage[]>(() => [
+    ...seed.transcript
+  ]);
   const counter = useRef(0);
 
   function nextId(): string {

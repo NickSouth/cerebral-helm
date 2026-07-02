@@ -23,7 +23,7 @@ export const MODE_TOKEN_NAMES = [
   "school.primary",
   "school.secondary",
   "entertainment.primary",
-  "entertainment.secondary",
+  "entertainment.secondary"
 ] as const;
 export type ModeTokenName = (typeof MODE_TOKEN_NAMES)[number];
 

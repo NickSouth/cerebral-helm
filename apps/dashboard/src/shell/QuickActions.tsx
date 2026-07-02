@@ -53,12 +53,22 @@ export function QuickActions() {
     <div className="quick-actions" role="group" aria-label="Quick actions">
       <div className="quick-actions__bars">
         {bars.map((action, index) => (
-          <QuickActionSlot key={`bar-${index}`} action={action} variant="bar" onActivate={resolve(action)} />
+          <QuickActionSlot
+            key={`bar-${index}`}
+            action={action}
+            variant="bar"
+            onActivate={resolve(action)}
+          />
         ))}
       </div>
       <div className="quick-actions__boxes">
         {boxes.map((action, index) => (
-          <QuickActionSlot key={`box-${index}`} action={action} variant="box" onActivate={resolve(action)} />
+          <QuickActionSlot
+            key={`box-${index}`}
+            action={action}
+            variant="box"
+            onActivate={resolve(action)}
+          />
         ))}
       </div>
     </div>

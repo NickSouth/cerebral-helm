@@ -11,5 +11,7 @@ export function useUpdateSettings() {
   const bridge = useBridge();
   return (changes: SettingsPatchChanges) =>
     // The bridge input is an open record; the patch is the schema-shaped settings-patch.
-    bridge.updateSettings({ patch: buildSettingsPatch(changes) as unknown as Readonly<Record<string, unknown>> });
+    bridge.updateSettings({
+      patch: buildSettingsPatch(changes) as unknown as Readonly<Record<string, unknown>>
+    });
 }

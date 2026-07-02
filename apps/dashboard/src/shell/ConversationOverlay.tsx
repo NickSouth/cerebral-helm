@@ -21,8 +21,13 @@ export function ConversationOverlay() {
 
       <ul className="conversation__transcript">
         {messages.map((message) => (
-          <li key={message.id} className={`conversation__message conversation__message--${message.role}`}>
-            <span className="conversation__role">{message.role === "user" ? "You" : "Heimlich"}</span>
+          <li
+            key={message.id}
+            className={`conversation__message conversation__message--${message.role}`}
+          >
+            <span className="conversation__role">
+              {message.role === "user" ? "You" : "Heimlich"}
+            </span>
             <span className="conversation__text">{message.text}</span>
           </li>
         ))}

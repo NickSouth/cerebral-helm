@@ -41,7 +41,9 @@ function AppsGridGlyph() {
       aria-hidden="true"
       focusable="false"
     >
-      {coords.flatMap((y) => coords.map((x) => <rect key={`${x}-${y}`} x={x} y={y} width="4.5" height="4.5" rx="1.2" />))}
+      {coords.flatMap((y) =>
+        coords.map((x) => <rect key={`${x}-${y}`} x={x} y={y} width="4.5" height="4.5" rx="1.2" />)
+      )}
     </svg>
   );
 }
@@ -65,7 +67,13 @@ export function QuickApps() {
           const app = appDefinition(id);
           return (
             <li key={id}>
-              <button type="button" className="quick-app" disabled aria-disabled="true" title="Launching apps is available on the macOS host">
+              <button
+                type="button"
+                className="quick-app"
+                disabled
+                aria-disabled="true"
+                title="Launching apps is available on the macOS host"
+              >
                 <span className="quick-app__icon">
                   <AppGlyph category={app?.category ?? "files"} />
                 </span>
@@ -91,7 +99,13 @@ export function QuickApps() {
           </li>
         ))}
         <li>
-          <button type="button" className="quick-app quick-app--more" disabled aria-disabled="true" title="App discovery is available on the macOS host">
+          <button
+            type="button"
+            className="quick-app quick-app--more"
+            disabled
+            aria-disabled="true"
+            title="App discovery is available on the macOS host"
+          >
             <span className="quick-app__icon" aria-hidden="true">
               <AppsGridGlyph />
             </span>

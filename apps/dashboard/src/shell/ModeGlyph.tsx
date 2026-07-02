@@ -11,7 +11,9 @@ import type { ReactNode } from "react";
  */
 const GLYPHS: Readonly<Record<string, ReactNode>> = {
   // Crown — Executive.
-  executive: <path d="M3 8l3.5 4L12 6l5.5 6L21 8v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5z" />,
+  executive: (
+    <path d="M3 8l3.5 4L12 6l5.5 6L21 8v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5z" />
+  ),
   // Angle brackets with a larger slash between, spaced so they don't touch — Developer (`</>`).
   developer: (
     <>

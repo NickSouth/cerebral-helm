@@ -2,7 +2,6 @@ import { QuickApps } from "./QuickApps";
 import { QuickActions } from "./QuickActions";
 import { ConversationOverlay } from "./ConversationOverlay";
 import { HeimlichConsciousness } from "./HeimlichConsciousness";
-import { useDashboardState } from "../state/DashboardStateProvider";
 import { useConversation } from "../state/ConversationProvider";
 import { useActiveMode } from "./useActiveMode";
 
@@ -15,7 +14,6 @@ import { useActiveMode } from "./useActiveMode";
  * main product is immediately visible (NIC-53).
  */
 export function CenterStage() {
-  const { heimlich } = useDashboardState();
   const { greeting } = useActiveMode();
   const conversation = useConversation();
 
@@ -30,7 +28,9 @@ export function CenterStage() {
           {greeting ? (
             <div className="heimlich__greeting-block">
               <p className="heimlich__greeting">{greeting.fallback}</p>
-              {greeting.subtitle ? <p className="heimlich__subgreeting">{greeting.subtitle}</p> : null}
+              {greeting.subtitle ? (
+                <p className="heimlich__subgreeting">{greeting.subtitle}</p>
+              ) : null}
             </div>
           ) : null}
           <QuickActions />

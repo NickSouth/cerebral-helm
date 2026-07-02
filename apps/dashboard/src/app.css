@@ -191,10 +191,20 @@ html.mode-wave .app-root *::after {
   font-size: var(--ch-font-size-display);
   font-weight: var(--ch-font-weight-light);
 }
-.type-xl { font-size: var(--ch-font-size-xl); }
-.type-lg { font-size: var(--ch-font-size-lg); font-weight: var(--ch-font-weight-medium); }
-.type-base { font-size: var(--ch-font-size-base); }
-.type-sm { font-size: var(--ch-font-size-sm); color: var(--ch-text-muted); }
+.type-xl {
+  font-size: var(--ch-font-size-xl);
+}
+.type-lg {
+  font-size: var(--ch-font-size-lg);
+  font-weight: var(--ch-font-weight-medium);
+}
+.type-base {
+  font-size: var(--ch-font-size-base);
+}
+.type-sm {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
 
 .confirm-sample {
   border: 1px solid var(--ch-confirm-accent);

@@ -63,8 +63,18 @@ describe("MockCerebralBridge", () => {
     expect(events).toHaveLength(9);
     expect(events.every((event) => event.type === "command.lifecycle.transition")).toBe(true);
 
-    const statuses = new Set(events.map((event) => (event.payload as { currentStatus: string }).currentStatus));
-    for (const status of ["received", "planned", "running", "requires_confirmation", "succeeded", "failed", "cancelled"]) {
+    const statuses = new Set(
+      events.map((event) => (event.payload as { currentStatus: string }).currentStatus)
+    );
+    for (const status of [
+      "received",
+      "planned",
+      "running",
+      "requires_confirmation",
+      "succeeded",
+      "failed",
+      "cancelled"
+    ]) {
       expect(statuses.has(status)).toBe(true);
     }
   });
@@ -101,9 +111,13 @@ describe("MockCerebralBridge", () => {
   it("returns fixture-shaped operation responses", async () => {
     const bridge = createMockCerebralBridge();
 
-    expect((await bridge.submitCommand({ rawInput: "mode developer", source: "dashboard" })).accepted).toBe(true);
+    expect(
+      (await bridge.submitCommand({ rawInput: "mode developer", source: "dashboard" })).accepted
+    ).toBe(true);
     expect((await bridge.applyMode({ modeId: "school" })).modeId).toBe("school");
-    expect((await bridge.decideConfirmation({ id: "conf_1", decision: "cancel" })).decision).toBe("cancel");
+    expect((await bridge.decideConfirmation({ id: "conf_1", decision: "cancel" })).decision).toBe(
+      "cancel"
+    );
 
     const activity = await bridge.getRecentActivity();
     expect(activity.commands.length).toBeGreaterThanOrEqual(1);

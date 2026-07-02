@@ -21,7 +21,9 @@ const STATE_PRESETS: Readonly<Record<string, { bootstrapKey?: string; recovery?:
 
 /** Emit the canonical read-only recovery status event so the reducer folds in the recovery posture. */
 function emitRecovery(bridge: ReturnType<typeof createMockCerebralBridge>): void {
-  const fixture = failureStateFixtures.find((f) => f.canonicalKey === "failure.bridge_major_version_mismatch");
+  const fixture = failureStateFixtures.find(
+    (f) => f.canonicalKey === "failure.bridge_major_version_mismatch"
+  );
   if (!fixture) {
     return;
   }
@@ -30,7 +32,11 @@ function emitRecovery(bridge: ReturnType<typeof createMockCerebralBridge>): void
     type: "system.status.changed",
     schemaVersion: "1.0.0",
     timestamp: fixture.clock,
-    payload: { canonicalKey: fixture.canonicalKey, category: fixture.category, state: fixture.state }
+    payload: {
+      canonicalKey: fixture.canonicalKey,
+      category: fixture.category,
+      state: fixture.state
+    }
   });
 }
 

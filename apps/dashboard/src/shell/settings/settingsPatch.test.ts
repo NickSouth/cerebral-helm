@@ -5,7 +5,9 @@ describe("validateSettingsChanges (NIC-63 — the shared config validation path)
   it("accepts the allowed editable changes", () => {
     expect(validateSettingsChanges({ defaultModeId: "developer" }).valid).toBe(true);
     expect(validateSettingsChanges({ appearance: { reducedMotion: true } }).valid).toBe(true);
-    expect(validateSettingsChanges({ knowledge: { rootReference: "knowledge-root" } }).valid).toBe(true);
+    expect(validateSettingsChanges({ knowledge: { rootReference: "knowledge-root" } }).valid).toBe(
+      true
+    );
   });
 
   it("rejects a risk override — permission policy cannot be weakened through settings", () => {

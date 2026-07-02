@@ -265,13 +265,13 @@ export default function Threads({
         uniforms: {
           iTime: { value: 0 },
           iResolution: {
-            value: new Color(gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height),
+            value: new Color(gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height)
           },
           uColor: { value: new Color(...initColor) },
           uColor2: { value: new Color(...(propsRef.current.color2 ?? initColor)) },
           uAmplitude: { value: propsRef.current.amplitude },
-          uDistance: { value: propsRef.current.distance },
-        },
+          uDistance: { value: propsRef.current.distance }
+        }
       });
       mesh = new Mesh(gl, { geometry, program });
     } catch {
@@ -303,7 +303,7 @@ export default function Threads({
       (entries) => {
         isVisible = entries[0].isIntersecting;
       },
-      { threshold: 0 },
+      { threshold: 0 }
     );
     intersectionObserver.observe(container);
 

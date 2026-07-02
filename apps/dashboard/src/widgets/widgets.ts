@@ -21,14 +21,49 @@ export interface WidgetDefinition {
 }
 
 export const WIDGET_REGISTRY = [
-  { id: "market-brief", label: "Market Brief", sides: ["left"], summary: "Tracked stocks and their movement." },
-  { id: "project-git-status", label: "Project Git Status", sides: ["left"], summary: "Build, test, branch, PR, and deploy summary." },
-  { id: "deadlines", label: "Deadlines", sides: ["left"], summary: "Upcoming assignments and due dates." },
+  {
+    id: "market-brief",
+    label: "Market Brief",
+    sides: ["left"],
+    summary: "Tracked stocks and their movement."
+  },
+  {
+    id: "project-git-status",
+    label: "Project Git Status",
+    sides: ["left"],
+    summary: "Build, test, branch, PR, and deploy summary."
+  },
+  {
+    id: "deadlines",
+    label: "Deadlines",
+    sides: ["left"],
+    summary: "Upcoming assignments and due dates."
+  },
   { id: "spotify", label: "Spotify", sides: ["left"], summary: "Current and recent listening." },
-  { id: "projects", label: "Projects", sides: ["right"], summary: "Pinned and active projects with status." },
-  { id: "repositories", label: "Repositories", sides: ["right"], summary: "Repositories with branch and worktree state." },
-  { id: "courses", label: "Courses", sides: ["right"], summary: "Current courses and their concise state." },
-  { id: "media-list", label: "Media List", sides: ["right"], summary: "Continue, queued, saved, and recent media." }
+  {
+    id: "projects",
+    label: "Projects",
+    sides: ["right"],
+    summary: "Pinned and active projects with status."
+  },
+  {
+    id: "repositories",
+    label: "Repositories",
+    sides: ["right"],
+    summary: "Repositories with branch and worktree state."
+  },
+  {
+    id: "courses",
+    label: "Courses",
+    sides: ["right"],
+    summary: "Current courses and their concise state."
+  },
+  {
+    id: "media-list",
+    label: "Media List",
+    sides: ["right"],
+    summary: "Continue, queued, saved, and recent media."
+  }
 ] as const satisfies readonly WidgetDefinition[];
 
 export type WidgetId = (typeof WIDGET_REGISTRY)[number]["id"];

@@ -26,7 +26,9 @@ describe("reduceDashboardState", () => {
   it("maps command-lifecycle status onto Heimlich state", () => {
     const base = loadBootstrapState();
     expect(reduceDashboardState(base, lifecycleEvent("running")).heimlich.state).toBe("acting");
-    expect(reduceDashboardState(base, lifecycleEvent("requires_confirmation")).heimlich.state).toBe("awaiting_confirmation");
+    expect(reduceDashboardState(base, lifecycleEvent("requires_confirmation")).heimlich.state).toBe(
+      "awaiting_confirmation"
+    );
     expect(reduceDashboardState(base, lifecycleEvent("failed")).heimlich.state).toBe("error");
   });
 
@@ -65,7 +67,9 @@ describe("reduceDashboardState", () => {
     });
     expect(cleared.activeConfirmation ?? null).toBeNull();
     // Clearing an already-absent confirmation is a no-op (same reference, no re-render).
-    expect(reduceDashboardState(cleared, { ...confirmationBridgeEvent, payload: { confirmation: null } })).toBe(cleared);
+    expect(
+      reduceDashboardState(cleared, { ...confirmationBridgeEvent, payload: { confirmation: null } })
+    ).toBe(cleared);
   });
 
   it("applies a mode-switch snapshot on config.changed, preserving the eager bundle", () => {

@@ -16,7 +16,12 @@ export const COMMAND_SUGGESTIONS: readonly CommandSuggestion[] = [
   { id: "search-notes", label: "Search notes", available: true },
   { id: "switch-mode", label: "Switch mode", available: true },
   { id: "open-app", label: "Open an app", hint: "Available on the macOS host", available: false },
-  { id: "run-command", label: "Run a system command", hint: "Available on the macOS host", available: false }
+  {
+    id: "run-command",
+    label: "Run a system command",
+    hint: "Available on the macOS host",
+    available: false
+  }
 ];
 
 /** Suggestions whose label matches the query (case-insensitive); an empty query returns all. */
@@ -25,5 +30,7 @@ export function rankSuggestions(query: string): readonly CommandSuggestion[] {
   if (!normalized) {
     return COMMAND_SUGGESTIONS;
   }
-  return COMMAND_SUGGESTIONS.filter((suggestion) => suggestion.label.toLowerCase().includes(normalized));
+  return COMMAND_SUGGESTIONS.filter((suggestion) =>
+    suggestion.label.toLowerCase().includes(normalized)
+  );
 }

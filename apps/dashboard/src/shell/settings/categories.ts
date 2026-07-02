@@ -5,13 +5,7 @@
  * contract inspection, or unavailable-future (FR-UI-06, FR-CFG-04).
  */
 export type SettingsCategoryId =
-  | "general"
-  | "permissions"
-  | "modes"
-  | "actions"
-  | "customization"
-  | "setup"
-  | "knowledge";
+  "general" | "permissions" | "modes" | "actions" | "customization" | "setup" | "knowledge";
 
 export interface SettingsCategory {
   readonly id: SettingsCategoryId;
@@ -22,10 +16,18 @@ export interface SettingsCategory {
 
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   { id: "general", label: "General", description: "Default mode and application information." },
-  { id: "permissions", label: "Permissions", description: "Enabled tools and their deterministic risk & confirmation policy." },
+  {
+    id: "permissions",
+    label: "Permissions",
+    description: "Enabled tools and their deterministic risk & confirmation policy."
+  },
   { id: "modes", label: "Modes", description: "The four modes and their configured surfaces." },
   { id: "actions", label: "Actions", description: "Quick actions and the workflows behind them." },
-  { id: "customization", label: "Customization", description: "Appearance and motion preferences." },
+  {
+    id: "customization",
+    label: "Customization",
+    description: "Appearance and motion preferences."
+  },
   { id: "setup", label: "Setup", description: "Integrations, onboarding, and data location." },
   { id: "knowledge", label: "Knowledge", description: "Where durable knowledge lives." }
 ];

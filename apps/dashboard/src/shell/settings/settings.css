@@ -125,7 +125,9 @@
   background: transparent;
   color: var(--ch-text-muted);
   cursor: pointer;
-  transition: background var(--ch-motion-fast) var(--ch-ease-standard), color var(--ch-motion-fast) var(--ch-ease-standard);
+  transition:
+    background var(--ch-motion-fast) var(--ch-ease-standard),
+    color var(--ch-motion-fast) var(--ch-ease-standard);
 }
 
 .settings-category:hover {
@@ -404,7 +406,9 @@
   height: 1rem;
   border-radius: var(--ch-radius-pill);
   background: var(--ch-text-muted);
-  transition: left var(--ch-motion-fast) var(--ch-ease-standard), background var(--ch-motion-fast) var(--ch-ease-standard);
+  transition:
+    left var(--ch-motion-fast) var(--ch-ease-standard),
+    background var(--ch-motion-fast) var(--ch-ease-standard);
 }
 
 .settings-switch input:checked + .settings-switch__track {

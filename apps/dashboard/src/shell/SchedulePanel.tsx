@@ -50,7 +50,13 @@ export function SchedulePanel({ now = new Date() }: { now?: Date } = {}) {
             {Array.from({ length: EVENT_SLOTS }, (_, index) => {
               const event = events[index];
               if (!event) {
-                return <li key={`empty-${index}`} className="calendar__event calendar__event--empty" aria-hidden="true" />;
+                return (
+                  <li
+                    key={`empty-${index}`}
+                    className="calendar__event calendar__event--empty"
+                    aria-hidden="true"
+                  />
+                );
               }
               return (
                 <li key={event.id} className="calendar__event">

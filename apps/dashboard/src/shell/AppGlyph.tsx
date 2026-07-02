@@ -66,7 +66,9 @@ const GLYPHS: Readonly<Record<AppCategory, ReactNode>> = {
       <circle cx="18" cy="13.5" r="1" />
     </>
   ),
-  chat: <path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3v-3H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />,
+  chat: (
+    <path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3v-3H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
+  ),
   photos: (
     <>
       <rect x="3" y="5" width="18" height="14" rx="2" />

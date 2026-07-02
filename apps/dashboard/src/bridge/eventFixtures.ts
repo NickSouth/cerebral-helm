@@ -28,13 +28,15 @@ const lifecycleTransitionFixtures = [
  * Each canonical lifecycle transition wrapped as a `command.lifecycle.transition` bridge
  * event (the payload is the lifecycle event itself, as the real bridge delivers it).
  */
-export const lifecycleBridgeEvents: readonly BridgeEvent[] = lifecycleTransitionFixtures.map((fixture, index) => ({
-  eventId: `brevt_lifecycle${String(index + 1).padStart(2, "0")}`,
-  type: "command.lifecycle.transition",
-  schemaVersion: fixture.schemaVersion,
-  timestamp: fixture.timestamp,
-  payload: fixture as Readonly<Record<string, unknown>>
-}));
+export const lifecycleBridgeEvents: readonly BridgeEvent[] = lifecycleTransitionFixtures.map(
+  (fixture, index) => ({
+    eventId: `brevt_lifecycle${String(index + 1).padStart(2, "0")}`,
+    type: "command.lifecycle.transition",
+    schemaVersion: fixture.schemaVersion,
+    timestamp: fixture.timestamp,
+    payload: fixture as Readonly<Record<string, unknown>>
+  })
+);
 
 /** The canonical capability-change event (system metrics unavailable). */
 export const capabilityBridgeEvent: BridgeEvent = {

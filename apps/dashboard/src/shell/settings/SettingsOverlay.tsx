@@ -6,7 +6,18 @@ import { SETTINGS_PANELS } from "./SettingsPanels";
 /** Power glyph for the shutdown control. */
 function PowerGlyph() {
   return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
       <path d="M12 3v9" />
       <path d="M6.4 6.4a8 8 0 1 0 11.2 0" />
     </svg>
@@ -56,17 +67,30 @@ function SettingsWindow({ closing, onExited }: { closing: boolean; onExited: () 
 
   function onAnimationEnd(event: AnimationEvent<HTMLDivElement>) {
     // Only the window's own exit animation unmounts — never a child's or the entrance's.
-    if (closing && event.target === event.currentTarget && event.animationName === "ch-settings-out") {
+    if (
+      closing &&
+      event.target === event.currentTarget &&
+      event.animationName === "ch-settings-out"
+    ) {
       onExited();
     }
   }
 
-  const active = SETTINGS_CATEGORIES.find((category) => category.id === activeCategory) ?? SETTINGS_CATEGORIES[0];
+  const active =
+    SETTINGS_CATEGORIES.find((category) => category.id === activeCategory) ??
+    SETTINGS_CATEGORIES[0];
   const Panel = SETTINGS_PANELS[active.id];
 
   return (
     <>
+      {/* Click-to-dismiss backdrop: a mouse convenience only. The keyboard-accessible dismiss
+          paths are the dialog's Escape handler and the × close control, so the static-element
+          click-handler rules are suppressed for the scrim. */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div className="settings-scrim" data-closing={closing || undefined} onClick={closeSettings} />
+      {/* A focusable modal dialog that captures Escape to close; onKeyDown on the dialog is the
+          accessible pattern, so the non-interactive-element-interactions rule is suppressed. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         className="settings-window"
         data-closing={closing || undefined}

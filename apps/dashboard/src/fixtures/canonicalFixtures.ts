@@ -36,7 +36,9 @@ export const failureStateFixtures = canonicalFixtureCatalog.fixtures.filter(
  * fields). Compose with getDashboardConfigBundle() for a full bootstrap state.
  */
 export function getDashboardFixture(canonicalKey: string): DashboardStateSnapshot {
-  const fixture = dashboardStoryFixtures.find((candidate) => candidate.canonicalKey === canonicalKey);
+  const fixture = dashboardStoryFixtures.find(
+    (candidate) => candidate.canonicalKey === canonicalKey
+  );
 
   if (!fixture) {
     throw new Error(`Missing dashboard fixture: ${canonicalKey}`);

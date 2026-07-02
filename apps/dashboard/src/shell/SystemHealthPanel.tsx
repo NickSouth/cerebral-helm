@@ -18,7 +18,17 @@ function batteryTone(percent: number): string {
 }
 
 /** A metric row: category glyph · label · usage bar · right-aligned value. */
-function BarRow({ glyph, label, percent, tone }: { glyph: "cpu" | "memory" | "battery"; label: string; percent: number; tone: string }) {
+function BarRow({
+  glyph,
+  label,
+  percent,
+  tone
+}: {
+  glyph: "cpu" | "memory" | "battery";
+  label: string;
+  percent: number;
+  tone: string;
+}) {
   const clamped = Math.max(0, Math.min(100, percent));
   return (
     <li className="metric">
@@ -46,7 +56,8 @@ export function SystemHealthPanel() {
   const live = systemHealth.state === "ready" || systemHealth.state === "stale";
   const network = systemHealth.network;
   const battery = systemHealth.battery;
-  const batteryLive = (battery.state === "ready" || battery.state === "stale") && typeof battery.percent === "number";
+  const batteryLive =
+    (battery.state === "ready" || battery.state === "stale") && typeof battery.percent === "number";
 
   return (
     <Panel label="System Health" labelId="region-health" icon={<PanelGlyph name="system-health" />}>
@@ -54,10 +65,20 @@ export function SystemHealthPanel() {
       {live ? (
         <ul className="metrics">
           {typeof systemHealth.cpuPercent === "number" ? (
-            <BarRow glyph="cpu" label="CPU" percent={systemHealth.cpuPercent} tone={usageTone(systemHealth.cpuPercent)} />
+            <BarRow
+              glyph="cpu"
+              label="CPU"
+              percent={systemHealth.cpuPercent}
+              tone={usageTone(systemHealth.cpuPercent)}
+            />
           ) : null}
           {typeof systemHealth.memoryPercent === "number" ? (
-            <BarRow glyph="memory" label="Memory" percent={systemHealth.memoryPercent} tone={usageTone(systemHealth.memoryPercent)} />
+            <BarRow
+              glyph="memory"
+              label="Memory"
+              percent={systemHealth.memoryPercent}
+              tone={usageTone(systemHealth.memoryPercent)}
+            />
           ) : null}
           {network ? (
             <li className="metric">
@@ -65,18 +86,27 @@ export function SystemHealthPanel() {
                 <HealthGlyph name="network" />
               </span>
               <span className="metric__label">Network</span>
-              {typeof network.uploadMbps === "number" && typeof network.downloadMbps === "number" ? (
+              {typeof network.uploadMbps === "number" &&
+              typeof network.downloadMbps === "number" ? (
                 <span className="metric__network">
-                  <span className="net-arrow net-arrow--up" aria-hidden="true">↑</span>
+                  <span className="net-arrow net-arrow--up" aria-hidden="true">
+                    ↑
+                  </span>
                   <span className="metric__value">{network.uploadMbps} Mbps</span>
-                  <span className="net-arrow net-arrow--down" aria-hidden="true">↓</span>
+                  <span className="net-arrow net-arrow--down" aria-hidden="true">
+                    ↓
+                  </span>
                   <span className="metric__value">{network.downloadMbps} Mbps</span>
                 </span>
               ) : networkMbps(network.label) ? (
                 <span className="metric__network">
-                  <span className="net-arrow net-arrow--up" aria-hidden="true">↑</span>
+                  <span className="net-arrow net-arrow--up" aria-hidden="true">
+                    ↑
+                  </span>
                   <span className="metric__value">{networkMbps(network.label)} Mbps</span>
-                  <span className="net-arrow net-arrow--down" aria-hidden="true">↓</span>
+                  <span className="net-arrow net-arrow--down" aria-hidden="true">
+                    ↓
+                  </span>
                 </span>
               ) : (
                 <span className="metric__value">{network.label}</span>
@@ -84,7 +114,12 @@ export function SystemHealthPanel() {
             </li>
           ) : null}
           {batteryLive ? (
-            <BarRow glyph="battery" label="Battery" percent={battery.percent as number} tone={batteryTone(battery.percent as number)} />
+            <BarRow
+              glyph="battery"
+              label="Battery"
+              percent={battery.percent as number}
+              tone={batteryTone(battery.percent as number)}
+            />
           ) : (
             <li className="metric">
               <span className="metric__icon">

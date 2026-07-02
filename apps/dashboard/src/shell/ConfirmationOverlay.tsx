@@ -80,6 +80,9 @@ function ConfirmationWindow({ confirmation }: { confirmation: ConfirmationDisclo
   return (
     <>
       <div className="confirmation-scrim" />
+      {/* A focusable modal dialog that captures Escape to cancel; onKeyDown on the dialog is the
+          accessible pattern, so the non-interactive-element-interactions rule is suppressed. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         className="confirmation-window"
         role="dialog"
@@ -88,7 +91,9 @@ function ConfirmationWindow({ confirmation }: { confirmation: ConfirmationDisclo
         aria-describedby="confirmation-summary"
         onKeyDown={onKeyDown}
       >
-        <p className="confirmation-window__eyebrow">Confirmation · {RISK_LABELS[confirmation.risk]}</p>
+        <p className="confirmation-window__eyebrow">
+          Confirmation · {RISK_LABELS[confirmation.risk]}
+        </p>
         <h2 id="confirmation-summary" className="confirmation-window__summary">
           {confirmation.actionSummary}
         </h2>

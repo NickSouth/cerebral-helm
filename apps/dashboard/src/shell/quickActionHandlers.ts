@@ -26,14 +26,20 @@ const HANDLERS = {
     // No content-entry affordance exists pre-Mac, so this captures a labelled quick note and
     // reports the real returned id. The acknowledgement is explicit that capture is a mock
     // until the knowledge system lands — honest-unavailable, never fake-rich.
-    const result = await bridge.captureNote({ title: "Quick note", body: "", kind: "quick-capture" });
+    const result = await bridge.captureNote({
+      title: "Quick note",
+      body: "",
+      kind: "quick-capture"
+    });
     acknowledge(
       `Captured a quick note (${result.noteId}). Quick capture is a mock pre-Mac — note content entry arrives with the knowledge system.`
     );
   }
 } satisfies Record<string, (deps: QuickActionDeps) => Promise<void>>;
 
-const WIRED_ACTIONS = wiringManifest.wiredActions as Readonly<Record<string, { readonly handler?: string }>>;
+const WIRED_ACTIONS = wiringManifest.wiredActions as Readonly<
+  Record<string, { readonly handler?: string }>
+>;
 
 /**
  * Resolve a quick-action id to its click handler, or `null` if the id is a placeholder. A wired
