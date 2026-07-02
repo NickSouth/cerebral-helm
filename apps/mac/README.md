@@ -22,8 +22,15 @@ package under `packages/` may depend on it.
   loaded offline over the private `cerebral://app/` scheme (`CerebralSchemeHandler`)
   above an `NSVisualEffectView`. Config **and** the dashboard build are bundled into
   Resources; a missing dashboard bundle surfaces as a visible diagnostic.
-- **Next:** the native bridge transport + handshake (NIC-74). Until then the
-  dashboard runs against its in-webview mock bridge.
+- **NIC-74a (done):** the versioned bridge transport skeleton. The portable
+  `CerebralBridge` package owns the handshake, version compatibility, and the
+  inbound-message gate (malformed messages never reach core); the app's
+  `WKWebViewCerebralBridge` adapts it to WebKit message handlers
+  (`window.webkit.messageHandlers.cerebral` ↔ `window.__cerebralReceive`). The
+  handshake reports capabilities and enters recovery on a major-version mismatch.
+- **Next:** NIC-74b maps operations onto the live `CommandRuntime` + pushes the
+  event stream; NIC-74c adds the dashboard-side transport and selects it. Until
+  then the dashboard still runs its in-webview mock bridge.
 
 ## Build & run
 

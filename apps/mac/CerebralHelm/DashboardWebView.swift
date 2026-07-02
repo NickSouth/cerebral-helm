@@ -16,6 +16,7 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
     let window: NSWindow
     private let webView: WKWebView
     private let handler: CerebralSchemeHandler
+    private let bridge = WKWebViewCerebralBridge()
     private let log = Logger(subsystem: "local.cerebralhelm.CerebralHelm", category: "dashboard")
 
     /// The root of the bundled dashboard build inside the app (`Resources/DashboardBundle`).
@@ -31,6 +32,10 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
 
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(handler, forURLScheme: CerebralSchemeHandler.scheme)
+        // Register the native bridge transport before the web view is built. The
+        // dashboard still runs its in-webview mock bridge until NIC-74c selects the
+        // native transport; this makes the handshake channel available (ADR-004).
+        bridge.install(on: configuration)
 
         webView = WKWebView(frame: .zero, configuration: configuration)
 
@@ -45,6 +50,7 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
         window.contentView = webView
 
         super.init()
+        bridge.attach(to: webView)
         webView.navigationDelegate = self
         webView.load(URLRequest(url: CerebralSchemeHandler.indexURL))
     }

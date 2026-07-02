@@ -20,6 +20,7 @@ let package = Package(
         .library(name: "CerebralStorage", targets: ["CerebralStorage"]),
         .library(name: "CerebralShared", targets: ["CerebralShared"]),
         .library(name: "CerebralContracts", targets: ["CerebralContracts"]),
+        .library(name: "CerebralBridge", targets: ["CerebralBridge"]),
         .executable(name: "cerebral", targets: ["cerebral"]),
     ],
     dependencies: [
@@ -54,6 +55,14 @@ let package = Package(
             name: "CerebralCore",
             dependencies: ["CerebralShared", "CerebralContracts"],
             path: "packages/core/Sources/CerebralCore"
+        ),
+        // The versioned dashboard bridge contract (ADR-004): handshake, version
+        // compatibility, and inbound message validation. Portable (no AppKit); the
+        // macOS WKWebView transport in apps/mac adapts this to WebKit message handlers.
+        .target(
+            name: "CerebralBridge",
+            dependencies: ["CerebralContracts"],
+            path: "packages/bridge/Sources/CerebralBridge"
         ),
         .target(
             name: "CerebralTools",
@@ -133,6 +142,14 @@ let package = Package(
                 "CerebralContracts",
             ],
             path: "Tests/ConfigTests"
+        ),
+        .testTarget(
+            name: "BridgeTests",
+            dependencies: [
+                "CerebralBridge",
+                "CerebralContracts",
+            ],
+            path: "Tests/BridgeTests"
         ),
         .testTarget(
             name: "StorageTests",
