@@ -1,0 +1,33 @@
+/*
+ * Responsive constraints for the three target viewport classes (UI-CONSTITUTION §8):
+ * compact (< 1440px), laptop (1440–1919px), external (>= 1920px). Breakpoint values
+ * are tokens so later layout work (NIC-53) references one source instead of re-deriving
+ * widths. No rail components exist yet — this only keeps the page stable across widths.
+ */
+
+:root {
+  --ch-breakpoint-compact: 1440px;
+  --ch-breakpoint-external: 1920px;
+}
+
+/* Never allow horizontal page scrolling at any width. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Compact laptop widths: tighten the page gutters. */
+@media (max-width: 1439px) {
+  .tokens-page {
+    padding-inline: var(--ch-space-4);
+  }
+}
+
+/* External displays: cap content width so line lengths and controls do not sprawl. */
+@media (min-width: 1920px) {
+  .tokens-page {
+    max-width: 1600px;
+    margin-inline: auto;
+  }
+}

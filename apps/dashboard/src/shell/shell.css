@@ -1,0 +1,1781 @@
+/* The shared three-zone shell. All values come from semantic tokens (constitution §2.1);
+   mode color enters only through data-mode-resolved accents. */
+
+/* The shell is a full-height, full-width flex column: the capped/centered column canvas on top,
+   the full-width bottom bar beneath. Clamped to the viewport so the bar is always pinned. */
+.dashboard-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  height: 100vh;
+  padding: var(--ch-space-4);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Edge sweep: ONE thin diagonal band of light travels across the whole dashboard, top-left →
+   bottom-right. It is a single viewport-fixed gradient (background-attachment: fixed) shared by
+   every component and masked to each panel's border ring — so wherever the band overlaps an
+   outline, that part of the border glows, and every component lights up from the SAME band in one
+   coordinated sweep (no independent spins). A repeating gradient shifted by exactly one period
+   makes it a seamless continuous loop (a new band enters top-left as the last exits bottom-right).
+   NOTE: no `filter`/`transform` on this element — either would re-anchor the fixed background to the
+   element and break the shared coordinate system. Freezes under prefers-reduced-motion. */
+.shell-panel,
+.heimlich,
+.bottom-bar,
+.command-surface--launcher {
+  position: relative;
+}
+
+/* Give the search container a radius so its ring matches the rounded input. */
+.command-surface--launcher {
+  border-radius: var(--ch-radius-md);
+}
+
+/* TWO radial "flashlights" (bright core → soft falloff) are shared viewport-fixed gradients masked
+   to each outline, so only the borders REFLECT the light — each fades in as its beam nears and out
+   as it passes (by proximity, not by crawling around corners). Both centers are driven by JS
+   (useAmbientBeam) through --beam-x/--beam-y and --beam2-x/--beam2-y: each pass enters from a random
+   direction, sweeps across, then waits a random 0.5–2s off-screen before the next — unsynced, so 0,
+   1, or 2 beams may be visible and they can come from anywhere. `mix-blend-mode: screen` makes the
+   accent add light. No filter (it would re-anchor the fixed background and break the shared beams). */
+.shell-panel::after,
+.heimlich::after,
+.bottom-bar::after,
+.command-surface--launcher::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background-image:
+    radial-gradient(
+      circle 480px at center,
+      color-mix(in srgb, var(--ch-accent-primary) 72%, transparent) 0%,
+      color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 42%,
+      transparent 100%
+    ),
+    radial-gradient(
+      circle 480px at center,
+      color-mix(in srgb, var(--ch-accent-primary) 72%, transparent) 0%,
+      color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 42%,
+      transparent 100%
+    );
+  background-repeat: no-repeat;
+  background-size: 1050px 1050px;
+  background-attachment: fixed;
+  /* Two independent beams: each gradient layer follows its own center vars (set by useAmbientBeam),
+     offset by half the 1050px tile so the var IS the center. Both default off-screen until their
+     first pass runs (and under prefers-reduced-motion, where the hook is disabled). */
+  background-position:
+    calc(var(--beam-x, -3000px) - 525px) calc(var(--beam-y, -3000px) - 525px),
+    calc(var(--beam2-x, -3000px) - 525px) calc(var(--beam2-y, -3000px) - 525px);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+/* The column area (search + three columns). Caps at a max width and centers on very wide screens
+   (the bottom bar, a sibling, still spans the full width). */
+.dashboard-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: 2000px;
+  margin-inline: auto;
+  display: grid;
+  /* Thin, capped side rails; the center takes the remaining (dominant) width (design spec
+     §4.1 — "side columns use stable min/max widths", center is the largest flexible width). */
+  grid-template-columns: minmax(190px, 250px) minmax(0, 1fr) minmax(190px, 250px);
+  /* The global search sits in its own header row over the center only; the rails begin at the
+     Quick Apps line below it and run down to the bottom (visual reference, Plate 01). The
+     product brand takes the header row's right cell (top-right corner). */
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    ".    search brand"
+    "left center right";
+  gap: var(--ch-space-3);
+}
+
+.shell-search {
+  grid-area: search;
+  min-width: 0;
+}
+
+/* Top-right product brand: the CerebralHelm wordmark with the helm mark in the corner itself.
+   Both re-tint with the active mode through the brand-* classes below (accent tokens only). */
+.shell-brand {
+  grid-area: brand;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ch-space-3);
+  min-width: 0;
+}
+
+/* Sized in rem so the brand scales with the viewport-height root font-size as one unit with the
+   rest of the shell. The wordmark yields (shrinks) before the mark if the rail column runs tight. */
+.brand-mark {
+  height: 2.6rem;
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.brand-wordmark {
+  width: 9.5rem;
+  max-width: calc(100% - 3.4rem);
+  height: auto;
+  flex: 0 1 auto;
+}
+
+/* Brand color enters only here, via the data-mode-resolved accents (constitution §2). */
+.brand-mark__frame {
+  stroke: var(--ch-accent-secondary);
+}
+
+.brand-mark__accent {
+  fill: var(--ch-accent-primary);
+}
+
+/* Dark ground behind the brain so it reads over the spokes, matching the page's top gradient. */
+.brand-mark__hub {
+  fill: var(--ch-bg-gradient-top);
+  stroke: var(--ch-accent-secondary);
+}
+
+.brand-mark__brain {
+  stroke: var(--ch-accent-primary);
+}
+
+.brand-wordmark__primary {
+  fill: var(--ch-accent-primary);
+}
+
+.brand-wordmark__secondary {
+  fill: var(--ch-accent-secondary);
+}
+
+.shell-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  min-width: 0;
+  /* Let the rail shrink into the middle row instead of forcing the page taller; if a rail is
+     still too tall (very short screens) it scrolls internally rather than pushing the bar off. */
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.shell-left {
+  grid-area: left;
+}
+
+/* Calendar (L1) and System Health (L2) keep their natural height and pack from the top with the
+   normal gap; the free widget (L3) and News (L4) grow equally to absorb the remaining space so the
+   column reaches the bottom with uniform gaps (matching the right rail) instead of big voids. They
+   share one flex basis, so they stay the same height as each other and across modes. */
+.shell-left > .shell-panel:nth-child(3),
+.shell-left > .shell-panel:nth-child(4) {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.shell-right {
+  grid-area: right;
+}
+
+/* Mode keeps its natural height; Agents and the lower widget split the remaining space equally
+   and run down to the bottom bar, matching the left column. */
+.shell-right > .shell-panel:nth-child(2),
+.shell-right > .shell-panel:nth-child(3) {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-center {
+  grid-area: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The bottom bar is a full-width sibling of the capped canvas — it always spans the whole screen
+   (only the shell's thin page padding insets it), never capped or centered. */
+.shell-bottombar {
+  flex: 0 0 auto;
+  width: 100%;
+  /* Border-box so the bar's own horizontal padding stays inside the full width instead of
+     overflowing (and being clipped) on the right. */
+  box-sizing: border-box;
+}
+
+.shell-panel {
+  margin: 0;
+  /* Tighter than the base panel so the rails pack into the viewport (mockup density). */
+  padding: var(--ch-space-4);
+  /* A thin, faint accent line — no emitted glow. Ambient light comes from the shell shine.
+     The accent enters only via the data-mode-resolved token — never a per-mode literal. */
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 12%, var(--ch-panel-border));
+}
+
+/* Panel eyebrow row: label on the left, a small category glyph pinned top-right (visual
+   reference — every rail panel carries an icon-first annotation). The header owns the
+   eyebrow's bottom spacing so the row stays baseline-aligned. */
+.panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+  margin-bottom: var(--ch-space-3);
+}
+
+/* The panel title takes the mode's primary color, set in the light-weight monospace face. */
+.panel__header .eyebrow {
+  margin: 0;
+  color: var(--ch-accent-primary);
+  font-family: var(--ch-font-mono);
+  font-weight: var(--ch-font-weight-light);
+}
+
+.panel__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--ch-accent-primary);
+}
+
+/* Icon glyphs are sized in rem (overriding their intrinsic px width/height attributes) so they
+   scale with the viewport-height root font-size alongside everything else. */
+.panel-glyph,
+.health-glyph {
+  width: 1rem;
+  height: 1rem;
+}
+
+.agent-glyph,
+.global-search__glyph {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.mode-glyph,
+.app-glyph {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* C0 — persistent global Ask-Heimlich launcher (a distinct surface from the in-conversation
+   bottom input, course-correction C). Compressed to less than the center width and centered,
+   with straighter (small-radius) corners and a leading magnifier. */
+.command-surface--launcher {
+  max-width: 620px;
+  margin-inline: auto;
+}
+
+.global-search__icon {
+  position: absolute;
+  top: 50%;
+  left: var(--ch-space-4);
+  transform: translateY(-50%);
+  display: inline-flex;
+  color: var(--ch-text-muted);
+  pointer-events: none;
+}
+
+.global-search__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--ch-space-3) var(--ch-space-4);
+  padding-left: calc(var(--ch-space-4) + var(--ch-space-6));
+  border-radius: var(--ch-radius-md);
+  /* Same thin faint accent line as the panels. */
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 12%, var(--ch-panel-border));
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-muted);
+  font: inherit;
+  font-size: var(--ch-font-size-base);
+}
+
+/* C2 — Heimlich center: the largest and calmest surface, always present. */
+.heimlich {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--ch-space-6);
+  min-height: 15rem;
+  padding: var(--ch-space-6);
+  /* Thin, faint accent line to match the rail panels — no emitted glow. */
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 12%, var(--ch-panel-border));
+  border-radius: var(--ch-radius-lg);
+  overflow: hidden;
+  /* Flat panel surface; the WebGL field supplies all glow (NIC-60) — no background gradient. */
+  background: var(--ch-surface-panel);
+}
+
+/* The Heimlich ribbon (NIC-60): an embedded external WebGL motion asset that fills the panel and
+   sits beneath the greeting/actions and the conversation overlay. Non-interactive by default;
+   carries no semantics (aria-hidden on the element). The embed visual lives in the external asset. */
+.heimlich__ribbon {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  /* Sit the consciousness stream higher in the panel so the greeting reads below it (design ref). */
+  transform: translateY(-12%);
+}
+
+.heimlich__ribbon-canvas,
+.heimlich__ribbon-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Static gradient shown until the embed is ready, or if it has no scene yet / fails to load.
+   Gold (left) → cyan (right) from the active mode accent — themed via data-mode, never inlined. */
+.heimlich__ribbon-fallback {
+  background:
+    radial-gradient(
+      120% 120% at 18% 45%,
+      color-mix(in srgb, var(--ch-accent-primary) 26%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      120% 120% at 82% 55%,
+      color-mix(in srgb, var(--ch-accent-secondary) 24%, transparent),
+      transparent 60%
+    ),
+    var(--ch-surface-panel);
+}
+
+/* Keep the panel content above the ribbon. The state label anchors the top-left; the foot
+   group (greeting + quick actions) sits at the bottom — `.heimlich` uses space-between so the
+   two ends pin apart with the ribbon breathing in between (visual reference). */
+.heimlich__state,
+.heimlich__greeting-block,
+.heimlich__foot {
+  position: relative;
+  z-index: 1;
+}
+
+/* The Heimlich wordmark sits top-left in the monospace display face, mode-accent colored. */
+.heimlich__state {
+  margin: 0;
+  align-self: flex-start;
+  text-align: left;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-lg);
+  font-weight: var(--ch-font-weight-light);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ch-accent-primary);
+}
+
+.heimlich__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-4);
+}
+
+/* The binding 4 + 4 quick-action geometry. */
+.quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.quick-actions__bars,
+.quick-actions__boxes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--ch-space-2);
+}
+
+.quick-action {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-status-neutral);
+  border: 1px dashed var(--ch-status-neutral);
+  border-radius: var(--ch-radius-md);
+  background: transparent;
+  padding: var(--ch-space-2);
+  text-align: center;
+  cursor: not-allowed;
+}
+
+.quick-action--box {
+  min-height: 3.5rem;
+}
+
+/* The thin top row is inset and centered so the 4+4 stack tapers to a slight pyramid: narrower,
+   slightly smaller bars lifted a hair above the wider bottom boxes (visual reference). The wider
+   bottom boxes keep their full edge-to-edge width. */
+.quick-actions__bars {
+  width: 90%;
+  margin-inline: auto;
+  margin-bottom: var(--ch-space-1);
+  gap: var(--ch-space-3);
+}
+
+.quick-action--bar {
+  padding-block: var(--ch-space-3);
+  font-size: var(--ch-font-size-label);
+}
+
+/* A wired (live) quick action reads as actionable — solid border, primary text, pointer. */
+.quick-action--wired {
+  color: var(--ch-text-primary);
+  border-style: solid;
+  border-color: var(--ch-panel-border);
+  background: var(--ch-surface-raised);
+  cursor: pointer;
+  transition: border-color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.quick-action--wired:hover {
+  border-color: var(--ch-accent-primary);
+}
+
+/* R1 — mode switcher: four fixed controls, strong selected state. */
+.mode-switcher {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ch-space-2);
+}
+
+/* Each option is a box: mode icon stacked over its label (visual reference — a 2×2 boxy
+   toggle). */
+.mode-switcher__option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-2);
+  min-height: 4.5rem;
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-3) var(--ch-space-2);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 20%, var(--ch-panel-border));
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-muted);
+  cursor: pointer;
+  transition:
+    color var(--ch-motion-fast) var(--ch-ease-standard),
+    background-color var(--ch-motion-fast) var(--ch-ease-standard),
+    border-color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+/* Solid-filled mode glyph; inherits the option's currentColor (muted when idle, mode accent
+   when selected). */
+.mode-switcher__icon {
+  display: inline-flex;
+  color: inherit;
+}
+
+/* Selected mode: entirely shaded in its mode color, with a solid-filled accent icon. */
+.mode-switcher__option[data-active="true"] {
+  border-color: var(--ch-accent-primary);
+  background: color-mix(in srgb, var(--ch-accent-primary) 22%, transparent);
+  color: var(--ch-accent-primary);
+}
+
+/* R2 — agent roster: each agent is its own interior card with a circular identity avatar, its
+   name, and a runtime status (color dot + label) (visual reference). */
+.agent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  /* Fill the (shortened) agents panel, spreading the four cards evenly. */
+  flex: 1 1 auto;
+  min-height: 0;
+  justify-content: space-between;
+}
+
+.agent-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-2);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 18%, var(--ch-panel-border));
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-raised);
+  font-size: var(--ch-font-size-sm);
+  transition: border-color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+/* Clickable-card affordance (agent workspaces / project rows open on the Mac host). */
+.agent-list__item:hover,
+.shell-right .widget-list__item:hover {
+  border-color: var(--ch-accent-primary);
+}
+
+/* Circular profile picture — the agent's identity glyph on a faint disc tinted with the agent's
+   OWN fixed identity color (does not change with mode; constitution allows fixed per-id identity). */
+.agent-avatar {
+  --agent-color: var(--ch-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: var(--ch-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--agent-color) 45%, transparent);
+  background: color-mix(in srgb, var(--agent-color) 16%, transparent);
+  color: var(--agent-color);
+}
+
+.agent-avatar[data-agent="research-analyst"] {
+  --agent-color: var(--ch-agent-research);
+}
+
+.agent-avatar[data-agent="financial-advisor"] {
+  --agent-color: var(--ch-agent-financial);
+}
+
+.agent-avatar[data-agent="project-manager"] {
+  --agent-color: var(--ch-agent-project);
+}
+
+.agent-avatar[data-agent="system-janitor"] {
+  --agent-color: var(--ch-agent-system);
+}
+
+.agent-list__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-list__status {
+  white-space: nowrap;
+}
+
+.agent-list__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  flex: 0 0 auto;
+  color: var(--ch-text-muted);
+}
+
+/* Runtime status indicator — a color dot paired with the text label (never color alone, §5.8). */
+.agent-status-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-status-neutral);
+}
+
+.agent-status-dot[data-activity="ready"] {
+  background: var(--ch-status-success);
+}
+
+.agent-status-dot[data-activity="thinking"] {
+  background: var(--ch-status-info);
+}
+
+.agent-status-dot[data-activity="waiting"] {
+  background: var(--ch-status-warning);
+}
+
+.agent-status-dot[data-activity="idle"] {
+  background: var(--ch-status-neutral);
+}
+
+/* Persistent bottom bar. */
+.bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-4);
+  padding: var(--ch-space-2) var(--ch-space-4);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-raised);
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+/* Three groups: left identity/weather · centered mode · right metrics/controls. */
+.bottom-bar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-4);
+  min-width: 0;
+}
+
+.bottom-bar__group--left {
+  flex: 1;
+}
+
+.bottom-bar__group--center {
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
+.bottom-bar__group--right {
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.bottom-bar__item {
+  white-space: nowrap;
+}
+
+/* Mode accent (home dashboard only) — themed via data-mode, never inlined per mode. */
+.bottom-bar__mode {
+  color: var(--ch-accent-primary);
+  font-weight: var(--ch-font-weight-medium);
+}
+
+/* Distinct degraded metric treatments (state is carried by text + color, never color alone). */
+.bottom-bar__metric--stale {
+  color: var(--ch-status-warning);
+}
+
+.bottom-bar__metric--loading {
+  color: var(--ch-text-faint);
+}
+
+.bottom-bar__control {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-1) var(--ch-space-3);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-surface-panel);
+  color: var(--ch-text-muted);
+  cursor: pointer;
+}
+
+.bottom-bar__control:disabled {
+  cursor: not-allowed;
+}
+
+/* Settings: a standalone (boxless) icon button at the far right, a little bigger. */
+.bottom-bar__control--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ch-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+}
+
+.bottom-bar__control--icon:hover:not(:disabled) {
+  color: var(--ch-text-primary);
+}
+
+.bottom-bar__control--icon svg {
+  width: 1.55rem;
+  height: 1.55rem;
+}
+
+/* Weather (accent icon + temperature), Wi-Fi (accent-secondary icon), battery (tinted fill icon). */
+.bottom-bar__weather,
+.bottom-bar__battery,
+.bottom-bar__wifi {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+/* Natural, condition-driven color (not the mode accent). Filled glyphs, a touch larger. */
+.weather-glyph {
+  width: 1.55rem;
+  height: 1.55rem;
+  color: var(--ch-weather-cloud);
+}
+
+.weather-glyph[data-weather="sun"] {
+  color: var(--ch-weather-sun);
+}
+
+.weather-glyph[data-weather="cloud"] {
+  color: var(--ch-weather-cloud);
+}
+
+.weather-glyph[data-weather="rain"] {
+  color: var(--ch-weather-rain);
+}
+
+/* Partly cloudy is two-tone: yellow sun (filled disc + stroked rays) behind, white cloud in front. */
+.weather-glyph[data-weather="partly"] .weather-glyph__sunfill {
+  fill: var(--ch-weather-sun);
+}
+
+.weather-glyph[data-weather="partly"] .weather-glyph__sunstroke {
+  stroke: var(--ch-weather-sun);
+}
+
+.weather-glyph[data-weather="partly"] .weather-glyph__cloudfill {
+  fill: var(--ch-weather-cloud);
+}
+
+.bottom-bar__wifi {
+  color: var(--ch-accent-secondary);
+}
+
+.bottom-bar__wifi .health-glyph {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+/* Battery: a good amount bigger; the whole icon (outline + fill) is tinted by the charge
+   threshold (green > 60, yellow ≥ 20, red < 20). */
+.battery-glyph {
+  width: 2.1rem;
+  height: auto;
+}
+
+/* Root gets `color` only (drives the stroked outline + terminal via currentColor); the fill rect
+   gets `fill`. Never set `fill` on the root — it would override the svg's fill:none and flood the
+   outline rect solid. */
+.battery-glyph[data-tone="good"] {
+  color: var(--ch-status-success);
+}
+
+.battery-glyph[data-tone="warning"] {
+  color: var(--ch-status-warning);
+}
+
+.battery-glyph[data-tone="danger"] {
+  color: var(--ch-status-error);
+}
+
+.battery-glyph__fill[data-tone="good"] {
+  fill: var(--ch-status-success);
+}
+
+.battery-glyph__fill[data-tone="warning"] {
+  fill: var(--ch-status-warning);
+}
+
+.battery-glyph__fill[data-tone="danger"] {
+  fill: var(--ch-status-error);
+}
+
+/* Thin vertical rules: between identity/weather, status icons/date, and date/settings. */
+.bottom-bar__divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 1.8rem;
+  background: var(--ch-panel-border);
+}
+
+/* Bottom-left Heimlich identity: circular avatar · name over status-with-dot · sound-wave mark. */
+.bottom-bar__identity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-3);
+}
+
+.bottom-bar__avatar {
+  display: inline-flex;
+}
+
+.bottom-bar__avatar svg {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+/* Heimlich's portrait follows the mode-repointed Heimlich stream palette (NOT the page accent):
+   organic structure takes the primary, cyborg hardware the secondary (constitution §2). */
+.heimlich-avatar__line {
+  stroke: var(--ch-heimlich-primary);
+}
+
+.heimlich-avatar__fill {
+  fill: var(--ch-heimlich-primary);
+}
+
+.heimlich-avatar__cyber-line {
+  stroke: var(--ch-heimlich-secondary);
+}
+
+.heimlich-avatar__cyber-fill {
+  fill: var(--ch-heimlich-secondary);
+}
+
+.bottom-bar__wave {
+  display: inline-flex;
+  color: var(--ch-accent-secondary);
+}
+
+.bottom-bar__wave svg {
+  width: 1.8rem;
+  height: 1.8rem;
+}
+
+.bottom-bar__identity-text {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.bottom-bar__name {
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+}
+
+.bottom-bar__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-1);
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-label);
+}
+
+.bottom-bar__status-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-status-neutral);
+}
+
+.bottom-bar__status-dot[data-state="ready"] {
+  background: var(--ch-status-success);
+}
+
+.bottom-bar__status-dot[data-state="info"] {
+  background: var(--ch-status-info);
+}
+
+.bottom-bar__status-dot[data-state="warning"] {
+  background: var(--ch-status-warning);
+}
+
+.bottom-bar__status-dot[data-state="error"] {
+  background: var(--ch-status-error);
+}
+
+.bottom-bar__status-dot[data-state="neutral"] {
+  background: var(--ch-status-neutral);
+}
+
+/* C1 Quick Apps — six fixed boxes (5 app slots + More Apps) spanning the panel edge-to-edge,
+   equal columns, perfectly aligned. Each box stacks its glyph over its label like the mode
+   toggle, a touch larger and squarer. */
+.quick-apps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--ch-space-2);
+}
+
+.quick-apps > li {
+  display: flex;
+}
+
+.quick-app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-2);
+  width: 100%;
+  min-height: 5rem;
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-3) var(--ch-space-2);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 20%, var(--ch-panel-border));
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-muted);
+  cursor: not-allowed;
+  text-align: center;
+}
+
+.quick-app__icon {
+  display: inline-flex;
+  color: var(--ch-accent-secondary);
+}
+
+.quick-app__icon .app-glyph {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.quick-app__label {
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+/* Empty slots read as addable placeholders; the pin + more-apps glyphs stay neutral. */
+.quick-app--pin {
+  border-style: dashed;
+}
+
+.quick-app--pin .quick-app__icon,
+.quick-app--more .quick-app__icon {
+  color: var(--ch-text-muted);
+}
+
+/* Mode-aware Heimlich greeting — the calm center text. */
+/* The greeting sits directly above the quick actions (in the foot group) and takes the mode
+   accent (visual reference). */
+/* Catchphrase + tagline, centered as a block below the stream (design reference §5.7). */
+.heimlich__greeting-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ch-space-2);
+  text-align: center;
+}
+
+.heimlich__greeting {
+  margin: 0;
+  font-size: var(--ch-font-size-display);
+  font-weight: var(--ch-font-weight-light);
+  color: var(--ch-accent-primary);
+  text-align: center;
+}
+
+/* Smaller tagline under the catchphrase. */
+.heimlich__subgreeting {
+  margin: 0;
+  font-size: var(--ch-font-size-base);
+  font-weight: var(--ch-font-weight-light);
+  color: var(--ch-text-muted);
+  text-align: center;
+}
+
+/* Region lists. */
+.metrics {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.news {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+/* L1 Calendar: big digital-feel clock, date, a fixed four-row event list, and a view control. */
+.calendar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.calendar__time {
+  margin: 0;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-xl);
+  font-weight: var(--ch-font-weight-light);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+  color: var(--ch-text-primary);
+}
+
+.calendar__date {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+/* Four reserved rows so the widget height is constant whatever the event count. */
+.calendar__events {
+  list-style: none;
+  margin: var(--ch-space-2) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-rows: repeat(4, minmax(1.5em, auto));
+  gap: var(--ch-space-1);
+}
+
+.calendar__event {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  font-size: var(--ch-font-size-sm);
+}
+
+.calendar__dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-accent-primary);
+}
+
+.calendar__dot[data-kind="tonight"] {
+  background: var(--ch-accent-secondary);
+}
+
+.calendar__event-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+}
+
+.calendar__event-time {
+  flex: 0 0 auto;
+  color: var(--ch-accent-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar__view {
+  margin-top: var(--ch-space-3);
+  align-self: flex-start;
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-1) 0;
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  cursor: not-allowed;
+}
+
+/* System Health rows: category glyph · label · (usage bar) · value. The bar flexes to fill the
+   row so values stay right-aligned. */
+.metric {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  font-size: var(--ch-font-size-sm);
+}
+
+.metric__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--ch-text-muted);
+}
+
+.metric__label {
+  flex: 0 0 auto;
+  min-width: 3.6em;
+  color: var(--ch-text-muted);
+}
+
+.metric__value {
+  flex: 0 0 auto;
+  color: var(--ch-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.metric__unavailable {
+  margin-left: auto;
+}
+
+/* Usage bar (CPU / memory / future battery): a track with a tone-colored fill. */
+.metric-bar {
+  flex: 1 1 auto;
+  height: 0.3rem;
+  /* Start the bar a little further right of the label. */
+  margin-inline-start: var(--ch-space-3);
+  border-radius: var(--ch-radius-pill);
+  background: color-mix(in srgb, var(--ch-text-faint) 28%, transparent);
+  overflow: hidden;
+}
+
+.metric-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ch-accent-primary);
+  transition: width var(--ch-motion-base) var(--ch-ease-standard);
+}
+
+.metric-bar__fill[data-tone="good"] {
+  background: var(--ch-status-success);
+}
+
+.metric-bar__fill[data-tone="warning"] {
+  background: var(--ch-status-warning);
+}
+
+.metric-bar__fill[data-tone="danger"] {
+  background: var(--ch-status-error);
+}
+
+/* Network throughput: upload arrow (mode secondary) + up Mbps, download arrow (mode primary) +
+   down Mbps. Wraps if the rail is narrow rather than clipping the figures. */
+.metric__network {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ch-space-1);
+  /* Start the network figures a little further left (was pushed to the far right). */
+  margin-left: var(--ch-space-2);
+  font-size: var(--ch-font-size-label);
+}
+
+.net-arrow {
+  font-weight: var(--ch-font-weight-semibold);
+  line-height: 1;
+}
+
+.net-arrow--up {
+  color: var(--ch-accent-secondary);
+}
+
+.net-arrow--down {
+  color: var(--ch-accent-primary);
+}
+
+.news__item {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--ch-font-size-sm);
+}
+
+.news__title {
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.news__source {
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-label);
+}
+
+/* Free-widget slots. */
+.widget {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.widget__headline {
+  margin: 0;
+  font-size: var(--ch-font-size-base);
+  color: var(--ch-text-primary);
+}
+
+.widget-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.widget-list__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+  font-size: var(--ch-font-size-sm);
+}
+
+.widget-list__primary {
+  color: var(--ch-text-primary);
+}
+
+.widget-list__secondary {
+  color: var(--ch-text-muted);
+}
+
+.widget__freshness {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* Right-rail widget (e.g. Projects): fills its half of the rail, and each list row is a
+   clickable stacked-rectangle card (design reference). */
+.shell-right .widget {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.shell-right .widget-list {
+  gap: var(--ch-space-2);
+}
+
+.shell-right .widget-list__item {
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 18%, var(--ch-panel-border));
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-raised);
+  transition: border-color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+/* C0 command surfaces (NIC-58): the persistent launcher + its capability-aware suggestions,
+   and the in-conversation docked input. */
+.command-surface {
+  position: relative;
+}
+
+.command-suggestions {
+  position: absolute;
+  top: calc(100% + var(--ch-space-1));
+  left: 0;
+  right: 0;
+  z-index: var(--ch-z-overlay);
+  list-style: none;
+  margin: 0;
+  padding: var(--ch-space-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-raised);
+}
+
+.command-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+  width: 100%;
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  text-align: left;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border: 0;
+  border-radius: var(--ch-radius-sm);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.command-suggestion:hover:not(:disabled),
+.command-suggestion:focus-visible {
+  background: var(--ch-surface-panel);
+}
+
+.command-suggestion:disabled {
+  color: var(--ch-text-muted);
+  cursor: not-allowed;
+}
+
+.command-suggestion--ask {
+  color: var(--ch-accent-secondary);
+}
+
+.command-suggestion__badge {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-status-neutral);
+  border: 1px dashed var(--ch-status-neutral);
+  border-radius: var(--ch-radius-pill);
+  padding: 0 var(--ch-space-2);
+}
+
+.docked-input__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-accent-primary);
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-primary);
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+}
+
+/* Conversation overlay — composited over the still-running ambient field (NIC-60 renders the
+   field and tunes the scrim); never replaces the center (course-correction A.3). */
+.heimlich {
+  position: relative;
+}
+
+.conversation {
+  position: absolute;
+  inset: 0;
+  z-index: var(--ch-z-raised);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-5);
+  border-radius: var(--ch-radius-lg);
+  background: var(--ch-surface-raised);
+}
+
+.conversation__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.conversation__close {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-1) var(--ch-space-3);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-surface-panel);
+  color: var(--ch-text-muted);
+  cursor: pointer;
+}
+
+.conversation__transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+}
+
+.conversation__message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  max-width: 80%;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-panel);
+}
+
+.conversation__message--user {
+  align-self: flex-end;
+  border: 1px solid var(--ch-accent-primary);
+}
+
+.conversation__role {
+  font-size: var(--ch-font-size-label);
+  letter-spacing: var(--ch-font-label-tracking);
+  text-transform: uppercase;
+  color: var(--ch-text-faint);
+}
+
+.conversation__text {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+}
+
+/* Animated mode transition (course-correction D.1): the palette cross-fades — not an instant
+   flip, not a loading state — when data-mode changes. CSS custom properties aren't themselves
+   transitionable, so the consuming properties transition. Collapses to instant under
+   prefers-reduced-motion (the safety net in app.css zeroes transition-duration). */
+.heimlich,
+.heimlich__state,
+.heimlich__greeting,
+.shell-panel,
+.panel__header .eyebrow,
+.panel__icon,
+.calendar__dot,
+.calendar__event-time,
+.quick-app__icon,
+.mode-switcher__option,
+.mode-switcher__icon,
+.bottom-bar__mode,
+.global-search__input {
+  transition:
+    color var(--ch-motion-base) var(--ch-ease-standard),
+    background-color var(--ch-motion-base) var(--ch-ease-standard),
+    border-color var(--ch-motion-base) var(--ch-ease-standard),
+    box-shadow var(--ch-motion-base) var(--ch-ease-standard);
+}
+
+/* The brand and the Heimlich portrait recolor via SVG fill/stroke, so they join the same mode
+   cross-fade with those properties (the wave path suspends this like everything else). */
+.brand-mark__frame,
+.brand-mark__accent,
+.brand-mark__hub,
+.brand-mark__brain,
+.brand-wordmark__primary,
+.brand-wordmark__secondary,
+.heimlich-avatar__line,
+.heimlich-avatar__fill,
+.heimlich-avatar__cyber-line,
+.heimlich-avatar__cyber-fill {
+  transition:
+    fill var(--ch-motion-base) var(--ch-ease-standard),
+    stroke var(--ch-motion-base) var(--ch-ease-standard);
+}
+
+/* Responsive (constitution §8): compact stacks the rails (center first), preserving the
+   center, mode, and bottom bar with no horizontal page scroll; external caps the width. */
+@media (max-width: 1439px) {
+  .dashboard-canvas {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(4, auto);
+    grid-template-areas:
+      "search"
+      "center"
+      "left"
+      "right";
+    /* Stacked content can exceed the height at narrow widths — scroll the canvas (the bottom bar,
+       a sibling below, stays pinned). */
+    overflow-y: auto;
+  }
+
+  /* Compact keeps the essentials; the corner brand (decorative chrome with no grid cell in the
+     stacked layout) steps aside rather than taking a row from content. */
+  .shell-brand {
+    display: none;
+  }
+}
+
+/* Confirmation window (design spec §9): the universal policy-owned safety surface. NEUTRAL
+   SYSTEM BLUE regardless of active mode — it references the mode-invariant --ch-confirm-*
+   tokens and never the mode accent. Lives in the overlay layer over a dimming scrim. */
+.confirmation-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ch-z-scrim);
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.confirmation-window {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: var(--ch-z-overlay);
+  width: min(560px, calc(100vw - var(--ch-space-8)));
+  max-height: calc(100vh - var(--ch-space-12));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-4);
+  padding: var(--ch-space-6);
+  border-radius: var(--ch-radius-lg);
+  border: 1px solid var(--ch-confirm-accent);
+  background: var(--ch-confirm-surface);
+  color: var(--ch-text-primary);
+}
+
+.confirmation-window__eyebrow {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  letter-spacing: var(--ch-font-label-tracking);
+  text-transform: uppercase;
+  color: var(--ch-confirm-accent);
+}
+
+.confirmation-window__summary {
+  margin: 0;
+  font-size: var(--ch-font-size-lg);
+  font-weight: var(--ch-font-weight-semibold);
+}
+
+.confirmation-window__label {
+  margin: 0 0 var(--ch-space-1);
+  font-size: var(--ch-font-size-label);
+  letter-spacing: var(--ch-font-label-tracking);
+  text-transform: uppercase;
+  color: var(--ch-text-faint);
+}
+
+.confirmation-detail {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.confirmation-detail__row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--ch-space-3);
+}
+
+.confirmation-detail__row dt {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+.confirmation-detail__row dd {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+}
+
+.confirmation-detail--technical {
+  padding-top: var(--ch-space-3);
+  border-top: 1px solid var(--ch-panel-border);
+}
+
+.confirmation-detail__mono {
+  font-family: ui-monospace, "SF Mono", monospace;
+  word-break: break-all;
+}
+
+.confirmation-arguments ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.confirmation-arguments li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+  font-size: var(--ch-font-size-sm);
+}
+
+.confirmation-arguments__name {
+  color: var(--ch-text-muted);
+}
+
+.confirmation-window__expiry {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+.confirmation-window__notice {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  font-weight: var(--ch-font-weight-medium);
+  color: var(--ch-confirm-accent);
+}
+
+.confirmation-window__choices {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+}
+
+.confirmation-choice {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-2) var(--ch-space-4);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.confirmation-choice--approve {
+  border-color: var(--ch-confirm-accent);
+  background: var(--ch-confirm-accent);
+  color: var(--ch-bg-base);
+  font-weight: var(--ch-font-weight-semibold);
+}
+
+.confirmation-choice:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
+/* --- NIC-64: degraded / empty / offline / recovery / error states --- */
+
+/* Any disabled control (mutating controls suppressed under a read-only posture, AC #3) reads as
+   clearly inert — dimmed with a not-allowed cursor. Text/labels remain legible (never color alone). */
+.mode-switcher__option:disabled,
+.confirmation-choice:disabled,
+.command-surface[data-disabled] .global-search__input,
+.command-surface[data-disabled] .docked-input__input {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Top-level degraded ribbon: a full-width sibling above the capped canvas. Never replaces the
+   shell (AC "no blank screens"). Tone is set by data-tone; the left rule + text carry meaning. */
+.system-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-4);
+  padding: var(--ch-space-3) var(--ch-space-4);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  border-left-width: 3px;
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-primary);
+}
+
+.system-banner[data-tone="offline"] {
+  border-left-color: var(--ch-status-neutral);
+}
+
+.system-banner[data-tone="recovery"] {
+  border-left-color: var(--ch-status-info);
+}
+
+.system-banner[data-tone="error"] {
+  border-left-color: var(--ch-status-error);
+}
+
+.system-banner__mark {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: var(--ch-radius-pill);
+  flex: none;
+  background: var(--ch-status-neutral);
+}
+
+.system-banner[data-tone="recovery"] .system-banner__mark {
+  background: var(--ch-status-info);
+}
+
+.system-banner[data-tone="error"] .system-banner__mark {
+  background: var(--ch-status-error);
+}
+
+.system-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.system-banner__title {
+  font-weight: var(--ch-font-weight-semibold);
+}
+
+.system-banner__detail {
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+}
+
+.system-banner__action {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  flex: none;
+  padding: var(--ch-space-2) var(--ch-space-4);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-accent-primary);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.system-banner__action:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
+/* Degraded calendar body (unavailable / empty) replaces the four-row event list. */
+.calendar__events--degraded {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* First-paint loading skeleton: mirrors the three-zone grid so there is never a blank screen. */
+.dashboard-canvas--loading {
+  display: block;
+}
+
+.dashboard-skeleton {
+  display: grid;
+  grid-template-columns: minmax(190px, 250px) minmax(0, 1fr) minmax(190px, 250px);
+  gap: var(--ch-space-3);
+  height: 100%;
+  min-height: 0;
+}
+
+.skeleton-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  min-height: 0;
+}
+
+.skeleton-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-4);
+  border-radius: var(--ch-radius-lg);
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-panel);
+}
+
+.skeleton-center {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-4);
+  padding: var(--ch-space-4);
+}
+
+/* Shimmer bone: a moving highlight over a muted base. Stilled under reduced motion (below). */
+.skeleton-bone {
+  display: block;
+  border-radius: var(--ch-radius-sm);
+  height: 0.75rem;
+  background: linear-gradient(
+    90deg,
+    var(--ch-surface-panel) 0%,
+    var(--ch-surface-raised) 50%,
+    var(--ch-surface-panel) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s var(--ch-ease-standard) infinite;
+}
+
+.skeleton-bone--label {
+  width: 40%;
+  height: 0.6rem;
+}
+
+.skeleton-bone--row {
+  width: 100%;
+}
+
+.skeleton-bone--apps {
+  height: 3rem;
+}
+
+.skeleton-bone--field {
+  flex: 1 1 auto;
+  min-height: 8rem;
+}
+
+.skeleton-bone--greeting {
+  height: 2rem;
+  width: 60%;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Reduced motion: still the shimmer to a flat base — the skeleton stays, only the motion goes. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-bone {
+    animation: none;
+    background: var(--ch-surface-panel);
+  }
+}

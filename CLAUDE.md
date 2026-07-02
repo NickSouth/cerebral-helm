@@ -30,7 +30,7 @@ rebuildable.
 1. **The user's latest explicit instruction** — always outranks everything below.
 2. **Scope & acceptance criteria** → [`.agent/spec/MVP-PRD.md`](.agent/spec/MVP-PRD.md). Controls *current* scope.
 3. **Approved stack & impl decisions** → [`.agent/spec/TECH-STACK.md`](.agent/spec/TECH-STACK.md).
-4. **UI/visual authority** → [`.agent/spec/CEREBRALHELM_DESIGN_SPEC.md`](.agent/spec/CEREBRALHELM_DESIGN_SPEC.md) + [`wiki/CerebralHelm-Visual-Design-Reference.pdf`](wiki/CerebralHelm-Visual-Design-Reference.pdf). **Precedence: the design spec beats the MVP-PRD for UI questions.**
+4. **UI/visual authority** → [`.agent/spec/CEREBRALHELM_DESIGN_SPEC.md`](.agent/spec/CEREBRALHELM_DESIGN_SPEC.md) + [`wiki/CerebralHelm-Visual-Design-Reference.pdf`](wiki/CerebralHelm-Visual-Design-Reference.pdf). **Precedence: the design spec beats the MVP-PRD for UI questions.** Day-to-day dashboard work reads the distilled [`.agent/spec/UI-CONSTITUTION.md`](.agent/spec/UI-CONSTITUTION.md) (tokens, grammar, per-increment checklist); the design spec still wins if they diverge.
 5. **Long-term intent (future compatibility, not current scope)** → [`wiki/NORTH-STAR.md`](wiki/NORTH-STAR.md).
 6. **Hard architecture boundaries** → [`docs/architecture/repository-boundaries.md`](docs/architecture/repository-boundaries.md).
 7. **Key decisions** → ADRs in [`docs/adr/`](docs/adr/): 001 AppKit+WKWebView shell · 002 single command lifecycle · 003 internal tool registry & risk policy · 004 versioned bridge.

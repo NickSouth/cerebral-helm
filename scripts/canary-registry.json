@@ -1,0 +1,22 @@
+{
+  "description": "Distinctive fake-secret markers ('canaries') that the redaction tests inject. They are intentionally fake and are NEVER real credentials. The secret-canary sweep fails CI if the CANARY- marker (or any known value) appears in a shipped artifact, generated output, or the built dashboard bundle — proving redaction never leaks a secret into logs, fixtures, or diagnostics (FR-OBS-03; NIC-69 AC-7; NIC-34 AC-34.1).",
+  "marker": "CANARY-",
+  "note": "The Swift redaction/disclosure tests under Tests/ are the source of these values. The marker prefix is what the sweep detects, so a new CANARY- value added to a test is covered automatically; keep knownCanaries in sync for documentation and gitleaks allowlisting.",
+  "knownCanaries": [
+    "CANARY-body-9931",
+    "CANARY-out-4410",
+    "CANARY-acme-merger-q3",
+    "CANARY-search-7c1f",
+    "CANARY-capture-9a2d",
+    "CANARY-hook-3e8b-deploy-token"
+  ],
+  "sweepPaths": [
+    "packages/contracts/fixtures",
+    "packages/contracts/generated",
+    "fixtures",
+    "config",
+    "knowledge-template",
+    "apps/dashboard/src/fixtures",
+    "apps/dashboard/dist"
+  ]
+}

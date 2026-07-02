@@ -25,6 +25,8 @@ const expectedCanonicalKeys = new Set([
   "failure.sqlite_locked",
   "failure.bridge_major_version_mismatch",
   "failure.dashboard_offline",
+  "system.dashboard.loading",
+  "failure.dashboard_error",
   "system.metrics.loading",
   "system.metrics.stale",
   "system.metrics.unavailable",
@@ -34,7 +36,11 @@ const expectedCanonicalKeys = new Set([
   "future.sensitive_context_blocked",
   "update.backup_failure",
   "update.migration_failure",
-  "update.health_check_failure_rollback"
+  "update.health_check_failure_rollback",
+  "agent.research-analyst.expanded",
+  "agent.financial-advisor.expanded",
+  "agent.project-manager.expanded",
+  "agent.system-janitor.expanded"
 ]);
 
 const validDashboardStates = new Set([
@@ -101,7 +107,11 @@ test("dashboard fixtures are story-ready and come from the canonical catalog", (
   for (const fixture of dashboardFixtures) {
     assert.equal(validDashboardStates.has(fixture.dashboardState.uiState), true, `${fixture.canonicalKey} has invalid UI state.`);
     assert.equal(typeof fixture.dashboardState.summary, "string");
-    assert.equal(typeof fixture.dashboardState.activeSurface, "string");
+    assert.equal(typeof fixture.dashboardState.heimlich.state, "string");
+    assert.ok(
+      fixture.dashboardState.expandedAgent === null || typeof fixture.dashboardState.expandedAgent === "string",
+      `${fixture.canonicalKey} expandedAgent must be null or an agent id.`
+    );
     assert.equal(Number.isInteger(fixture.dashboardState.commandsToday), true);
     assert.equal(Number.isInteger(fixture.dashboardState.pendingConfirmations), true);
   }

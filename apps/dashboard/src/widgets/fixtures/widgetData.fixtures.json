@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Pre-bridge widget-data fixtures (one ready instance per registered widget plus degraded exemplars) keyed by widget id. Demonstrates the WidgetData envelope shape NIC-52 lifts into the bootstrap-state contract and NIC-54 renders. Clocks are fixed for deterministic snapshots.",
+  "ready": {
+    "market-brief": {
+      "widgetId": "market-brief",
+      "state": "ready",
+      "headline": "Markets up modestly",
+      "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" },
+      "data": {
+        "tickers": [
+          { "symbol": "SPX", "changePct": 0.6 },
+          { "symbol": "AAPL", "changePct": -0.3 },
+          { "symbol": "NVDA", "changePct": 1.4 }
+        ]
+      },
+      "action": { "id": "open-market-brief", "label": "Open market brief" }
+    },
+    "project-git-status": {
+      "widgetId": "project-git-status",
+      "state": "ready",
+      "headline": "dev · checks passing",
+      "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
+      "data": { "branch": "dev", "ahead": 2, "behind": 0, "checks": "passing", "openPullRequests": 1 },
+      "action": { "id": "git-status", "label": "View status" }
+    },
+    "deadlines": {
+      "widgetId": "deadlines",
+      "state": "ready",
+      "headline": "2 due this week",
+      "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "5m ago" },
+      "data": {
+        "items": [
+          { "title": "CS260 problem set", "dueAt": "2026-06-30T23:59:00.000Z" },
+          { "title": "History essay", "dueAt": "2026-07-02T23:59:00.000Z" }
+        ]
+      },
+      "action": { "id": "review-assignments", "label": "Review assignments" }
+    },
+    "spotify": {
+      "widgetId": "spotify",
+      "state": "ready",
+      "headline": "Recently played",
+      "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "8m ago" },
+      "data": { "track": "Weightless", "artist": "Marconi Union", "playing": false },
+      "action": { "id": "resume-playback", "label": "Resume" }
+    },
+    "projects": {
+      "widgetId": "projects",
+      "state": "ready",
+      "headline": "2 active",
+      "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" },
+      "data": {
+        "items": [
+          { "name": "Quarterly planning", "status": "in-progress" },
+          { "name": "Board prep", "status": "review" }
+        ]
+      },
+      "action": { "id": "review-projects", "label": "Review projects" }
+    },
+    "repositories": {
+      "widgetId": "repositories",
+      "state": "ready",
+      "headline": "1 repository",
+      "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
+      "data": {
+        "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }]
+      },
+      "action": { "id": "open-workspace", "label": "Open workspace" }
+    },
+    "courses": {
+      "widgetId": "courses",
+      "state": "ready",
+      "headline": "Current term",
+      "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "6m ago" },
+      "data": {
+        "items": [
+          { "name": "CS260", "next": "Lecture 14" },
+          { "name": "HIST101", "next": "Essay due" }
+        ]
+      },
+      "action": { "id": "open-courses", "label": "Open courses" }
+    },
+    "media-list": {
+      "widgetId": "media-list",
+      "state": "ready",
+      "headline": "Continue watching",
+      "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "10m ago" },
+      "data": {
+        "items": [
+          { "title": "The Bear", "kind": "continue" },
+          { "title": "Dune", "kind": "queued" }
+        ]
+      },
+      "action": { "id": "browse-library", "label": "Browse library" }
+    }
+  },
+  "degraded": {
+    "empty": {
+      "widgetId": "deadlines",
+      "state": "empty",
+      "emptyMessage": "No deadlines in the next two weeks."
+    },
+    "stale": {
+      "widgetId": "project-git-status",
+      "state": "stale",
+      "headline": "dev · checks passing",
+      "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "12m ago" },
+      "data": { "branch": "dev", "checks": "passing" }
+    },
+    "unavailable": {
+      "widgetId": "spotify",
+      "state": "unavailable",
+      "emptyMessage": "Spotify isn't connected yet."
+    }
+  }
+}

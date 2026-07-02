@@ -171,6 +171,31 @@ func forwardMigrationOnExistingDatabase() throws {
     #expect(try db.query("SELECT COUNT(*) AS c FROM commands;")[0].integer("c") == 1)
 }
 
+@Test("an upgrade records the canonical checksum for every migration applied forward (AC-46.2)")
+func upgradeRecordsCanonicalChecksums() throws {
+    let db = try SQLiteDatabase(location: .memory)
+
+    // A first release that ships only migration 0001.
+    _ = try SchemaMigrator(migrations: [SchemaMigrations.all[0]]).migrate(db)
+
+    // Upgrading to the full set applies exactly the later migrations.
+    let applied = try SchemaMigrator().migrate(db)
+    #expect(applied == Array(SchemaMigrations.all.dropFirst().map(\.id)))
+
+    // Every recorded row — including the ones applied during the upgrade — carries the
+    // canonical checksum for its migration, so drift detection later compares against a
+    // truthful baseline (AC-46.2).
+    let recorded = try SchemaMigrator().appliedMigrations(db)
+    #expect(recorded.map(\.id) == SchemaMigrations.all.map(\.id))
+    for migration in SchemaMigrations.all {
+        let row = recorded.first { $0.id == migration.id }
+        #expect(row?.checksum == migration.checksum, "recorded checksum for \(migration.id) must be canonical")
+    }
+
+    // A no-op re-run only succeeds if every recorded checksum still validates.
+    #expect(try SchemaMigrator().migrate(db).isEmpty)
+}
+
 @Test("required indexes are created (AC-46.3)")
 func requiredIndexesPresent() throws {
     let db = try SQLiteDatabase(location: .memory)

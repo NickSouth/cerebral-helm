@@ -1,0 +1,427 @@
+/* Settings window (NIC-63). A floating two-pane surface over the dashboard — mode-accented via the
+   inherited data-mode, layered just below the confirmation surface so a confirmation always wins.
+   All values come from semantic tokens (constitution §2.1). */
+
+.settings-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 890;
+  background: rgba(3, 6, 12, 0.55);
+  backdrop-filter: blur(2px);
+  animation: ch-settings-scrim-in var(--ch-motion-base) var(--ch-ease-standard) both;
+}
+
+.settings-scrim[data-closing="true"] {
+  animation: ch-settings-scrim-out var(--ch-motion-base) var(--ch-ease-standard) both;
+}
+
+.settings-window[data-closing="true"] {
+  animation: ch-settings-out var(--ch-motion-base) var(--ch-ease-standard) both;
+}
+
+@keyframes ch-settings-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(44vw, 42vh) scale(0.04);
+    filter: blur(12px);
+  }
+  55% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+    filter: blur(0);
+  }
+}
+
+@keyframes ch-settings-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+    filter: blur(0);
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(44vw, 42vh) scale(0.04);
+    filter: blur(12px);
+  }
+}
+
+@keyframes ch-settings-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ch-settings-scrim-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.settings-window {
+  position: fixed;
+  z-index: 990;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(880px, 92vw);
+  height: min(620px, 86vh);
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) 1fr;
+  border-radius: var(--ch-radius-lg);
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-raised);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  /* Open motion: the window emerges from the bottom-right corner — where the bottom bar's
+     settings control lives — sliding up the diagonal while it expands and sharpens from a
+     blur. Closing reverses back into the corner, faster (motion-base); SettingsOverlay
+     unmounts on `ch-settings-out`'s animationend. Reduced motion collapses both via the
+     app.css safety net, so open/close become instant. */
+  animation: ch-settings-in var(--ch-motion-slow) var(--ch-ease-standard) both;
+}
+
+.settings-window:focus {
+  outline: none;
+}
+
+/* Left rail: category list on top, shutdown pinned to the bottom. */
+.settings-sidebar {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--ch-space-4);
+  padding: var(--ch-space-4);
+  border-right: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-panel);
+  min-height: 0;
+}
+
+.settings-sidebar__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.settings-category {
+  font: inherit;
+  text-align: left;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ch-text-muted);
+  cursor: pointer;
+  transition:
+    background var(--ch-motion-fast) var(--ch-ease-standard),
+    color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.settings-category:hover {
+  color: var(--ch-text-primary);
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
+}
+
+/* Selected category wears the active mode accent (design intent: settings is mode-colored). */
+.settings-category[data-active="true"] {
+  color: var(--ch-text-primary);
+  background: color-mix(in srgb, var(--ch-accent-primary) 20%, transparent);
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 45%, transparent);
+}
+
+.settings-category:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
+/* Shutdown: pinned bottom-left, danger-toned, honest-disabled pre-Mac. */
+.settings-shutdown {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid color-mix(in srgb, var(--ch-status-error) 40%, var(--ch-panel-border));
+  background: transparent;
+  color: var(--ch-status-error);
+  cursor: pointer;
+}
+
+.settings-shutdown:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Right pane. */
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.settings-content__header {
+  position: relative;
+  padding: var(--ch-space-5) var(--ch-space-6) var(--ch-space-4);
+  border-bottom: 1px solid var(--ch-panel-border);
+}
+
+.settings-content__title {
+  margin: 0;
+  font-size: var(--ch-font-size-lg);
+  font-weight: var(--ch-font-weight-medium);
+}
+
+.settings-content__description {
+  margin: var(--ch-space-1) 0 0;
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+}
+
+.settings-content__close {
+  position: absolute;
+  top: var(--ch-space-4);
+  right: var(--ch-space-4);
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 1.25rem;
+  line-height: 1;
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: transparent;
+  color: var(--ch-text-muted);
+  cursor: pointer;
+}
+
+.settings-content__close:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
+.settings-content__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ch-space-5) var(--ch-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-6);
+}
+
+/* Sections + fields. */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+}
+
+.settings-section__title {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  font-weight: var(--ch-font-weight-semibold);
+  color: var(--ch-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-4);
+  padding: var(--ch-space-3) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--ch-panel-border) 60%, transparent);
+}
+
+.settings-field__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.settings-field__label {
+  color: var(--ch-text-primary);
+}
+
+.settings-field__hint {
+  color: var(--ch-text-faint);
+  font-size: var(--ch-font-size-sm);
+}
+
+.settings-field__control {
+  flex: none;
+}
+
+.settings-readonly {
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+}
+
+.settings-note {
+  margin: 0;
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+  line-height: 1.5;
+}
+
+/* Inspection lists (permissions, modes, actions). */
+.settings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.settings-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid color-mix(in srgb, var(--ch-panel-border) 60%, transparent);
+  background: var(--ch-surface-panel);
+}
+
+.settings-list__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-list__title {
+  color: var(--ch-text-primary);
+}
+
+.settings-list__sub {
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+}
+
+.settings-list__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-3);
+  flex: none;
+}
+
+.settings-list__policy {
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+}
+
+.settings-badge {
+  padding: 0.1rem var(--ch-space-2);
+  border-radius: var(--ch-radius-pill);
+  border: 1px solid var(--ch-panel-border);
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+.settings-badge[data-risk="shell"],
+.settings-badge[data-risk="destructive"],
+.settings-badge[data-risk="financial"] {
+  color: var(--ch-status-error);
+  border-color: color-mix(in srgb, var(--ch-status-error) 45%, transparent);
+}
+
+.settings-swatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--ch-radius-md);
+  flex: none;
+  border: 1px solid var(--ch-panel-border);
+}
+
+/* Controls. */
+.settings-select,
+.settings-input {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-primary);
+}
+
+.settings-input {
+  min-width: 14rem;
+}
+
+.settings-select:focus-visible,
+.settings-input:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
+/* Toggle switch. */
+.settings-switch {
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.settings-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.settings-switch__track {
+  width: 2.5rem;
+  height: 1.4rem;
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-surface-panel);
+  border: 1px solid var(--ch-panel-border);
+  position: relative;
+  transition: background var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.settings-switch__track::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0.2rem;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-text-muted);
+  transition:
+    left var(--ch-motion-fast) var(--ch-ease-standard),
+    background var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.settings-switch input:checked + .settings-switch__track {
+  background: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+  border-color: var(--ch-accent-primary);
+}
+
+.settings-switch input:checked + .settings-switch__track::after {
+  left: calc(100% - 1.2rem);
+  background: var(--ch-text-primary);
+}
+
+.settings-switch input:focus-visible + .settings-switch__track {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}

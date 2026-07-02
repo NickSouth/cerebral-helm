@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000020",
+  "type": "bridge.operation.response",
+  "operation": "getRecentActivity",
+  "status": "ok",
+  "payload": {
+    "recentActivity": {
+      "commands": [
+        {
+          "id": "cmd_000000000000000000000001",
+          "source": "dashboard",
+          "status": "succeeded",
+          "summary": "Captured a note to the inbox.",
+          "occurredAt": "2026-06-23T16:09:00.000Z"
+        },
+        {
+          "id": "cmd_000000000000000000000002",
+          "source": "command_palette",
+          "status": "cancelled",
+          "summary": "Shell action was reviewed and cancelled.",
+          "occurredAt": "2026-06-23T16:08:00.000Z"
+        }
+      ],
+      "toolCalls": [
+        {
+          "id": "toolcall_000000000000000000000001",
+          "commandId": "cmd_000000000000000000000001",
+          "toolId": "notes.capture",
+          "adapterId": "mock",
+          "status": "succeeded",
+          "durationMs": 42,
+          "occurredAt": "2026-06-23T16:09:00.500Z"
+        }
+      ],
+      "confirmations": [
+        {
+          "confirmationId": "conf_000000000000000000000001",
+          "commandId": "cmd_000000000000000000000002",
+          "decision": "approved",
+          "occurredAt": "2026-06-23T16:08:00.000Z"
+        }
+      ],
+      "modeSessions": [
+        {
+          "id": "session_000000000000000000000001",
+          "modeId": "developer",
+          "result": "success",
+          "startedAt": "2026-06-23T16:00:00.000Z",
+          "endedAt": "2026-06-23T16:09:00.000Z"
+        }
+      ],
+      "errors": [
+        {
+          "id": "err_000000000000000000000001",
+          "category": "tool",
+          "code": "adapter_timeout",
+          "message": "The allowlisted hook exceeded its configured timeout.",
+          "occurredAt": "2026-06-23T15:55:00.000Z"
+        }
+      ]
+    }
+  },
+  "error": null
+}

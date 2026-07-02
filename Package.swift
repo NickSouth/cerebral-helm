@@ -4,6 +4,15 @@ import PackageDescription
 
 let package = Package(
     name: "CerebralHelm",
+    // The core uses Swift Concurrency (Task, task groups, CancellationError), which
+    // require a macOS 10.15+ deployment target. Without an explicit floor SwiftPM
+    // targets a pre-concurrency default on macOS and fails to build (Linux/Windows have
+    // no OS-availability gating, so the gap only surfaces on the macOS CI runner). This
+    // is the build/deployment floor for compilation only; the shipped app's macOS
+    // minimum is pinned separately on real hardware (compatibility manifest / NIC-15).
+    platforms: [
+        .macOS(.v13)
+    ],
     products: [
         .library(name: "CerebralCore", targets: ["CerebralCore"]),
         .library(name: "CerebralTools", targets: ["CerebralTools"]),

@@ -10,6 +10,37 @@ import {
   repositoryRoot,
   schemasRoot
 } from "./contracts-shared.mjs";
+import {
+  readRegisteredModeThemeTokens,
+  readRegisteredQuickAppIds,
+  readRegisteredWidgetIds,
+  validateModeQuickApps,
+  validateModeThemeTokens,
+  validateModeWidgets
+} from "./validate-config.mjs";
+
+// A mode reference fixture (theme token / widget / quick-app) is schema-valid by
+// construction — the dangling id still matches the configId pattern — so JSON Schema
+// alone cannot reject it. The reference-resolution gate is the constraint "JSON Schema
+// cannot express", so an invalid mode fixture is allowed to fail via this gate, exactly
+// as reference-catalog and workflow fixtures may fail via their duplicate-id scans.
+function readModeReferenceRegistries() {
+  return {
+    tokenNames: readRegisteredModeThemeTokens(repositoryRoot),
+    widgetIds: readRegisteredWidgetIds(repositoryRoot),
+    appIds: readRegisteredQuickAppIds(repositoryRoot)
+  };
+}
+
+function modeReferenceGateErrors(filePath, registries) {
+  const document = readJson(filePath);
+  const relativePath = path.relative(repositoryRoot, filePath);
+  const errors = [];
+  validateModeThemeTokens(document, relativePath, registries.tokenNames, errors);
+  validateModeWidgets(document, relativePath, registries.widgetIds, errors);
+  validateModeQuickApps(document, relativePath, registries.appIds, errors);
+  return errors;
+}
 
 function fail(message) {
   throw new Error(message);
@@ -224,6 +255,7 @@ function scanWorkflowDuplicateStepIds(filePath, errors) {
 export function validateContracts() {
   const ajv = createAjv();
   const errors = [];
+  const modeReferenceRegistries = readModeReferenceRegistries();
   const validFixtures = collectJsonFiles(path.join(fixturesRoot, "valid"));
   const invalidFixtures = collectJsonFiles(path.join(fixturesRoot, "invalid"));
 
@@ -288,6 +320,21 @@ export function validateContracts() {
       scanWorkflowDuplicateStepIds(filePath, duplicateErrors);
 
       if (ajvValid && duplicateErrors.length === 0) {
+        errors.push(`${path.relative(repositoryRoot, filePath)} unexpectedly passed ${schema}`);
+      }
+
+      continue;
+    }
+
+    // Modes can be invalid structurally (Ajv) or by referencing an unregistered
+    // theme token / widget / quick-app (the reference-resolution gate, which JSON
+    // Schema cannot express). Accept either signal as the expected failure.
+    if (schema === schemaId("config", "mode")) {
+      const validate = ajv.getSchema(schema);
+      const ajvValid = validate ? validate(readJson(filePath)) : false;
+      const gateErrors = modeReferenceGateErrors(filePath, modeReferenceRegistries);
+
+      if (ajvValid && gateErrors.length === 0) {
         errors.push(`${path.relative(repositoryRoot, filePath)} unexpectedly passed ${schema}`);
       }
 

@@ -1,0 +1,208 @@
+name: CI
+
+# Portable-foundation continuous verification (NIC-67 / PRD G-08, NFR-01).
+# Each surface is a separately named job so a red check names the package that owns
+# the failure (AC-3) and every job name is a stable branch-protection target (AC-1).
+#
+# This workflow currently covers the core Swift package (Linux + macOS) and the
+# dashboard. Contracts/config/migration gates (NIC-68), secret scanning (NIC-69), and
+# documentation checks (NIC-70) are added as further named jobs in later increments.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev
+      - prod
+
+# Superseded runs on the same ref are cancelled so the latest push is what gates.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  contracts-config:
+    name: contracts-config
+    runs-on: ubuntu-latest
+    # Deterministic contract, config, mode/agent/tool, and fixture gates (NIC-68 /
+    # FR-CFG-02, FR-OBS-01). A single invalid artifact fails the job (AC-4). Migration
+    # empty/upgrade/checksum behaviour is verified in the core-swift jobs (StorageTests);
+    # this job gates the artifacts those migrations and contracts are generated from.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No --require-swift: this Node-only job has no Swift toolchain.
+      - name: Toolchain versions
+        run: node ./scripts/check-toolchain.mjs
+
+      - name: Validate config
+        run: node ./scripts/validate-config.mjs
+
+      - name: Validate compatibility manifest
+        run: node ./scripts/validate-compatibility.mjs
+
+      - name: Validate contracts
+        run: node ./scripts/validate-contracts.mjs
+
+      - name: Check generated-contract drift
+        run: node ./scripts/check-contract-drift.mjs
+
+      # Schemas, generated types, examples, the four modes, four agents, tools, and
+      # fixtures — one bad artifact fails strict decoding here (AC-4).
+      - name: Contract, config, and fixture tests
+        run: node --test scripts/*.test.mjs
+
+  dashboard:
+    name: dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Corepack activates the pnpm version pinned in package.json (packageManager).
+      # Enabled before setup-node so its pnpm cache can resolve the store path.
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      # --frozen-lockfile fails if pnpm-lock.yaml is out of sync with any package.json,
+      # independent of the pnpm store cache — so a warm cache can never hide lockfile
+      # drift (AC-2).
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm --dir apps/dashboard lint
+
+      - name: Typecheck
+        run: pnpm --dir apps/dashboard typecheck
+
+      - name: Unit tests
+        run: pnpm --dir apps/dashboard test --run
+
+      - name: Production build
+        run: pnpm --dir apps/dashboard build
+
+  core-swift-linux:
+    name: core-swift-linux
+    runs-on: ubuntu-latest
+    # Proves the portable core builds and tests on a non-Mac environment (NFR-01).
+    # The official Swift image is the toolchain entrypoint; bump the tag to raise the
+    # Swift floor. Linux has none of the Windows dev-box symlink / OneDrive constraints.
+    container:
+      image: swift:6.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: swiftpm-linux-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: |
+            swiftpm-linux-
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Swift tests
+        run: swift test
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    # Documentation and compatibility gate (NIC-70 / NFR-10). Required decision docs
+    # must exist and relative links must resolve (AC-10), the compatibility manifest
+    # must validate as machine-readable (AC-11), and every changelog entry must declare
+    # config + migration impact (AC-12).
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate required docs, links, and changelog
+        run: node ./scripts/validate-docs.mjs
+
+      - name: Validate compatibility manifest
+        run: node ./scripts/validate-compatibility.mjs
+
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    # Secret scanning + privacy regression gate (NIC-69 / FR-OBS-03, FR-CFG-03).
+    # gitleaks proves no real credentials are committed, including in fixtures/config
+    # (AC-8); the canary sweep proves the redaction test markers never leak into
+    # shipped artifacts or build output (AC-7). Diagnostic-export redaction (AC-9) is
+    # proven by the redaction/disclosure tests in the core-swift jobs.
+    steps:
+      - uses: actions/checkout@v4
+
+      # Run the gitleaks binary directly against the working tree rather than the
+      # gitleaks-action: the action calls the GitHub PR API (which needs elevated
+      # permissions and couples the gate to PR-comment plumbing), whereas a `--no-git`
+      # filesystem scan is deterministic, needs no token, and matches "scan repository
+      # content" (AC-8). The pinned version can be bumped as gitleaks releases.
+      - name: Secret scan (gitleaks)
+        run: |
+          version=8.24.3
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks version
+          /tmp/gitleaks detect --no-git --source . --config .gitleaks.toml --redact --verbose
+
+      # Node-only sweep (no dependencies); the ubuntu runner's preinstalled Node is fine.
+      - name: Canary leak sweep
+        run: node ./scripts/secret-canary-sweep.mjs
+
+  core-swift-macos:
+    name: core-swift-macos
+    runs-on: macos-15
+    # A macOS CI build proves portable compilation on Apple's toolchain — not real
+    # AppKit window behavior (that is validated on target hardware, NIC-15).
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: swiftpm-macos-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: |
+            swiftpm-macos-
+
+      # Fail loudly if the runner's default toolchain is older than the package floor
+      # rather than surfacing a confusing mid-compile error.
+      - name: Verify Swift toolchain (>= 6.0)
+        run: |
+          swift --version
+          major=$(swift --version 2>&1 | grep -oE 'Swift version [0-9]+' | grep -oE '[0-9]+$' | head -n1)
+          if [ "${major:-0}" -lt 6 ]; then
+            echo "Swift 6.0+ is required; found major version ${major:-unknown}." >&2
+            exit 1
+          fi
+
+      - name: Swift tests
+        run: swift test

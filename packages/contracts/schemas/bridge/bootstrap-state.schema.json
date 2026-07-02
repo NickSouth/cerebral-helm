@@ -11,8 +11,12 @@
     "summary",
     "commandsToday",
     "pendingConfirmations",
-    "activeSurface",
-    "uiState"
+    "uiState",
+    "heimlich",
+    "expandedAgent",
+    "modes",
+    "agents",
+    "regions"
   ],
   "properties": {
     "schemaVersion": {
@@ -20,29 +24,342 @@
       "pattern": "^\\d+\\.\\d+\\.\\d+$"
     },
     "mode": {
+      "title": "Mode",
       "type": "string",
       "enum": ["Executive", "Developer", "School", "Entertainment"]
     },
-    "project": {
-      "type": "string"
-    },
-    "summary": {
-      "type": "string"
-    },
-    "commandsToday": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "pendingConfirmations": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "activeSurface": {
-      "type": "string"
+    "project": { "type": "string" },
+    "summary": { "type": "string" },
+    "commandsToday": { "type": "integer", "minimum": 0 },
+    "pendingConfirmations": { "type": "integer", "minimum": 0 },
+    "weather": {
+      "title": "DashboardWeatherChannel",
+      "description": "Ambient weather for the persistent bottom bar. Optional (a Mac-only capability; mocked pre-Mac).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "label"],
+      "properties": {
+        "state": {
+          "title": "DashboardRegionState",
+          "type": "string",
+          "enum": ["ready", "empty", "stale", "unavailable"]
+        },
+        "label": { "type": "string" },
+        "temperatureF": { "type": "number", "description": "Temperature in °F, when known." },
+        "condition": { "type": "string", "description": "Short condition phrase, e.g. \"Partly Cloudy\"." }
+      }
     },
     "uiState": {
+      "title": "UIState",
       "type": "string",
       "enum": ["loading", "empty", "stale", "unavailable", "offline", "error", "confirmation", "success", "cancelled", "ready"]
+    },
+    "heimlich": {
+      "title": "DashboardHeimlich",
+      "description": "The center surface — Heimlich's consciousness — present in every mode; the center is never replaced (design spec §5.7). `conversation` is the translucent chat overlay over the still-running field, including its docked bottom input.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "conversation"],
+      "properties": {
+        "state": {
+          "title": "DashboardHeimlichState",
+          "type": "string",
+          "enum": ["idle", "listening", "thinking", "acting", "awaiting_confirmation", "success", "error", "offline"]
+        },
+        "conversation": {
+          "title": "DashboardHeimlichConversation",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["open", "transcript", "input"],
+          "properties": {
+            "open": { "type": "boolean" },
+            "transcript": {
+              "type": "array",
+              "items": {
+                "title": "DashboardConversationMessage",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "role", "text"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "role": {
+                    "title": "DashboardConversationRole",
+                    "type": "string",
+                    "enum": ["user", "heimlich"]
+                  },
+                  "text": { "type": "string" }
+                }
+              }
+            },
+            "input": {
+              "title": "DashboardConversationInput",
+              "description": "The in-conversation docked bottom input (distinct from the persistent top-center Ask Heimlich launcher); shown when the conversation is open, lifts on minimize/close.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["placeholder"],
+              "properties": {
+                "draft": { "type": "string" },
+                "placeholder": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "expandedAgent": {
+      "description": "The agent whose right-column-width workspace panel is open over the right column, or null. Defaults to null in every mode — Heimlich owns the center and nothing is expanded by default (design spec §5.10).",
+      "type": ["string", "null"]
+    },
+    "modes": {
+      "description": "All four resolved mode views, shipped eagerly so a mode switch re-themes instantly without a bridge round-trip or theme flash (NIC-117 d). The active mode is identified by the top-level `mode`.",
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "title": "DashboardModeView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "theme", "quickApps", "quickActions", "widgets"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "theme": {
+            "title": "DashboardModeTheme",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["accentPrimary", "accentSecondary"],
+            "properties": {
+              "accentPrimary": { "type": "string" },
+              "accentSecondary": { "type": "string" }
+            }
+          },
+          "quickApps": { "type": "array", "items": { "type": "string" } },
+          "quickActions": {
+            "description": "Exactly 8 ordered slots; an id or null for an unconfigured slot (rendered as an honest disabled placeholder pre-wiring).",
+            "type": "array",
+            "minItems": 8,
+            "maxItems": 8,
+            "items": { "type": ["string", "null"] }
+          },
+          "widgets": {
+            "title": "DashboardModeWidgets",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["left", "right"],
+            "properties": {
+              "left": { "type": "string" },
+              "right": { "type": "string" }
+            }
+          },
+          "greeting": {
+            "title": "DashboardModeGreeting",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["persona", "fallback"],
+            "properties": {
+              "persona": { "type": "string" },
+              "directive": { "type": "string" },
+              "fallback": { "type": "string" }
+            }
+          },
+          "calendarProfile": { "type": "string" },
+          "newsProfile": { "type": "string" }
+        }
+      }
+    },
+    "agents": {
+      "description": "The fixed global agent roster, identical in every mode (design spec §5.10). No add-agent capability.",
+      "type": "array",
+      "items": {
+        "title": "DashboardAgentSummary",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "summary", "availability", "activity"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "summary": { "type": "string" },
+          "availability": {
+            "title": "DashboardAgentAvailability",
+            "description": "The configured availability flag (agent config `status`); not the runtime dashboard state.",
+            "type": "string",
+            "enum": ["mock", "disabled", "unavailable", "enabled"]
+          },
+          "activity": {
+            "title": "DashboardAgentActivity",
+            "description": "The runtime dashboard status (design spec §5.10); event-driven, defaults to idle in bootstrap.",
+            "type": "string",
+            "enum": ["idle", "waiting", "thinking", "ready"]
+          }
+        }
+      }
+    },
+    "regions": {
+      "title": "DashboardRegions",
+      "description": "The active mode's region data (schedule, system health, news, left/right widgets). Heavy data is resolved on switch, not shipped eagerly for every mode.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schedule", "systemHealth", "news", "widgets"],
+      "properties": {
+        "schedule": {
+          "title": "DashboardScheduleRegion",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "items"],
+          "properties": {
+            "state": {
+              "title": "DashboardRegionState",
+              "type": "string",
+              "enum": ["ready", "empty", "stale", "unavailable"]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "title": "DashboardScheduleItem",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "title", "kind"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "title": { "type": "string" },
+                  "start": { "type": "string" },
+                  "kind": {
+                    "title": "DashboardScheduleKind",
+                    "type": "string",
+                    "enum": ["today", "tonight"]
+                  }
+                }
+              }
+            },
+            "emptyMessage": { "type": "string" }
+          }
+        },
+        "systemHealth": {
+          "title": "DashboardSystemHealthRegion",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "battery"],
+          "properties": {
+            "state": {
+              "title": "DashboardRegionState",
+              "type": "string",
+              "enum": ["ready", "empty", "stale", "unavailable"]
+            },
+            "cpuPercent": { "type": "number" },
+            "memoryPercent": { "type": "number" },
+            "network": {
+              "title": "DashboardNetworkChannel",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "label"],
+              "properties": {
+                "state": {
+                  "title": "DashboardRegionState",
+                  "type": "string",
+                  "enum": ["ready", "empty", "stale", "unavailable"]
+                },
+                "label": { "type": "string" },
+                "uploadMbps": { "type": "number", "description": "Uplink throughput in Mbps, when known." },
+                "downloadMbps": { "type": "number", "description": "Downlink throughput in Mbps, when known." }
+              }
+            },
+            "battery": {
+              "title": "DashboardBatteryChannel",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "label"],
+              "properties": {
+                "state": {
+                  "title": "DashboardRegionState",
+                  "type": "string",
+                  "enum": ["ready", "empty", "stale", "unavailable"]
+                },
+                "label": { "type": "string" },
+                "percent": { "type": "number", "minimum": 0, "maximum": 100, "description": "Charge level 0–100, when known (Mac-only capability)." }
+              }
+            }
+          }
+        },
+        "news": {
+          "title": "DashboardNewsRegion",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "headlines"],
+          "properties": {
+            "state": {
+              "title": "DashboardRegionState",
+              "type": "string",
+              "enum": ["ready", "empty", "stale", "unavailable"]
+            },
+            "headlines": {
+              "type": "array",
+              "maxItems": 3,
+              "items": {
+                "title": "DashboardNewsHeadline",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "title", "source"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "title": { "type": "string" },
+                  "source": { "type": "string" }
+                }
+              }
+            },
+            "emptyMessage": { "type": "string" }
+          }
+        },
+        "widgets": {
+          "title": "DashboardRegionWidgets",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["left", "right"],
+          "properties": {
+            "left": { "$ref": "#/$defs/widgetData" },
+            "right": { "$ref": "#/$defs/widgetData" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "widgetData": {
+      "title": "DashboardWidgetData",
+      "description": "The common widget-data envelope (mirrors apps/dashboard/src/widgets/widgetData.ts). The per-widget payload is the open `data` object.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["widgetId", "state"],
+      "properties": {
+        "widgetId": { "type": "string" },
+        "state": {
+          "title": "DashboardRegionState",
+          "type": "string",
+          "enum": ["ready", "empty", "stale", "unavailable"]
+        },
+        "headline": { "type": "string" },
+        "data": { "type": "object", "additionalProperties": true },
+        "freshness": {
+          "title": "DashboardWidgetFreshness",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["observedAt", "label"],
+          "properties": {
+            "observedAt": { "type": "string" },
+            "label": { "type": "string" }
+          }
+        },
+        "emptyMessage": { "type": "string" },
+        "action": {
+          "title": "DashboardWidgetAction",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "label"],
+          "properties": {
+            "id": { "type": "string" },
+            "label": { "type": "string" }
+          }
+        }
+      }
     }
   }
 }

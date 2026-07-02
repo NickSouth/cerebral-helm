@@ -12,10 +12,54 @@
         "mode": "Executive",
         "project": "Daily Command",
         "summary": "Executive mode is ready with planning, status, and cross-project briefing surfaces.",
+        "weather": { "state": "ready", "label": "72°F · Partly Cloudy", "temperatureF": 72, "condition": "Partly Cloudy" },
         "commandsToday": 2,
         "pendingConfirmations": 0,
-        "activeSurface": "Project Manager",
-        "uiState": "ready"
+        "uiState": "ready",
+        "expandedAgent": null,
+        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": {
+            "state": "ready",
+            "items": [
+              { "id": "evt-board", "title": "Board prep review", "start": "2026-06-23T17:00:00.000Z", "kind": "today" },
+              { "id": "evt-investor", "title": "Investor call", "start": "2026-06-23T20:30:00.000Z", "kind": "tonight" }
+            ]
+          },
+          "systemHealth": {
+            "state": "ready",
+            "cpuPercent": 18,
+            "memoryPercent": 50,
+            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "uploadMbps": 20, "downloadMbps": 120 },
+            "battery": { "state": "ready", "label": "82%", "percent": 82 }
+          },
+          "news": {
+            "state": "ready",
+            "headlines": [
+              { "id": "news-market", "title": "Markets edge higher into the close", "source": "Market Wire" },
+              { "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily" },
+              { "id": "news-earnings", "title": "Quarterly earnings season opens", "source": "Briefing" }
+            ]
+          },
+          "widgets": {
+            "left": {
+              "widgetId": "market-brief",
+              "state": "ready",
+              "headline": "Markets up modestly",
+              "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" },
+              "data": { "tickers": [{ "symbol": "SPX", "changePct": 0.6 }, { "symbol": "AAPL", "changePct": -0.3 }, { "symbol": "NVDA", "changePct": 1.4 }] },
+              "action": { "id": "open-market-brief", "label": "Open market brief" }
+            },
+            "right": {
+              "widgetId": "projects",
+              "state": "ready",
+              "headline": "2 active",
+              "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" },
+              "data": { "items": [{ "name": "Quarterly planning", "status": "in-progress" }, { "name": "Board prep", "status": "review" }] },
+              "action": { "id": "review-projects", "label": "Review projects" }
+            }
+          }
+        }
       },
       "sourceFixtures": []
     },
@@ -29,10 +73,54 @@
         "mode": "Developer",
         "project": "NIC-12 Workspace Bootstrap",
         "summary": "Pre-Mac foundation is running against a mock CerebralBridge.",
+        "weather": { "state": "ready", "label": "66°F · Cloudy", "temperatureF": 66, "condition": "Cloudy" },
         "commandsToday": 4,
         "pendingConfirmations": 0,
-        "activeSurface": "Project Manager",
-        "uiState": "ready"
+        "uiState": "ready",
+        "expandedAgent": null,
+        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": {
+            "state": "ready",
+            "items": [
+              { "id": "evt-standup", "title": "Team standup", "start": "2026-06-23T16:30:00.000Z", "kind": "today" },
+              { "id": "evt-review", "title": "PR review block", "start": "2026-06-23T19:00:00.000Z", "kind": "today" }
+            ]
+          },
+          "systemHealth": {
+            "state": "ready",
+            "cpuPercent": 22,
+            "memoryPercent": 58,
+            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "uploadMbps": 22, "downloadMbps": 118 },
+            "battery": { "state": "ready", "label": "47%", "percent": 47 }
+          },
+          "news": {
+            "state": "ready",
+            "headlines": [
+              { "id": "news-ts", "title": "TypeScript 5.9 ships incremental project references", "source": "Dev Weekly" },
+              { "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums" },
+              { "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest" }
+            ]
+          },
+          "widgets": {
+            "left": {
+              "widgetId": "project-git-status",
+              "state": "ready",
+              "headline": "dev · checks passing",
+              "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
+              "data": { "branch": "dev", "ahead": 2, "behind": 0, "checks": "passing", "openPullRequests": 1 },
+              "action": { "id": "git-status", "label": "View status" }
+            },
+            "right": {
+              "widgetId": "repositories",
+              "state": "ready",
+              "headline": "1 repository",
+              "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
+              "data": { "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }] },
+              "action": { "id": "open-workspace", "label": "Open workspace" }
+            }
+          }
+        }
       },
       "sourceFixtures": [
         "fixtures/simulations/successful-developer-mode.json",
@@ -49,10 +137,54 @@
         "mode": "School",
         "project": "Coursework Focus",
         "summary": "School mode is ready with deadlines, study shortcuts, and research support.",
+        "weather": { "state": "ready", "label": "75°F · Sunny", "temperatureF": 75, "condition": "Sunny" },
         "commandsToday": 1,
         "pendingConfirmations": 0,
-        "activeSurface": "Research Analyst",
-        "uiState": "ready"
+        "uiState": "ready",
+        "expandedAgent": null,
+        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": {
+            "state": "ready",
+            "items": [
+              { "id": "evt-lecture", "title": "CS260 lecture", "start": "2026-06-23T17:00:00.000Z", "kind": "today" },
+              { "id": "evt-study", "title": "Study group", "start": "2026-06-23T21:00:00.000Z", "kind": "tonight" }
+            ]
+          },
+          "systemHealth": {
+            "state": "ready",
+            "cpuPercent": 16,
+            "memoryPercent": 44,
+            "network": { "state": "ready", "label": "Wi-Fi · 90 Mbps", "uploadMbps": 15, "downloadMbps": 90 },
+            "battery": { "state": "ready", "label": "88%", "percent": 88 }
+          },
+          "news": {
+            "state": "ready",
+            "headlines": [
+              { "id": "news-grant", "title": "New research grant program announced", "source": "Campus News" },
+              { "id": "news-lib", "title": "Library extends finals-week hours", "source": "Student Desk" },
+              { "id": "news-study", "title": "Study finds spaced repetition boosts recall", "source": "Academic Brief" }
+            ]
+          },
+          "widgets": {
+            "left": {
+              "widgetId": "deadlines",
+              "state": "ready",
+              "headline": "2 due this week",
+              "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "5m ago" },
+              "data": { "items": [{ "title": "CS260 problem set", "dueAt": "2026-06-30T23:59:00.000Z" }, { "title": "History essay", "dueAt": "2026-07-02T23:59:00.000Z" }] },
+              "action": { "id": "review-assignments", "label": "Review assignments" }
+            },
+            "right": {
+              "widgetId": "courses",
+              "state": "ready",
+              "headline": "Current term",
+              "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "6m ago" },
+              "data": { "items": [{ "name": "CS260", "next": "Lecture 14" }, { "name": "HIST101", "next": "Essay due" }] },
+              "action": { "id": "open-courses", "label": "Open courses" }
+            }
+          }
+        }
       },
       "sourceFixtures": []
     },
@@ -66,10 +198,53 @@
         "mode": "Entertainment",
         "project": "Evening Downtime",
         "summary": "Entertainment mode is ready with lighter density and non-work shortcuts.",
+        "weather": { "state": "ready", "label": "70°F · Clear", "temperatureF": 70, "condition": "Clear" },
         "commandsToday": 1,
         "pendingConfirmations": 0,
-        "activeSurface": "Heimlich",
-        "uiState": "ready"
+        "uiState": "ready",
+        "expandedAgent": null,
+        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": {
+            "state": "ready",
+            "items": [
+              { "id": "evt-watch", "title": "Watch party", "start": "2026-06-23T21:30:00.000Z", "kind": "tonight" }
+            ]
+          },
+          "systemHealth": {
+            "state": "ready",
+            "cpuPercent": 12,
+            "memoryPercent": 40,
+            "network": { "state": "ready", "label": "Wi-Fi · 200 Mbps", "uploadMbps": 30, "downloadMbps": 200 },
+            "battery": { "state": "ready", "label": "15%", "percent": 15 }
+          },
+          "news": {
+            "state": "ready",
+            "headlines": [
+              { "id": "news-game", "title": "Anticipated indie title launches this week", "source": "Play Wire" },
+              { "id": "news-show", "title": "Streaming series renewed for a new season", "source": "Screen Desk" },
+              { "id": "news-music", "title": "Surprise album drops overnight", "source": "Sound Brief" }
+            ]
+          },
+          "widgets": {
+            "left": {
+              "widgetId": "spotify",
+              "state": "ready",
+              "headline": "Recently played",
+              "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "8m ago" },
+              "data": { "track": "Weightless", "artist": "Marconi Union", "playing": false },
+              "action": { "id": "resume-playback", "label": "Resume" }
+            },
+            "right": {
+              "widgetId": "media-list",
+              "state": "ready",
+              "headline": "Continue watching",
+              "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "10m ago" },
+              "data": { "items": [{ "title": "The Bear", "kind": "continue" }, { "title": "Dune", "kind": "queued" }] },
+              "action": { "id": "browse-library", "label": "Browse library" }
+            }
+          }
+        }
       },
       "sourceFixtures": []
     },
@@ -239,8 +414,42 @@
         "summary": "Dashboard is offline and showing the last-known safe fixture state.",
         "commandsToday": 4,
         "pendingConfirmations": 0,
-        "activeSurface": "Heimlich",
-        "uiState": "offline"
+        "uiState": "offline",
+        "expandedAgent": null,
+        "heimlich": { "state": "offline", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": {
+            "state": "stale",
+            "items": [
+              { "id": "evt-standup", "title": "Team standup", "start": "2026-06-23T16:30:00.000Z", "kind": "today" }
+            ],
+            "emptyMessage": "Schedule may be out of date — the dashboard is offline."
+          },
+          "systemHealth": {
+            "state": "unavailable",
+            "network": { "state": "unavailable", "label": "Network metrics unavailable while offline" },
+            "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
+          },
+          "news": {
+            "state": "unavailable",
+            "headlines": [],
+            "emptyMessage": "News is unavailable while the dashboard is offline."
+          },
+          "widgets": {
+            "left": {
+              "widgetId": "project-git-status",
+              "state": "stale",
+              "headline": "dev · last known",
+              "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "offline" },
+              "data": { "branch": "dev", "checks": "passing" }
+            },
+            "right": {
+              "widgetId": "repositories",
+              "state": "unavailable",
+              "emptyMessage": "Repository data is unavailable while offline."
+            }
+          }
+        }
       },
       "sourceFixtures": [
         "packages/contracts/fixtures/valid/bridge/bootstrap/bootstrap-state.json"
@@ -384,6 +593,180 @@
         "stage": "health_check",
         "status": "rollback_offered",
         "message": "Updated app failed health checks; rollback is available and user state is preserved."
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_agent_research_analyst_expanded",
+      "canonicalKey": "agent.research-analyst.expanded",
+      "category": "agent",
+      "clock": "2026-06-23T16:41:00.000Z",
+      "modeId": "school",
+      "dashboardState": {
+        "mode": "School",
+        "project": "Coursework Focus",
+        "summary": "Research Analyst workspace is expanded over the right column; Heimlich and the left column are unaffected.",
+        "commandsToday": 1,
+        "pendingConfirmations": 0,
+        "uiState": "ready",
+        "expandedAgent": "research-analyst",
+        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": { "state": "ready", "items": [{ "id": "evt-lecture", "title": "CS260 lecture", "start": "2026-06-23T17:00:00.000Z", "kind": "today" }] },
+          "systemHealth": { "state": "ready", "cpuPercent": 16, "memoryPercent": 44, "network": { "state": "ready", "label": "Wi-Fi · 90 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
+          "news": { "state": "ready", "headlines": [{ "id": "news-lib", "title": "Library extends finals-week hours", "source": "Student Desk" }] },
+          "widgets": {
+            "left": { "widgetId": "deadlines", "state": "ready", "headline": "2 due this week", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "5m ago" }, "data": { "items": [{ "title": "CS260 problem set", "dueAt": "2026-06-30T23:59:00.000Z" }] } },
+            "right": { "widgetId": "courses", "state": "ready", "headline": "Current term", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "6m ago" }, "data": { "items": [{ "name": "CS260", "next": "Lecture 14" }] } }
+          }
+        }
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_agent_financial_advisor_expanded",
+      "canonicalKey": "agent.financial-advisor.expanded",
+      "category": "agent",
+      "clock": "2026-06-23T16:42:00.000Z",
+      "modeId": "executive",
+      "dashboardState": {
+        "mode": "Executive",
+        "project": "Daily Command",
+        "summary": "Financial Advisor workspace is expanded over the right column; Heimlich and the left column are unaffected.",
+        "commandsToday": 2,
+        "pendingConfirmations": 0,
+        "uiState": "ready",
+        "expandedAgent": "financial-advisor",
+        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": { "state": "ready", "items": [{ "id": "evt-board", "title": "Board prep review", "start": "2026-06-23T17:00:00.000Z", "kind": "today" }] },
+          "systemHealth": { "state": "ready", "cpuPercent": 18, "memoryPercent": 50, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
+          "news": { "state": "ready", "headlines": [{ "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily" }] },
+          "widgets": {
+            "left": { "widgetId": "market-brief", "state": "ready", "headline": "Markets up modestly", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" }, "data": { "tickers": [{ "symbol": "SPX", "changePct": 0.6 }] } },
+            "right": { "widgetId": "projects", "state": "ready", "headline": "2 active", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" }, "data": { "items": [{ "name": "Quarterly planning", "status": "in-progress" }] } }
+          }
+        }
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_agent_project_manager_expanded",
+      "canonicalKey": "agent.project-manager.expanded",
+      "category": "agent",
+      "clock": "2026-06-23T16:43:00.000Z",
+      "modeId": "developer",
+      "dashboardState": {
+        "mode": "Developer",
+        "project": "NIC-12 Workspace Bootstrap",
+        "summary": "Project Manager workspace is expanded over the right column; Heimlich and the left column are unaffected.",
+        "commandsToday": 4,
+        "pendingConfirmations": 0,
+        "uiState": "ready",
+        "expandedAgent": "project-manager",
+        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": { "state": "ready", "items": [{ "id": "evt-standup", "title": "Team standup", "start": "2026-06-23T16:30:00.000Z", "kind": "today" }] },
+          "systemHealth": { "state": "ready", "cpuPercent": 22, "memoryPercent": 58, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
+          "news": { "state": "ready", "headlines": [{ "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums" }] },
+          "widgets": {
+            "left": { "widgetId": "project-git-status", "state": "ready", "headline": "dev · checks passing", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "branch": "dev", "checks": "passing" } },
+            "right": { "widgetId": "repositories", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }] } }
+          }
+        }
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_agent_system_janitor_expanded",
+      "canonicalKey": "agent.system-janitor.expanded",
+      "category": "agent",
+      "clock": "2026-06-23T16:44:00.000Z",
+      "modeId": "developer",
+      "dashboardState": {
+        "mode": "Developer",
+        "project": "NIC-12 Workspace Bootstrap",
+        "summary": "System Janitor workspace is expanded over the right column; Heimlich and the left column are unaffected.",
+        "commandsToday": 4,
+        "pendingConfirmations": 0,
+        "uiState": "ready",
+        "expandedAgent": "system-janitor",
+        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": { "state": "ready", "items": [{ "id": "evt-review", "title": "PR review block", "start": "2026-06-23T19:00:00.000Z", "kind": "today" }] },
+          "systemHealth": { "state": "ready", "cpuPercent": 22, "memoryPercent": 58, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
+          "news": { "state": "ready", "headlines": [{ "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest" }] },
+          "widgets": {
+            "left": { "widgetId": "project-git-status", "state": "ready", "headline": "dev · checks passing", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "branch": "dev", "checks": "passing" } },
+            "right": { "widgetId": "repositories", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }] } }
+          }
+        }
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_dashboard_loading",
+      "canonicalKey": "system.dashboard.loading",
+      "category": "dashboard",
+      "clock": "2026-06-23T16:45:00.000Z",
+      "modeId": "executive",
+      "dashboardState": {
+        "mode": "Executive",
+        "project": "Daily Command",
+        "summary": "The dashboard is loading its live surfaces.",
+        "commandsToday": 0,
+        "pendingConfirmations": 0,
+        "uiState": "loading",
+        "expandedAgent": null,
+        "heimlich": { "state": "thinking", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": { "state": "unavailable", "items": [], "emptyMessage": "Loading today’s schedule…" },
+          "systemHealth": {
+            "state": "unavailable",
+            "network": { "state": "unavailable", "label": "Sampling network metrics…" },
+            "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
+          },
+          "news": { "state": "unavailable", "headlines": [], "emptyMessage": "Loading headlines…" },
+          "widgets": {
+            "left": { "widgetId": "market-brief", "state": "unavailable", "emptyMessage": "Loading…" },
+            "right": { "widgetId": "projects", "state": "unavailable", "emptyMessage": "Loading…" }
+          }
+        }
+      },
+      "sourceFixtures": []
+    },
+    {
+      "id": "fx_dashboard_error",
+      "canonicalKey": "failure.dashboard_error",
+      "category": "dashboard_failure",
+      "clock": "2026-06-23T16:46:00.000Z",
+      "modeId": "developer",
+      "dashboardState": {
+        "mode": "Developer",
+        "project": "NIC-12 Workspace Bootstrap",
+        "summary": "The dashboard hit an error loading live data and is showing the last-known safe state.",
+        "commandsToday": 4,
+        "pendingConfirmations": 0,
+        "uiState": "error",
+        "expandedAgent": null,
+        "heimlich": { "state": "error", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "regions": {
+          "schedule": {
+            "state": "stale",
+            "items": [{ "id": "evt-standup", "title": "Team standup", "start": "2026-06-23T16:30:00.000Z", "kind": "today" }],
+            "emptyMessage": "Schedule may be out of date after the error."
+          },
+          "systemHealth": {
+            "state": "unavailable",
+            "network": { "state": "unavailable", "label": "Network metrics unavailable after the error" },
+            "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
+          },
+          "news": { "state": "unavailable", "headlines": [], "emptyMessage": "News is unavailable after the error." },
+          "widgets": {
+            "left": { "widgetId": "project-git-status", "state": "stale", "headline": "dev · last known", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "before the error" }, "data": { "branch": "dev", "checks": "passing" } },
+            "right": { "widgetId": "repositories", "state": "unavailable", "emptyMessage": "Repository data is unavailable after the error." }
+          }
+        }
       },
       "sourceFixtures": []
     }

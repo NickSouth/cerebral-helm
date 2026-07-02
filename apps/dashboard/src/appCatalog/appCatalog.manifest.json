@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Node-readable mock application catalog: the quick-app ids a mode config may reference (quickApps[]). Mirror of APP_IDS in appCatalog.ts (kept in lockstep by appCatalog.test.ts); read by scripts/validate-config.mjs to resolve mode quick-apps. Replaced by real app discovery on the Mac target.",
+  "appIds": [
+    "chrome",
+    "gmail",
+    "finder",
+    "claude-desktop",
+    "vscode",
+    "terminal",
+    "github",
+    "docker",
+    "linear",
+    "canvas",
+    "drive",
+    "quizlet",
+    "spotify",
+    "youtube",
+    "steam",
+    "discord",
+    "photos"
+  ]
+}

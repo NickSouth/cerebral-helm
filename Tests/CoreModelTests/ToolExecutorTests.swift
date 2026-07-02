@@ -147,7 +147,7 @@ func longCallDoesNotBlockOthers() async throws {
 
 @Test("handler errors map to stable categories (FR-TOL-06)")
 func handlerErrorsMapToCategories() async throws {
-    let cases: [(ToolHandlerError, ToolResultStatus, Category)] = [
+    let cases: [(ToolHandlerError, ToolResultStatus, CerebralContracts.Category)] = [
         (.invalidInput("bad"), .failure, .invalidInput),
         (.unavailable("no adapter"), .unavailable, .unavailableCapability),
         (.permissionDenied("nope"), .denied, .permissionDenied),

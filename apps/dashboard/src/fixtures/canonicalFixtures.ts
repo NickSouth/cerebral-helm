@@ -1,5 +1,6 @@
 import catalog from "../../../../fixtures/catalog/canonical-states.json";
-import type { DashboardBootstrapState } from "../bridge/types";
+import configBundle from "./dashboardConfig.fixtures.json";
+import type { DashboardConfigBundle, DashboardStateSnapshot } from "../bridge/types";
 
 interface CanonicalFixture {
   readonly id: string;
@@ -7,7 +8,9 @@ interface CanonicalFixture {
   readonly category: string;
   readonly clock: string;
   readonly modeId: string;
-  readonly dashboardState?: DashboardBootstrapState;
+  readonly dashboardState?: DashboardStateSnapshot;
+  /** Present on non-dashboard fixtures (adapter/storage/bridge/metrics/update failures). */
+  readonly state?: Readonly<Record<string, unknown>>;
 }
 
 interface CanonicalFixtureCatalog {
@@ -18,16 +21,37 @@ interface CanonicalFixtureCatalog {
 export const canonicalFixtureCatalog = catalog as CanonicalFixtureCatalog;
 
 export const dashboardStoryFixtures = canonicalFixtureCatalog.fixtures.filter(
-  (fixture): fixture is CanonicalFixture & { readonly dashboardState: DashboardBootstrapState } =>
+  (fixture): fixture is CanonicalFixture & { readonly dashboardState: DashboardStateSnapshot } =>
     fixture.dashboardState !== undefined
 );
 
-export function getDashboardFixture(canonicalKey: string): DashboardBootstrapState {
-  const fixture = dashboardStoryFixtures.find((candidate) => candidate.canonicalKey === canonicalKey);
+/** Canonical failure / degraded-state fixtures (those carrying a `state` payload). */
+export const failureStateFixtures = canonicalFixtureCatalog.fixtures.filter(
+  (fixture): fixture is CanonicalFixture & { readonly state: Readonly<Record<string, unknown>> } =>
+    fixture.state !== undefined
+);
+
+/**
+ * The per-state snapshot for a canonical key (active mode view + regions + summary
+ * fields). Compose with getDashboardConfigBundle() for a full bootstrap state.
+ */
+export function getDashboardFixture(canonicalKey: string): DashboardStateSnapshot {
+  const fixture = dashboardStoryFixtures.find(
+    (candidate) => candidate.canonicalKey === canonicalKey
+  );
 
   if (!fixture) {
     throw new Error(`Missing dashboard fixture: ${canonicalKey}`);
   }
 
   return fixture.dashboardState;
+}
+
+/**
+ * The eager, mode-independent config bundle: all four resolved mode views (so a switch
+ * re-themes with no flash) plus the fixed agent roster. The bridge ships this once; the
+ * mock composes it with a per-state snapshot.
+ */
+export function getDashboardConfigBundle(): DashboardConfigBundle {
+  return configBundle as DashboardConfigBundle;
 }

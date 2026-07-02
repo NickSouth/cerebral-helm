@@ -1,10 +1,112 @@
 {
   "schemaVersion": "1.0.0",
-  "mode": "Developer",
-  "project": "NIC-12 Workspace Bootstrap",
-  "summary": "Pre-Mac foundation is running against a mock CerebralBridge.",
-  "commandsToday": 4,
+  "mode": "Executive",
+  "project": "Daily Command",
+  "summary": "Executive mode is ready with planning, status, and cross-project briefing surfaces.",
+  "commandsToday": 2,
   "pendingConfirmations": 0,
-  "activeSurface": "Project Manager",
-  "uiState": "ready"
+  "uiState": "ready",
+  "heimlich": {
+    "state": "idle",
+    "conversation": {
+      "open": false,
+      "transcript": [],
+      "input": { "draft": "", "placeholder": "Message Heimlich…" }
+    }
+  },
+  "expandedAgent": null,
+  "modes": [
+    {
+      "id": "executive",
+      "label": "Executive",
+      "theme": { "accentPrimary": "executive.primary", "accentSecondary": "executive.secondary" },
+      "quickApps": ["chrome", "gmail", "finder", "claude-desktop"],
+      "quickActions": ["daily-brief", "open-calendar", "capture-note", "review-projects", "check-system-status", "open-mail", "start-focus-block", "open-news-brief"],
+      "widgets": { "left": "market-brief", "right": "projects" },
+      "greeting": { "persona": "Friendly Assistant", "directive": "Greet by time of day and surface today's priorities.", "fallback": "Good day." },
+      "calendarProfile": "all",
+      "newsProfile": "broad"
+    },
+    {
+      "id": "developer",
+      "label": "Developer",
+      "theme": { "accentPrimary": "developer.primary", "accentSecondary": "developer.secondary" },
+      "quickApps": ["vscode", "terminal", "github", "docker", "linear"],
+      "quickActions": ["open-developer-layout", "open-workspace", "run-tests", "search-notes", "git-status", "open-terminal", "review-pull-requests", "capture-note"],
+      "widgets": { "left": "project-git-status", "right": "repositories" },
+      "greeting": { "persona": "Development copilot", "directive": "Greet and point to the active project's next task.", "fallback": "Ready to build." },
+      "calendarProfile": "engineering",
+      "newsProfile": "engineering"
+    },
+    {
+      "id": "school",
+      "label": "School",
+      "theme": { "accentPrimary": "school.primary", "accentSecondary": "school.secondary" },
+      "quickApps": ["canvas", "drive", "claude-desktop", "gmail", "quizlet"],
+      "quickActions": ["open-school-layout", "open-schedule", "capture-idea", "search-notes", "review-assignments", "start-study-block", "summarize-notes", "open-courses"],
+      "widgets": { "left": "deadlines", "right": "courses" },
+      "greeting": { "persona": "Academic partner", "directive": "Greet and nudge toward the next deadline.", "fallback": "Time to study." },
+      "calendarProfile": "academic",
+      "newsProfile": "academic"
+    },
+    {
+      "id": "entertainment",
+      "label": "Entertainment",
+      "theme": { "accentPrimary": "entertainment.primary", "accentSecondary": "entertainment.secondary" },
+      "quickApps": ["spotify", "youtube", "steam", "discord", "photos"],
+      "quickActions": ["open-entertainment-layout", "open-media", "capture-note", "check-system-status", "resume-playback", "open-queue", "browse-library", "start-party-mode"],
+      "widgets": { "left": "spotify", "right": "media-list" },
+      "greeting": { "persona": "Downtime concierge", "directive": "Greet and suggest something to unwind with.", "fallback": "Time to unwind." },
+      "calendarProfile": "leisure",
+      "newsProfile": "interest"
+    }
+  ],
+  "agents": [
+    { "id": "research-analyst", "label": "Research Analyst", "summary": "Future scoped research surface with knowledge-first context.", "availability": "mock", "activity": "idle" },
+    { "id": "financial-advisor", "label": "Financial Advisor", "summary": "Future finance planning surface with explicit policy boundaries.", "availability": "mock", "activity": "idle" },
+    { "id": "project-manager", "label": "Project Manager", "summary": "Current planning and progress surface for deterministic workflows.", "availability": "mock", "activity": "idle" },
+    { "id": "system-janitor", "label": "System Janitor", "summary": "Future maintenance surface for narrow recovery and cleanup actions.", "availability": "mock", "activity": "idle" }
+  ],
+  "regions": {
+    "schedule": {
+      "state": "ready",
+      "items": [
+        { "id": "evt-board", "title": "Board prep review", "start": "2026-06-23T17:00:00.000Z", "kind": "today" },
+        { "id": "evt-investor", "title": "Investor call", "start": "2026-06-23T20:30:00.000Z", "kind": "tonight" }
+      ]
+    },
+    "systemHealth": {
+      "state": "ready",
+      "cpuPercent": 18,
+      "memoryPercent": 50,
+      "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" },
+      "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
+    },
+    "news": {
+      "state": "ready",
+      "headlines": [
+        { "id": "news-market", "title": "Markets edge higher into the close", "source": "Market Wire" },
+        { "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily" },
+        { "id": "news-earnings", "title": "Quarterly earnings season opens", "source": "Briefing" }
+      ]
+    },
+    "widgets": {
+      "left": {
+        "widgetId": "market-brief",
+        "state": "ready",
+        "headline": "Markets up modestly",
+        "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" },
+        "data": { "tickers": [{ "symbol": "SPX", "changePct": 0.6 }, { "symbol": "AAPL", "changePct": -0.3 }, { "symbol": "NVDA", "changePct": 1.4 }] },
+        "action": { "id": "open-market-brief", "label": "Open market brief" }
+      },
+      "right": {
+        "widgetId": "projects",
+        "state": "ready",
+        "headline": "2 active",
+        "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" },
+        "data": { "items": [{ "name": "Quarterly planning", "status": "in-progress" }, { "name": "Board prep", "status": "review" }] },
+        "action": { "id": "review-projects", "label": "Review projects" }
+      }
+    }
+  }
 }

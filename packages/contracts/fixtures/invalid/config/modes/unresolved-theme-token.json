@@ -1,0 +1,31 @@
+{
+  "id": "executive",
+  "label": "Executive",
+  "theme": {
+    "accentPrimary": "executive.tertiary",
+    "accentSecondary": "executive.secondary"
+  },
+  "calendarProfile": "all",
+  "newsProfile": "broad",
+  "greeting": {
+    "persona": "Friendly Assistant",
+    "directive": "Greet by time of day and surface today's priorities.",
+    "fallback": "Good day."
+  },
+  "quickApps": ["chrome"],
+  "quickActions": [
+    "daily-brief",
+    "open-calendar",
+    "capture-note",
+    "review-projects",
+    "check-system-status",
+    "open-mail",
+    "start-focus-block",
+    "open-news-brief"
+  ],
+  "widgets": {
+    "left": "market-brief",
+    "right": "projects"
+  },
+  "layoutId": "executive.default"
+}

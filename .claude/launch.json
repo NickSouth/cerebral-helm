@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--dir", "apps/dashboard", "dev"],
+      "port": 5173,
+      "autoPort": true
+    }
+  ]
+}

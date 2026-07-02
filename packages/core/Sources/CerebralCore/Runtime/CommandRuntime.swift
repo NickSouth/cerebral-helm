@@ -375,7 +375,7 @@ public final class CommandRuntime: @unchecked Sendable {
         sink(event)
     }
 
-    private func lifecycleError(_ category: Category, _ code: String, _ message: String) -> CerebralHelmCommandLifecycleEventError {
+    private func lifecycleError(_ category: CerebralContracts.Category, _ code: String, _ message: String) -> CerebralHelmCommandLifecycleEventError {
         CerebralHelmCommandLifecycleEventError(category: category, code: code, details: nil, message: message, remediation: nil)
     }
 

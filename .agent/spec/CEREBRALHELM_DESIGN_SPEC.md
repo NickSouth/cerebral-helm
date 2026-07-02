@@ -159,7 +159,7 @@ Result order:
 
 `Ask Heimlich` is always first, including when an app name is an exact match. Keyboard navigation, pointer navigation, Escape dismissal, and a visible selected state are required. Search results are capability-aware and must not display an action as available when the bridge cannot perform it.
 
-Submitting `Ask Heimlich` opens the active Heimlich conversation in the center panel. Voice activation follows the same conversation state when visible dialogue is required.
+Submitting `Ask Heimlich` opens the active Heimlich conversation in the center panel. This top-center bar is a **persistent global launcher**: it stays visible even during an active conversation and dispatches independently of the open chat — starting a new Heimlich exchange, opening an app, or running a system command. It is a **distinct surface** from the in-conversation input docked at the bottom of the center (see 5.7), which continues the *current* conversation. The two inputs coexist with distinct roles (top = global / new / unrelated; bottom = continue the current exchange); there is no separate floating command-palette modal. Voice activation follows the same conversation state when visible dialogue is required.
 
 ### 5.6 Quick Apps
 
@@ -260,7 +260,9 @@ The top-right mode switcher always contains the same four controls in the same o
 3. School
 4. Entertainment
 
-The active mode has a strong selected state. Switching mode updates theme tokens and configured content while preserving the grid, focus logic, and component identity. Mode application may surface a pending state or action preview when it includes app, URL, hook, or layout actions.
+**Executive is the default mode** (ADR-007): the system boots into it on first run and falls back to it when no prior mode is recorded; otherwise the last valid mode is restored. The default lives in `config/defaults/app.json` (`defaultModeId`), never hard-coded in the UI.
+
+The active mode has a strong selected state. Switching mode is an **animated transition** (theme cross-fade / motion) — not an instant flip and not a loading/pending state; all four mode palettes may be preloaded at bootstrap so the transition is smooth. It updates theme tokens and configured content while preserving the grid, focus logic, and component identity. A mode whose application includes app, URL, hook, or layout actions may still surface an action preview for those actions specifically.
 
 ### 5.10 Agents
 
@@ -282,7 +284,7 @@ Allowed compact statuses:
 | Thinking | Currently running |
 | Ready | Finished response exists and has not been opened |
 
-The mockup label `Online` is illustrative and is replaced by this status model. Status must have text plus a non-color indicator. Selecting an agent expands the focused agent workspace with Chat, Context, History, linked knowledge, suggested next actions, status, and persistent input. The main canvas compresses or reflows; the panel must not cover critical controls.
+The mockup label `Online` is illustrative and is replaced by this status model. Status is runtime state (driven by events), not the agent config `status` (which stays the availability flag); it must have text plus a non-color indicator. Selecting an agent opens its focused workspace — Chat, Context, History, linked knowledge, suggested next actions, status, and persistent input — as a panel the **width of the right column** that slides in and **covers the right column only** (mode switcher, agents, and right widget) while open, restoring them on close. Heimlich (the center) and the left column are unaffected; the agent workspace never replaces or compresses the center. The default state is no agent expanded.
 
 ### 5.11 Right free widget
 
@@ -321,6 +323,8 @@ The bottom bar changes accent color with the active mode on the home dashboard o
 | News | Broad priority | Engineering | Academic | Interest/media |
 | Layout quick action | Optional general layout | Open Developer Layout | Open School Layout | Open Entertainment Layout |
 | Greeting | Friendly Assistant | Development Copilot | Academic Partner | Downtime Concierge |
+
+All four modes share **identical information density and layout grammar**; only palette/accent and configured content differ. No mode — including Entertainment — reduces density.
 
 Mode color values are semantic tokens and remain tunable. Components reference roles such as `accent-primary`, `accent-secondary`, `panel-border`, `glow-soft`, `status-success`, and `focus-ring`; they do not embed mode-specific hex values.
 
@@ -509,7 +513,7 @@ The dashboard design is implemented correctly when:
 4. Quick Apps supports one to five configured apps plus More Apps.
 5. Heimlich ambient view has exactly eight actions in the required four-plus-four geometry.
 6. Developer, School, and Entertainment expose their layout action.
-7. Active conversation replaces the ambient center, provides follow-up input, and can be minimized.
+7. Active conversation is a translucent overlay over the still-running ambient center (it never replaces it), provides follow-up input docked at the bottom of the center, and can be minimized.
 8. System Health contains CPU, memory, battery, and network speed with degraded states.
 9. Agents use only Idle, Waiting, Thinking, and Ready in the compact dashboard.
 10. Agent identity stays fixed while mode styling changes.
@@ -528,8 +532,8 @@ The visual reference set contains eight primary plates:
 2. School home dashboard: reference for academic configuration and stronger mode recoloring.
 3. Entertainment home dashboard: reference for evening context, media widgets, and green palette.
 4. Developer home dashboard: reference for engineering context and restrained cool palette.
-5. Active Heimlich with gated action: reference for conversation replacement and modal safety.
-6. Expanded Financial Advisor: reference for focused agent workspace and responsive canvas compression.
+5. Active Heimlich with gated action: reference for the conversation overlay (composited over the still-running field, never a replacement) and modal safety.
+6. Expanded Financial Advisor: reference for the focused agent workspace as a right-column-width overlay that covers the right column only (center and left column unaffected).
 7. School layout mode: reference for managed multi-app layout, hot-swap bar, and over-app confirmation.
 8. Fullscreen sidebar: reference for compact persistent access while another app owns the screen.
 
