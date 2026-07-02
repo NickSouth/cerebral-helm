@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let controller = DashboardWindowController(dashboardRoot: dashboardRoot)
+        let controller = DashboardWindowController(dashboardRoot: dashboardRoot, paths: paths)
         controller.show()
         dashboardWindow = controller
     }

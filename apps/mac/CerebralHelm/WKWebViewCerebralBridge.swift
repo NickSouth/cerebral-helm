@@ -2,6 +2,8 @@ import Foundation
 import WebKit
 import CerebralBridge
 import CerebralContracts
+import CerebralCore
+import CerebralRuntimeHost
 import os
 
 /// The macOS `WKWebView` transport for the versioned CerebralBridge (NIC-74, ADR-004).
@@ -16,10 +18,11 @@ import os
 /// then an operation is answered with an `unavailable_capability` error so the
 /// dashboard degrades honestly rather than hanging. React components never branch on
 /// transport (ADR-004).
-final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler {
+final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecked Sendable {
     static let handlerName = "cerebral"
 
     private weak var webView: WKWebView?
+    private var session: BridgeSession?
     private let log = Logger(subsystem: "local.cerebralhelm.CerebralHelm", category: "bridge")
 
     /// Registers the message handler on a configuration before the web view is built.
@@ -30,6 +33,15 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler {
     /// Binds the web view used to deliver replies (set right after construction).
     func attach(to webView: WKWebView) {
         self.webView = webView
+    }
+
+    /// Builds the live runtime for this session so bridge operations execute against
+    /// it (NIC-74b). The startup pre-flight has already validated config + the
+    /// database, so composition is expected to succeed; if it does not, operations
+    /// answer with a structured error rather than crashing.
+    func connectRuntime(paths: WorkspacePaths) {
+        session = (try? makeCommandRuntime(paths: paths)).map(BridgeSession.init(runtime:))
+        if session == nil { log.error("Bridge runtime composition failed; operations will report unavailable.") }
     }
 
     func userContentController(
@@ -47,9 +59,20 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler {
             deliver(response)
 
         case let .operation(request):
-            // Runtime mapping arrives in the next increment. Answer with a structured
-            // unavailable error so the dashboard never hangs waiting on a reply.
-            deliver(Self.unavailable(for: request))
+            guard let session else {
+                deliver(Self.runtimeUnavailable(for: request))
+                return
+            }
+            // Send only the Sendable JSON across the task boundary (the decoded DTO
+            // holds a reference-typed payload and is not Sendable); re-decode inside.
+            // The runtime call is async; reply on completion so the dashboard never
+            // hangs. `deliver` marshals back to the main thread for evaluateJavaScript.
+            let requestData = data
+            Task { [weak self] in
+                guard let request = try? CerebralHelmBridgeOperationRequest(data: requestData) else { return }
+                let response = await session.execute(request)
+                self?.deliver(response)
+            }
 
         case let .malformed(reason):
             log.error("Rejected malformed bridge message: \(reason, privacy: .public)")
@@ -74,15 +97,15 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler {
         }
     }
 
-    private static func unavailable(
+    private static func runtimeUnavailable(
         for request: CerebralHelmBridgeOperationRequest
     ) -> CerebralHelmBridgeOperationResponse {
         CerebralHelmBridgeOperationResponse(
             error: CerebralHelmBridgeOperationResponseError(
                 category: .unavailableCapability,
-                code: "bridge_operation_unwired",
+                code: "bridge_runtime_unavailable",
                 details: nil,
-                message: "Bridge operations are not wired to the runtime yet.",
+                message: "The runtime is unavailable; restart CerebralHelm.",
                 remediation: nil
             ),
             messageID: request.messageID,

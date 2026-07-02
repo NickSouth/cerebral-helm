@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import CerebralCore
 import os
 
 /// Hosts the bundled production dashboard in a `WKWebView`, loaded offline over the
@@ -27,7 +28,7 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
         return FileManager.default.fileExists(atPath: index.path) ? root : nil
     }
 
-    init(dashboardRoot: URL) {
+    init(dashboardRoot: URL, paths: WorkspacePaths) {
         handler = CerebralSchemeHandler(root: dashboardRoot)
 
         let configuration = WKWebViewConfiguration()
@@ -51,6 +52,7 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
 
         super.init()
         bridge.attach(to: webView)
+        bridge.connectRuntime(paths: paths)
         webView.navigationDelegate = self
         webView.load(URLRequest(url: CerebralSchemeHandler.indexURL))
     }

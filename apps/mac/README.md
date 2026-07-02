@@ -28,9 +28,15 @@ package under `packages/` may depend on it.
   `WKWebViewCerebralBridge` adapts it to WebKit message handlers
   (`window.webkit.messageHandlers.cerebral` ↔ `window.__cerebralReceive`). The
   handshake reports capabilities and enters recovery on a major-version mismatch.
-- **Next:** NIC-74b maps operations onto the live `CommandRuntime` + pushes the
-  event stream; NIC-74c adds the dashboard-side transport and selects it. Until
-  then the dashboard still runs its in-webview mock bridge.
+- **NIC-74b (in progress):** bridge operations now execute against the live
+  runtime. The shared `CerebralRuntimeHost` package composes the `CommandRuntime`
+  once (the CLI and the shell both use it); `BridgeSession` maps `submitCommand` and
+  `applyMode` onto it, and the transport routes operations through it. The remaining
+  operations (`captureNote`, `searchNotes`, `decideConfirmation`, `updateSettings`,
+  `getRecentActivity`), `getBootstrapState`, and the event stream are next.
+- **Next:** finish the operation set + push the event stream, then NIC-74c adds the
+  dashboard-side transport and selects it. Until then the dashboard still runs its
+  in-webview mock bridge.
 
 ## Build & run
 

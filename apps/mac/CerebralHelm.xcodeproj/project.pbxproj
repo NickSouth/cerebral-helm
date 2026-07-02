@@ -19,6 +19,7 @@
 		CE0000000000000000000029 /* DashboardBundle in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000028 /* DashboardBundle */; };
 		CE000000000000000000002D /* WKWebViewCerebralBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000002C /* WKWebViewCerebralBridge.swift */; };
 		CE000000000000000000002B /* CerebralBridge in Frameworks */ = {isa = PBXBuildFile; productRef = CE000000000000000000002A /* CerebralBridge */; };
+		CE000000000000000000002F /* CerebralRuntimeHost in Frameworks */ = {isa = PBXBuildFile; productRef = CE000000000000000000002E /* CerebralRuntimeHost */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +44,7 @@
 				CE0000000000000000000016 /* CerebralCore in Frameworks */,
 				CE0000000000000000000023 /* CerebralStorage in Frameworks */,
 				CE000000000000000000002B /* CerebralBridge in Frameworks */,
+				CE000000000000000000002F /* CerebralRuntimeHost in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -102,6 +104,7 @@
 				CE0000000000000000000018 /* CerebralCore */,
 				CE0000000000000000000022 /* CerebralStorage */,
 				CE000000000000000000002A /* CerebralBridge */,
+				CE000000000000000000002E /* CerebralRuntimeHost */,
 			);
 			productName = CerebralHelm;
 			productReference = CE0000000000000000000006 /* CerebralHelm.app */;
@@ -299,6 +302,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CE0000000000000000000017 /* XCLocalSwiftPackageReference "../.." */;
 			productName = CerebralBridge;
+		};
+		CE000000000000000000002E /* CerebralRuntimeHost */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE0000000000000000000017 /* XCLocalSwiftPackageReference "../.." */;
+			productName = CerebralRuntimeHost;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

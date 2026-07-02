@@ -21,6 +21,7 @@ let package = Package(
         .library(name: "CerebralShared", targets: ["CerebralShared"]),
         .library(name: "CerebralContracts", targets: ["CerebralContracts"]),
         .library(name: "CerebralBridge", targets: ["CerebralBridge"]),
+        .library(name: "CerebralRuntimeHost", targets: ["CerebralRuntimeHost"]),
         .executable(name: "cerebral", targets: ["cerebral"]),
     ],
     dependencies: [
@@ -83,6 +84,21 @@ let package = Package(
             ],
             path: "packages/storage/Sources/CerebralStorage"
         ),
+        // App-layer runtime composition (no AppKit): builds the live CommandRuntime
+        // and executes bridge operations against it. Shared by the CLI and the macOS
+        // shell so the runtime is wired once (NIC-74b).
+        .target(
+            name: "CerebralRuntimeHost",
+            dependencies: [
+                "CerebralCore",
+                "CerebralTools",
+                "CerebralKnowledge",
+                "CerebralStorage",
+                "CerebralShared",
+                "CerebralContracts",
+            ],
+            path: "packages/runtime-host/Sources/CerebralRuntimeHost"
+        ),
         .executableTarget(
             name: "cerebral",
             dependencies: [
@@ -91,6 +107,7 @@ let package = Package(
                 "CerebralStorage",
                 "CerebralKnowledge",
                 "CerebralShared",
+                "CerebralRuntimeHost",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             path: "apps/cli/Sources/cerebral"
@@ -150,6 +167,15 @@ let package = Package(
                 "CerebralContracts",
             ],
             path: "Tests/BridgeTests"
+        ),
+        .testTarget(
+            name: "RuntimeHostTests",
+            dependencies: [
+                "CerebralRuntimeHost",
+                "CerebralCore",
+                "CerebralContracts",
+            ],
+            path: "Tests/RuntimeHostTests"
         ),
         .testTarget(
             name: "StorageTests",

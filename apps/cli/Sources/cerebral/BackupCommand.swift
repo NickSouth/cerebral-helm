@@ -1,5 +1,6 @@
 import Foundation
 import ArgumentParser
+import CerebralRuntimeHost
 import CerebralStorage
 
 /// `cerebral backup` — create and verify a timestamped snapshot of durable state
