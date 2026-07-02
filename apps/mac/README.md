@@ -30,10 +30,12 @@ package under `packages/` may depend on it.
   handshake reports capabilities and enters recovery on a major-version mismatch.
 - **NIC-74b (in progress):** bridge operations now execute against the live
   runtime. The shared `CerebralRuntimeHost` package composes the `CommandRuntime`
-  once (the CLI and the shell both use it); `BridgeSession` maps `submitCommand` and
-  `applyMode` onto it, and the transport routes operations through it. The remaining
-  operations (`captureNote`, `searchNotes`, `decideConfirmation`, `updateSettings`,
-  `getRecentActivity`), `getBootstrapState`, and the event stream are next.
+  once (the CLI and the shell both use it); `BridgeSession` maps `submitCommand`,
+  `applyMode`, and `getBootstrapState` onto it, and the transport routes operations
+  through it. `getBootstrapState` composes the four mode views and the agent roster
+  from the real config (`BootstrapComposer`), with regions/Heimlich in their honest
+  pre-adapter degraded state. Remaining: `captureNote`, `searchNotes`,
+  `decideConfirmation`, `updateSettings`, `getRecentActivity`, and the event stream.
 - **Next:** finish the operation set + push the event stream, then NIC-74c adds the
   dashboard-side transport and selects it. Until then the dashboard still runs its
   in-webview mock bridge.

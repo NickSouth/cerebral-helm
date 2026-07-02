@@ -14,16 +14,20 @@ import CerebralCore
 /// hanging on a missing reply.
 public final class BridgeSession: @unchecked Sendable {
     private let runtime: CommandRuntime
+    private let configDirectory: URL
     private let messageSchemaVersion = "1.0.0"
 
-    public init(runtime: CommandRuntime) {
+    public init(runtime: CommandRuntime, configDirectory: URL) {
         self.runtime = runtime
+        self.configDirectory = configDirectory
     }
 
     public func execute(
         _ request: CerebralHelmBridgeOperationRequest
     ) async -> CerebralHelmBridgeOperationResponse {
         switch request.operation {
+        case .getBootstrapState:
+            return ok(request, payload: BootstrapComposer.compose(configDirectory: configDirectory))
         case .submitCommand:
             return await submitCommand(request)
         case .applyMode:

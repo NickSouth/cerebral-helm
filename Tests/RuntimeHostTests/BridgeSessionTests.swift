@@ -19,7 +19,7 @@ private func repositoryRoot() -> URL {
 
 private func makeSession() throws -> BridgeSession {
     let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
-    return BridgeSession(runtime: try makeCommandRuntime(paths: paths))
+    return BridgeSession(runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory)
 }
 
 private func payload(_ json: String) -> [String: JSONAny] {
@@ -100,12 +100,35 @@ func applyModeRequiresModeID() async throws {
     #expect(response.error?.category == .invalidInput)
 }
 
+// MARK: - getBootstrapState
+
+@Test("getBootstrapState composes the four mode views and agent roster from real config")
+func bootstrapComposesFromConfig() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.getBootstrapState, "{}"))
+
+    #expect(response.status == .ok)
+    #expect(response.error == nil)
+    let state = try decode(response, as: CerebralHelmBridgeBootstrapState.self)
+    // All four modes are shipped eagerly, derived from config (real ids + themes).
+    #expect(state.modes.count == 4)
+    #expect(state.modes.contains { $0.id == "developer" })
+    #expect(state.modes.contains { $0.theme.accentPrimary.contains("primary") })
+    // The fixed global agent roster comes from config.
+    #expect(!state.agents.isEmpty)
+    // Pre-adapter honesty: regions are empty/unavailable, Heimlich idle, weather nil.
+    #expect(state.uiState == .ready)
+    #expect(state.heimlich.state == .idle)
+    #expect(state.regions.systemHealth.state == .unavailable)
+    #expect(state.weather == nil)
+}
+
 // MARK: - Unwired operations
 
 @Test("an operation not yet wired returns a structured unavailable error, never a hang")
 func unwiredOperationIsUnavailable() async throws {
     let session = try makeSession()
-    let response = await session.execute(operationRequest(.getBootstrapState, "{}"))
+    let response = await session.execute(operationRequest(.getRecentActivity, "{}"))
     #expect(response.status == .error)
     #expect(response.error?.category == .unavailableCapability)
     #expect(response.error?.code == "bridge_operation_unimplemented")

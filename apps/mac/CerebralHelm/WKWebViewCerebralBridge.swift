@@ -40,7 +40,9 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecke
     /// database, so composition is expected to succeed; if it does not, operations
     /// answer with a structured error rather than crashing.
     func connectRuntime(paths: WorkspacePaths) {
-        session = (try? makeCommandRuntime(paths: paths)).map(BridgeSession.init(runtime:))
+        session = (try? makeCommandRuntime(paths: paths)).map {
+            BridgeSession(runtime: $0, configDirectory: paths.configDirectory)
+        }
         if session == nil { log.error("Bridge runtime composition failed; operations will report unavailable.") }
     }
 
