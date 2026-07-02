@@ -40,9 +40,17 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecke
     /// database, so composition is expected to succeed; if it does not, operations
     /// answer with a structured error rather than crashing.
     func connectRuntime(paths: WorkspacePaths) {
-        session = (try? makeCommandRuntime(paths: paths)).map {
-            BridgeSession(runtime: $0, configDirectory: paths.configDirectory)
-        }
+        // Forward every command lifecycle event to the dashboard as a bridge event.
+        // The event is converted to JSON *inside* this @Sendable closure so only the
+        // encoded String (Sendable) crosses back to the transport — the lifecycle
+        // DTO holds a reference-typed payload and is not Sendable.
+        let runtime = try? makeCommandRuntime(paths: paths, onEvent: { [weak self] event in
+            let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
+            guard let payload = try? BridgeMessageCoding.encoder().encode(bridgeEvent),
+                  let json = String(data: payload, encoding: .utf8) else { return }
+            self?.deliverEncoded(json)
+        })
+        session = runtime.map { BridgeSession(runtime: $0, configDirectory: paths.configDirectory) }
         if session == nil { log.error("Bridge runtime composition failed; operations will report unavailable.") }
     }
 
@@ -83,16 +91,21 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecke
 
     /// Encodes a message to JSON and hands it to the dashboard's receive callback.
     private func deliver<Message: Encodable>(_ message: Message) {
-        guard
-            let payload = try? JSONEncoder().encode(message),
-            let payloadString = String(data: payload, encoding: .utf8),
-            // Re-encode the JSON string as a JS string literal so quotes/newlines are safe.
-            let literal = try? JSONEncoder().encode(payloadString),
-            let literalString = String(data: literal, encoding: .utf8)
-        else {
+        guard let payload = try? BridgeMessageCoding.encoder().encode(message),
+              let json = String(data: payload, encoding: .utf8) else {
             log.error("Failed to encode bridge reply.")
             return
         }
+        deliverEncoded(json)
+    }
+
+    /// Hands an already-encoded bridge-message JSON to the dashboard's receive
+    /// callback. Takes a Sendable `String` so the @Sendable event-forwarding closure
+    /// can call it without sending a non-Sendable DTO across threads.
+    private func deliverEncoded(_ json: String) {
+        // Re-encode the JSON string as a JS string literal so quotes/newlines are safe.
+        guard let literal = try? JSONEncoder().encode(json),
+              let literalString = String(data: literal, encoding: .utf8) else { return }
         let script = "window.__cerebralReceive && window.__cerebralReceive(\(literalString));"
         DispatchQueue.main.async { [weak self] in
             self?.webView?.evaluateJavaScript(script)

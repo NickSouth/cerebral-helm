@@ -34,11 +34,13 @@ package under `packages/` may depend on it.
   `applyMode`, and `getBootstrapState` onto it, and the transport routes operations
   through it. `getBootstrapState` composes the four mode views and the agent roster
   from the real config (`BootstrapComposer`), with regions/Heimlich in their honest
-  pre-adapter degraded state. Remaining: `captureNote`, `searchNotes`,
-  `decideConfirmation`, `updateSettings`, `getRecentActivity`, and the event stream.
-- **Next:** finish the operation set + push the event stream, then NIC-74c adds the
-  dashboard-side transport and selects it. Until then the dashboard still runs its
-  in-webview mock bridge.
+  pre-adapter degraded state. The runtime **event stream** is forwarded too: every
+  command lifecycle event is pushed to the dashboard as a `command.lifecycle.transition`
+  bridge event (`BridgeEventFactory` + a shared ISO-8601 encoder). Remaining:
+  `captureNote`, `searchNotes`, `decideConfirmation`, `updateSettings`,
+  `getRecentActivity`.
+- **Next:** finish the operation set, then NIC-74c adds the dashboard-side transport
+  and selects it. Until then the dashboard still runs its in-webview mock bridge.
 
 ## Build & run
 

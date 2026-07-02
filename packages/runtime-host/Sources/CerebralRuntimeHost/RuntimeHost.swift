@@ -15,7 +15,14 @@ import CerebralTools
 ///
 /// It contains no AppKit and no CLI argument handling — callers resolve their own
 /// ``WorkspacePaths`` and pass it in.
-public func makeCommandRuntime(paths: WorkspacePaths) throws -> CommandRuntime {
+///
+/// `onEvent`, when supplied, is invoked for every command lifecycle event *in
+/// addition to* persistence — the macOS bridge uses it to forward the event stream
+/// to the dashboard (NIC-74b). The CLI omits it.
+public func makeCommandRuntime(
+    paths: WorkspacePaths,
+    onEvent: (@Sendable (CommandLifecycleEvent) -> Void)? = nil
+) throws -> CommandRuntime {
     let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory)
     let hookCatalog = makeHookCatalog(references: references, repositoryRoot: paths.repositoryRoot)
     let modePlanner = try PreMacToolRuntime.makeActionPlanner(
@@ -52,7 +59,10 @@ public func makeCommandRuntime(paths: WorkspacePaths) throws -> CommandRuntime {
         hookCatalog: hookCatalog,
         modePlanner: modePlanner,
         commandSink: { persistCommand($0, into: commands) },
-        sink: { persistEvent($0, into: commands) },
+        sink: { event in
+            persistEvent(event, into: commands)
+            onEvent?(event)
+        },
         // Already redacted by the runtime; linked to its command by the runtime.
         toolCallSink: { commandID, data in persistToolCall(commandID, data, into: toolCalls) }
     )
