@@ -41,9 +41,12 @@ package under `packages/` may depend on it.
   honest empty envelope (durable history read is a follow-on). The **confirmation
   flow** is wired: a gated command pushes a `confirmation.changed` disclosure event,
   and `decideConfirmation` looks up the single-use token and resolves it (approve /
-  cancel) with a clearing event. Remaining: `updateSettings`, and `captureNote` (a
-  contract tension — it returns a synchronous `noteId` but `note.capture` is
-  confirmation-gated; notes are capturable today via `submitCommand`).
+  cancel) with a clearing event. `updateSettings` validates the patch against the
+  deterministic allowlist (`SettingsPatchValidator`) — policy-weakening keys are
+  rejected (ADR-003); durable persistence is a follow-on (no settings store yet).
+  The operation surface is complete except `captureNote` (a contract tension — it
+  returns a synchronous `noteId` but `note.capture` is confirmation-gated; notes are
+  capturable today via `submitCommand`).
 - **Next:** NIC-74c wires the dashboard-side transport + selection, at which point the
   dashboard runs fully on the live bridge. Until then it runs the in-webview mock.
 

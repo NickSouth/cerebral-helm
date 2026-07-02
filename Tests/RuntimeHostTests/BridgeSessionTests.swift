@@ -224,12 +224,55 @@ func decideUnknownConfirmation() async throws {
     #expect(response.error?.code == "unknown_confirmation")
 }
 
+// MARK: - updateSettings (validate-only)
+
+private struct Accepted: Decodable { let accepted: Bool }
+
+@Test("a valid settings patch is accepted")
+func validSettingsPatchAccepted() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_abcd1234","changes":{"defaultModeId":"developer","appearance":{"density":"compact"}}}}"#
+    ))
+    #expect(response.status == .ok)
+    #expect(try decode(response, as: Accepted.self).accepted)
+}
+
+@Test("a policy-weakening key is rejected — settings cannot widen risk (ADR-003)")
+func riskOverridePatchRejected() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"toolRiskOverrides":{"hook.run":"read_only"}}}}"#
+    ))
+    #expect(response.status == .ok)
+    #expect(!(try decode(response, as: Accepted.self).accepted))
+}
+
+@Test("an invalid value is rejected")
+func invalidSettingsValueRejected() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(
+        .updateSettings, #"{"patch":{"changes":{"appearance":{"density":"gigantic"}}}}"#
+    ))
+    #expect(!(try decode(response, as: Accepted.self).accepted))
+}
+
+@Test("updateSettings without a patch is an invalid-input error")
+func updateSettingsRequiresPatch() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.updateSettings, "{}"))
+    #expect(response.status == .error)
+    #expect(response.error?.category == .invalidInput)
+}
+
 // MARK: - Unwired operations
 
 @Test("an operation not yet wired returns a structured unavailable error, never a hang")
 func unwiredOperationIsUnavailable() async throws {
     let session = try makeSession()
-    let response = await session.execute(operationRequest(.updateSettings, "{}"))
+    let response = await session.execute(operationRequest(.captureNote, "{}"))
     #expect(response.status == .error)
     #expect(response.error?.category == .unavailableCapability)
     #expect(response.error?.code == "bridge_operation_unimplemented")

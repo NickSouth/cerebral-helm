@@ -52,9 +52,11 @@ public final class BridgeSession: @unchecked Sendable {
             return getRecentActivity(request)
         case .decideConfirmation:
             return await decideConfirmation(request)
+        case .updateSettings:
+            return updateSettings(request)
         default:
             // captureNote (confirmation-gated local_write returning a synchronous
-            // noteId), updateSettings, and subscribe follow later.
+            // noteId) and subscribe follow later.
             return unimplemented(request)
         }
     }
@@ -146,6 +148,25 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: DecideConfirmationResult(confirmationId: input.id, decision: input.decision))
     }
 
+    /// Validates a settings patch against the deterministic allowlist (ADR-003):
+    /// unknown or policy-weakening keys are rejected. This enforces the security gate
+    /// and reports acceptance; durable persistence lives with the settings store (not
+    /// yet present), so an accepted patch is validated, not yet saved.
+    private func updateSettings(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) -> CerebralHelmBridgeOperationResponse {
+        guard
+            let data = try? JSONEncoder().encode(request.payload),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let patch = object["patch"] as? [String: Any]
+        else {
+            return invalidInput(request, "updateSettings requires a patch.")
+        }
+        let changes = (patch["changes"] as? [String: Any]) ?? [:]
+        let errors = SettingsPatchValidator.validate(changes: changes)
+        return ok(request, payload: UpdateSettingsResult(accepted: errors.isEmpty))
+    }
+
     // MARK: - Confirmation flow
 
     /// When a command pauses for confirmation, remember its single-use token and push
@@ -207,6 +228,9 @@ public final class BridgeSession: @unchecked Sendable {
     private struct DecideConfirmationResult: Encodable {
         let confirmationId: String
         let decision: String
+    }
+    private struct UpdateSettingsResult: Encodable {
+        let accepted: Bool
     }
     /// Mirrors the bridge `getRecentActivity` payload wrapper `{ recentActivity: … }`.
     private struct RecentActivityEnvelope: Encodable {
