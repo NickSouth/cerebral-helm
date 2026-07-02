@@ -16,10 +16,24 @@ public final class BridgeSession: @unchecked Sendable {
     private let runtime: CommandRuntime
     private let configDirectory: URL
     private let messageSchemaVersion = "1.0.0"
+    /// Emits an already-encoded bridge-event JSON string to the dashboard (Sendable
+    /// String — no non-Sendable DTO crosses the transport boundary).
+    private let emitEventJSON: @Sendable (String) -> Void
 
-    public init(runtime: CommandRuntime, configDirectory: URL) {
+    /// Pending confirmations awaiting a decision, keyed by disclosure id
+    /// (== `ConfirmationToken.confirmationID`). The token is a single-use secret held
+    /// only here; the dashboard decides by id and never sees the token.
+    private let tokenLock = NSLock()
+    private var pendingTokens: [String: ConfirmationToken] = [:]
+
+    public init(
+        runtime: CommandRuntime,
+        configDirectory: URL,
+        emitEventJSON: @escaping @Sendable (String) -> Void = { _ in }
+    ) {
         self.runtime = runtime
         self.configDirectory = configDirectory
+        self.emitEventJSON = emitEventJSON
     }
 
     public func execute(
@@ -36,10 +50,11 @@ public final class BridgeSession: @unchecked Sendable {
             return await searchNotes(request)
         case .getRecentActivity:
             return getRecentActivity(request)
+        case .decideConfirmation:
+            return await decideConfirmation(request)
         default:
-            // captureNote is confirmation-gated (local_write) and lands with the
-            // confirmation flow (decideConfirmation + confirmation events);
-            // updateSettings and subscribe follow later.
+            // captureNote (confirmation-gated local_write returning a synchronous
+            // noteId), updateSettings, and subscribe follow later.
             return unimplemented(request)
         }
     }
@@ -57,6 +72,7 @@ public final class BridgeSession: @unchecked Sendable {
         // strings.
         let source = input.source.flatMap(CommandSource.init(rawValue:)) ?? .dashboard
         let outcome = await runtime.submit(input.rawInput, source: source)
+        registerAwaitingConfirmation(outcome)
         return ok(request, payload: receipt(for: outcome))
     }
 
@@ -68,6 +84,7 @@ public final class BridgeSession: @unchecked Sendable {
         }
         // Mode application enters through the same bus as every other command.
         let outcome = await runtime.submit("mode \(input.modeId)", source: .dashboard)
+        registerAwaitingConfirmation(outcome)
         let status: String
         switch outcome {
         case .completed, .awaitingConfirmation:
@@ -108,6 +125,52 @@ public final class BridgeSession: @unchecked Sendable {
         ok(request, payload: RecentActivityEnvelope())
     }
 
+    private func decideConfirmation(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: DecideConfirmationInput = decodePayload(request), !input.id.isEmpty else {
+            return invalidInput(request, "decideConfirmation requires an id and decision.")
+        }
+        guard let token = takeToken(id: input.id) else {
+            return errorResponse(
+                request, category: .invalidInput,
+                code: "unknown_confirmation", message: "No pending confirmation for \(input.id)."
+            )
+        }
+        // Only approve/cancel cross the bridge; anything else fails closed as cancel.
+        let decision: ConfirmationDecision = (input.decision == "approve") ? .approve : .cancel
+        _ = await runtime.decide(token: token, decision: decision)
+        // Clear the active confirmation in the UI; the command's own completion/cancel
+        // is carried by the lifecycle event stream.
+        emit(BridgeEventFactory.confirmationEvent(disclosure: nil, id: BridgeEventFactory.newEventID(), timestamp: Date()))
+        return ok(request, payload: DecideConfirmationResult(confirmationId: input.id, decision: input.decision))
+    }
+
+    // MARK: - Confirmation flow
+
+    /// When a command pauses for confirmation, remember its single-use token and push
+    /// the policy-owned disclosure to the dashboard as a `confirmation.changed` event.
+    private func registerAwaitingConfirmation(_ outcome: CommandRuntimeOutcome) {
+        guard case let .awaitingConfirmation(_, disclosure, token) = outcome else { return }
+        tokenLock.lock()
+        pendingTokens[token.confirmationID] = token
+        tokenLock.unlock()
+        emit(BridgeEventFactory.confirmationEvent(
+            disclosure: disclosure, id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+    }
+
+    private func takeToken(id: String) -> ConfirmationToken? {
+        tokenLock.lock(); defer { tokenLock.unlock() }
+        return pendingTokens.removeValue(forKey: id)
+    }
+
+    private func emit(_ event: CerebralHelmBridgeEvent) {
+        guard let data = try? BridgeMessageCoding.encoder().encode(event),
+              let json = String(data: data, encoding: .utf8) else { return }
+        emitEventJSON(json)
+    }
+
     // MARK: - Payload mapping
 
     private struct SubmitCommandInput: Decodable {
@@ -136,6 +199,14 @@ public final class BridgeSession: @unchecked Sendable {
     }
     private struct SearchNotesResult: Encodable {
         let results: [NoteHit]
+    }
+    private struct DecideConfirmationInput: Decodable {
+        let id: String
+        let decision: String
+    }
+    private struct DecideConfirmationResult: Encodable {
+        let confirmationId: String
+        let decision: String
     }
     /// Mirrors the bridge `getRecentActivity` payload wrapper `{ recentActivity: … }`.
     private struct RecentActivityEnvelope: Encodable {

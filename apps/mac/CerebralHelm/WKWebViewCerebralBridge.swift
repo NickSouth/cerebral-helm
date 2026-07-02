@@ -50,7 +50,14 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecke
                   let json = String(data: payload, encoding: .utf8) else { return }
             self?.deliverEncoded(json)
         })
-        session = runtime.map { BridgeSession(runtime: $0, configDirectory: paths.configDirectory) }
+        session = runtime.map {
+            BridgeSession(
+                runtime: $0,
+                configDirectory: paths.configDirectory,
+                // Confirmation-flow events arrive already-encoded (Sendable String).
+                emitEventJSON: { [weak self] json in self?.deliverEncoded(json) }
+            )
+        }
         if session == nil { log.error("Bridge runtime composition failed; operations will report unavailable.") }
     }
 

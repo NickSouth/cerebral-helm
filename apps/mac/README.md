@@ -38,11 +38,14 @@ package under `packages/` may depend on it.
   command lifecycle event is pushed to the dashboard as a `command.lifecycle.transition`
   bridge event (`BridgeEventFactory` + a shared ISO-8601 encoder). `searchNotes`
   runs through the bus and returns live index hits; `getRecentActivity` returns the
-  honest empty envelope (durable history read is a follow-on). Remaining: the
-  **confirmation flow** — `captureNote` (confirmation-gated `local_write`) +
-  `decideConfirmation` + confirmation events — and `updateSettings`.
-- **Next:** the confirmation flow, then NIC-74c adds the dashboard-side transport and
-  selects it. Until then the dashboard still runs its in-webview mock bridge.
+  honest empty envelope (durable history read is a follow-on). The **confirmation
+  flow** is wired: a gated command pushes a `confirmation.changed` disclosure event,
+  and `decideConfirmation` looks up the single-use token and resolves it (approve /
+  cancel) with a clearing event. Remaining: `updateSettings`, and `captureNote` (a
+  contract tension — it returns a synchronous `noteId` but `note.capture` is
+  confirmation-gated; notes are capturable today via `submitCommand`).
+- **Next:** NIC-74c wires the dashboard-side transport + selection, at which point the
+  dashboard runs fully on the live bridge. Until then it runs the in-webview mock.
 
 ## Build & run
 

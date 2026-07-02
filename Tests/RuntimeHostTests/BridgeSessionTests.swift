@@ -165,6 +165,65 @@ func recentActivityEmptyEnvelope() async throws {
     #expect(response.payload["recentActivity"] != nil)
 }
 
+// MARK: - Confirmation flow
+
+/// Thread-safe collector for emitted bridge-event JSON strings.
+private final class EmittedEvents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [String] = []
+    func emit(_ json: String) { lock.lock(); defer { lock.unlock() }; events.append(json) }
+    func all() -> [String] { lock.lock(); defer { lock.unlock() }; return events }
+}
+
+@Test("a gated command emits a confirmation disclosure, and decideConfirmation resolves it")
+func confirmationFlow() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // Developer mode application is confirmation-gated.
+    let submit = await session.execute(operationRequest(.applyMode, #"{"modeId":"developer"}"#))
+    #expect(submit.status == .ok)
+
+    // A confirmation.changed event carrying the disclosure was pushed to the UI.
+    let confirmationEvents = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "confirmation.changed" }
+    #expect(!confirmationEvents.isEmpty)
+
+    // Extract the disclosure id the dashboard would decide on.
+    let disclosure = (confirmationEvents.first?["payload"] as? [String: Any])?["confirmation"] as? [String: Any]
+    let id = try #require(disclosure?["id"] as? String)
+
+    // Decide it: approve → resolves, returns the id, and clears the confirmation.
+    let decided = await session.execute(
+        operationRequest(.decideConfirmation, #"{"id":"\#(id)","decision":"approve"}"#)
+    )
+    #expect(decided.status == .ok)
+
+    // A clearing confirmation.changed event (no disclosure) followed the decision.
+    let cleared = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "confirmation.changed" }
+    #expect(cleared.count >= 2)
+    let lastConfirmation = (cleared.last?["payload"] as? [String: Any])?["confirmation"]
+    #expect(lastConfirmation == nil) // absent/null == cleared
+}
+
+@Test("deciding an unknown confirmation id fails closed")
+func decideUnknownConfirmation() async throws {
+    let session = try makeSession()
+    let response = await session.execute(
+        operationRequest(.decideConfirmation, #"{"id":"conf_does_not_exist","decision":"approve"}"#)
+    )
+    #expect(response.status == .error)
+    #expect(response.error?.code == "unknown_confirmation")
+}
+
 // MARK: - Unwired operations
 
 @Test("an operation not yet wired returns a structured unavailable error, never a hang")
