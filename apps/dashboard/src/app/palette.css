@@ -1,6 +1,7 @@
-/* The floating command palette surface (NIC-75). The native NSPanel provides the window
-   frame; this paints the Spotlight-like box the CommandSurface sits in. On-device visual
-   tuning (vibrancy, exact metrics) is a later concern — this is functional parity. */
+/* The floating command palette surface (NIC-75). The native NSPanel provides the (transparent)
+   window frame; per the owner (NIC-77) the palette is *just the search bar* floating over the
+   visible dashboard — no surrounding box. The suggestion list only appears once the user types
+   (spotlight mode) and carries its own subtle dropdown styling (.command-suggestions). */
 
 html,
 body {
@@ -8,16 +9,16 @@ body {
   background: transparent;
 }
 
+/* No box: the container is a bare, transparent wrapper that positions the search pill at the top
+   of the panel. Everything behind stays visible; the pill (.global-search__*) is the only chrome. */
 .command-palette {
   box-sizing: border-box;
   width: 100%;
-  min-height: 100vh;
-  padding: var(--ch-space-4, 16px);
+  padding: var(--ch-space-2, 8px);
   display: flex;
   align-items: flex-start;
-  background: var(--ch-surface-raised);
-  border: 1px solid var(--ch-panel-border);
-  border-radius: 14px;
+  background: transparent;
+  border: 0;
 }
 
 .command-palette .command-surface--launcher {

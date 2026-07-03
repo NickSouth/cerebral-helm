@@ -37,7 +37,8 @@ export function CommandSurface({
   ariaLabel,
   onSubmit,
   disabled = false,
-  autoFocus = false
+  autoFocus = false,
+  spotlight = false
 }: {
   variant: "launcher" | "docked";
   placeholder: string;
@@ -47,6 +48,12 @@ export function CommandSurface({
   disabled?: boolean;
   /** Focus the input on mount — used by the floating command palette (NIC-75). */
   autoFocus?: boolean;
+  /**
+   * Spotlight mode (NIC-77): show the suggestion list only once the user has typed something,
+   * so an empty focus is just the bare search bar. Used by the floating palette; the docked
+   * top launcher leaves this off and still surfaces suggestions on focus.
+   */
+  spotlight?: boolean;
 }) {
   const [value, setValue] = useState("");
   const [focused, setFocused] = useState(false);
@@ -73,11 +80,13 @@ export function CommandSurface({
     }
   }
 
-  // Only the global launcher surfaces the suggestion list; the docked input continues the
-  // current exchange directly. A read-only surface never shows actionable suggestions.
-  const showSuggestions = focused && variant === "launcher" && !disabled;
-  const suggestions = rankSuggestions(value);
   const trimmed = value.trim();
+  // Only the global launcher surfaces the suggestion list; the docked input continues the
+  // current exchange directly. A read-only surface never shows actionable suggestions. In
+  // spotlight mode (the floating palette) the list stays hidden until the user types.
+  const showSuggestions =
+    focused && variant === "launcher" && !disabled && (!spotlight || trimmed.length > 0);
+  const suggestions = rankSuggestions(value);
 
   return (
     <div

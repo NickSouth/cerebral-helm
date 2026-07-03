@@ -75,6 +75,7 @@ export function CommandPaletteApp() {
         ariaLabel="Command palette"
         onSubmit={onSubmit}
         autoFocus
+        spotlight
       />
     </div>
   );

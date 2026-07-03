@@ -1,10 +1,15 @@
+import { useEffect, useRef, useState } from "react";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useSettings } from "../state/SettingsProvider";
+import { useBridge } from "../state/BridgeProvider";
+import { useUiPosture } from "../state/useUiPosture";
+import { armModeWave } from "./modeWave";
 import { heimlichStateLabel } from "./labels";
 import { BatteryGlyph } from "./BatteryGlyph";
 import { WeatherGlyph } from "./WeatherGlyph";
 import { HealthGlyph } from "./HealthGlyph";
 import { HeimlichAvatar } from "./HeimlichAvatar";
+import { ModeGlyph } from "./ModeGlyph";
 
 /** Format the wall clock for display. Masked in visual snapshots (see shell.spec.ts) so the
  *  live value never makes the deterministic baseline flake. */
@@ -67,6 +72,101 @@ const HEIMLICH_STATE_DOT: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The centered mode control in the bottom bar (NIC-77): shows the active mode and opens an
+ * upward menu of all four modes. Selecting a mode switches it and — like the right-rail switcher —
+ * emits the mode wave, here originating from the bottom-middle control instead of the top-right.
+ * Mode switching is paused while the dashboard is read-only, matching the rail switcher.
+ */
+function BottomBarModeMenu() {
+  const { mode, modes } = useDashboardState();
+  const bridge = useBridge();
+  const { readOnly } = useUiPosture();
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function onDocPointerDown(event: MouseEvent): void {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  function selectMode(modeId: string, active: boolean): void {
+    setOpen(false);
+    if (active || readOnly) {
+      return;
+    }
+    // Pulse from the bottom-middle control's center (the wave engine reveals the new palette
+    // outward from here — bottom-up rather than the rail's top-down).
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      armModeWave(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    }
+    void bridge.applyMode({ modeId });
+  }
+
+  return (
+    <div className="bottom-bar__mode" ref={containerRef}>
+      {open ? (
+        <ul className="bottom-bar__mode-menu" role="menu" aria-label="Switch mode">
+          {modes.map((modeView) => {
+            const active = modeView.label === mode;
+            return (
+              <li key={modeView.id} role="none">
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={active}
+                  className="bottom-bar__mode-option"
+                  data-active={active}
+                  disabled={readOnly}
+                  onClick={() => selectMode(modeView.id, active)}
+                >
+                  <span className="bottom-bar__mode-option-icon" aria-hidden="true">
+                    <ModeGlyph mode={modeView.id} />
+                  </span>
+                  {modeView.label}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      <button
+        type="button"
+        ref={triggerRef}
+        className="bottom-bar__item bottom-bar__mode-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={readOnly}
+        title={
+          readOnly ? "Mode switching is paused while the dashboard is read-only" : "Switch mode"
+        }
+        onClick={() => setOpen((value) => !value)}
+      >
+        {mode}
+      </button>
+    </div>
+  );
+}
+
+/**
  * The thin, persistent bottom bar on its own layout track (design spec §5.12, constitution §6).
  * Left→right: Heimlich identity + state · weather (icon + temperature) · [centered] mode · battery
  * (fill icon) · date & time · settings. The bar takes the **active mode accent on the home
@@ -77,7 +177,7 @@ const HEIMLICH_STATE_DOT: Readonly<Record<string, string>> = {
 export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
   const state = useDashboardState();
   const { openSettings } = useSettings();
-  const { mode, heimlich, weather } = state;
+  const { heimlich, weather } = state;
   const battery = state.regions.systemHealth.battery;
 
   const weatherLive =
@@ -127,8 +227,9 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
       </div>
 
       <div className="bottom-bar__group bottom-bar__group--center">
-        {/* Mode accent on the home dashboard only (design spec §5.12); themed via data-mode. */}
-        <span className="bottom-bar__item bottom-bar__mode">{mode}</span>
+        {/* Mode accent on the home dashboard only (design spec §5.12); themed via data-mode.
+            Now an upward menu of all four modes (NIC-77). */}
+        <BottomBarModeMenu />
       </div>
 
       <div className="bottom-bar__group bottom-bar__group--right">

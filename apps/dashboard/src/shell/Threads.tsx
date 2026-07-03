@@ -48,8 +48,8 @@ uniform float uDistance;
 #define PI 3.1415926538
 
 const int u_line_count = 30;
-const float u_line_width = 7.0;
-const float u_line_blur = 16.0; // soft, ethereal lines
+const float u_line_width = 4.0; // NIC-77: thinner strands (esp. on large viewports)
+const float u_line_blur = 11.0; // softness trimmed to match the thinner lines
 
 float Perlin2D(vec2 P) {
     vec2 Pi = floor(P);
@@ -191,7 +191,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // Overlap shouldn't pile up brightness at the converged edges: saturate the bloom with a cap
     // that is low at the edges (a dull glow) and higher through the middle.
     float envX = mix(0.12, 1.0, pow(sin(clamp(uv.x, 0.0, 1.0) * PI), 0.7));
-    float bloomCap = mix(0.5, 1.3, envX);
+    // NIC-77 (owner: "not nearly as much ethereal glow"): pull the bloom cap well down so the
+    // strands read crisp with only a faint halo instead of a wide aura.
+    float bloomCap = mix(0.22, 0.55, envX);
     bloom = bloomCap * (1.0 - exp(-bloom / max(bloomCap, 0.001)));
 
     float colorVal = (1.0 - line_strength) * edgeFade;
@@ -205,9 +207,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float sparkV = sparkLayer(uv, iTime) * smoothstep(0.08, 0.45, prox);
 
     // Emissive compositing: ribbons are light that IS their colour and tints the dark around them.
-    float bloomStrength = 0.5; // medium bloom
+    float bloomStrength = 0.22; // NIC-77: reduced bloom — crisp strands, minimal ethereal glow
     vec3 emit = tint * (colorVal + bloom * bloomStrength);
-    emit += mix(tint, vec3(1.0), 0.22) * heroGlow * 0.32; // foreground: mostly colour, little white
+    emit += mix(tint, vec3(1.0), 0.22) * heroGlow * 0.16; // foreground: mostly colour, little white
     emit += mix(tint, vec3(1.0), 0.3) * sparkV;
 
     // Warm it a touch, then cap brightness in a HUE-PRESERVING way (bright crossings stay coloured).
@@ -215,7 +217,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float mx = max(emit.r, max(emit.g, emit.b));
     emit = emit / max(mx, 1.0);
 
-    float alpha = clamp(colorVal + bloom * bloomStrength * 0.9 + heroGlow * 0.32 + sparkV, 0.0, 1.0);
+    float alpha = clamp(colorVal + bloom * bloomStrength * 0.9 + heroGlow * 0.16 + sparkV, 0.0, 1.0);
     fragColor = vec4(emit, alpha);
 }
 

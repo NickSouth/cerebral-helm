@@ -5,8 +5,13 @@
      the screen height — up on taller screens, down on shorter — always keeping proportions and
      (because it fits at the reference size) always fitting without a page scroll. Width is a
      separate concern: the columns cap-and-center, the bottom bar spans the full width. */
-  font-size: clamp(12px, 1.5vh, 20px);
+  font-size: clamp(11px, 1.32vh, 17.5px);
   font-family: var(--ch-font-family);
+  /* Grayscale antialiasing (NIC-77): on a large / non-Retina external display subpixel smoothing
+     reads as soft, slightly-fuzzy text. Grayscale AA keeps the type crisp and even-weighted. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   /* Solid fallback only. The mode-tinted gradient lives on `.app-root` (which carries `data-mode`),
      because custom properties set on that element are not visible up here on the root. */
   background: var(--ch-bg-base);

@@ -26,6 +26,8 @@ const WAVE_EASING = "cubic-bezier(0.2, 0, 0, 1)";
 interface ViewTransitionLike {
   readonly ready: Promise<void>;
   readonly finished: Promise<void>;
+  /** Finish the transition immediately (jump to the end) — used to interrupt on a rapid re-switch. */
+  skipTransition?: () => void;
 }
 
 type DocumentWithViewTransition = Document & {
@@ -35,6 +37,8 @@ type DocumentWithViewTransition = Document & {
 let pendingOrigin: { x: number; y: number; armedAt: number } | null = null;
 /** Concurrent-wave guard (rapid re-clicks): only the LAST wave to finish removes the class. */
 let activeWaves = 0;
+/** The in-flight transition, if any — a new switch skips it so the reveal is interruptible. */
+let activeTransition: ViewTransitionLike | null = null;
 
 /** Arm the next mode switch to wave out from this viewport point (the clicked control's center). */
 export function armModeWave(x: number, y: number): void {
@@ -94,6 +98,10 @@ function runModeWave(notify: () => void): void {
     return;
   }
 
+  // Interruptible reveal (NIC-77): if a wave is still running, finish it instantly so this new
+  // switch takes over immediately instead of the click being ignored until the first completes.
+  activeTransition?.skipTransition?.();
+
   const root = document.documentElement;
   // While the wave runs, revealed pixels must already wear the final palette — this class
   // suspends the per-property cross-fades (app.css) so the wavefront carries the change.
@@ -130,6 +138,7 @@ function runModeWave(notify: () => void): void {
     }
     return;
   }
+  activeTransition = transition;
 
   transition.ready
     .then(() => {
@@ -157,6 +166,18 @@ function runModeWave(notify: () => void): void {
       // committed via the callback — nothing visual to recover.
     });
   transition.finished.then(cleanup, cleanup);
+  transition.finished.then(
+    () => {
+      if (activeTransition === transition) {
+        activeTransition = null;
+      }
+    },
+    () => {
+      if (activeTransition === transition) {
+        activeTransition = null;
+      }
+    }
+  );
 }
 
 /**
