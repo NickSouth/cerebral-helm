@@ -14,12 +14,19 @@ import os
 /// hardware in NIC-77, not as unverified groundwork here. The React app is unchanged
 /// and still runs against its in-webview mock bridge until NIC-74 wires the native
 /// transport. Navigation failures are logged so a broken bundle is visible.
-final class DashboardWindowController: NSObject, WKNavigationDelegate {
+final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    static let controlHandlerName = "shellControl"
+
     let window: NSWindow
     private let webView: WKWebView
     private let handler: CerebralSchemeHandler
     private let bridge = WKWebViewCerebralBridge()
     private let log = Logger(subsystem: "local.cerebralhelm.CerebralHelm", category: "dashboard")
+
+    /// Web → native shell actions from the dashboard (NIC-76), e.g. rebinding the palette
+    /// hotkey from the settings "Hotkeys" panel. Kept off the versioned/portable bridge —
+    /// these are Mac-only window/shell concerns. Set by `WindowCoordinator`.
+    var onShellControl: (([String: Any]) -> Void)?
 
     /// The root of the bundled dashboard build inside the app (`Resources/DashboardBundle`).
     static func bundledDashboardRoot() -> URL? {
@@ -52,6 +59,14 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
             ))
         }
 
+        // Seed the settings "Hotkeys" panel with the current palette shortcut (NIC-76).
+        let preset = PaletteShortcutPreset.current
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "window.__cerebralHotkey = { preset: \"\(preset.rawValue)\", label: \"\(preset.label)\" };",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+
         webView = WKWebView(frame: .zero, configuration: configuration)
 
         window = NSWindow(
@@ -67,6 +82,7 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
         super.init()
         bridge.attach(to: webView)
         bridge.bind(session: session)
+        configuration.userContentController.add(self, name: Self.controlHandlerName)
         webView.navigationDelegate = self
         webView.load(URLRequest(url: CerebralSchemeHandler.indexURL))
     }
@@ -89,6 +105,21 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
               let literalString = String(data: literal, encoding: .utf8) else { return }
         let script = "window.__cerebralShell && window.__cerebralShell.openConversation(\(literalString));"
         webView.evaluateJavaScript(script)
+    }
+
+    /// Opens the web settings overlay over the dashboard (NIC-76 / FR-UI-06). The native
+    /// settings window is retired; the menu-bar "Settings…" routes here.
+    func openSettings() {
+        webView.evaluateJavaScript(
+            "window.__cerebralShell && window.__cerebralShell.openSettings && window.__cerebralShell.openSettings();"
+        )
+    }
+
+    // MARK: - WKScriptMessageHandler (web → native shell control)
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == Self.controlHandlerName, let body = message.body as? [String: Any] else { return }
+        onShellControl?(body)
     }
 
     // MARK: - WKNavigationDelegate (surface load failures)

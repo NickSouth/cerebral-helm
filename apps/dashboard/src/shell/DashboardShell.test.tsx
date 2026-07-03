@@ -422,3 +422,15 @@ describe("DashboardShell native shell-intent hook (NIC-76)", () => {
     expect(screen.getByText("ping from palette")).toBeInTheDocument();
   });
 });
+
+describe("DashboardShell bottom bar (NIC-76 AC2 / FR-UI-04)", () => {
+  it("keeps the persistent bottom bar on its own track — a direct child of the shell, not overlaying content", () => {
+    const { container } = renderShell();
+    const shell = container.querySelector(".dashboard-shell");
+    const bar = shell?.querySelector(":scope > .bottom-bar");
+    // The bar is a direct flex-column child (its own track), a sibling of the canvas — so it
+    // never composites over dashboard content.
+    expect(bar).not.toBeNull();
+    expect(shell?.querySelector(".dashboard-canvas")).not.toBeNull();
+  });
+});

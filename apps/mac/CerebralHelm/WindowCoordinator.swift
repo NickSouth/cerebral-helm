@@ -16,13 +16,15 @@ import CerebralRuntimeHost
 final class WindowCoordinator {
     private var dashboard: DashboardWindowController?
     private var palette: CommandPaletteWindowController?
-    private var settings: SettingsWindowController?
     private var recovery: RecoveryWindowController?
 
     /// Ready path: host the dashboard and pre-warm the single command palette against the
     /// shared session. Called once after a clean startup pre-flight.
     func enterReady(dashboardRoot: URL, paths: WorkspacePaths, session: BridgeSession) {
         let dashboard = DashboardWindowController(dashboardRoot: dashboardRoot, paths: paths, session: session)
+        // Increment 4: web → native shell actions (e.g. rebinding the palette hotkey from
+        // the settings "Hotkeys" panel).
+        dashboard.onShellControl = { [weak self] body in self?.handleShellControl(body) }
         self.dashboard = dashboard
         dashboard.show()
 
@@ -48,6 +50,14 @@ final class WindowCoordinator {
         if json.contains("\"config.changed\"") {
             palette?.deliverBridgeEvent(json)
         }
+        // Increment 5: a pending confirmation must be seen in context (AC3). When a gated
+        // command's disclosure arrives (e.g. one submitted from the palette) while the
+        // dashboard may be backgrounded, surface the dashboard and dismiss the palette; the
+        // neutral-blue confirmation renders in the dashboard's web overlay (design spec §9).
+        // A `confirmation:null` payload is a *clear* (approved/cancelled) — not a new prompt.
+        if json.contains("\"confirmation.changed\"") && !json.contains("\"confirmation\":null") {
+            surfaceConfirmation()
+        }
     }
 
     /// Summon (or refocus) the single command palette (FR-SHL-02/04). No-op in recovery.
@@ -55,11 +65,14 @@ final class WindowCoordinator {
         palette?.summon()
     }
 
-    /// Open the native settings window. (Reconciled to the web settings overlay in a later
-    /// NIC-76 increment; kept here as the current owner for now.)
+    /// Open settings as the **web overlay** over the dashboard (NIC-76 / FR-UI-06): bring the
+    /// dashboard forward and open the overlay via the shell-intent hook. There is no separate
+    /// native settings window — settings never replaces the dashboard, and appears in context.
     func openSettings() {
-        if settings == nil { settings = SettingsWindowController() }
-        settings?.show()
+        guard let dashboard else { return }
+        dashboard.window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        dashboard.openSettings()
     }
 
     /// Increment 2: dismiss the palette (already done by its control channel), bring the
@@ -69,5 +82,24 @@ final class WindowCoordinator {
         dashboard.window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         dashboard.openConversation(text)
+    }
+
+    /// Increment 5: bring the dashboard forward (dismissing the palette) so a pending
+    /// confirmation is always seen. No-op in recovery.
+    private func surfaceConfirmation() {
+        palette?.dismiss()
+        guard let dashboard else { return }
+        dashboard.window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Increment 4: apply a web-driven shell action. Currently only the palette-hotkey
+    /// rebind from the settings "Hotkeys" panel; the native shell owns the actual
+    /// `KeyboardShortcuts` registration (a Mac-only concern kept off the portable bridge).
+    private func handleShellControl(_ body: [String: Any]) {
+        guard (body["action"] as? String) == "setPaletteShortcut",
+              let presetID = body["preset"] as? String,
+              let preset = PaletteShortcutPreset(rawValue: presetID) else { return }
+        preset.apply()
     }
 }

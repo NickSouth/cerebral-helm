@@ -64,11 +64,26 @@ package under `packages/` may depend on it.
   that renders only the existing `CommandSurface`; summon activates + focuses it in
   ~one frame, repeated summon focuses the same panel (no duplicates), and submit /
   Escape / click-away dismiss it via a private `paletteControl` channel.
-  `SettingsWindowController` hosts `KeyboardShortcuts.RecorderCocoa` to rebind/disable
-  the shortcut with conflict-remediation copy. Deferred to NIC-76: the "Ask Heimlich →
-  dashboard center panel" window-role routing and syncing the palette to the active mode.
-- **Next:** native window roles / command choreography (NIC-76), then on-device visual
-  tuning (NIC-77).
+- **NIC-76 (done):** native window roles + palette↔dashboard choreography (FR-SHL-04,
+  FR-UI-04, FR-UI-06). `WindowCoordinator` is the single owner of the native window
+  roles — dashboard, command palette, recovery — with deterministic show/hide/focus and
+  no duplicate/orphan windows (AC1); `AppDelegate` keeps only the runtime + menu-bar item.
+  Per the design spec §10 and the owner decision, the **bottom bar, confirmation, and
+  settings stay web surfaces** in the dashboard webview (only the palette is a separate
+  native panel). The palette's "Ask Heimlich" now dismisses the palette, brings the
+  dashboard forward, and opens the conversation in the center panel via an injected
+  `window.__cerebralShell` intent hook; the palette also re-themes to the active mode
+  (`config.changed` forwarded to its webview → `usePaletteMode`). Settings is reconciled
+  to the single web `SettingsOverlay`: the native settings window is retired, the menu-bar
+  "Settings…" brings the dashboard forward and opens the overlay, and a new **Hotkeys**
+  panel rebinds the global shortcut from a curated preset set through a native
+  `shellControl` web→native channel (kept off the portable bridge — a Mac-only concern)
+  that applies it via `KeyboardShortcuts`. A pending confirmation surfaces the dashboard
+  (dismissing the palette) so it is always seen (AC3); the bottom bar occupies its own
+  flex track and never obscures content (AC2). Deferred: inline palette command-execution
+  without surfacing the dashboard (pending reachable app-launch commands), and the
+  layout-mode bottom-bar contents (project/context + emergency return/close).
+- **Next:** on-device visual tuning (NIC-77).
 
 ## Build & run
 

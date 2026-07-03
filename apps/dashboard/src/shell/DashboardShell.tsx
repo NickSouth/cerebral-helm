@@ -9,13 +9,17 @@ import { SystemStatusBanner } from "./SystemStatusBanner";
 import { BrandMark, BrandWordmark } from "./BrandMark";
 import { DashboardSkeleton } from "./DashboardSkeleton";
 import { useConversation } from "../state/ConversationProvider";
+import { useSettings } from "../state/SettingsProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { useAmbientBeam } from "./useAmbientBeam";
 import { useEffect, useRef } from "react";
 
 /** The native shell's intent channel into the dashboard (NIC-76 window-role choreography). */
 interface ShellIntentWindow extends Window {
-  __cerebralShell?: { openConversation?: (text: string) => void };
+  __cerebralShell?: {
+    openConversation?: (text: string) => void;
+    openSettings?: () => void;
+  };
 }
 
 /**
@@ -34,18 +38,25 @@ interface ShellIntentWindow extends Window {
  */
 export function DashboardShell() {
   const conversation = useConversation();
+  const settings = useSettings();
   const posture = useUiPosture();
   const shellRef = useRef<HTMLDivElement>(null);
   useAmbientBeam(shellRef);
 
-  // Register the native shell's intent hook so the command palette's "Ask Heimlich" can
-  // open the conversation in the center panel (NIC-76). Registered once; it calls the
-  // latest `conversation.submit` via a ref so the callback never goes stale.
+  // Register the native shell's intent hook so the menu bar / command palette can drive the
+  // dashboard: "Ask Heimlich" opens the center-panel conversation, and "Settings…" opens the
+  // web settings overlay (NIC-76). Registered once; it calls the latest handlers via refs so
+  // the callbacks never go stale.
   const submitRef = useRef(conversation.submit);
   submitRef.current = conversation.submit;
+  const openSettingsRef = useRef(settings.openSettings);
+  openSettingsRef.current = settings.openSettings;
   useEffect(() => {
     const shellWindow = window as ShellIntentWindow;
-    shellWindow.__cerebralShell = { openConversation: (text: string) => submitRef.current(text) };
+    shellWindow.__cerebralShell = {
+      openConversation: (text: string) => submitRef.current(text),
+      openSettings: () => openSettingsRef.current()
+    };
     return () => {
       delete shellWindow.__cerebralShell;
     };
