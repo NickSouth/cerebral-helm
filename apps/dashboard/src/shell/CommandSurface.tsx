@@ -36,7 +36,8 @@ export function CommandSurface({
   placeholder,
   ariaLabel,
   onSubmit,
-  disabled = false
+  disabled = false,
+  autoFocus = false
 }: {
   variant: "launcher" | "docked";
   placeholder: string;
@@ -44,6 +45,8 @@ export function CommandSurface({
   onSubmit: (text: string) => void;
   /** Suppress the command locus while the surface is read-only (offline/recovery — NIC-64). */
   disabled?: boolean;
+  /** Focus the input on mount — used by the floating command palette (NIC-75). */
+  autoFocus?: boolean;
 }) {
   const [value, setValue] = useState("");
   const [focused, setFocused] = useState(false);
@@ -93,6 +96,7 @@ export function CommandSurface({
         placeholder={disabled ? "Paused — the dashboard is read-only" : placeholder}
         aria-label={ariaLabel}
         disabled={disabled}
+        autoFocus={autoFocus}
         onChange={(event) => setValue(event.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}

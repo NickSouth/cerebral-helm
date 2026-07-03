@@ -35,30 +35,20 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecke
         self.webView = webView
     }
 
-    /// Builds the live runtime for this session so bridge operations execute against
-    /// it (NIC-74b). The startup pre-flight has already validated config + the
-    /// database, so composition is expected to succeed; if it does not, operations
-    /// answer with a structured error rather than crashing.
-    func connectRuntime(paths: WorkspacePaths) {
-        // Forward every command lifecycle event to the dashboard as a bridge event.
-        // The event is converted to JSON *inside* this @Sendable closure so only the
-        // encoded String (Sendable) crosses back to the transport — the lifecycle
-        // DTO holds a reference-typed payload and is not Sendable.
-        let runtime = try? makeCommandRuntime(paths: paths, onEvent: { [weak self] event in
-            let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
-            guard let payload = try? BridgeMessageCoding.encoder().encode(bridgeEvent),
-                  let json = String(data: payload, encoding: .utf8) else { return }
-            self?.deliverEncoded(json)
-        })
-        session = runtime.map {
-            BridgeSession(
-                runtime: $0,
-                configDirectory: paths.configDirectory,
-                // Confirmation-flow events arrive already-encoded (Sendable String).
-                emitEventJSON: { [weak self] json in self?.deliverEncoded(json) }
-            )
-        }
-        if session == nil { log.error("Bridge runtime composition failed; operations will report unavailable.") }
+    /// Binds the shared ``BridgeSession`` composed once at the app layer
+    /// (`AppBridgeRuntime`). Both the dashboard and the command-palette transport bind
+    /// the *same* session, so operations from either webview run against one live
+    /// runtime (NIC-75 / FR-SHL-02) rather than forking a second one.
+    func bind(session: BridgeSession) {
+        self.session = session
+    }
+
+    /// Delivers an already-encoded bridge-event JSON to *this* webview. The app routes
+    /// the shared session's event stream here for the dashboard transport (the palette
+    /// transport is not registered as an event sink — it only submits).
+    func deliverBridgeEvent(_ json: String) {
+        chProbe("deliverBridgeEvent webView=\(webView == nil ? "NIL" : "ok")") // TEMP
+        deliverEncoded(json)
     }
 
     func userContentController(
@@ -76,6 +66,7 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecke
             deliver(response)
 
         case let .operation(request):
+            chProbe("op recv=\(request.operation.rawValue)") // TEMP
             guard let session else {
                 deliver(Self.runtimeUnavailable(for: request))
                 return

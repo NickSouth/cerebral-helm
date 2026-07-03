@@ -29,7 +29,7 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
         return FileManager.default.fileExists(atPath: index.path) ? root : nil
     }
 
-    init(dashboardRoot: URL, paths: WorkspacePaths) {
+    init(dashboardRoot: URL, paths: WorkspacePaths, session: BridgeSession) {
         handler = CerebralSchemeHandler(root: dashboardRoot)
 
         let configuration = WKWebViewConfiguration()
@@ -66,13 +66,19 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
 
         super.init()
         bridge.attach(to: webView)
-        bridge.connectRuntime(paths: paths)
+        bridge.bind(session: session)
         webView.navigationDelegate = self
         webView.load(URLRequest(url: CerebralSchemeHandler.indexURL))
     }
 
     func show() {
         window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Routes a shared-session bridge event (lifecycle/confirmation/config) to the
+    /// dashboard webview. The app wires this as `AppBridgeRuntime`'s event sink.
+    func deliverBridgeEvent(_ json: String) {
+        bridge.deliverBridgeEvent(json)
     }
 
     // MARK: - WKNavigationDelegate (surface load failures)

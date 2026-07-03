@@ -53,8 +53,22 @@ package under `packages/` may depend on it.
   correlated by messageId, events dispatched to subscribers); `createDashboardRuntime`
   selects it when running inside the shell, seeding synchronously from the bootstrap
   the shell injects (`window.__cerebralBootstrap`). React components are unchanged.
-- **Next:** the menu-bar item + global hotkey (NIC-75) and native window roles /
-  command palette (NIC-76), then on-device visual tuning (NIC-77).
+- **NIC-75 (done):** the menu-bar item + global command hotkey + floating command
+  palette (FR-SHL-02). `MenuBarController` owns an `NSStatusItem` (summon palette /
+  settings / quit) and registers a configurable global hotkey via the Carbon-backed
+  `KeyboardShortcuts` package (default ⌥Space, no Accessibility permission). The
+  `CommandRuntime` + `BridgeSession` now compose once at the app layer
+  (`AppBridgeRuntime`) and are shared: the dashboard **and** the palette submit through
+  the one live runtime (no forked runtime). `CommandPaletteWindowController` is a single
+  pre-warmed `NSPanel` hosting a lightweight `index.html?surface=palette` WebKit route
+  that renders only the existing `CommandSurface`; summon activates + focuses it in
+  ~one frame, repeated summon focuses the same panel (no duplicates), and submit /
+  Escape / click-away dismiss it via a private `paletteControl` channel.
+  `SettingsWindowController` hosts `KeyboardShortcuts.RecorderCocoa` to rebind/disable
+  the shortcut with conflict-remediation copy. Deferred to NIC-76: the "Ask Heimlich →
+  dashboard center panel" window-role routing and syncing the palette to the active mode.
+- **Next:** native window roles / command choreography (NIC-76), then on-device visual
+  tuning (NIC-77).
 
 ## Build & run
 

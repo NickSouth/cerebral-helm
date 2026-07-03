@@ -1,0 +1,25 @@
+/* The floating command palette surface (NIC-75). The native NSPanel provides the window
+   frame; this paints the Spotlight-like box the CommandSurface sits in. On-device visual
+   tuning (vibrancy, exact metrics) is a later concern — this is functional parity. */
+
+html,
+body {
+  margin: 0;
+  background: transparent;
+}
+
+.command-palette {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100vh;
+  padding: var(--ch-space-4, 16px);
+  display: flex;
+  align-items: flex-start;
+  background: var(--ch-surface-raised);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: 14px;
+}
+
+.command-palette .command-surface--launcher {
+  width: 100%;
+}
