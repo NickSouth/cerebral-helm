@@ -82,22 +82,37 @@ func submitCommandRequiresInput() async throws {
 
 // MARK: - applyMode
 
-@Test("applyMode enters through the command bus and reports ok")
-func applyModeRunsThroughBus() async throws {
-    let session = try makeSession()
+@Test("applyMode re-themes by emitting the target mode's config.changed snapshot")
+func applyModeEmitsConfigChanged() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        emitEventJSON: { emitted.emit($0) }
+    )
     let response = await session.execute(operationRequest(.applyMode, #"{"modeId":"developer"}"#))
     #expect(response.status == .ok)
-    let result = try decode(response, as: ApplyModeResult.self)
-    #expect(result.modeId == "developer")
-    #expect(result.status == "ok")
+    #expect(try decode(response, as: ApplyModeResult.self).status == "ok")
+
+    // A config.changed event with the target mode snapshot was pushed (no confirmation).
+    let configEvents = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "config.changed" }
+    #expect(!configEvents.isEmpty)
+    let snapshot = (configEvents.first?["payload"] as? [String: Any])?["snapshot"] as? [String: Any]
+    #expect(snapshot?["mode"] as? String == "Developer")
 }
 
-@Test("applyMode requires a modeId")
-func applyModeRequiresModeID() async throws {
+@Test("applyMode rejects an unknown mode and requires a modeId")
+func applyModeValidatesMode() async throws {
     let session = try makeSession()
-    let response = await session.execute(operationRequest(.applyMode, "{}"))
-    #expect(response.status == .error)
-    #expect(response.error?.category == .invalidInput)
+    let missing = await session.execute(operationRequest(.applyMode, "{}"))
+    #expect(missing.error?.category == .invalidInput)
+
+    let unknown = await session.execute(operationRequest(.applyMode, #"{"modeId":"nope"}"#))
+    #expect(unknown.status == .ok)
+    #expect(try decode(unknown, as: ApplyModeResult.self).status == "error")
 }
 
 // MARK: - getBootstrapState
@@ -110,9 +125,9 @@ func bootstrapComposesFromConfig() async throws {
     #expect(response.status == .ok)
     #expect(response.error == nil)
     let state = try decode(response, as: CerebralHelmBridgeBootstrapState.self)
-    // All four modes are shipped eagerly, derived from config (real ids + themes).
-    #expect(state.modes.count == 4)
-    #expect(state.modes.contains { $0.id == "developer" })
+    // All four modes are shipped eagerly, derived from config (real ids + themes),
+    // in the canonical display order (not alphabetical config-file order).
+    #expect(state.modes.map(\.id) == ["executive", "developer", "school", "entertainment"])
     #expect(state.modes.contains { $0.theme.accentPrimary.contains("primary") })
     // The fixed global agent roster comes from config.
     #expect(!state.agents.isEmpty)
@@ -129,16 +144,15 @@ private struct SearchResult: Decodable { struct Hit: Decodable { let noteId: Str
 
 @Test("searchNotes finds a note captured through the runtime")
 func searchFindsSeededNote() async throws {
-    // note.capture is confirmation-gated (local_write), so seed a note by driving the
-    // runtime's submit → approve flow directly, then search through the bridge session.
+    // note.capture is local_write and runs without confirmation, so seed a note by
+    // submitting directly, then search through the bridge session.
     let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
     let runtime = try makeCommandRuntime(paths: paths)
-    let pending = await runtime.submit("note Quarterly planning deck", source: .dashboard)
-    guard case let .awaitingConfirmation(_, _, token) = pending else {
-        Issue.record("expected note.capture to await confirmation, got \(pending)")
+    let outcome = await runtime.submit("note Quarterly planning deck", source: .dashboard)
+    guard case .completed = outcome else {
+        Issue.record("expected note capture to complete, got \(outcome)")
         return
     }
-    _ = await runtime.decide(token: token, decision: .approve)
 
     let session = BridgeSession(runtime: runtime, configDirectory: paths.configDirectory)
     let searched = await session.execute(operationRequest(.searchNotes, #"{"text":"quarterly"}"#))
@@ -147,6 +161,21 @@ func searchFindsSeededNote() async throws {
     // The search reaches the live index and returns the seeded note with an id.
     #expect(!results.results.isEmpty)
     #expect(results.results.allSatisfy { !$0.noteId.isEmpty })
+}
+
+private struct NoteId: Decodable { let noteId: String }
+
+@Test("captureNote writes a note and returns its real id (local_write runs without confirmation)")
+func captureNoteReturnsRealId() async throws {
+    let session = try makeSession()
+    let response = await session.execute(
+        operationRequest(.captureNote, #"{"title":"Quarterly planning","body":"Draft the deck."}"#)
+    )
+    #expect(response.status == .ok)
+    let noteId = try decode(response, as: NoteId.self).noteId
+    // A completed capture returns the note's id, not a command handle (no confirmation).
+    #expect(!noteId.isEmpty)
+    #expect(!noteId.hasPrefix("cmd_"))
 }
 
 @Test("an empty search query returns no results (not an error)")
@@ -185,8 +214,10 @@ func confirmationFlow() async throws {
         emitEventJSON: { emitted.emit($0) }
     )
 
-    // Developer mode application is confirmation-gated.
-    let submit = await session.execute(operationRequest(.applyMode, #"{"modeId":"developer"}"#))
+    // hook.run (shell) is a gated class, so it pauses for confirmation.
+    let submit = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"hook ondraft-dev","source":"dashboard"}"#)
+    )
     #expect(submit.status == .ok)
 
     // A confirmation.changed event carrying the disclosure was pushed to the UI.
@@ -272,7 +303,7 @@ func updateSettingsRequiresPatch() async throws {
 @Test("an operation not yet wired returns a structured unavailable error, never a hang")
 func unwiredOperationIsUnavailable() async throws {
     let session = try makeSession()
-    let response = await session.execute(operationRequest(.captureNote, "{}"))
+    let response = await session.execute(operationRequest(.subscribe, "{}"))
     #expect(response.status == .error)
     #expect(response.error?.category == .unavailableCapability)
     #expect(response.error?.code == "bridge_operation_unimplemented")

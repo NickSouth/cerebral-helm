@@ -45,7 +45,9 @@ public final class BridgeSession: @unchecked Sendable {
         case .submitCommand:
             return await submitCommand(request)
         case .applyMode:
-            return await applyMode(request)
+            return applyMode(request)
+        case .captureNote:
+            return await captureNote(request)
         case .searchNotes:
             return await searchNotes(request)
         case .getRecentActivity:
@@ -80,21 +82,51 @@ public final class BridgeSession: @unchecked Sendable {
 
     private func applyMode(
         _ request: CerebralHelmBridgeOperationRequest
-    ) async -> CerebralHelmBridgeOperationResponse {
+    ) -> CerebralHelmBridgeOperationResponse {
         guard let input: ApplyModeInput = decodePayload(request), !input.modeId.isEmpty else {
             return invalidInput(request, "applyMode requires a modeId.")
         }
-        // Mode application enters through the same bus as every other command.
-        let outcome = await runtime.submit("mode \(input.modeId)", source: .dashboard)
-        registerAwaitingConfirmation(outcome)
-        let status: String
-        switch outcome {
-        case .completed, .awaitingConfirmation:
-            status = "ok"
-        case .rejected:
-            status = "error"
+        guard BootstrapComposer.modeExists(input.modeId, configDirectory: configDirectory) else {
+            return ok(request, payload: ApplyModeResult(modeId: input.modeId, status: "error"))
         }
-        return ok(request, payload: ApplyModeResult(modeId: input.modeId, status: status))
+        // Switching mode re-themes the dashboard: emit the target mode's snapshot as a
+        // config.changed event (parity with the mock). The view switch is not a gated
+        // command — a mode's side-effecting actions (apps/URLs/hooks) are Mac-only and
+        // land with their adapters.
+        let snapshot = BootstrapComposer.compose(configDirectory: configDirectory, activeModeID: input.modeId)
+        emit(BridgeEventFactory.configChangedEvent(
+            snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+        return ok(request, payload: ApplyModeResult(modeId: input.modeId, status: "ok"))
+    }
+
+    private func captureNote(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: CaptureNoteInput = decodePayload(request), !input.title.isEmpty else {
+            return invalidInput(request, "captureNote requires a title.")
+        }
+        // note.capture is a confirmation-gated local_write, so this enters the bus and
+        // the disclosure is pushed to the UI. The note is written after the user
+        // approves; the returned id is the command handle (see the captureNote contract
+        // note — a synchronous noteId is not possible for a gated capture).
+        let text = input.body.isEmpty ? input.title : "\(input.title)\n\(input.body)"
+        let outcome = await runtime.submit("note \(text)", source: .dashboard)
+        registerAwaitingConfirmation(outcome)
+        switch outcome {
+        case let .completed(commandID, _, result):
+            if let data = result?.output, let output = try? CerebralHelmNoteCaptureOutput(data: data) {
+                return ok(request, payload: CaptureNoteResult(noteId: output.noteID))
+            }
+            return ok(request, payload: CaptureNoteResult(noteId: commandID))
+        case let .awaitingConfirmation(commandID, _, _):
+            return ok(request, payload: CaptureNoteResult(noteId: commandID))
+        case .rejected:
+            return errorResponse(
+                request, category: .invalidInput,
+                code: "note_rejected", message: "The note could not be parsed."
+            )
+        }
     }
 
     private func searchNotes(
@@ -208,6 +240,14 @@ public final class BridgeSession: @unchecked Sendable {
     private struct ApplyModeResult: Encodable {
         let modeId: String
         let status: String
+    }
+    private struct CaptureNoteInput: Decodable {
+        let title: String
+        let body: String
+        let kind: String?
+    }
+    private struct CaptureNoteResult: Encodable {
+        let noteId: String
     }
     private struct SearchNotesInput: Decodable {
         let text: String

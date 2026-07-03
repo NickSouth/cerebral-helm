@@ -118,12 +118,17 @@ public struct PolicyEngine: Sendable {
         switch risk {
         case .readOnly:
             return (.allow, "allow.read_only", "Read-only tools run without confirmation.")
+        case .localWrite:
+            // Local, reversible writes (capture a note, open a configured app/URL) run
+            // without confirmation. Confirmation is reserved for irreversible or
+            // external effects — see the gated classes below.
+            return (.allow, "allow.local_write", "Local, reversible writes run without confirmation.")
         case .shell:
             if let invocation = request.shellInvocation, hookAllowlist.allows(invocation) {
                 return (.allow, "allow.shell_allowlisted", "The exact shell invocation is explicitly allowlisted.")
             }
             return (.requireConfirmation, "confirm.shell", "Shell execution requires confirmation unless the exact invocation is allowlisted.")
-        case .localWrite, .externalWrite, .destructive, .financial, .purchaseOrBooking:
+        case .externalWrite, .destructive, .financial, .purchaseOrBooking:
             return (.requireConfirmation, "confirm.\(risk.rawValue)", "Risk class '\(risk.rawValue)' requires confirmation.")
         }
     }
@@ -132,8 +137,9 @@ public struct PolicyEngine: Sendable {
 extension Risk {
     /// Provisional severity ordering, used only to choose which class to *report*
     /// as the governing risk when aggregating a multi-action plan (FR-MOD-03,
-    /// ADR-003). Every non-read class shares the same baseline decision, so this
-    /// ordering never changes whether confirmation is required — only the label.
+    /// ADR-003). Read-only and local writes are allowed; the gated classes
+    /// (external write, shell, financial, purchase, destructive) share the same
+    /// requireConfirmation baseline, so this ordering only selects the reported label.
     var severityRank: Int {
         switch self {
         case .readOnly: return 0

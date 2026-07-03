@@ -1,6 +1,7 @@
 import AppKit
 import WebKit
 import CerebralCore
+import CerebralRuntimeHost
 import os
 
 /// Hosts the bundled production dashboard in a `WKWebView`, loaded offline over the
@@ -37,6 +38,19 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
         // dashboard still runs its in-webview mock bridge until NIC-74c selects the
         // native transport; this makes the handshake channel available (ADR-004).
         bridge.install(on: configuration)
+
+        // Inject the bootstrap state synchronously (before the app loads) so the
+        // dashboard seeds its store with no round-trip or loading flash; the live
+        // bridge then serves operations and the event stream (NIC-74c).
+        if let data = try? BridgeMessageCoding.encoder().encode(
+            BootstrapComposer.compose(configDirectory: paths.configDirectory)
+        ), let json = String(data: data, encoding: .utf8) {
+            configuration.userContentController.addUserScript(WKUserScript(
+                source: "window.__cerebralBootstrap = \(json);",
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+        }
 
         webView = WKWebView(frame: .zero, configuration: configuration)
 

@@ -51,9 +51,41 @@ public enum BridgeEventFactory {
         )
     }
 
+    /// A `config.changed` event carrying the target mode's snapshot — the dashboard
+    /// folds it over the eager bundle to re-theme and swap regions without remounting
+    /// (mode switch, NIC-54/D2). `modes`/`agents` are omitted (a snapshot is the
+    /// bootstrap minus the eager bundle).
+    public static func configChangedEvent(
+        snapshot: CerebralHelmBridgeBootstrapState, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: snapshotPayload(snapshot),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .configChanged
+        )
+    }
+
     /// Generates a schema-valid event id (`^brevt_[A-Za-z0-9_-]{8,64}$`).
     public static func newEventID() -> String {
         "brevt_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+    }
+
+    /// `{ snapshot: <bootstrap minus modes/agents> }` — the mode-switch payload the
+    /// dashboard reducer folds in.
+    private static func snapshotPayload(_ snapshot: CerebralHelmBridgeBootstrapState) -> [String: JSONAny] {
+        guard
+            let data = try? BridgeMessageCoding.encoder().encode(snapshot),
+            var dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [:] }
+        dict.removeValue(forKey: "modes")
+        dict.removeValue(forKey: "agents")
+        guard
+            let wrapped = try? JSONSerialization.data(withJSONObject: ["snapshot": dict]),
+            let payload = try? JSONDecoder().decode([String: JSONAny].self, from: wrapped)
+        else { return [:] }
+        return payload
     }
 
     private static func confirmationPayload(

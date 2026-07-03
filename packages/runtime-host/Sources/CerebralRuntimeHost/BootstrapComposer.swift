@@ -11,12 +11,21 @@ import CerebralCore
 /// unavailable) until the live providers land (FR-SHL-06); counts default to zero
 /// for a fresh session. Live region data and real counts are a follow-on increment.
 public enum BootstrapComposer {
-    public static func compose(configDirectory: URL) -> CerebralHelmBridgeBootstrapState {
+    /// The canonical mode display order (design spec / `tokens.ts` MODE_IDS). Config
+    /// files enumerate in filesystem order, so the composer imposes this order rather
+    /// than shipping an alphabetical roster the shell would render in the wrong order.
+    private static let canonicalModeOrder = ["executive", "developer", "school", "entertainment"]
+
+    /// Composes the bootstrap state. `activeModeID`, when supplied, sets the active
+    /// mode (used by a mode switch to re-theme); otherwise the configured default.
+    public static func compose(
+        configDirectory: URL, activeModeID: String? = nil
+    ) -> CerebralHelmBridgeBootstrapState {
         var modeConfigs: [CerebralHelmModeConfig] = []
         var agentConfigs: [CerebralHelmAgentSurfaceConfig] = []
         var defaultModeID: String?
         if case let .valid(config) = ConfigValidator.validate(configDirectory: configDirectory) {
-            modeConfigs = config.modes
+            modeConfigs = orderedModes(config.modes)
             agentConfigs = config.agents
             defaultModeID = config.defaults.defaultModeID
         }
@@ -37,7 +46,7 @@ public enum BootstrapComposer {
             commandsToday: 0,
             expandedAgent: nil,
             heimlich: idleHeimlich(),
-            mode: resolveMode(defaultID: defaultModeID, modes: modeConfigs),
+            mode: resolveMode(defaultID: activeModeID ?? defaultModeID, modes: modeConfigs),
             modes: modes,
             pendingConfirmations: 0,
             project: "CerebralHelm",
@@ -47,6 +56,24 @@ public enum BootstrapComposer {
             uiState: .ready,
             weather: nil
         )
+    }
+
+    /// Whether a mode id is configured (used to accept/reject a mode switch).
+    public static func modeExists(_ id: String, configDirectory: URL) -> Bool {
+        guard case let .valid(config) = ConfigValidator.validate(configDirectory: configDirectory) else {
+            return false
+        }
+        return config.modes.contains { $0.id == id }
+    }
+
+    /// Orders modes by the canonical display order; any unlisted mode keeps its
+    /// relative position after the known ones.
+    private static func orderedModes(_ modes: [CerebralHelmModeConfig]) -> [CerebralHelmModeConfig] {
+        modes.enumerated().sorted { lhs, rhs in
+            let li = canonicalModeOrder.firstIndex(of: lhs.element.id) ?? (canonicalModeOrder.count + lhs.offset)
+            let ri = canonicalModeOrder.firstIndex(of: rhs.element.id) ?? (canonicalModeOrder.count + rhs.offset)
+            return li < ri
+        }.map(\.element)
     }
 
     /// A mode config maps directly onto a mode view: the shared fields (id, label,

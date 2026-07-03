@@ -47,8 +47,14 @@ package under `packages/` may depend on it.
   The operation surface is complete except `captureNote` (a contract tension — it
   returns a synchronous `noteId` but `note.capture` is confirmation-gated; notes are
   capturable today via `submitCommand`).
-- **Next:** NIC-74c wires the dashboard-side transport + selection, at which point the
-  dashboard runs fully on the live bridge. Until then it runs the in-webview mock.
+- **NIC-74c (done):** the dashboard runs on the **live bridge**. The dashboard-side
+  `wkWebViewCerebralBridge` implements `CerebralBridge` over
+  `window.webkit.messageHandlers.cerebral` ↔ `window.__cerebralReceive` (operations
+  correlated by messageId, events dispatched to subscribers); `createDashboardRuntime`
+  selects it when running inside the shell, seeding synchronously from the bootstrap
+  the shell injects (`window.__cerebralBootstrap`). React components are unchanged.
+- **Next:** the menu-bar item + global hotkey (NIC-75) and native window roles /
+  command palette (NIC-76), then on-device visual tuning (NIC-77).
 
 ## Build & run
 
