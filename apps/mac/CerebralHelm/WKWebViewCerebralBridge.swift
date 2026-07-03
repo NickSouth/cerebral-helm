@@ -47,7 +47,6 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecke
     /// the shared session's event stream here for the dashboard transport (the palette
     /// transport is not registered as an event sink — it only submits).
     func deliverBridgeEvent(_ json: String) {
-        chProbe("deliverBridgeEvent webView=\(webView == nil ? "NIL" : "ok")") // TEMP
         deliverEncoded(json)
     }
 
@@ -66,7 +65,6 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecke
             deliver(response)
 
         case let .operation(request):
-            chProbe("op recv=\(request.operation.rawValue)") // TEMP
             guard let session else {
                 deliver(Self.runtimeUnavailable(for: request))
                 return

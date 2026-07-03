@@ -26,6 +26,7 @@
 		CE0000000000000000000038 /* AppBridgeRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000037 /* AppBridgeRuntime.swift */; };
 		CE000000000000000000003A /* CommandPaletteWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000039 /* CommandPaletteWindowController.swift */; };
 		CE000000000000000000003C /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000003B /* SettingsWindowController.swift */; };
+		CE000000000000000000003E /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000003D /* WindowCoordinator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +46,7 @@
 		CE0000000000000000000037 /* AppBridgeRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBridgeRuntime.swift; sourceTree = "<group>"; };
 		CE0000000000000000000039 /* CommandPaletteWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteWindowController.swift; sourceTree = "<group>"; };
 		CE000000000000000000003B /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
+		CE000000000000000000003D /* WindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCoordinator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -97,6 +99,7 @@
 				CE0000000000000000000037 /* AppBridgeRuntime.swift */,
 				CE0000000000000000000039 /* CommandPaletteWindowController.swift */,
 				CE000000000000000000003B /* SettingsWindowController.swift */,
+				CE000000000000000000003D /* WindowCoordinator.swift */,
 			);
 			path = CerebralHelm;
 			sourceTree = "<group>";
@@ -194,6 +197,7 @@
 				CE0000000000000000000038 /* AppBridgeRuntime.swift in Sources */,
 				CE000000000000000000003A /* CommandPaletteWindowController.swift in Sources */,
 				CE000000000000000000003C /* SettingsWindowController.swift in Sources */,
+				CE000000000000000000003E /* WindowCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

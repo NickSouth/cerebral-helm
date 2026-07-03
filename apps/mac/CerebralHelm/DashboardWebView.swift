@@ -81,6 +81,16 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate {
         bridge.deliverBridgeEvent(json)
     }
 
+    /// Opens the Heimlich conversation in the center panel with `text` (NIC-76 / the
+    /// palette's "Ask Heimlich" routing). Calls the dashboard's injected shell-intent hook;
+    /// it is a no-op if the dashboard React tree has not mounted yet.
+    func openConversation(_ text: String) {
+        guard let literal = try? JSONEncoder().encode(text),
+              let literalString = String(data: literal, encoding: .utf8) else { return }
+        let script = "window.__cerebralShell && window.__cerebralShell.openConversation(\(literalString));"
+        webView.evaluateJavaScript(script)
+    }
+
     // MARK: - WKNavigationDelegate (surface load failures)
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

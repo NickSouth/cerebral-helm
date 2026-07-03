@@ -11,19 +11,18 @@ import CerebralCore
 /// nothing (PRD §8.1). The native bridge transport follows in NIC-74; until then the
 /// dashboard runs against its in-webview mock bridge.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var dashboardWindow: DashboardWindowController?
-    private var recoveryWindow: RecoveryWindowController?
+    /// The single owner of native window roles (NIC-76). AppDelegate keeps only the
+    /// non-window concerns: the live runtime/bridge and the menu-bar item.
+    private let coordinator = WindowCoordinator()
     private var menuBar: MenuBarController?
     private var bridgeRuntime: AppBridgeRuntime?
-    private var paletteWindow: CommandPaletteWindowController?
-    private var settingsWindow: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         switch Bootstrap.run() {
         case let .ready(paths):
             enterReady(paths)
         case let .recovery(recovery):
-            enterRecovery(recovery)
+            coordinator.enterRecovery(recovery)
         }
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -42,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 at: paths.stateRoot, withIntermediateDirectories: true
             )
         } catch {
-            enterRecovery(Bootstrap.Recovery(
+            coordinator.enterRecovery(Bootstrap.Recovery(
                 reason: "startup_validation_failed",
                 diagnosticCode: "state_root_uncreatable",
                 remediation: "Grant write access to ~/Library/Application Support, then relaunch.",
@@ -52,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard let dashboardRoot = DashboardWindowController.bundledDashboardRoot() else {
-            enterRecovery(Bootstrap.Recovery(
+            coordinator.enterRecovery(Bootstrap.Recovery(
                 reason: "startup_validation_failed",
                 diagnosticCode: "dashboard_bundle_missing",
                 remediation: "Build the dashboard bundle (apps/mac/scripts/build-dashboard-bundle.sh), then rebuild the app.",
@@ -64,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The single live runtime + bridge session for this app session (NIC-75). Both
         // the dashboard and the command-palette webview submit through it.
         guard let bridgeRuntime = AppBridgeRuntime(paths: paths) else {
-            enterRecovery(Bootstrap.Recovery(
+            coordinator.enterRecovery(Bootstrap.Recovery(
                 reason: "startup_validation_failed",
                 diagnosticCode: "runtime_composition_failed",
                 remediation: "Reinstall CerebralHelm; the command runtime could not be composed.",
@@ -74,49 +73,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         self.bridgeRuntime = bridgeRuntime
 
-        let controller = DashboardWindowController(
-            dashboardRoot: dashboardRoot, paths: paths, session: bridgeRuntime.session
-        )
-        controller.show()
-        dashboardWindow = controller
+        // Hand the window roles to the coordinator (dashboard + pre-warmed palette).
+        coordinator.enterReady(dashboardRoot: dashboardRoot, paths: paths, session: bridgeRuntime.session)
 
-        // Route the shared session's event stream (lifecycle/confirmation/config) to the
-        // dashboard webview — the palette only submits, so it is not an event sink.
+        // Route the shared session's event stream to the coordinator, which fans it to the
+        // dashboard (and mode changes to the palette).
         bridgeRuntime.setEventSink { [weak self] json in
-            chProbe("sink self=\(self == nil ? "NIL" : "ok") dash=\(self?.dashboardWindow == nil ? "NIL" : "ok")") // TEMP
-            self?.dashboardWindow?.deliverBridgeEvent(json)
+            self?.coordinator.deliverBridgeEvent(json)
         }
-
-        // Pre-warm the command palette so the hotkey/menu summon it instantly (NIC-75 /
-        // FR-SHL-02 latency target). One controller ⇒ one panel ⇒ no duplicate palettes.
-        paletteWindow = CommandPaletteWindowController(
-            dashboardRoot: dashboardRoot, paths: paths, session: bridgeRuntime.session
-        )
 
         // The menu-bar item + global summon hotkey (NIC-75 / FR-SHL-02). Both the menu
-        // item and the hotkey call `summonPalette`.
+        // item and the hotkey drive the coordinator.
         menuBar = MenuBarController(
-            summon: { [weak self] in self?.summonPalette() },
-            openSettings: { [weak self] in self?.openSettings() }
+            summon: { [weak self] in self?.coordinator.summonPalette() },
+            openSettings: { [weak self] in self?.coordinator.openSettings() }
         )
-    }
-
-    /// Summon (or refocus) the one command palette (FR-SHL-02).
-    private func summonPalette() {
-        paletteWindow?.summon()
-    }
-
-    /// Open the native settings window (hosts the hotkey recorder + remediation).
-    private func openSettings() {
-        if settingsWindow == nil {
-            settingsWindow = SettingsWindowController()
-        }
-        settingsWindow?.show()
-    }
-
-    private func enterRecovery(_ recovery: Bootstrap.Recovery) {
-        let controller = RecoveryWindowController(recovery)
-        controller.show()
-        recoveryWindow = controller
     }
 }

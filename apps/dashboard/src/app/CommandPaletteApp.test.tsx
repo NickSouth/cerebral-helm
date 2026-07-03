@@ -25,13 +25,13 @@ describe("CommandPaletteApp (NIC-75 floating palette route)", () => {
     expect(screen.queryByRole("img", { name: "CerebralHelm" })).toBeNull();
   });
 
-  it("asks the native shell to dismiss after submitting a command", () => {
+  it("routes a submission to the dashboard's Ask-Heimlich conversation", () => {
     const postMessage = installPaletteControl();
     render(<CommandPaletteApp />);
     const input = screen.getByLabelText("Command palette");
     fireEvent.change(input, { target: { value: "note buy milk" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(postMessage).toHaveBeenCalledWith({ action: "dismiss" });
+    expect(postMessage).toHaveBeenCalledWith({ action: "askHeimlich", text: "note buy milk" });
   });
 
   it("dismisses on Escape", () => {

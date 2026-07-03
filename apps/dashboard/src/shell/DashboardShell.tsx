@@ -11,7 +11,12 @@ import { DashboardSkeleton } from "./DashboardSkeleton";
 import { useConversation } from "../state/ConversationProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { useAmbientBeam } from "./useAmbientBeam";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
+
+/** The native shell's intent channel into the dashboard (NIC-76 window-role choreography). */
+interface ShellIntentWindow extends Window {
+  __cerebralShell?: { openConversation?: (text: string) => void };
+}
 
 /**
  * The shared three-zone shell (design spec §10 composition, constitution §6): one layout
@@ -32,6 +37,19 @@ export function DashboardShell() {
   const posture = useUiPosture();
   const shellRef = useRef<HTMLDivElement>(null);
   useAmbientBeam(shellRef);
+
+  // Register the native shell's intent hook so the command palette's "Ask Heimlich" can
+  // open the conversation in the center panel (NIC-76). Registered once; it calls the
+  // latest `conversation.submit` via a ref so the callback never goes stale.
+  const submitRef = useRef(conversation.submit);
+  submitRef.current = conversation.submit;
+  useEffect(() => {
+    const shellWindow = window as ShellIntentWindow;
+    shellWindow.__cerebralShell = { openConversation: (text: string) => submitRef.current(text) };
+    return () => {
+      delete shellWindow.__cerebralShell;
+    };
+  }, []);
 
   return (
     <div className="dashboard-shell" ref={shellRef} data-read-only={posture.readOnly || undefined}>

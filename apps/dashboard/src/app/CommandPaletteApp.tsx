@@ -4,24 +4,27 @@ import "../app.css";
 import "../shell/shell.css";
 import "./palette.css";
 import { CommandSurface } from "../shell/CommandSurface";
+import { usePaletteMode } from "./usePaletteMode";
 import {
   createWKWebViewCerebralBridge,
   isNativeBridgeAvailable
 } from "../bridge/wkWebViewCerebralBridge";
 
 /**
- * The floating command palette's React entry (NIC-75 / FR-SHL-02), loaded by the native
- * shell at `index.html?surface=palette` into a lightweight WKWebView inside an `NSPanel`.
+ * The floating command palette's React entry (NIC-75/76, FR-SHL-02/04), loaded by the
+ * native shell at `index.html?surface=palette` into a lightweight WKWebView inside an
+ * `NSPanel`.
  *
- * It reuses the existing `CommandSurface` (token/visual parity, owner decision) and
- * submits through the **same** live bridge as the dashboard — `submitCommand` runs on the
- * one shared runtime, never a forked one. A private `paletteControl` channel asks the
- * native side to dismiss on submit or Escape. Executing a command dismisses the palette;
- * the "Ask Heimlich → dashboard center panel" routing is NIC-76 window-role work.
+ * It reuses the existing `CommandSurface` (token/visual parity, owner decision). A
+ * submission routes to the dashboard's **center-panel conversation** ("Ask Heimlich"):
+ * the palette posts `askHeimlich` on the private `paletteControl` channel, and the native
+ * coordinator dismisses the palette, brings the dashboard forward, and opens the
+ * conversation (which dispatches the command through the shared bridge). Escape / click
+ * dismiss. The palette re-themes to the active mode via `config.changed` (Increment 3).
  */
 
 // The shell registers the native bridge transport; in a plain browser preview there is
-// none, so the input still renders and submit is a no-op.
+// none, so the input still renders and submit posts to a no-op channel.
 const bridge = isNativeBridgeAvailable() ? createWKWebViewCerebralBridge() : null;
 
 interface PaletteControlWindow extends Window {
@@ -29,11 +32,16 @@ interface PaletteControlWindow extends Window {
   __cerebralFocusPalette?: () => void;
 }
 
-function paletteControl(action: string): void {
-  (window as PaletteControlWindow).webkit?.messageHandlers?.paletteControl?.postMessage({ action });
+function paletteControl(action: string, payload: Record<string, unknown> = {}): void {
+  (window as PaletteControlWindow).webkit?.messageHandlers?.paletteControl?.postMessage({
+    action,
+    ...payload
+  });
 }
 
 export function CommandPaletteApp() {
+  const mode = usePaletteMode(bridge);
+
   useEffect(() => {
     // The native side calls this on every summon so the pre-warmed (previously hidden)
     // webview focuses its input immediately.
@@ -52,16 +60,15 @@ export function CommandPaletteApp() {
   }, []);
 
   const onSubmit = useCallback((text: string) => {
-    // Fire-and-forget: failures surface through the dashboard's event stream, not here.
-    // The `hotkey` source keeps the command bus honest about provenance (FR-CMD-01).
-    bridge?.submitCommand({ rawInput: text, source: "hotkey" }).catch(() => {});
-    paletteControl("dismiss");
+    // Route to the dashboard's Ask-Heimlich conversation; the coordinator dismisses the
+    // palette, brings the dashboard forward, and opens the conversation (which dispatches
+    // the command through the shared bridge). Inline command execution without surfacing
+    // the dashboard is a later refinement (tied to reachable app-launch commands).
+    paletteControl("askHeimlich", { text });
   }, []);
 
-  // Default mode theming (executive) so the mode-accent tokens resolve; syncing the
-  // palette to the active mode is later window-role/visual work.
   return (
-    <div className="command-palette" data-mode="executive">
+    <div className="command-palette" data-mode={mode}>
       <CommandSurface
         variant="launcher"
         placeholder="Ask Heimlich or type a command…"

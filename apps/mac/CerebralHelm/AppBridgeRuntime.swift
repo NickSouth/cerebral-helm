@@ -4,17 +4,6 @@ import CerebralCore
 import CerebralRuntimeHost
 import os
 
-// TEMP NIC-75 event-path probe — remove after diagnosis.
-func chProbe(_ s: String) {
-    let url = URL(fileURLWithPath: "/tmp/ch-probe.log")
-    let line = (s + "\n").data(using: .utf8)!
-    if let handle = try? FileHandle(forWritingTo: url) {
-        handle.seekToEndOfFile(); handle.write(line); try? handle.close()
-    } else {
-        try? line.write(to: url)
-    }
-}
-
 /// Composes the **single** live `CommandRuntime` + `BridgeSession` for the app session
 /// and routes the runtime's event stream to the dashboard (NIC-75).
 ///
@@ -74,7 +63,6 @@ private final class EventRelay: @unchecked Sendable {
 
     func emit(_ json: String) {
         lock.lock(); let sink = self.sink; lock.unlock()
-        chProbe("relay.emit sink=\(sink == nil ? "NIL" : "set") json=\(json.prefix(200))") // TEMP
         sink?(json)
     }
 }

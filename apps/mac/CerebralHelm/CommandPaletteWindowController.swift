@@ -38,6 +38,10 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
     private let bridge = WKWebViewCerebralBridge()
     private let log = Logger(subsystem: "local.cerebralhelm.CerebralHelm", category: "palette")
 
+    /// Increment 2: invoked when the palette submits a conversational query ("Ask
+    /// Heimlich"). The coordinator brings the dashboard forward and opens the conversation.
+    var onAskHeimlich: ((String) -> Void)?
+
     private static var paletteURL: URL {
         URL(string: "\(CerebralSchemeHandler.scheme)://\(CerebralSchemeHandler.host)/index.html?surface=palette")!
     }
@@ -48,6 +52,19 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(handler, forURLScheme: CerebralSchemeHandler.scheme)
         bridge.install(on: configuration)
+
+        // Increment 3: seed the palette with the active mode (and rest of the bootstrap) so
+        // its first paint matches the dashboard's theme; `config.changed` events keep it in
+        // sync thereafter.
+        if let data = try? BridgeMessageCoding.encoder().encode(
+            BootstrapComposer.compose(configDirectory: paths.configDirectory)
+        ), let json = String(data: data, encoding: .utf8) {
+            configuration.userContentController.addUserScript(WKUserScript(
+                source: "window.__cerebralBootstrap = \(json);",
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+        }
 
         webView = WKWebView(frame: .zero, configuration: configuration)
 
@@ -101,6 +118,12 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
         panel.orderOut(nil)
     }
 
+    /// Increment 3: forward a `config.changed` event to the palette webview so it re-themes
+    /// to the active mode. The coordinator only routes mode events here.
+    func deliverBridgeEvent(_ json: String) {
+        bridge.deliverBridgeEvent(json)
+    }
+
     private func position() {
         guard let screen = NSScreen.main else { return }
         let visible = screen.visibleFrame
@@ -115,9 +138,13 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
         guard let body = message.body as? [String: Any], let action = body["action"] as? String else { return }
         switch action {
         case "dismiss":
-            // Submit + Escape both route here. Executing a command dismisses the palette;
-            // bringing the dashboard forward for "Ask Heimlich" is NIC-76 window-role work.
+            // Escape / click-away dismiss the palette.
             dismiss()
+        case "askHeimlich":
+            // Increment 2: a conversational submission dismisses the palette and routes to
+            // the dashboard's center-panel conversation (via the coordinator).
+            dismiss()
+            onAskHeimlich?((body["text"] as? String) ?? "")
         default:
             log.error("Unknown paletteControl action: \(action, privacy: .public)")
         }
