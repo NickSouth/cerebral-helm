@@ -13,3 +13,4 @@ Current records:
 - [ADR-005](ADR-005-vendored-sqlite-engine.md): Vendored SQLite via `swift-toolchain-sqlite` (GRDB deferred to post-Mac)
 - [ADR-006](ADR-006-sqlite-single-source-of-truth.md): SQLite as the single source of truth for operational history (NDJSON/file adapters demoted)
 - [ADR-007](ADR-007-executive-default-mode.md): Executive is the default mode (`config/defaults/app.json` is the single authority; frontend/fixtures aligned)
+- [ADR-008](ADR-008-unsandboxed-developer-id-distribution.md): Unsandboxed Developer ID distribution for the MVP (App Sandbox rejected; policy layer remains the security boundary)
