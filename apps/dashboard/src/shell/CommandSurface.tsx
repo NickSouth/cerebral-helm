@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { rankSuggestions } from "./commandSuggestions";
 
 /** Magnifying-glass glyph for the persistent launcher. */
@@ -37,7 +37,7 @@ export function CommandSurface({
   ariaLabel,
   onSubmit,
   disabled = false,
-  autoFocus = false,
+  focusOnMount = false,
   spotlight = false
 }: {
   variant: "launcher" | "docked";
@@ -46,8 +46,12 @@ export function CommandSurface({
   onSubmit: (text: string) => void;
   /** Suppress the command locus while the surface is read-only (offline/recovery — NIC-64). */
   disabled?: boolean;
-  /** Focus the input on mount — used by the floating command palette (NIC-75). */
-  autoFocus?: boolean;
+  /**
+   * Move focus into the input on mount — used by the floating command palette (NIC-75).
+   * Implemented as an effect (the WAI-ARIA pattern for a just-summoned surface) rather than the
+   * DOM autoFocus attribute, which jsx-a11y rightly flags for ordinary page content.
+   */
+  focusOnMount?: boolean;
   /**
    * Spotlight mode (NIC-77): show the suggestion list only once the user has typed something,
    * so an empty focus is just the bare search bar. Used by the floating palette; the docked
@@ -57,6 +61,13 @@ export function CommandSurface({
 }) {
   const [value, setValue] = useState("");
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (focusOnMount) {
+      inputRef.current?.focus();
+    }
+  }, [focusOnMount]);
 
   function submit(text: string): void {
     if (disabled) {
@@ -99,13 +110,13 @@ export function CommandSurface({
         </span>
       ) : null}
       <input
+        ref={inputRef}
         type="text"
         className={variant === "launcher" ? "global-search__input" : "docked-input__input"}
         value={value}
         placeholder={disabled ? "Paused — the dashboard is read-only" : placeholder}
         aria-label={ariaLabel}
         disabled={disabled}
-        autoFocus={autoFocus}
         /* A command input, not prose: macOS/WebKit autocorrect + inline writing suggestions
            otherwise draw a native completion bubble OVER the input (NIC-77 palette overlap). */
         autoComplete="off"

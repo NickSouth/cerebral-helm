@@ -97,7 +97,7 @@ export function CommandPaletteApp() {
         placeholder="Ask Heimlich or type a command…"
         ariaLabel="Command palette"
         onSubmit={onSubmit}
-        autoFocus
+        focusOnMount
         spotlight
       />
     </div>

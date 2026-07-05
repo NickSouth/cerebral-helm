@@ -115,7 +115,13 @@ func productionRequiresExplicitSelection() throws {
 func applicationSupportRootIsUnderLibrary() {
     let root = WorkspacePaths.applicationSupportRoot()
     #expect(root.lastPathComponent == "CerebralHelm")
+    // Portable invariant: an absolute, per-user location on every platform.
+    #expect(root.path.hasPrefix(FileManager.default.homeDirectoryForCurrentUser.path))
+    #if os(macOS)
+    // The macOS literal only holds on the platform the packaged app ships on — Linux CI's
+    // Foundation resolves .applicationSupportDirectory to the XDG data dir (~/.local/share).
     #expect(root.path.contains("Application Support"))
+    #endif
 
     // A custom app name is honored.
     #expect(WorkspacePaths.applicationSupportRoot(appName: "CerebralHelm-Beta").lastPathComponent
