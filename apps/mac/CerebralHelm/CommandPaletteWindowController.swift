@@ -29,8 +29,17 @@ private final class CommandPalettePanel: NSPanel {
 /// versioned bridge — window control is a native-app concern, not part of the contract.
 final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKScriptMessageHandler, NSWindowDelegate {
     static let controlHandlerName = "paletteControl"
-    private static let width: CGFloat = 680
-    private static let height: CGFloat = 420
+    // Width matches the dashboard's top Ask-Heimlich bar (NIC-77): the palette is just that bar
+    // floating over the dashboard, so the two read as the same control. The window is sized to the
+    // content — bar height when empty, growing as the suggestion list appears (see `setPanelHeight`,
+    // driven by the web layer's `resize` message) — so there is no box, just a bar.
+    private static let width: CGFloat = 640
+    /// A sanity floor only — the real height always comes from the web content's `resize`
+    /// report, so the window hugs the bar exactly (no slack rectangle below it).
+    private static let minHeight: CGFloat = 40
+    private static let initialHeight: CGFloat = 56
+    // Fixed screen-Y of the bar's TOP edge (upper third); the window grows downward from here.
+    private var topEdgeY: CGFloat = 0
 
     private let panel: CommandPalettePanel
     private let webView: WKWebView
@@ -67,9 +76,17 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
         }
 
         webView = WKWebView(frame: .zero, configuration: configuration)
+        // The webview paints the bar colour edge-to-edge; clip its layer to rounded corners so the
+        // window reads as a clean rounded bar (no square rim) regardless of webview transparency
+        // support. `drawsBackground = false` is still attempted so it can be translucent where it
+        // works, but the layout no longer depends on it (NIC-77).
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.wantsLayer = true
+        webView.layer?.cornerRadius = 14
+        webView.layer?.masksToBounds = true
 
         panel = CommandPalettePanel(
-            contentRect: NSRect(x: 0, y: 0, width: Self.width, height: Self.height),
+            contentRect: NSRect(x: 0, y: 0, width: Self.width, height: Self.initialHeight),
             styleMask: [.titled, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -80,6 +97,11 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
         // The control channel is added after super.init so `self` can be the handler.
         configuration.userContentController.add(self, name: Self.controlHandlerName)
 
+        // Transparent panel so the only thing drawn is the web pill — no window chrome, no box.
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        // A soft shadow follows the opaque pill (or the bar-shaped window), so it floats like Spotlight.
+        panel.hasShadow = true
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
         panel.isMovableByWindowBackground = true
@@ -128,8 +150,24 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
         guard let screen = NSScreen.main else { return }
         let visible = screen.visibleFrame
         let x = visible.midX - Self.width / 2
-        let y = visible.midY + visible.height * 0.10 // upper third, Spotlight-like
-        panel.setFrame(NSRect(x: x, y: y, width: Self.width, height: Self.height), display: false)
+        let height = panel.frame.height // keep whatever the content sized the bar to
+        // Anchor the TOP edge in the upper third (Spotlight-like); the window grows downward.
+        topEdgeY = visible.midY + visible.height * 0.30
+        panel.setFrame(NSRect(x: x, y: topEdgeY - height, width: Self.width, height: height), display: false)
+    }
+
+    /// Size the window to the web content's height (bar-only, or taller with the suggestion list),
+    /// keeping the bar's top edge fixed so it grows downward like Spotlight.
+    private func setPanelHeight(_ raw: CGFloat) {
+        let anchor = topEdgeY > 0 ? topEdgeY : panel.frame.origin.y + panel.frame.height
+        let maxHeight = (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 900
+        let height = max(Self.minHeight, min(raw, maxHeight - 80))
+        panel.setFrame(
+            NSRect(x: panel.frame.origin.x, y: anchor - height, width: Self.width, height: height),
+            display: true
+        )
+        // A clear, layer-clipped window keeps a stale shadow shape after resizing; recompute it.
+        panel.invalidateShadow()
     }
 
     // MARK: - paletteControl channel (web → native window control)
@@ -140,6 +178,12 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
         case "dismiss":
             // Escape / click-away dismiss the palette.
             dismiss()
+        case "resize":
+            // The web layer reports its content height so the window is just the bar (growing for
+            // the suggestion list) rather than a fixed box (NIC-77).
+            if let height = body["height"] as? NSNumber {
+                setPanelHeight(CGFloat(truncating: height))
+            }
         case "askHeimlich":
             // Increment 2: a conversational submission dismisses the palette and routes to
             // the dashboard's center-panel conversation (via the coordinator).

@@ -218,7 +218,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     emit = emit / max(mx, 1.0);
 
     float alpha = clamp(colorVal + bloom * bloomStrength * 0.9 + heroGlow * 0.16 + sparkV, 0.0, 1.0);
-    fragColor = vec4(emit, alpha);
+    // Premultiplied output (NIC-77): colour is pre-scaled by alpha to match the ONE / ONE_MINUS_SRC_ALPHA
+    // blend and the premultiplied drawing buffer, so WKWebView composites the aura at the right level.
+    fragColor = vec4(emit * alpha, alpha);
 }
 
 void main() {
@@ -246,14 +248,20 @@ export default function Threads({
 
     let renderer: Renderer;
     try {
-      renderer = new Renderer({ alpha: true });
+      // Premultiplied-alpha pipeline (NIC-77): WKWebView's LIVE WebGL compositor over-brightens a
+      // straight-alpha canvas (the aura blooms), while the raster/snapshot path composites it
+      // correctly — which is why the glow looked right only during the old view-transition. Declaring
+      // the buffer premultiplied and emitting premultiplied colour (see the shader's final line +
+      // ONE / ONE_MINUS_SRC_ALPHA blend) makes the live composite match the correct raster in both
+      // WKWebView and browsers.
+      renderer = new Renderer({ alpha: true, premultipliedAlpha: true });
     } catch {
       return; // no WebGL — the caller shows its own fallback
     }
     const gl = renderer.gl;
     gl.clearColor(0, 0, 0, 0);
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     container.appendChild(gl.canvas);
 
     const initColor = propsRef.current.color;

@@ -78,6 +78,18 @@ html.mode-wave .app-root *::after {
   z-index: 1400;
 }
 
+/* While the wave runs, the view transition swallows input, so the mode controls are briefly
+   inert: grey the unselected ones out for the wave's exact lifetime (the `mode-wave` root class)
+   so the lock reads as intentional rather than broken (NIC-77 owner UX call). The newly selected
+   control keeps full strength, confirming the choice. Reduced-motion never adds the class (no
+   wave → no lock → nothing to grey). */
+html.mode-wave .mode-switcher__option:not([data-active="true"]),
+html.mode-wave .bottom-bar__mode-trigger,
+html.mode-wave .bottom-bar__mode-option:not([data-active="true"]) {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
 .tokens-page {
   box-sizing: border-box;
   min-height: 100vh;

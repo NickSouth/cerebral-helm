@@ -1,26 +1,69 @@
-/* The floating command palette surface (NIC-75). The native NSPanel provides the (transparent)
-   window frame; per the owner (NIC-77) the palette is *just the search bar* floating over the
-   visible dashboard — no surrounding box. The suggestion list only appears once the user types
-   (spotlight mode) and carries its own subtle dropdown styling (.command-suggestions). */
+/* The floating command palette surface (NIC-75 / NIC-77). The native window is sized BY this
+   content: the web layer reports its height and the panel hugs it exactly — bar-only when empty,
+   growing with the suggestion list. The webview paints the bar colour edge-to-edge and the native
+   layer clips to rounded corners, so the window IS the bar (no box, no dependence on webview
+   transparency). */
+
+/* The dashboard's root font-size derives from viewport HEIGHT (app.css) — in a window that is
+   itself sized by its content that is circular (content → window → vh → font → content) and
+   collapses to the 11px clamp floor in a bar-height window. The palette pins a fixed, readable
+   size instead; it has no full-page layout to scale. */
+:root {
+  font-size: 15px;
+}
 
 html,
 body {
   margin: 0;
-  background: transparent;
+  min-width: 0;
+  min-height: 0;
+  /* Never show a scrollbar during the one-frame gap while the native window catches up. */
+  overflow: hidden;
+  background: var(--ch-surface-raised);
 }
 
-/* No box: the container is a bare, transparent wrapper that positions the search pill at the top
-   of the panel. Everything behind stays visible; the pill (.global-search__*) is the only chrome. */
+/* app.css gives #root a 100vh floor for the dashboard page; the palette document must be exactly
+   its content so the reported height is authoritative. */
+#root {
+  min-height: 0;
+}
+
 .command-palette {
   box-sizing: border-box;
   width: 100%;
-  padding: var(--ch-space-2, 8px);
-  display: flex;
-  align-items: flex-start;
-  background: transparent;
-  border: 0;
+  padding: var(--ch-space-3);
 }
 
+/* Fill the bar (the window already matches the top search-bar width). */
 .command-palette .command-surface--launcher {
   width: 100%;
+  max-width: none;
+}
+
+/* No decorative underline in the palette. */
+.command-palette .command-surface--launcher::after {
+  display: none;
+}
+
+/* The input is bare text inside the bar — the window itself is the pill. */
+.command-palette .global-search__input {
+  background: transparent;
+  border: none;
+}
+
+/* The magnifier is normally centered at 50% of the command surface; with the suggestion list in
+   flow the surface grows taller than the input, which slid the icon down over the first row. Pin
+   it to the input's own midline instead (input ≈ 2×space-3 padding + one ~1.2 line of base text). */
+.command-palette .global-search__icon {
+  top: calc(var(--ch-space-3) + 0.6em);
+}
+
+/* Suggestions flow in-document (so the reported height includes them) as plain rows — the
+   window grows around them; they need no box of their own. */
+.command-palette .command-suggestions {
+  position: static;
+  background: transparent;
+  border: none;
+  margin-top: var(--ch-space-2);
+  padding: 0;
 }

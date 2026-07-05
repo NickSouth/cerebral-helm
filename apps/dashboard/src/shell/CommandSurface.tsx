@@ -106,7 +106,20 @@ export function CommandSurface({
         aria-label={ariaLabel}
         disabled={disabled}
         autoFocus={autoFocus}
-        onChange={(event) => setValue(event.target.value)}
+        /* A command input, not prose: macOS/WebKit autocorrect + inline writing suggestions
+           otherwise draw a native completion bubble OVER the input (NIC-77 palette overlap). */
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        {...({ writingsuggestions: "false" } as Record<string, string>)}
+        onChange={(event) => {
+          setValue(event.target.value);
+          // Typing IS focus: after a dismiss (submit/Escape) the pre-warmed palette's input can
+          // still be document.activeElement, so the next summon's .focus() fires no event and the
+          // `focused` state stays stale-false — which silently suppressed suggestions (NIC-77).
+          setFocused(true);
+        }}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onKeyDown={onKeyDown}

@@ -47,6 +47,10 @@ export function CommandPaletteApp() {
     // webview focuses its input immediately.
     (window as PaletteControlWindow).__cerebralFocusPalette = () => {
       const input = document.querySelector<HTMLInputElement>(".command-palette input");
+      // Blur first: after a dismiss the input is often still document.activeElement, making a
+      // bare .focus() a no-op that fires no focus event — React's `focused` state then stays
+      // stale and the suggestion list never returns (NIC-77). Blur→focus forces a real event.
+      input?.blur();
       input?.focus();
       input?.select();
     };
@@ -57,6 +61,25 @@ export function CommandPaletteApp() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // Report the palette's content height to the native shell so the window can size to just the bar
+  // (and grow when the suggestion list appears) — the palette is a bare bar, not a fixed box (NIC-77).
+  useEffect(() => {
+    const el = document.querySelector<HTMLElement>(".command-palette");
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let last = 0;
+    const report = () => {
+      const height = Math.ceil(el.getBoundingClientRect().height);
+      if (height && height !== last) {
+        last = height;
+        paletteControl("resize", { height });
+      }
+    };
+    const observer = new ResizeObserver(report);
+    observer.observe(el);
+    report();
+    return () => observer.disconnect();
   }, []);
 
   const onSubmit = useCallback((text: string) => {
