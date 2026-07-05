@@ -115,11 +115,11 @@ func productionRequiresExplicitSelection() throws {
 func applicationSupportRootIsUnderLibrary() {
     let root = WorkspacePaths.applicationSupportRoot()
     #expect(root.lastPathComponent == "CerebralHelm")
-    // Portable invariant: an absolute, per-user location on every platform.
-    #expect(root.path.hasPrefix(FileManager.default.homeDirectoryForCurrentUser.path))
     #if os(macOS)
-    // The macOS literal only holds on the platform the packaged app ships on — Linux CI's
-    // Foundation resolves .applicationSupportDirectory to the XDG data dir (~/.local/share).
+    // The location itself is macOS product behavior, asserted only there. On Linux,
+    // .applicationSupportDirectory resolves via XDG ($HOME-derived) while home-directory APIs
+    // resolve via passwd — inside CI containers the two can legitimately disagree (e.g.
+    // HOME=/github/home vs passwd /root), so no cross-API location invariant holds portably.
     #expect(root.path.contains("Application Support"))
     #endif
 
