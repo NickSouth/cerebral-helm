@@ -109,3 +109,29 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     await waitFor(() => expect(accepted).toEqual([true]));
   });
 });
+
+describe("SettingsOverlay Hotkeys panel (NIC-76 / FR-UI-06)", () => {
+  interface ShellControlWindow {
+    webkit?: { messageHandlers?: { shellControl?: { postMessage: (m: unknown) => void } } };
+  }
+
+  afterEach(() => {
+    delete (window as unknown as ShellControlWindow).webkit;
+  });
+
+  it("rebinds the palette shortcut through the native shellControl channel", () => {
+    const postMessage = vi.fn();
+    (window as unknown as ShellControlWindow).webkit = {
+      messageHandlers: { shellControl: { postMessage } }
+    };
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Hotkeys" }));
+    const select = within(dialog).getByRole("combobox", { name: "Command palette shortcut" });
+    fireEvent.change(select, { target: { value: "command-shift-space" } });
+    expect(postMessage).toHaveBeenCalledWith({
+      action: "setPaletteShortcut",
+      preset: "command-shift-space"
+    });
+  });
+});

@@ -129,6 +129,44 @@ public struct WorkspacePaths: Sendable {
         )
     }
 
+    // MARK: - Packaged macOS application
+
+    /// The default writable state root for the packaged macOS app:
+    /// `~/Library/Application Support/<appName>`. Defined here, in portable tested
+    /// code, so the app never hardcodes the location. This is a *default* the app
+    /// may present or override with a user-selected root; it is always passed to
+    /// ``forApplication(bundleResourcesRoot:stateRoot:)`` explicitly, so the
+    /// production invariant (never created implicitly) holds.
+    public static func applicationSupportRoot(appName: String = "CerebralHelm") -> URL {
+        let base = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        return base.appendingPathComponent(appName, isDirectory: true).standardizedFileURL
+    }
+
+    /// Builds paths for the packaged macOS app (NIC-72): read-only config and tool
+    /// descriptors resolve from the app bundle's Resources, while writable
+    /// personal-production state lives at an explicit, outside-the-bundle root
+    /// (defaults to ``applicationSupportRoot(appName:)``).
+    ///
+    /// The state root is passed explicitly as a `production` root, which keeps the
+    /// AC-41 invariant that personal-production state is user-selected and is never
+    /// created by an implicit default. Read-only config is bundled, so no user data
+    /// is ever written inside the `.app`.
+    public static func forApplication(
+        bundleResourcesRoot: URL,
+        stateRoot: URL = applicationSupportRoot()
+    ) throws -> WorkspacePaths {
+        try WorkspacePaths(
+            repositoryRoot: bundleResourcesRoot,
+            environment: [
+                "CEREBRAL_ENV": "production",
+                "CEREBRAL_STATE_ROOT": stateRoot.standardizedFileURL.path
+            ]
+        )
+    }
+
     // MARK: - Environment
 
     private static func environment(from raw: String?) throws -> WorkspaceEnvironment {

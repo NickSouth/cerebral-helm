@@ -405,3 +405,32 @@ describe("DashboardShell quick actions (D4 / NIC-117 b)", () => {
     expect(within(dialog).getByText(/Captured a quick note \(note_/)).toBeInTheDocument();
   });
 });
+
+describe("DashboardShell native shell-intent hook (NIC-76)", () => {
+  interface ShellIntentWindow {
+    __cerebralShell?: { openConversation?: (text: string) => void };
+  }
+
+  it("exposes __cerebralShell.openConversation, opening the center-panel conversation", () => {
+    renderShell();
+    const shell = (window as unknown as ShellIntentWindow).__cerebralShell;
+    expect(typeof shell?.openConversation).toBe("function");
+    act(() => {
+      shell?.openConversation?.("ping from palette");
+    });
+    // Routes to conversation.submit, which appends the user turn and opens the overlay.
+    expect(screen.getByText("ping from palette")).toBeInTheDocument();
+  });
+});
+
+describe("DashboardShell bottom bar (NIC-76 AC2 / FR-UI-04)", () => {
+  it("keeps the persistent bottom bar on its own track — a direct child of the shell, not overlaying content", () => {
+    const { container } = renderShell();
+    const shell = container.querySelector(".dashboard-shell");
+    const bar = shell?.querySelector(":scope > .bottom-bar");
+    // The bar is a direct flex-column child (its own track), a sibling of the canvas — so it
+    // never composites over dashboard content.
+    expect(bar).not.toBeNull();
+    expect(shell?.querySelector(".dashboard-canvas")).not.toBeNull();
+  });
+});

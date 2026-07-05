@@ -184,6 +184,67 @@ function ActionsPanel() {
   );
 }
 
+// --- Hotkeys --------------------------------------------------------------
+
+/** The curated palette shortcuts, mirroring the native `PaletteShortcutPreset` ids. */
+const PALETTE_SHORTCUT_PRESETS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: "option-space", label: "⌥Space" },
+  { id: "command-shift-space", label: "⌘⇧Space" },
+  { id: "control-space", label: "⌃Space" },
+  { id: "option-command-k", label: "⌥⌘K" }
+];
+
+interface HotkeyWindow extends Window {
+  webkit?: { messageHandlers?: { shellControl?: { postMessage(message: unknown): void } } };
+  __cerebralHotkey?: { preset?: string; label?: string };
+}
+
+/** Ask the native shell to rebind the palette hotkey (a Mac-only concern, off the bridge). */
+function setPaletteShortcut(preset: string): void {
+  (window as HotkeyWindow).webkit?.messageHandlers?.shellControl?.postMessage({
+    action: "setPaletteShortcut",
+    preset
+  });
+}
+
+function HotkeysPanel() {
+  const selectId = useId();
+  const [preset, setPreset] = useState(
+    () => (window as HotkeyWindow).__cerebralHotkey?.preset ?? "option-space"
+  );
+
+  function onChange(next: string) {
+    setPreset(next);
+    setPaletteShortcut(next);
+  }
+
+  return (
+    <Section title="Command palette">
+      <Field
+        label="Summon shortcut"
+        hint="Press this from anywhere to open the command palette."
+      >
+        <select
+          id={selectId}
+          className="settings-select"
+          value={preset}
+          aria-label="Command palette shortcut"
+          onChange={(event) => onChange(event.target.value)}
+        >
+          {PALETTE_SHORTCUT_PRESETS.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <p className="settings-note">
+        If the shortcut doesn’t respond, another app may already use it — pick a different one.
+      </p>
+    </Section>
+  );
+}
+
 // --- Customization --------------------------------------------------------
 
 function CustomizationPanel() {
@@ -288,6 +349,7 @@ export const SETTINGS_PANELS: Readonly<Record<SettingsCategoryId, () => ReactNod
   permissions: PermissionsPanel,
   modes: ModesPanel,
   actions: ActionsPanel,
+  hotkeys: HotkeysPanel,
   customization: CustomizationPanel,
   setup: SetupPanel,
   knowledge: KnowledgePanel

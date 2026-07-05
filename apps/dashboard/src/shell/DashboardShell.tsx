@@ -9,9 +9,18 @@ import { SystemStatusBanner } from "./SystemStatusBanner";
 import { BrandMark, BrandWordmark } from "./BrandMark";
 import { DashboardSkeleton } from "./DashboardSkeleton";
 import { useConversation } from "../state/ConversationProvider";
+import { useSettings } from "../state/SettingsProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { useAmbientBeam } from "./useAmbientBeam";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
+
+/** The native shell's intent channel into the dashboard (NIC-76 window-role choreography). */
+interface ShellIntentWindow extends Window {
+  __cerebralShell?: {
+    openConversation?: (text: string) => void;
+    openSettings?: () => void;
+  };
+}
 
 /**
  * The shared three-zone shell (design spec §10 composition, constitution §6): one layout
@@ -29,9 +38,29 @@ import { useRef } from "react";
  */
 export function DashboardShell() {
   const conversation = useConversation();
+  const settings = useSettings();
   const posture = useUiPosture();
   const shellRef = useRef<HTMLDivElement>(null);
   useAmbientBeam(shellRef);
+
+  // Register the native shell's intent hook so the menu bar / command palette can drive the
+  // dashboard: "Ask Heimlich" opens the center-panel conversation, and "Settings…" opens the
+  // web settings overlay (NIC-76). Registered once; it calls the latest handlers via refs so
+  // the callbacks never go stale.
+  const submitRef = useRef(conversation.submit);
+  submitRef.current = conversation.submit;
+  const openSettingsRef = useRef(settings.openSettings);
+  openSettingsRef.current = settings.openSettings;
+  useEffect(() => {
+    const shellWindow = window as ShellIntentWindow;
+    shellWindow.__cerebralShell = {
+      openConversation: (text: string) => submitRef.current(text),
+      openSettings: () => openSettingsRef.current()
+    };
+    return () => {
+      delete shellWindow.__cerebralShell;
+    };
+  }, []);
 
   return (
     <div className="dashboard-shell" ref={shellRef} data-read-only={posture.readOnly || undefined}>

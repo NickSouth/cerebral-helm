@@ -63,10 +63,29 @@ public enum StartupValidation {
     public static func validate(
         operationalDatabasePath: URL,
         knowledgeRoot: URL,
+        configDirectory: URL? = nil,
         migrator: SchemaMigrator = SchemaMigrator()
     ) -> StartupCheck {
         var diagnostics: [RecoveryDiagnostic] = []
         let fileManager = FileManager.default
+
+        // Configuration schemas (read-only). A packaged app validates its bundled
+        // config so a corrupt or incompatible configuration surfaces as recovery
+        // rather than a half-loaded UI (FR-SHL-05, PRD §8.1). Callers that do not
+        // supply a config directory (e.g. the CLI `doctor`) skip this check.
+        if let configDirectory,
+           case let .invalid(errors) = ConfigValidator.validate(configDirectory: configDirectory) {
+            let detail = errors.first.map { "\($0.file): \($0.message)" }
+                ?? "\(errors.count) schema issue(s)"
+            let fix = errors.first?.remediation
+                ?? "Reinstall CerebralHelm; its bundled configuration is invalid."
+            diagnostics.append(RecoveryDiagnostic(
+                store: "config",
+                code: "config_invalid",
+                summary: "Configuration failed schema validation — \(detail).",
+                guidance: fix
+            ))
+        }
 
         // Operational database: only validate an existing file. A missing database is
         // first-run state that the runtime creates and migrates separately.

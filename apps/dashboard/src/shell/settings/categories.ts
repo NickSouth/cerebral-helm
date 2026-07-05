@@ -5,7 +5,14 @@
  * contract inspection, or unavailable-future (FR-UI-06, FR-CFG-04).
  */
 export type SettingsCategoryId =
-  "general" | "permissions" | "modes" | "actions" | "customization" | "setup" | "knowledge";
+  | "general"
+  | "permissions"
+  | "modes"
+  | "actions"
+  | "hotkeys"
+  | "customization"
+  | "setup"
+  | "knowledge";
 
 export interface SettingsCategory {
   readonly id: SettingsCategoryId;
@@ -23,6 +30,11 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   },
   { id: "modes", label: "Modes", description: "The four modes and their configured surfaces." },
   { id: "actions", label: "Actions", description: "Quick actions and the workflows behind them." },
+  {
+    id: "hotkeys",
+    label: "Hotkeys",
+    description: "The global shortcut that summons the command palette."
+  },
   {
     id: "customization",
     label: "Customization",

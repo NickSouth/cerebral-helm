@@ -1,4 +1,9 @@
 import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
+import {
+  createWKWebViewCerebralBridge,
+  isNativeBridgeAvailable,
+  readInjectedBootstrap
+} from "../bridge/wkWebViewCerebralBridge";
 import { createBridgeStore } from "./bridgeStore";
 import { failureStateFixtures } from "../fixtures/canonicalFixtures";
 import type { CerebralBridge } from "../bridge/cerebralBridge";
@@ -51,6 +56,15 @@ export function createDashboardRuntime(options: { stateName?: string } = {}): {
   bridge: CerebralBridge;
   store: DashboardStore;
 } {
+  // Inside the native shell, run on the live WKWebView bridge, seeded synchronously
+  // from the bootstrap the shell injected before load (no loading flash). The `?state=`
+  // preview presets are a mock-only affordance and do not apply here.
+  if (isNativeBridgeAvailable()) {
+    const bridge = createWKWebViewCerebralBridge();
+    const seed = readInjectedBootstrap() ?? loadBootstrapState();
+    return { bridge, store: createBridgeStore(bridge, seed) };
+  }
+
   const preset = (options.stateName && STATE_PRESETS[options.stateName]) || STATE_PRESETS.ready;
   const bridge = createMockCerebralBridge({ bootstrapKey: preset.bootstrapKey });
   const store = createBridgeStore(bridge, loadBootstrapState(preset.bootstrapKey));

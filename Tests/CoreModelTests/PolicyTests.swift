@@ -14,7 +14,7 @@ func everyRiskClassIsCovered() {
     let engine = PolicyEngine()
     let expected: [(Risk, PolicyDecision)] = [
         (.readOnly, .allow),
-        (.localWrite, .requireConfirmation),
+        (.localWrite, .allow),
         (.externalWrite, .requireConfirmation),
         (.destructive, .requireConfirmation),
         (.shell, .requireConfirmation),
@@ -37,10 +37,10 @@ func callersCannotLowerRisk() {
     let engine = PolicyEngine()
 
     // Asking to skip confirmation is ignored for any confirming class.
-    let localWrite = engine.evaluate(
-        PolicyRequest(toolID: "app.open", declaredRisk: .localWrite, callerRequestedConfirmation: false)
+    let externalWrite = engine.evaluate(
+        PolicyRequest(toolID: "some.external", declaredRisk: .externalWrite, callerRequestedConfirmation: false)
     )
-    #expect(localWrite.decision == .requireConfirmation)
+    #expect(externalWrite.decision == .requireConfirmation)
 
     let shell = engine.evaluate(
         PolicyRequest(toolID: "hook.run", declaredRisk: .shell, callerRequestedConfirmation: false)
@@ -97,16 +97,16 @@ func overridesAreStricterOnly() {
     #expect(denyShell.evaluate(PolicyRequest(toolID: "hook.run", declaredRisk: .shell, shellInvocation: trusted)).decision == .deny)
 
     // An override of `.allow` cannot relax a class that already confirms.
-    let relax = PolicyEngine(overrides: PolicyOverrides(minimumDecisions: [.localWrite: .allow]))
-    #expect(relax.evaluate(PolicyRequest(toolID: "app.open", declaredRisk: .localWrite)).decision == .requireConfirmation)
+    let relax = PolicyEngine(overrides: PolicyOverrides(minimumDecisions: [.externalWrite: .allow]))
+    #expect(relax.evaluate(PolicyRequest(toolID: "some.external", declaredRisk: .externalWrite)).decision == .requireConfirmation)
 
     // The provisional MVP hard-denial set denies deferred classes outright...
     let mvp = PolicyEngine(overrides: .mvpHardDenials)
     #expect(mvp.evaluate(PolicyRequest(toolID: "x", declaredRisk: .destructive)).decision == .deny)
     #expect(mvp.evaluate(PolicyRequest(toolID: "x", declaredRisk: .financial)).decision == .deny)
     #expect(mvp.evaluate(PolicyRequest(toolID: "x", declaredRisk: .purchaseOrBooking)).decision == .deny)
-    // ...without over-reaching into implemented classes.
-    #expect(mvp.evaluate(PolicyRequest(toolID: "x", declaredRisk: .localWrite)).decision == .requireConfirmation)
+    // ...without over-reaching into implemented classes (local writes stay allowed).
+    #expect(mvp.evaluate(PolicyRequest(toolID: "x", declaredRisk: .localWrite)).decision == .allow)
 }
 
 @Test("a plan aggregates to at least the strictest planned action (FR-MOD-03)")

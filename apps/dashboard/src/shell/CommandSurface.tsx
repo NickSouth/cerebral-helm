@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { rankSuggestions } from "./commandSuggestions";
 
 /** Magnifying-glass glyph for the persistent launcher. */
@@ -36,7 +36,9 @@ export function CommandSurface({
   placeholder,
   ariaLabel,
   onSubmit,
-  disabled = false
+  disabled = false,
+  focusOnMount = false,
+  spotlight = false
 }: {
   variant: "launcher" | "docked";
   placeholder: string;
@@ -44,9 +46,28 @@ export function CommandSurface({
   onSubmit: (text: string) => void;
   /** Suppress the command locus while the surface is read-only (offline/recovery — NIC-64). */
   disabled?: boolean;
+  /**
+   * Move focus into the input on mount — used by the floating command palette (NIC-75).
+   * Implemented as an effect (the WAI-ARIA pattern for a just-summoned surface) rather than the
+   * DOM autoFocus attribute, which jsx-a11y rightly flags for ordinary page content.
+   */
+  focusOnMount?: boolean;
+  /**
+   * Spotlight mode (NIC-77): show the suggestion list only once the user has typed something,
+   * so an empty focus is just the bare search bar. Used by the floating palette; the docked
+   * top launcher leaves this off and still surfaces suggestions on focus.
+   */
+  spotlight?: boolean;
 }) {
   const [value, setValue] = useState("");
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (focusOnMount) {
+      inputRef.current?.focus();
+    }
+  }, [focusOnMount]);
 
   function submit(text: string): void {
     if (disabled) {
@@ -70,11 +91,13 @@ export function CommandSurface({
     }
   }
 
-  // Only the global launcher surfaces the suggestion list; the docked input continues the
-  // current exchange directly. A read-only surface never shows actionable suggestions.
-  const showSuggestions = focused && variant === "launcher" && !disabled;
-  const suggestions = rankSuggestions(value);
   const trimmed = value.trim();
+  // Only the global launcher surfaces the suggestion list; the docked input continues the
+  // current exchange directly. A read-only surface never shows actionable suggestions. In
+  // spotlight mode (the floating palette) the list stays hidden until the user types.
+  const showSuggestions =
+    focused && variant === "launcher" && !disabled && (!spotlight || trimmed.length > 0);
+  const suggestions = rankSuggestions(value);
 
   return (
     <div
@@ -87,13 +110,27 @@ export function CommandSurface({
         </span>
       ) : null}
       <input
+        ref={inputRef}
         type="text"
         className={variant === "launcher" ? "global-search__input" : "docked-input__input"}
         value={value}
         placeholder={disabled ? "Paused — the dashboard is read-only" : placeholder}
         aria-label={ariaLabel}
         disabled={disabled}
-        onChange={(event) => setValue(event.target.value)}
+        /* A command input, not prose: macOS/WebKit autocorrect + inline writing suggestions
+           otherwise draw a native completion bubble OVER the input (NIC-77 palette overlap). */
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        {...({ writingsuggestions: "false" } as Record<string, string>)}
+        onChange={(event) => {
+          setValue(event.target.value);
+          // Typing IS focus: after a dismiss (submit/Escape) the pre-warmed palette's input can
+          // still be document.activeElement, so the next summon's .focus() fires no event and the
+          // `focused` state stays stale-false — which silently suppressed suggestions (NIC-77).
+          setFocused(true);
+        }}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onKeyDown={onKeyDown}

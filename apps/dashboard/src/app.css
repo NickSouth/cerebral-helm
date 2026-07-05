@@ -5,8 +5,13 @@
      the screen height — up on taller screens, down on shorter — always keeping proportions and
      (because it fits at the reference size) always fitting without a page scroll. Width is a
      separate concern: the columns cap-and-center, the bottom bar spans the full width. */
-  font-size: clamp(12px, 1.5vh, 20px);
+  font-size: clamp(11px, 1.32vh, 17.5px);
   font-family: var(--ch-font-family);
+  /* Grayscale antialiasing (NIC-77): on a large / non-Retina external display subpixel smoothing
+     reads as soft, slightly-fuzzy text. Grayscale AA keeps the type crisp and even-weighted. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   /* Solid fallback only. The mode-tinted gradient lives on `.app-root` (which carries `data-mode`),
      because custom properties set on that element are not visible up here on the root. */
   background: var(--ch-bg-base);
@@ -71,6 +76,18 @@ html.mode-wave .app-root *::after {
     inset 0 0 42px color-mix(in srgb, var(--ch-accent-primary) 30%, transparent);
   pointer-events: none;
   z-index: 1400;
+}
+
+/* While the wave runs, the view transition swallows input, so the mode controls are briefly
+   inert: grey the unselected ones out for the wave's exact lifetime (the `mode-wave` root class)
+   so the lock reads as intentional rather than broken (NIC-77 owner UX call). The newly selected
+   control keeps full strength, confirming the choice. Reduced-motion never adds the class (no
+   wave → no lock → nothing to grey). */
+html.mode-wave .mode-switcher__option:not([data-active="true"]),
+html.mode-wave .bottom-bar__mode-trigger,
+html.mode-wave .bottom-bar__mode-option:not([data-active="true"]) {
+  pointer-events: none;
+  opacity: 0.45;
 }
 
 .tokens-page {

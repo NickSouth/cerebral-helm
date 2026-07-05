@@ -109,33 +109,23 @@ func allowedCommandExecutes() async throws {
     #expect(recorder.statuses == [.received, .planned, .running, .succeeded])
 }
 
-@Test("a local-write command requires confirmation, then is refused as phase-unavailable on approval (FR-SAF-04, NIC-111)")
-func confirmationThenExecution() async throws {
-    // app.open declares availability.preMac == false. The confirmation path is
-    // unchanged — it still pauses and discloses a local_write action — but on
-    // approval the executor's NIC-111 availability gate refuses it: the command
-    // terminates `failed` with an `.unavailable` result, never running the
-    // handler. (A pre-Mac-available local_write tool — note.capture — is exercised
-    // end-to-end in `capturedNoteSecretIsRedactedEndToEnd`.)
+@Test("a local-write command runs without confirmation and is refused as phase-unavailable pre-Mac (NIC-111)")
+func localWriteRunsThenPhaseUnavailable() async throws {
+    // app.open is local_write, which now runs WITHOUT confirmation (only irreversible
+    // / external classes gate). It is also Mac-only (availability.preMac == false), so
+    // the executor's NIC-111 gate refuses it as unavailable-in-phase: the command
+    // terminates `failed` with no confirmation step.
     let recorder = EventRecorder()
     let runtime = try makeRuntime(recorder: recorder)
 
-    let pending = await runtime.submit("open vscode", source: .cli)
-    guard case let .awaitingConfirmation(_, disclosure, token) = pending else {
-        Issue.record("Expected awaitingConfirmation, got \(pending)"); return
-    }
-    #expect(disclosure.tool.id == "app.open")
-    #expect(disclosure.risk == .localWrite)
-    #expect(disclosure.choices.defaultFocusedChoice == .review)
-
-    let decided = await runtime.decide(token: token, decision: .approve)
-    guard case let .completed(_, status, result) = decided else {
-        Issue.record("Expected completed, got \(decided)"); return
+    let outcome = await runtime.submit("open vscode", source: .cli)
+    guard case let .completed(_, status, result) = outcome else {
+        Issue.record("Expected completed (no confirmation), got \(outcome)"); return
     }
     #expect(status == .failed)
     #expect(result?.status == .unavailable)
     #expect(result?.error?.code == "tool.unavailable_in_phase")
-    #expect(recorder.statuses == [.received, .planned, .requiresConfirmation, .running, .failed])
+    #expect(recorder.statuses == [.received, .planned, .running, .failed])
 }
 
 @Test("a shell hook requires confirmation, then is refused as phase-unavailable on approval (AC-33.2, FR-SAF-03, NIC-111)")
@@ -164,7 +154,8 @@ func shellHookRequiresConfirmation() async throws {
 @Test("a replayed approval is refused (AC-31.1, wired)")
 func replayedApprovalRefused() async throws {
     let runtime = try makeRuntime()
-    let pending = await runtime.submit("open vscode", source: .cli)
+    // hook.run (shell) is a gated class, so it pauses for confirmation.
+    let pending = await runtime.submit("hook ondraft-dev", source: .cli)
     guard case let .awaitingConfirmation(_, _, token) = pending else {
         Issue.record("Expected awaitingConfirmation"); return
     }
@@ -226,15 +217,11 @@ func capturedNoteSecretIsRedactedEndToEnd() async throws {
     let toolCalls = DataRecorder()
     let runtime = try makeRuntime(toolCallSink: { _, data in toolCalls.record(data) })
 
-    // note.capture is local_write, so it pauses for confirmation; the canary
+    // note.capture is local_write, which runs without confirmation; the canary
     // rides in the note body, which the descriptor marks for redaction.
-    let pending = await runtime.submit("note \(canary)", source: .cli)
-    guard case let .awaitingConfirmation(_, _, token) = pending else {
-        Issue.record("Expected awaitingConfirmation, got \(pending)"); return
-    }
-    let decided = await runtime.decide(token: token, decision: .approve)
-    guard case let .completed(_, status, result) = decided else {
-        Issue.record("Expected completed, got \(decided)"); return
+    let outcome = await runtime.submit("note \(canary)", source: .cli)
+    guard case let .completed(_, status, result) = outcome else {
+        Issue.record("Expected completed, got \(outcome)"); return
     }
     #expect(status == .succeeded)
     #expect(result?.status == .success)
