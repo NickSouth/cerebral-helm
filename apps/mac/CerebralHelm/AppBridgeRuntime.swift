@@ -1,6 +1,7 @@
 import Foundation
 import CerebralBridge
 import CerebralCore
+import CerebralMacAdapters
 import CerebralRuntimeHost
 import os
 
@@ -27,7 +28,15 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // sink. Capturing the relay (a reference type) rather than `self` keeps these
         // @Sendable closures free of the not-yet-initialized `session`.
         let relay = self.relay
-        guard let runtime = try? makeCommandRuntime(paths: paths, onEvent: { event in
+        // The native shell composes for the macOS phase with the native capability
+        // bundle (NIC-78/79): NSWorkspace app/url adapters are honest; the not-yet-
+        // implemented slots (hooks, system status) truthfully report unavailable.
+        guard let references = try? ReferenceCatalogLoader.load(configDirectory: paths.configDirectory) else {
+            Self.log.error("Reference catalog failed to load; the shell has no live runtime.")
+            return nil
+        }
+        let capabilities = MacToolCapabilities.make(references: references)
+        guard let runtime = try? makeCommandRuntime(paths: paths, phase: .macOS, capabilities: capabilities, onEvent: { event in
             let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
             guard let payload = try? BridgeMessageCoding.encoder().encode(bridgeEvent),
                   let json = String(data: payload, encoding: .utf8) else { return }
@@ -39,6 +48,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         session = BridgeSession(
             runtime: runtime,
             configDirectory: paths.configDirectory,
+            capabilities: CompositionCapabilities.bridgeCapabilities(phase: .macOS, capabilities: capabilities),
             emitEventJSON: { relay.emit($0) }
         )
     }

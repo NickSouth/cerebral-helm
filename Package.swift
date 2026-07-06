@@ -23,6 +23,7 @@ let package = Package(
         .library(name: "CerebralBridge", targets: ["CerebralBridge"]),
         .library(name: "CerebralRuntimeHost", targets: ["CerebralRuntimeHost"]),
         .library(name: "CerebralAdapterContractSuite", targets: ["CerebralAdapterContractSuite"]),
+        .library(name: "CerebralMacAdapters", targets: ["CerebralMacAdapters"]),
         .executable(name: "cerebral", targets: ["cerebral"]),
     ],
     dependencies: [
@@ -85,6 +86,16 @@ let package = Package(
             name: "CerebralAdapterContractSuite",
             dependencies: ["CerebralTools", "CerebralCore", "CerebralContracts"],
             path: "packages/tools/Sources/CerebralAdapterContractSuite"
+        ),
+        // Native macOS adapters (NIC-78/79). Lives under `apps/mac` — the only MVP
+        // location that may own AppKit and native platform adapters (repository
+        // boundary rule 3); `packages/` stays AppKit-free (rule 1). Every source is
+        // `#if canImport(AppKit)`-gated so the package graph still compiles (empty)
+        // on Linux CI, while `swift test` on macOS exercises the adapters.
+        .target(
+            name: "CerebralMacAdapters",
+            dependencies: ["CerebralTools", "CerebralCore", "CerebralContracts"],
+            path: "apps/mac/Sources/CerebralMacAdapters"
         ),
         .target(
             name: "CerebralStorage",
@@ -207,6 +218,18 @@ let package = Package(
                 "CerebralShared",
             ],
             path: "Tests/KnowledgeTests"
+        ),
+        .testTarget(
+            name: "MacAdapterTests",
+            dependencies: [
+                "CerebralMacAdapters",
+                "CerebralAdapterContractSuite",
+                "CerebralTools",
+                "CerebralCore",
+                "CerebralShared",
+                "CerebralContracts",
+            ],
+            path: "Tests/MacAdapterTests"
         ),
     ]
 )

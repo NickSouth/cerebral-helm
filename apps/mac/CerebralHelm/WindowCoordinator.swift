@@ -13,7 +13,11 @@ import CerebralRuntimeHost
 /// (`MenuBarController`) are separate concerns owned by `AppDelegate`; this type is the
 /// window-management seam only. Ready and recovery are mutually exclusive: a recovery
 /// launch has no dashboard or palette.
-final class WindowCoordinator {
+/// `@unchecked Sendable`: window state is mutated only on the main thread — the
+/// lifecycle entry points run from `AppDelegate` (main), and `deliverBridgeEvent`
+/// re-dispatches itself to main before touching any state. The annotation exists so
+/// the background event relay may hand `self` across the main-queue hop.
+final class WindowCoordinator: @unchecked Sendable {
     private var dashboard: DashboardWindowController?
     private var palette: CommandPaletteWindowController?
     private var recovery: RecoveryWindowController?
@@ -46,6 +50,14 @@ final class WindowCoordinator {
     /// (`config.changed`) are additionally forwarded to the palette so it re-themes to the
     /// active mode (Increment 3); everything else is dashboard-only.
     func deliverBridgeEvent(_ json: String) {
+        // Session/runtime events arrive on background tasks (BridgeSession executes
+        // operations off-main), but confirmation surfacing below orders windows —
+        // AppKit traps off the main thread (SIGTRAP in NSWindow orderOut). Hop once
+        // at this seam so every downstream consumer is on main.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.deliverBridgeEvent(json) }
+            return
+        }
         dashboard?.deliverBridgeEvent(json)
         if json.contains("\"config.changed\"") {
             palette?.deliverBridgeEvent(json)

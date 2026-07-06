@@ -20,6 +20,7 @@
 		CE000000000000000000002D /* WKWebViewCerebralBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000002C /* WKWebViewCerebralBridge.swift */; };
 		CE000000000000000000002B /* CerebralBridge in Frameworks */ = {isa = PBXBuildFile; productRef = CE000000000000000000002A /* CerebralBridge */; };
 		CE000000000000000000002F /* CerebralRuntimeHost in Frameworks */ = {isa = PBXBuildFile; productRef = CE000000000000000000002E /* CerebralRuntimeHost */; };
+		CE0000000000000000000041 /* CerebralMacAdapters in Frameworks */ = {isa = PBXBuildFile; productRef = CE0000000000000000000040 /* CerebralMacAdapters */; };
 		CE0000000000000000000032 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = CE0000000000000000000031 /* KeyboardShortcuts */; };
 		CE0000000000000000000034 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000033 /* MenuBarController.swift */; };
 		CE0000000000000000000036 /* PaletteShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000035 /* PaletteShortcut.swift */; };
@@ -56,6 +57,7 @@
 				CE0000000000000000000023 /* CerebralStorage in Frameworks */,
 				CE000000000000000000002B /* CerebralBridge in Frameworks */,
 				CE000000000000000000002F /* CerebralRuntimeHost in Frameworks */,
+				CE0000000000000000000041 /* CerebralMacAdapters in Frameworks */,
 				CE0000000000000000000032 /* KeyboardShortcuts in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -122,6 +124,7 @@
 				CE0000000000000000000022 /* CerebralStorage */,
 				CE000000000000000000002A /* CerebralBridge */,
 				CE000000000000000000002E /* CerebralRuntimeHost */,
+				CE0000000000000000000040 /* CerebralMacAdapters */,
 				CE0000000000000000000031 /* KeyboardShortcuts */,
 			);
 			productName = CerebralHelm;
@@ -342,6 +345,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CE0000000000000000000017 /* XCLocalSwiftPackageReference "../.." */;
 			productName = CerebralRuntimeHost;
+		};
+		CE0000000000000000000040 /* CerebralMacAdapters */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE0000000000000000000017 /* XCLocalSwiftPackageReference "../.." */;
+			productName = CerebralMacAdapters;
 		};
 		CE0000000000000000000031 /* KeyboardShortcuts */ = {
 			isa = XCSwiftPackageProductDependency;
