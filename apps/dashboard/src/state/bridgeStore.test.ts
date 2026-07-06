@@ -72,6 +72,90 @@ describe("reduceDashboardState", () => {
     ).toBe(cleared);
   });
 
+  it("folds a live system_metrics snapshot into the system-health region (NIC-81b)", () => {
+    const base = loadBootstrapState();
+    const event: BridgeEvent = {
+      eventId: "brevt_metrics01",
+      type: "system.status.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        category: "system_metrics",
+        cpu: { availability: "available", value: 23.5, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
+        memory: { availability: "available", value: 61.2, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
+        network: {
+          availability: "available",
+          uploadMbps: 2.1,
+          downloadMbps: 8.4,
+          unit: "mbps",
+          sampledAt: "2026-06-23T16:00:00.000Z"
+        },
+        battery: {
+          availability: "available",
+          value: 76,
+          charging: true,
+          pluggedIn: true,
+          unit: "percent",
+          sampledAt: "2026-06-23T16:00:00.000Z"
+        },
+        display: { availability: "available", value: 2, unit: null, sampledAt: "2026-06-23T16:00:00.000Z" }
+      }
+    };
+
+    const health = reduceDashboardState(base, event).regions.systemHealth;
+    expect(health.state).toBe("ready");
+    expect(health.cpuPercent).toBe(23.5);
+    expect(health.memoryPercent).toBe(61.2);
+    expect(health.network?.uploadMbps).toBe(2.1);
+    expect(health.network?.downloadMbps).toBe(8.4);
+    expect(health.battery.percent).toBe(76);
+    expect(health.battery.state).toBe("ready");
+    expect(health.battery.charging).toBe(true);
+    expect(health.battery.pluggedIn).toBe(true);
+  });
+
+  it("maps per-channel degradation honestly: no battery is unavailable, warming rates are empty", () => {
+    const base = loadBootstrapState();
+    const event: BridgeEvent = {
+      eventId: "brevt_metrics02",
+      type: "system.status.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        category: "system_metrics",
+        // First tick on a desktop Mac: rate metrics still warming, no battery.
+        cpu: { availability: "loading", value: null, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
+        memory: { availability: "available", value: 40, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
+        network: { availability: "loading", uploadMbps: null, downloadMbps: null, unit: "mbps", sampledAt: null },
+        battery: { availability: "unavailable", value: null, unit: "percent", sampledAt: null },
+        display: { availability: "available", value: 1, unit: null, sampledAt: "2026-06-23T16:00:00.000Z" }
+      }
+    };
+
+    const health = reduceDashboardState(base, event).regions.systemHealth;
+    expect(health.state).toBe("ready");
+    expect(health.cpuPercent).toBeUndefined();
+    expect(health.memoryPercent).toBe(40);
+    expect(health.network?.state).toBe("empty");
+    expect(health.battery.state).toBe("unavailable");
+    expect(health.battery.percent).toBeUndefined();
+  });
+
+  it("still folds bridge_failure status changes into read-only recovery (NIC-64)", () => {
+    const base = loadBootstrapState();
+    const event: BridgeEvent = {
+      eventId: "brevt_failure01",
+      type: "system.status.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        category: "bridge_failure",
+        state: { status: "read_only", message: "Bridge is in read-only recovery." }
+      }
+    };
+    expect(reduceDashboardState(base, event).recovery?.startupMode).toBe("recovery");
+  });
+
   it("applies a mode-switch snapshot on config.changed, preserving the eager bundle", () => {
     const base = loadBootstrapState(); // Executive default
     const snapshot = getDashboardFixture("mode.school.ready");

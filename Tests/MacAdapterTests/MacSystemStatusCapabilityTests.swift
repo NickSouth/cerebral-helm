@@ -18,21 +18,21 @@ private final class FakeMetricSource: SystemMetricSampling, @unchecked Sendable 
     private let lock = NSLock()
     private var cpuSamples: [CPUTicksSample?]
     private var memorySample: MemorySample?
-    private var networkSamples: [UInt64?]
-    private var battery: Double?
+    private var networkSamples: [NetworkBytesSample?]
+    private var batterySample: BatterySample?
     private var displays: Int?
 
     init(
         cpu: [CPUTicksSample?] = [],
         memory: MemorySample? = nil,
-        network: [UInt64?] = [],
-        battery: Double? = nil,
+        network: [NetworkBytesSample?] = [],
+        battery: BatterySample? = nil,
         displays: Int? = nil
     ) {
         self.cpuSamples = cpu
         self.memorySample = memory
         self.networkSamples = network
-        self.battery = battery
+        self.batterySample = battery
         self.displays = displays
     }
 
@@ -44,8 +44,8 @@ private final class FakeMetricSource: SystemMetricSampling, @unchecked Sendable 
 
     func cpuTicks() -> CPUTicksSample? { pop(&cpuSamples) }
     func memory() -> MemorySample? { memorySample }
-    func networkBytes() -> UInt64? { pop(&networkSamples) }
-    func batteryPercent() -> Double? { battery }
+    func networkBytes() -> NetworkBytesSample? { pop(&networkSamples) }
+    func battery() -> BatterySample? { batterySample }
     func displayCount() -> Int? { displays }
 }
 
@@ -75,8 +75,8 @@ func firstRateReadIsLoading() async throws {
     let capability = MacSystemStatusCapability(source: FakeMetricSource(
         cpu: [CPUTicksSample(busyTicks: 100, totalTicks: 1000)],
         memory: MemorySample(usedBytes: 8, totalBytes: 16),
-        network: [1_000_000],
-        battery: 80,
+        network: [NetworkBytesSample(inBytes: 1_000_000, outBytes: 0)],
+        battery: BatterySample(percent: 80, isCharging: true, isPluggedIn: true),
         displays: 2
     ))
 
@@ -101,7 +101,10 @@ func secondReadComputesRates() async throws {
                 CPUTicksSample(busyTicks: 100, totalTicks: 1000),
                 CPUTicksSample(busyTicks: 350, totalTicks: 2000), // 250 busy of 1000 total → 25%
             ],
-            network: [1_000_000, 3_500_000] // 2.5 MB in 2 s → 10 Mbit/s
+            network: [
+                NetworkBytesSample(inBytes: 1_000_000, outBytes: 500_000),
+                NetworkBytesSample(inBytes: 3_000_000, outBytes: 1_000_000), // ↓2 MB + ↑0.5 MB in 2 s → 8 + 2 Mbit/s
+            ]
         ),
         nowNanos: { now.now() }
     )
@@ -125,7 +128,11 @@ func secondReadComputesRates() async throws {
 func wrappedNetworkCounterReusesLastRate() async throws {
     let now = FakeNow()
     let capability = MacSystemStatusCapability(
-        source: FakeMetricSource(network: [1_000_000, 3_500_000, 500]), // third sample shrank: wrap
+        source: FakeMetricSource(network: [
+            NetworkBytesSample(inBytes: 1_000_000, outBytes: 500_000),
+            NetworkBytesSample(inBytes: 3_000_000, outBytes: 1_000_000),
+            NetworkBytesSample(inBytes: 500, outBytes: 100), // shrank: wrap
+        ]),
         nowNanos: { now.now() }
     )
 
@@ -220,23 +227,29 @@ func liveSourceSanity() async throws {
     #expect(memory.usedBytes > 0 && memory.usedBytes <= memory.totalBytes)
 
     let network = try #require(source.networkBytes())
-    #expect(network > 0)
+    #expect(network.inBytes > 0)
 
     let displays = try #require(source.displayCount())
     #expect(displays >= 1)
 
     // Battery may legitimately be nil (desktop Mac); when present it is a percent.
-    if let battery = source.batteryPercent() {
-        #expect(battery >= 0 && battery <= 100)
+    if let battery = source.battery() {
+        #expect(battery.percent >= 0 && battery.percent <= 100)
     }
 
-    // End to end through the adapter: two reads a moment apart yield an
-    // available CPU percent in range on real hardware.
+    // End to end through the adapter: successive reads yield an available CPU
+    // percent in range on real hardware. A transient Mach sampling failure means
+    // one more loading tick (the production cadence self-heals the same way), so
+    // allow a few attempts rather than demanding exactly the second read.
     let capability = MacSystemStatusCapability(source: source)
     _ = try await capability.readMetrics([.cpu])
-    try await Task.sleep(nanoseconds: 150_000_000)
-    let second = try await capability.readMetrics([.cpu])
-    let percent = try #require(reading(second, .cpu)?.value)
-    #expect(percent >= 0 && percent <= 100)
+    var percent: Double?
+    for _ in 0..<5 where percent == nil {
+        try await Task.sleep(nanoseconds: 150_000_000)
+        let readings = try await capability.readMetrics([.cpu])
+        percent = reading(readings, .cpu)?.value
+    }
+    let value = try #require(percent)
+    #expect(value >= 0 && value <= 100)
 }
 #endif

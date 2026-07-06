@@ -82,6 +82,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.coordinator.deliverBridgeEvent(json)
         }
 
+        // Live system metrics stream (NIC-81b): start once the sink is bound, and
+        // pause sampling whenever the dashboard window is fully occluded.
+        coordinator.onDashboardVisibilityChange = { [weak bridgeRuntime] visible in
+            bridgeRuntime?.setStatusPublishingActive(visible)
+        }
+        bridgeRuntime.startStatusPublishing()
+
         // The menu-bar item + global summon hotkey (NIC-75 / FR-SHL-02). Both the menu
         // item and the hotkey drive the coordinator.
         menuBar = MenuBarController(

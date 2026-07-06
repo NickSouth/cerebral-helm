@@ -112,7 +112,7 @@ public enum BootstrapComposer {
             news: DashboardNewsRegion(emptyMessage: "News is unavailable.", headlines: [], state: .empty),
             schedule: DashboardScheduleRegion(emptyMessage: "No schedule yet.", items: [], state: .empty),
             systemHealth: DashboardSystemHealthRegion(
-                battery: DashboardBatteryChannel(label: "Battery", percent: nil, state: .unavailable),
+                battery: DashboardBatteryChannel(charging: nil, label: "Battery", percent: nil, pluggedIn: nil, state: .unavailable),
                 cpuPercent: nil,
                 memoryPercent: nil,
                 network: nil,

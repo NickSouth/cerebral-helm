@@ -30,10 +30,18 @@ private func invocation(
     )
 }
 
-/// A per-test-run marker a sleeping grandchild carries in its argv, so tests can
-/// find survivors with pgrep without knowing pids.
+/// A unique-per-call marker a sleeping grandchild carries in its argv, so tests
+/// can find survivors with pgrep without knowing pids. Tests run concurrently in
+/// one process, so the pid alone is NOT unique enough — a shared marker lets one
+/// test's sleeper appear as another's survivor.
+private let markerCounter = NSLock()
+private nonisolated(unsafe) var markerSequence = 0
 private func sleepMarker() -> String {
-    "30.0\(ProcessInfo.processInfo.processIdentifier % 100000)"
+    markerCounter.lock()
+    markerSequence += 1
+    let sequence = markerSequence
+    markerCounter.unlock()
+    return "30.\(sequence)\(ProcessInfo.processInfo.processIdentifier % 10000)"
 }
 
 private func survivorCount(matching marker: String) -> Int {

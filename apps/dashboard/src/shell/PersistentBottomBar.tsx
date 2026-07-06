@@ -247,9 +247,12 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
             className="bottom-bar__item bottom-bar__battery"
             role="img"
             title={battery.label}
-            aria-label={`Battery ${battery.percent}%`}
+            aria-label={`Battery ${Math.round(battery.percent as number)}%${battery.charging ? ", charging" : battery.pluggedIn ? ", plugged in" : ""}`}
           >
-            <BatteryGlyph percent={battery.percent as number} />
+            <BatteryGlyph
+              percent={battery.percent as number}
+              charging={battery.charging === true || battery.pluggedIn === true}
+            />
           </span>
         ) : (
           <span className="bottom-bar__item unavailable" title={battery.label}>

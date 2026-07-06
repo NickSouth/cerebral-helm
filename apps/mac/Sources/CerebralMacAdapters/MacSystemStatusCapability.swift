@@ -1,4 +1,4 @@
-// Live system status adapter (NIC-81a, MAC-ADAPTER-3).
+// Live system status adapter (NIC-81, MAC-ADAPTER-3).
 #if canImport(AppKit)
 import Darwin
 import Foundation
@@ -29,6 +29,32 @@ public struct MemorySample: Equatable, Sendable {
     }
 }
 
+/// Cumulative received/sent bytes across non-loopback interfaces since boot.
+public struct NetworkBytesSample: Equatable, Sendable {
+    public let inBytes: UInt64
+    public let outBytes: UInt64
+
+    public init(inBytes: UInt64, outBytes: UInt64) {
+        self.inBytes = inBytes
+        self.outBytes = outBytes
+    }
+}
+
+/// The battery's charge level and power state (IOKit power sources).
+/// `isCharging` means actively taking charge; `isPluggedIn` means on external
+/// power (a full battery on AC is plugged in but not charging).
+public struct BatterySample: Equatable, Sendable {
+    public let percent: Double
+    public let isCharging: Bool
+    public let isPluggedIn: Bool
+
+    public init(percent: Double, isCharging: Bool, isPluggedIn: Bool) {
+        self.percent = percent
+        self.isCharging = isCharging
+        self.isPluggedIn = isPluggedIn
+    }
+}
+
 /// The raw-counter seam over Mach / getifaddrs / IOKit / CoreGraphics, so the
 /// delta math and availability mapping are unit-testable with scripted samples.
 /// Any `nil` means "this metric cannot be sampled right now" and maps to an
@@ -36,12 +62,50 @@ public struct MemorySample: Equatable, Sendable {
 public protocol SystemMetricSampling: Sendable {
     func cpuTicks() -> CPUTicksSample?
     func memory() -> MemorySample?
-    /// Cumulative bytes (in + out) across non-loopback interfaces since boot.
-    func networkBytes() -> UInt64?
-    /// Battery charge percent, or `nil` when no internal battery exists (or
-    /// sampling failed) — a desktop Mac honestly reports unavailable.
-    func batteryPercent() -> Double?
+    func networkBytes() -> NetworkBytesSample?
+    /// Battery charge and charging state, or `nil` when no internal battery
+    /// exists (or sampling failed) — a desktop Mac honestly reports unavailable.
+    func battery() -> BatterySample?
     func displayCount() -> Int?
+}
+
+/// One computed channel of the rich status snapshot the publisher streams to
+/// the dashboard (NIC-81b). `sampledAt` is the wall-clock time of the sample
+/// that produced the value, so stale data stays timestamped downstream.
+public struct SystemStatusChannel: Equatable, Sendable {
+    public let availability: MetricAvailability
+    public let value: Double?
+    public let sampledAt: Date?
+}
+
+/// Network keeps its direction split for the dashboard's up/down display; the
+/// portable tool reading remains the combined throughput.
+public struct SystemStatusNetworkChannel: Equatable, Sendable {
+    public let availability: MetricAvailability
+    public let uploadMbps: Double?
+    public let downloadMbps: Double?
+    public let sampledAt: Date?
+}
+
+/// Battery keeps its charging flag for the dashboard's bolt indicator; the
+/// portable tool reading remains the charge percent.
+public struct SystemStatusBatteryChannel: Equatable, Sendable {
+    public let availability: MetricAvailability
+    public let percent: Double?
+    public let isCharging: Bool?
+    public let isPluggedIn: Bool?
+    public let sampledAt: Date?
+}
+
+/// A full rich reading of every metric, shared source of truth for the status
+/// publisher. The one-shot `system.status.read` tool maps the same channels
+/// onto the portable `SystemMetricReading` contract.
+public struct SystemStatusSnapshot: Equatable, Sendable {
+    public let cpu: SystemStatusChannel
+    public let memory: SystemStatusChannel
+    public let network: SystemStatusNetworkChannel
+    public let battery: SystemStatusBatteryChannel
+    public let display: SystemStatusChannel
 }
 
 /// The live system metrics adapter: CPU and memory from Mach host statistics,
@@ -57,106 +121,145 @@ public protocol SystemMetricSampling: Sendable {
 public actor MacSystemStatusCapability: SystemStatusCapability {
     private let source: any SystemMetricSampling
     private let nowNanos: @Sendable () -> UInt64
+    private let wallClock: @Sendable () -> Date
 
     private var previousCPU: CPUTicksSample?
     private var lastCPUPercent: Double?
-    private var previousNetworkBytes: UInt64?
+    private var previousNetwork: NetworkBytesSample?
     private var previousNetworkAtNanos: UInt64?
-    private var lastNetworkMbps: Double?
+    private var lastNetworkMbps: (up: Double, down: Double)?
 
     public init(
         source: any SystemMetricSampling = LiveSystemMetricSource(),
-        nowNanos: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
+        nowNanos: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
+        wallClock: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.source = source
         self.nowNanos = nowNanos
+        self.wallClock = wallClock
     }
+
+    // MARK: - Portable tool contract
 
     public func readMetrics(_ ids: [SystemMetricID]) async throws -> [SystemMetricReading] {
         let requested = ids.isEmpty ? SystemMetricID.allCases : ids
         return requested.map { id in
             switch id {
-            case .cpu: return cpuReading()
-            case .memory: return memoryReading()
-            case .network: return networkReading()
-            case .battery: return batteryReading()
-            case .display: return displayReading()
+            case .cpu:
+                return reading(.cpu, cpuChannel(), unit: "percent")
+            case .memory:
+                return reading(.memory, memoryChannel(), unit: "percent")
+            case .network:
+                let channel = networkChannel()
+                let combined = (channel.uploadMbps ?? 0) + (channel.downloadMbps ?? 0)
+                let value: Double? = (channel.uploadMbps == nil && channel.downloadMbps == nil) ? nil : combined
+                return SystemMetricReading(id: .network, availability: channel.availability, value: value, unit: "mbps")
+            case .battery:
+                let channel = batteryChannel()
+                return SystemMetricReading(id: .battery, availability: channel.availability, value: channel.percent, unit: "percent")
+            case .display:
+                return reading(.display, displayChannel(), unit: nil)
             }
         }
     }
 
-    // MARK: - Per-metric readings
+    /// The rich per-channel snapshot the status publisher streams (NIC-81b).
+    /// Shares the same delta state as `readMetrics`.
+    public func snapshot() -> SystemStatusSnapshot {
+        SystemStatusSnapshot(
+            cpu: cpuChannel(),
+            memory: memoryChannel(),
+            network: networkChannel(),
+            battery: batteryChannel(),
+            display: displayChannel()
+        )
+    }
 
-    private func cpuReading() -> SystemMetricReading {
+    private func reading(_ id: SystemMetricID, _ channel: SystemStatusChannel, unit: String?) -> SystemMetricReading {
+        SystemMetricReading(id: id, availability: channel.availability, value: channel.value, unit: unit)
+    }
+
+    // MARK: - Per-metric channels
+
+    private func cpuChannel() -> SystemStatusChannel {
         guard let sample = source.cpuTicks() else {
-            return SystemMetricReading(id: .cpu, availability: .unavailable, value: nil, unit: "percent")
+            return SystemStatusChannel(availability: .unavailable, value: nil, sampledAt: nil)
         }
+        let sampledAt = wallClock()
         defer { previousCPU = sample }
         guard let previous = previousCPU else {
-            return SystemMetricReading(id: .cpu, availability: .loading, value: nil, unit: "percent")
+            return SystemStatusChannel(availability: .loading, value: nil, sampledAt: sampledAt)
         }
         let totalDelta = sample.totalTicks - previous.totalTicks
         guard totalDelta > 0 else {
             // Re-sampled within the same tick: reuse the last computed load
             // rather than dividing by zero or flapping back to loading.
             guard let last = lastCPUPercent else {
-                return SystemMetricReading(id: .cpu, availability: .loading, value: nil, unit: "percent")
+                return SystemStatusChannel(availability: .loading, value: nil, sampledAt: sampledAt)
             }
-            return SystemMetricReading(id: .cpu, availability: .available, value: last, unit: "percent")
+            return SystemStatusChannel(availability: .available, value: last, sampledAt: sampledAt)
         }
         let busyDelta = sample.busyTicks - previous.busyTicks
-        let percent = (max(0, min(1, busyDelta / totalDelta))) * 100
+        let percent = max(0, min(1, busyDelta / totalDelta)) * 100
         lastCPUPercent = percent
-        return SystemMetricReading(id: .cpu, availability: .available, value: percent, unit: "percent")
+        return SystemStatusChannel(availability: .available, value: percent, sampledAt: sampledAt)
     }
 
-    private func memoryReading() -> SystemMetricReading {
+    private func memoryChannel() -> SystemStatusChannel {
         guard let sample = source.memory(), sample.totalBytes > 0 else {
-            return SystemMetricReading(id: .memory, availability: .unavailable, value: nil, unit: "percent")
+            return SystemStatusChannel(availability: .unavailable, value: nil, sampledAt: nil)
         }
         let percent = max(0, min(1, sample.usedBytes / sample.totalBytes)) * 100
-        return SystemMetricReading(id: .memory, availability: .available, value: percent, unit: "percent")
+        return SystemStatusChannel(availability: .available, value: percent, sampledAt: wallClock())
     }
 
-    private func networkReading() -> SystemMetricReading {
-        guard let bytes = source.networkBytes() else {
-            return SystemMetricReading(id: .network, availability: .unavailable, value: nil, unit: "mbps")
+    private func networkChannel() -> SystemStatusNetworkChannel {
+        guard let sample = source.networkBytes() else {
+            return SystemStatusNetworkChannel(availability: .unavailable, uploadMbps: nil, downloadMbps: nil, sampledAt: nil)
         }
         let now = nowNanos()
+        let sampledAt = wallClock()
         defer {
-            previousNetworkBytes = bytes
+            previousNetwork = sample
             previousNetworkAtNanos = now
         }
-        guard let previousBytes = previousNetworkBytes, let previousAt = previousNetworkAtNanos else {
-            return SystemMetricReading(id: .network, availability: .loading, value: nil, unit: "mbps")
+        guard let previous = previousNetwork, let previousAt = previousNetworkAtNanos else {
+            return SystemStatusNetworkChannel(availability: .loading, uploadMbps: nil, downloadMbps: nil, sampledAt: sampledAt)
         }
         let elapsedSeconds = Double(now &- previousAt) / 1_000_000_000
         // A shrunken counter means an underlying 32-bit interface counter
         // wrapped (or an interface vanished): the delta is meaningless once, so
         // reuse the last known rate instead of reporting garbage.
-        guard elapsedSeconds > 0, bytes >= previousBytes else {
+        guard elapsedSeconds > 0, sample.inBytes >= previous.inBytes, sample.outBytes >= previous.outBytes else {
             guard let last = lastNetworkMbps else {
-                return SystemMetricReading(id: .network, availability: .loading, value: nil, unit: "mbps")
+                return SystemStatusNetworkChannel(availability: .loading, uploadMbps: nil, downloadMbps: nil, sampledAt: sampledAt)
             }
-            return SystemMetricReading(id: .network, availability: .available, value: last, unit: "mbps")
+            return SystemStatusNetworkChannel(availability: .available, uploadMbps: last.up, downloadMbps: last.down, sampledAt: sampledAt)
         }
-        let mbps = Double(bytes - previousBytes) * 8 / elapsedSeconds / 1_000_000
-        lastNetworkMbps = mbps
-        return SystemMetricReading(id: .network, availability: .available, value: mbps, unit: "mbps")
+        let downMbps = Double(sample.inBytes - previous.inBytes) * 8 / elapsedSeconds / 1_000_000
+        let upMbps = Double(sample.outBytes - previous.outBytes) * 8 / elapsedSeconds / 1_000_000
+        lastNetworkMbps = (up: upMbps, down: downMbps)
+        return SystemStatusNetworkChannel(availability: .available, uploadMbps: upMbps, downloadMbps: downMbps, sampledAt: sampledAt)
     }
 
-    private func batteryReading() -> SystemMetricReading {
-        guard let percent = source.batteryPercent() else {
-            return SystemMetricReading(id: .battery, availability: .unavailable, value: nil, unit: "percent")
+    private func batteryChannel() -> SystemStatusBatteryChannel {
+        guard let sample = source.battery() else {
+            return SystemStatusBatteryChannel(availability: .unavailable, percent: nil, isCharging: nil, isPluggedIn: nil, sampledAt: nil)
         }
-        return SystemMetricReading(id: .battery, availability: .available, value: max(0, min(100, percent)), unit: "percent")
+        return SystemStatusBatteryChannel(
+            availability: .available,
+            percent: max(0, min(100, sample.percent)),
+            isCharging: sample.isCharging,
+            isPluggedIn: sample.isPluggedIn,
+            sampledAt: wallClock()
+        )
     }
 
-    private func displayReading() -> SystemMetricReading {
+    private func displayChannel() -> SystemStatusChannel {
         guard let count = source.displayCount() else {
-            return SystemMetricReading(id: .display, availability: .unavailable, value: nil, unit: nil)
+            return SystemStatusChannel(availability: .unavailable, value: nil, sampledAt: nil)
         }
-        return SystemMetricReading(id: .display, availability: .available, value: Double(count), unit: nil)
+        return SystemStatusChannel(availability: .available, value: Double(count), sampledAt: wallClock())
     }
 }
 
@@ -198,17 +301,20 @@ public struct LiveSystemMetricSource: SystemMetricSampling {
         var size = MemoryLayout<UInt64>.size
         guard sysctlbyname("hw.memsize", &totalBytes, &size, nil, 0) == 0, totalBytes > 0 else { return nil }
         let pageSize = Double(getpagesize())
-        // "Used" approximates what Activity Monitor calls memory pressure input:
-        // active + wired + compressed pages.
-        let used = (Double(stats.active_count) + Double(stats.wire_count) + Double(stats.compressor_page_count)) * pageSize
-        return MemorySample(usedBytes: used, totalBytes: Double(totalBytes))
+        // Matches Activity Monitor's "Memory Used": app (anonymous) memory minus
+        // purgeable, plus wired and compressed — so the panel agrees with what
+        // the user cross-checks against.
+        let used = (Double(stats.internal_page_count) - Double(stats.purgeable_count)
+            + Double(stats.wire_count) + Double(stats.compressor_page_count)) * pageSize
+        return MemorySample(usedBytes: max(0, used), totalBytes: Double(totalBytes))
     }
 
-    public func networkBytes() -> UInt64? {
+    public func networkBytes() -> NetworkBytesSample? {
         var addresses: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&addresses) == 0 else { return nil }
         defer { freeifaddrs(addresses) }
-        var total: UInt64 = 0
+        var inTotal: UInt64 = 0
+        var outTotal: UInt64 = 0
         var cursor = addresses
         while let entry = cursor?.pointee {
             defer { cursor = entry.ifa_next }
@@ -217,12 +323,13 @@ public struct LiveSystemMetricSource: SystemMetricSampling {
             let name = String(cString: entry.ifa_name)
             guard !name.hasPrefix("lo") else { continue }
             let data = dataPointer.assumingMemoryBound(to: if_data.self).pointee
-            total &+= UInt64(data.ifi_ibytes) &+ UInt64(data.ifi_obytes)
+            inTotal &+= UInt64(data.ifi_ibytes)
+            outTotal &+= UInt64(data.ifi_obytes)
         }
-        return total
+        return NetworkBytesSample(inBytes: inTotal, outBytes: outTotal)
     }
 
-    public func batteryPercent() -> Double? {
+    public func battery() -> BatterySample? {
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef] else {
             return nil
@@ -234,7 +341,13 @@ public struct LiveSystemMetricSource: SystemMetricSampling {
                   let current = description[kIOPSCurrentCapacityKey] as? Int,
                   let maximum = description[kIOPSMaxCapacityKey] as? Int,
                   maximum > 0 else { continue }
-            return Double(current) / Double(maximum) * 100
+            let isCharging = description[kIOPSIsChargingKey] as? Bool ?? false
+            let isPluggedIn = (description[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue
+            return BatterySample(
+                percent: Double(current) / Double(maximum) * 100,
+                isCharging: isCharging,
+                isPluggedIn: isPluggedIn
+            )
         }
         return nil
     }

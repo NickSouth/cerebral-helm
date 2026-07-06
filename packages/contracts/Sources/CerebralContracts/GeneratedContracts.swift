@@ -1097,14 +1097,21 @@ public extension DashboardSystemHealthRegion {
 
 // MARK: - DashboardBatteryChannel
 public struct DashboardBatteryChannel: Codable {
+    /// Whether the battery is currently charging, when known (Mac-only capability).
+    public let charging: Bool?
     public let label: String
     /// Charge level 0–100, when known (Mac-only capability).
     public let percent: Double?
+    /// Whether the machine is on external power, when known (a full battery on AC is plugged in
+    /// but not charging).
+    public let pluggedIn: Bool?
     public let state: DashboardRegionState
 
-    public init(label: String, percent: Double?, state: DashboardRegionState) {
+    public init(charging: Bool?, label: String, percent: Double?, pluggedIn: Bool?, state: DashboardRegionState) {
+        self.charging = charging
         self.label = label
         self.percent = percent
+        self.pluggedIn = pluggedIn
         self.state = state
     }
 }
@@ -1128,13 +1135,17 @@ public extension DashboardBatteryChannel {
     }
 
     func with(
+        charging: Bool?? = nil,
         label: String? = nil,
         percent: Double?? = nil,
+        pluggedIn: Bool?? = nil,
         state: DashboardRegionState? = nil
     ) -> DashboardBatteryChannel {
         return DashboardBatteryChannel(
+            charging: charging ?? self.charging,
             label: label ?? self.label,
             percent: percent ?? self.percent,
+            pluggedIn: pluggedIn ?? self.pluggedIn,
             state: state ?? self.state
         )
     }

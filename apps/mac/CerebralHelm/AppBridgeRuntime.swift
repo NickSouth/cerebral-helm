@@ -18,6 +18,9 @@ final class AppBridgeRuntime: @unchecked Sendable {
     let session: BridgeSession
 
     private let relay = EventRelay()
+    /// Streams live system metrics to the dashboard (NIC-81b). Shares the status
+    /// capability actor with the `system.status.read` tool.
+    private let statusPublisher: SystemStatusPublisher
     private static let log = Logger(subsystem: "local.cerebralhelm.CerebralHelm", category: "bridge")
 
     /// Builds the runtime; returns nil if composition fails (the startup pre-flight has
@@ -35,7 +38,9 @@ final class AppBridgeRuntime: @unchecked Sendable {
             Self.log.error("Reference catalog failed to load; the shell has no live runtime.")
             return nil
         }
-        let capabilities = MacToolCapabilities.make(references: references)
+        let composition = MacToolCapabilities.make(references: references)
+        let capabilities = composition.capabilities
+        statusPublisher = SystemStatusPublisher(status: composition.systemStatus, emit: { relay.emit($0) })
         guard let runtime = try? makeCommandRuntime(paths: paths, phase: .macOS, capabilities: capabilities, onEvent: { event in
             let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
             guard let payload = try? BridgeMessageCoding.encoder().encode(bridgeEvent),
@@ -58,6 +63,20 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// command has run yet, so none are emitted).
     func setEventSink(_ sink: @escaping (String) -> Void) {
         relay.setSink(sink)
+    }
+
+    /// Start the live metrics stream (call once the event sink is bound, so the
+    /// first snapshot has a consumer).
+    func startStatusPublishing() {
+        let publisher = statusPublisher
+        Task { await publisher.start() }
+    }
+
+    /// Pause/resume the metrics stream from the shell's visibility signal
+    /// (dashboard occluded → no sampling; MAC-ADAPTER-3 battery AC).
+    func setStatusPublishingActive(_ active: Bool) {
+        let publisher = statusPublisher
+        Task { await publisher.setActive(active) }
     }
 }
 

@@ -228,12 +228,21 @@ export interface DashboardSystemHealthRegion {
 }
 
 export interface DashboardBatteryChannel {
-    label: string;
+    /**
+     * Whether the battery is currently charging, when known (Mac-only capability).
+     */
+    charging?: boolean;
+    label:     string;
     /**
      * Charge level 0–100, when known (Mac-only capability).
      */
     percent?: number;
-    state:    DashboardRegionState;
+    /**
+     * Whether the machine is on external power, when known (a full battery on AC is plugged in
+     * but not charging).
+     */
+    pluggedIn?: boolean;
+    state:      DashboardRegionState;
 }
 
 export interface DashboardNetworkChannel {

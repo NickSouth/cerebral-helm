@@ -21,6 +21,11 @@ final class WindowCoordinator: @unchecked Sendable {
     private var dashboard: DashboardWindowController?
     private var palette: CommandPaletteWindowController?
     private var recovery: RecoveryWindowController?
+    private var occlusionObserver: NSObjectProtocol?
+
+    /// Fired on the main queue whenever the dashboard window becomes visible or
+    /// fully occluded — the shell pauses the status publisher on hidden (NIC-81b).
+    var onDashboardVisibilityChange: ((Bool) -> Void)?
 
     /// Ready path: host the dashboard and pre-warm the single command palette against the
     /// shared session. Called once after a clean startup pre-flight.
@@ -31,6 +36,17 @@ final class WindowCoordinator: @unchecked Sendable {
         dashboard.onShellControl = { [weak self] body in self?.handleShellControl(body) }
         self.dashboard = dashboard
         dashboard.show()
+
+        // Visibility signal for the status publisher: a fully occluded or hidden
+        // dashboard needs no live metric sampling (MAC-ADAPTER-3 battery AC).
+        occlusionObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: dashboard.window,
+            queue: .main
+        ) { [weak self] note in
+            guard let window = note.object as? NSWindow else { return }
+            self?.onDashboardVisibilityChange?(window.occlusionState.contains(.visible))
+        }
 
         let palette = CommandPaletteWindowController(dashboardRoot: dashboardRoot, paths: paths, session: session)
         // Increment 2: a conversational palette submission routes to the dashboard's

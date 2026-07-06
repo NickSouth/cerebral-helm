@@ -1,6 +1,7 @@
 import { Panel } from "./Panel";
 import { PanelGlyph } from "./PanelGlyph";
 import { HealthGlyph } from "./HealthGlyph";
+import { ChargingBoltGlyph } from "./BatteryGlyph";
 import { StaleMarker } from "../components/StaleMarker";
 import { Unavailable } from "../components/Unavailable";
 import { useDashboardState } from "../state/DashboardStateProvider";
@@ -22,12 +23,16 @@ function BarRow({
   glyph,
   label,
   percent,
-  tone
+  tone,
+  charging = false,
+  chargingTitle = "Charging"
 }: {
   glyph: "cpu" | "memory" | "battery";
   label: string;
   percent: number;
   tone: string;
+  charging?: boolean;
+  chargingTitle?: string;
 }) {
   const clamped = Math.max(0, Math.min(100, percent));
   return (
@@ -39,7 +44,14 @@ function BarRow({
       <span className="metric-bar" aria-hidden="true">
         <span className="metric-bar__fill" data-tone={tone} style={{ width: `${clamped}%` }} />
       </span>
-      <span className="metric__value">{percent}%</span>
+      <span className="metric__value">
+        {charging ? (
+          <span className="metric__charging" title={chargingTitle} role="img" aria-label={chargingTitle}>
+            <ChargingBoltGlyph />
+          </span>
+        ) : null}
+        {Math.round(clamped)}%
+      </span>
     </li>
   );
 }
@@ -92,11 +104,11 @@ export function SystemHealthPanel() {
                   <span className="net-arrow net-arrow--up" aria-hidden="true">
                     ↑
                   </span>
-                  <span className="metric__value">{network.uploadMbps} Mbps</span>
+                  <span className="metric__value">{Math.round(network.uploadMbps)} Mbps</span>
                   <span className="net-arrow net-arrow--down" aria-hidden="true">
                     ↓
                   </span>
-                  <span className="metric__value">{network.downloadMbps} Mbps</span>
+                  <span className="metric__value">{Math.round(network.downloadMbps)} Mbps</span>
                 </span>
               ) : networkMbps(network.label) ? (
                 <span className="metric__network">
@@ -119,6 +131,8 @@ export function SystemHealthPanel() {
               label="Battery"
               percent={battery.percent as number}
               tone={batteryTone(battery.percent as number)}
+              charging={battery.charging === true || battery.pluggedIn === true}
+              chargingTitle={battery.charging === true ? "Charging" : "Plugged in"}
             />
           ) : (
             <li className="metric">

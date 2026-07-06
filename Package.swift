@@ -94,7 +94,7 @@ let package = Package(
         // on Linux CI, while `swift test` on macOS exercises the adapters.
         .target(
             name: "CerebralMacAdapters",
-            dependencies: ["CerebralTools", "CerebralCore", "CerebralContracts"],
+            dependencies: ["CerebralTools", "CerebralCore", "CerebralContracts", "CerebralRuntimeHost"],
             path: "apps/mac/Sources/CerebralMacAdapters"
         ),
         .target(
