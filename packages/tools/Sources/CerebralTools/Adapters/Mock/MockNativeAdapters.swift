@@ -138,19 +138,23 @@ public struct MockWindowCapability: WindowCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault
     public var windows: [WindowInfo]
-    /// Simulated arrangement outcomes by bundle id; an unlisted id is `.notRunning`.
+    /// Simulated arrangement/restore outcomes by bundle id; an unlisted id is `.notRunning`.
     public var arrangeOutcomes: [String: WindowArrangeOutcome]
+    /// Simulated readable main-window frames by bundle id (geometry capture).
+    public var capturedFrames: [String: WindowRect]
 
     public init(
         matrix: CapabilityMatrix = .allAvailable,
         fault: MockFault = .none,
         windows: [WindowInfo] = [],
-        arrangeOutcomes: [String: WindowArrangeOutcome] = [:]
+        arrangeOutcomes: [String: WindowArrangeOutcome] = [:],
+        capturedFrames: [String: WindowRect] = [:]
     ) {
         self.matrix = matrix
         self.fault = fault
         self.windows = windows
         self.arrangeOutcomes = arrangeOutcomes
+        self.capturedFrames = capturedFrames
     }
 
     public func inspect() async throws -> [WindowInfo] {
@@ -159,6 +163,16 @@ public struct MockWindowCapability: WindowCapability {
     }
 
     public func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome {
+        try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault, subject: bundleID)
+        return arrangeOutcomes[bundleID] ?? .notRunning
+    }
+
+    public func captureFrame(bundleID: String) async throws -> WindowRect? {
+        try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault, subject: bundleID)
+        return capturedFrames[bundleID]
+    }
+
+    public func restoreFrame(bundleID: String, rect: WindowRect) async throws -> WindowArrangeOutcome {
         try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault, subject: bundleID)
         return arrangeOutcomes[bundleID] ?? .notRunning
     }

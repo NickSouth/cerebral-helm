@@ -138,6 +138,14 @@ public struct SecretResolution: Equatable, Sendable {
 /// restore is a separate, gated capability. All operations are best-effort and
 /// report the bundle ids actually affected; an id that is not running is simply
 /// not in the result, never an error.
+///
+/// DECISION (NIC-85, 2026-07-06): storage is app-level, so an application used
+/// in two modes shares all of its windows between them — opening a
+/// hidden-by-mode app surfaces every window (macOS activation un-hides the whole
+/// app; there is no universal new-window API). Accepted MVP behavior; per-mode
+/// window sets belong to the post-MVP deeper-window-management pool (PRD §5.3),
+/// where an opt-in `createsNewApplicationInstance` reference flag is the known
+/// 80% approach for single-instance-forwarding apps like Chrome.
 public protocol WorkspaceWindowsCapability: Sendable {
     /// Bundle ids of regular, currently visible (un-hidden) applications,
     /// excluding the host app itself.
@@ -184,6 +192,16 @@ public protocol WindowCapability: Sendable {
     /// `NativeCapabilityError.permissionDenied` when the Accessibility permission
     /// is not granted (FR-SAF-07 — a capability error, never a prompt loop).
     func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome
+
+    /// Read the application's main window frame for a workspace snapshot
+    /// ("Windows Stored by Mode" geometry, NIC-85). `nil` when the application
+    /// is not running or exposes no readable window; throws `permissionDenied`
+    /// when Accessibility is not granted.
+    func captureFrame(bundleID: String) async throws -> WindowRect?
+
+    /// Reapply a stored main-window frame. Same outcome vocabulary as `arrange`;
+    /// throws `permissionDenied` when Accessibility is not granted.
+    func restoreFrame(bundleID: String, rect: WindowRect) async throws -> WindowArrangeOutcome
 }
 
 public struct WindowInfo: Equatable, Sendable {

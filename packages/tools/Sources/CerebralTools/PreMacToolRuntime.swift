@@ -44,7 +44,8 @@ public enum PreMacToolRuntime {
                 stateStore: modeStateStore,
                 settings: settingsStore,
                 workspaceStore: modeWorkspaceStore,
-                windows: capabilities.workspaceWindows
+                windows: capabilities.workspaceWindows,
+                windowFrames: capabilities.window
             ),
         ]
 

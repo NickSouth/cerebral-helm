@@ -68,7 +68,10 @@ func windowsStoredByModeStoresHidesAndRestores() async throws {
     try stateStore.saveActiveModeID("developer")
     let workspaceStore = InMemoryModeWorkspaceStore()
     // Executive's earlier departure stored Safari and Mail; Mail has since quit.
-    try workspaceStore.saveSnapshot(modeID: "executive", bundleIDs: ["com.apple.Safari", "com.apple.Mail"])
+    try workspaceStore.saveSnapshot(modeID: "executive", apps: [
+        WorkspaceAppSnapshot(bundleID: "com.apple.Safari"),
+        WorkspaceAppSnapshot(bundleID: "com.apple.Mail"),
+    ])
     let handler = ModeApplyHandler(
         modeIDs: ["developer", "executive"],
         coordinator: ModeSessionCoordinator(stateStore: stateStore, sessionLog: InMemoryModeSessionLog()),
@@ -86,12 +89,84 @@ func windowsStoredByModeStoresHidesAndRestores() async throws {
     #expect(decoded.status == .success)
 
     // The outgoing developer workspace was stored…
-    #expect(try workspaceStore.loadSnapshot(modeID: "developer") == ["com.microsoft.VSCode", "com.apple.Terminal"])
+    #expect(try workspaceStore.loadSnapshot(modeID: "developer")?.map(\.bundleID) == ["com.microsoft.VSCode", "com.apple.Terminal"])
     // …and both window operations report honestly, including the quit app.
     let byID = Dictionary(uniqueKeysWithValues: decoded.actions.map { ($0.actionID, $0) })
     #expect(byID["store-windows"]?.status == .success)
     #expect(byID["restore-windows"]?.status == .success)
     #expect(byID["restore-windows"]?.message?.contains("1 of 2") == true)
+}
+
+@Test("window frames are captured on departure and restored on return (NIC-85 geometry)")
+func windowGeometryCapturesAndRestores() async throws {
+    let stateStore = InMemoryModeStateStore()
+    try stateStore.saveActiveModeID("developer")
+    let workspaceStore = InMemoryModeWorkspaceStore()
+    // Executive stored Safari with a frame last time it was left.
+    try workspaceStore.saveSnapshot(modeID: "executive", apps: [
+        WorkspaceAppSnapshot(bundleID: "com.apple.Safari", frame: WindowRect(x: 5, y: 30, width: 900, height: 700)),
+    ])
+    let handler = ModeApplyHandler(
+        modeIDs: ["developer", "executive"],
+        coordinator: ModeSessionCoordinator(stateStore: stateStore, sessionLog: InMemoryModeSessionLog()),
+        stateStore: stateStore,
+        settings: FixedSettings(stored: StoredSettings(windowsStoredByMode: true)),
+        workspaceStore: workspaceStore,
+        windows: MockWorkspaceWindowsCapability(
+            visibleBundleIDs: ["com.microsoft.VSCode"],
+            runningBundleIDs: ["com.apple.Safari"]
+        ),
+        windowFrames: MockWindowCapability(
+            arrangeOutcomes: ["com.apple.Safari": .arranged],
+            capturedFrames: ["com.microsoft.VSCode": WindowRect(x: 0, y: 25, width: 800, height: 775)]
+        )
+    )
+
+    let output = try await handler.execute(input: Data(#"{"modeId":"executive"}"#.utf8))
+    let decoded = try CerebralHelmModeApplyOutput(data: output)
+    #expect(decoded.status == .success)
+
+    // Departure captured VS Code's frame into the developer snapshot…
+    let stored = try workspaceStore.loadSnapshot(modeID: "developer")
+    #expect(stored?.first?.frame == WindowRect(x: 0, y: 25, width: 800, height: 775))
+    // …and both messages surface geometry coverage honestly.
+    let byID = Dictionary(uniqueKeysWithValues: decoded.actions.map { ($0.actionID, $0) })
+    #expect(byID["store-windows"]?.message?.contains("positions stored for 1") == true)
+    #expect(byID["restore-windows"]?.message?.contains("positions restored for 1 of 1") == true)
+}
+
+@Test("without Accessibility, restore degrades to reactivation-only with an honest note")
+func windowGeometryDegradesWithoutAccessibility() async throws {
+    let stateStore = InMemoryModeStateStore()
+    try stateStore.saveActiveModeID("developer")
+    let workspaceStore = InMemoryModeWorkspaceStore()
+    try workspaceStore.saveSnapshot(modeID: "executive", apps: [
+        WorkspaceAppSnapshot(bundleID: "com.apple.Safari", frame: WindowRect(x: 5, y: 30, width: 900, height: 700)),
+    ])
+    let handler = ModeApplyHandler(
+        modeIDs: ["developer", "executive"],
+        coordinator: ModeSessionCoordinator(stateStore: stateStore, sessionLog: InMemoryModeSessionLog()),
+        stateStore: stateStore,
+        settings: FixedSettings(stored: StoredSettings(windowsStoredByMode: true)),
+        workspaceStore: workspaceStore,
+        windows: MockWorkspaceWindowsCapability(
+            visibleBundleIDs: ["com.microsoft.VSCode"],
+            runningBundleIDs: ["com.apple.Safari"]
+        ),
+        // Accessibility denied: geometry is unavailable, hide/return still work.
+        windowFrames: MockWindowCapability(fault: .permissionDenied)
+    )
+
+    let output = try await handler.execute(input: Data(#"{"modeId":"executive"}"#.utf8))
+    let decoded = try CerebralHelmModeApplyOutput(data: output)
+    // The core hide/return behavior succeeded; geometry is a surfaced degradation.
+    #expect(decoded.status == .success)
+    let byID = Dictionary(uniqueKeysWithValues: decoded.actions.map { ($0.actionID, $0) })
+    #expect(byID["store-windows"]?.message?.contains("Accessibility") == true)
+    #expect(byID["restore-windows"]?.message?.contains("Accessibility") == true)
+    // The snapshot still stored the apps, frame-less.
+    #expect(try workspaceStore.loadSnapshot(modeID: "developer")?.first
+        == WorkspaceAppSnapshot(bundleID: "com.microsoft.VSCode", frame: nil))
 }
 
 @Test("with the toggle off, a switch performs no window operations")

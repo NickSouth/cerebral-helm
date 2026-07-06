@@ -35,18 +35,18 @@ public final class InMemoryModeStateStore: ModeStateStore, @unchecked Sendable {
 /// durable snapshot store is composed ("Windows Stored by Mode", NIC-85).
 public final class InMemoryModeWorkspaceStore: ModeWorkspaceStore, @unchecked Sendable {
     private let lock = NSLock()
-    private var snapshots: [String: [String]] = [:]
+    private var snapshots: [String: [WorkspaceAppSnapshot]] = [:]
 
     public init() {}
 
-    public func loadSnapshot(modeID: String) throws -> [String]? {
+    public func loadSnapshot(modeID: String) throws -> [WorkspaceAppSnapshot]? {
         lock.lock(); defer { lock.unlock() }
         return snapshots[modeID]
     }
 
-    public func saveSnapshot(modeID: String, bundleIDs: [String]) throws {
+    public func saveSnapshot(modeID: String, apps: [WorkspaceAppSnapshot]) throws {
         lock.lock(); defer { lock.unlock() }
-        snapshots[modeID] = bundleIDs
+        snapshots[modeID] = apps
     }
 }
 

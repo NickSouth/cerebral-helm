@@ -23,6 +23,10 @@ public struct ModeApplyHandler: ToolHandler {
     private let settings: (any SettingsStore)?
     private let workspaceStore: any ModeWorkspaceStore
     private let windows: any WorkspaceWindowsCapability
+    /// Geometry capture/restore (Accessibility). Best-effort enhancement: when
+    /// untrusted or unavailable, snapshots store no frames and restore degrades
+    /// to reactivation-only — surfaced in the action message, never a failure.
+    private let windowFrames: any WindowCapability
     private let configVersion: String
     /// Recorded as the session's activation source (FR-MOD-06). The handler does
     /// not see the command envelope, so the composition supplies the surface
@@ -36,6 +40,7 @@ public struct ModeApplyHandler: ToolHandler {
         settings: (any SettingsStore)? = nil,
         workspaceStore: any ModeWorkspaceStore = InMemoryModeWorkspaceStore(),
         windows: any WorkspaceWindowsCapability = MockWorkspaceWindowsCapability(matrix: .none),
+        windowFrames: any WindowCapability = MockWindowCapability(matrix: .none),
         configVersion: String = ConfigValidator.schemaVersion,
         sessionSource: String = "command"
     ) {
@@ -45,6 +50,7 @@ public struct ModeApplyHandler: ToolHandler {
         self.settings = settings
         self.workspaceStore = workspaceStore
         self.windows = windows
+        self.windowFrames = windowFrames
         self.configVersion = configVersion
         self.sessionSource = sessionSource
     }
@@ -98,12 +104,16 @@ public struct ModeApplyHandler: ToolHandler {
         if let previous = previousModeID {
             do {
                 let visible = try await windows.visibleApplicationBundleIDs()
-                try workspaceStore.saveSnapshot(modeID: previous, bundleIDs: visible)
+                // Geometry is captured before hiding (hidden windows may not
+                // report frames) and is best-effort: an untrusted Accessibility
+                // permission stores frame-less snapshots, surfaced in the message.
+                let (snapshots, framesNote) = await captureFrames(for: visible)
+                try workspaceStore.saveSnapshot(modeID: previous, apps: snapshots)
                 let hidden = try await windows.hideApplications(bundleIDs: visible)
                 actions.append(Action(
                     actionID: "store-windows",
                     kind: "workspace.hide",
-                    message: "Stored and hid \(hidden.count) of \(visible.count) applications for '\(previous)'.",
+                    message: "Stored and hid \(hidden.count) of \(visible.count) applications for '\(previous)'\(framesNote).",
                     risk: .localWrite,
                     status: .success
                 ))
@@ -117,11 +127,12 @@ public struct ModeApplyHandler: ToolHandler {
         do {
             let stored = (try workspaceStore.loadSnapshot(modeID: modeID)) ?? []
             if !stored.isEmpty {
-                let returned = try await windows.unhideApplications(bundleIDs: stored)
+                let returned = try await windows.unhideApplications(bundleIDs: stored.map(\.bundleID))
+                let framesNote = await restoreFrames(for: stored, returned: Set(returned))
                 actions.append(Action(
                     actionID: "restore-windows",
                     kind: "workspace.restore",
-                    message: "Returned \(returned.count) of \(stored.count) stored applications; quit applications are not relaunched.",
+                    message: "Returned \(returned.count) of \(stored.count) stored applications\(framesNote); quit applications are not relaunched.",
                     risk: .localWrite,
                     status: .success
                 ))
@@ -133,6 +144,50 @@ public struct ModeApplyHandler: ToolHandler {
         }
 
         return actions
+    }
+
+    /// Reads each visible application's main-window frame for the snapshot.
+    /// Returns the snapshots plus a message note describing coverage; a missing
+    /// Accessibility permission or capability yields frame-less snapshots and an
+    /// honest note, never a failed switch.
+    private func captureFrames(for bundleIDs: [String]) async -> ([WorkspaceAppSnapshot], String) {
+        var snapshots: [WorkspaceAppSnapshot] = []
+        var captured = 0
+        var geometryUnavailable = false
+        for bundleID in bundleIDs {
+            do {
+                let frame = try await windowFrames.captureFrame(bundleID: bundleID)
+                if frame != nil { captured += 1 }
+                snapshots.append(WorkspaceAppSnapshot(bundleID: bundleID, frame: frame))
+            } catch {
+                geometryUnavailable = true
+                snapshots.append(WorkspaceAppSnapshot(bundleID: bundleID, frame: nil))
+            }
+        }
+        if geometryUnavailable {
+            return (snapshots, " (window positions not stored — needs the Accessibility permission)")
+        }
+        return (snapshots, captured > 0 ? " (positions stored for \(captured))" : "")
+    }
+
+    /// Reapplies stored frames to the applications that actually returned.
+    /// Best-effort: per-app refusals and a missing permission degrade to
+    /// reactivation-only with an honest note.
+    private func restoreFrames(for stored: [WorkspaceAppSnapshot], returned: Set<String>) async -> String {
+        let withFrames = stored.filter { $0.frame != nil && returned.contains($0.bundleID) }
+        guard !withFrames.isEmpty else { return "" }
+        var restored = 0
+        for snapshot in withFrames {
+            guard let frame = snapshot.frame else { continue }
+            do {
+                if case .arranged = try await windowFrames.restoreFrame(bundleID: snapshot.bundleID, rect: frame) {
+                    restored += 1
+                }
+            } catch {
+                return " (window positions not restored — needs the Accessibility permission)"
+            }
+        }
+        return " (positions restored for \(restored) of \(withFrames.count))"
     }
 
     private func windowFailure(actionID: String, kind: String, error: Error) -> Action {

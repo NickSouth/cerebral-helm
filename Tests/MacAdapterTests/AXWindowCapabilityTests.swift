@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+import CerebralCore
 import CerebralMacAdapters
 import CerebralTools
 
@@ -13,9 +14,11 @@ private struct FakeAXWindows: AXWindowSurface {
     var primaryVisibleFrame: CGRect? = CGRect(x: 0, y: 25, width: 1200, height: 775)
     var pidsByBundleID: [String: [pid_t]] = [:]
     var settablePIDs: Set<pid_t> = []
+    var framesByPID: [pid_t: CGRect] = [:]
 
     func runningProcessIDs(bundleID: String) -> [pid_t] { pidsByBundleID[bundleID] ?? [] }
     func setMainWindowFrame(pid: pid_t, frame: CGRect) -> Bool { settablePIDs.contains(pid) }
+    func mainWindowFrame(pid: pid_t) -> CGRect? { framesByPID[pid] }
 }
 
 @Test("an untrusted process is a permission-denied capability error, never a prompt")
@@ -46,6 +49,43 @@ func settableWindowArranges() async throws {
         settablePIDs: [7]
     ))
     #expect(try await capability.arrange(bundleID: "com.microsoft.VSCode", frame: .leftHalf) == .arranged)
+}
+
+@Test("frame capture reads the main window and reports nil for unreadable apps (NIC-85 geometry)")
+func captureFrameIsHonest() async throws {
+    let capability = AXWindowCapability(surface: FakeAXWindows(
+        pidsByBundleID: [
+            "com.microsoft.VSCode": [7],
+            "com.apple.Terminal": [8],
+        ],
+        framesByPID: [7: CGRect(x: 10, y: 30, width: 640, height: 480)]
+    ))
+
+    #expect(try await capability.captureFrame(bundleID: "com.microsoft.VSCode")
+        == WindowRect(x: 10, y: 30, width: 640, height: 480))
+    // A running app with no readable window is nil, never a guess.
+    #expect(try await capability.captureFrame(bundleID: "com.apple.Terminal") == nil)
+    // Untrusted process: permission denied, not a silent nil.
+    let untrusted = AXWindowCapability(surface: FakeAXWindows(isProcessTrusted: false))
+    await #expect(throws: NativeCapabilityError.permissionDenied) {
+        _ = try await untrusted.captureFrame(bundleID: "com.microsoft.VSCode")
+    }
+}
+
+@Test("a stored frame restores through the same settable-window gate")
+func restoreFrameAppliesStoredGeometry() async throws {
+    let capability = AXWindowCapability(surface: FakeAXWindows(
+        pidsByBundleID: ["com.microsoft.VSCode": [7]],
+        settablePIDs: [7]
+    ))
+    let outcome = try await capability.restoreFrame(
+        bundleID: "com.microsoft.VSCode",
+        rect: WindowRect(x: 10, y: 30, width: 640, height: 480)
+    )
+    #expect(outcome == .arranged)
+    #expect(try await capability.restoreFrame(
+        bundleID: "com.quit.App", rect: WindowRect(x: 0, y: 0, width: 1, height: 1)
+    ) == .notRunning)
 }
 
 @Test("named frames resolve to deterministic geometry within the visible area")
