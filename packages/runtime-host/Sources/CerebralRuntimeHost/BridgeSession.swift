@@ -16,10 +16,19 @@ public final class BridgeSession: @unchecked Sendable {
     private let runtime: CommandRuntime
     private let configDirectory: URL
     /// The composed capability flags the handshake reports (FR-SHL-06), derived at
-    /// composition time from the bound capability bundle and phase
-    /// (``CompositionCapabilities``). Defaults to the honest pre-Mac mock set:
-    /// every native capability unavailable.
-    public let capabilities: [CerebralContracts.Capability]
+    /// composition time from the bound capability bundle, phase, and platform
+    /// permissions (``CompositionCapabilities``). Defaults to the honest pre-Mac
+    /// mock set: every native capability unavailable. Mutable because permission
+    /// state can change while running (NIC-83) — the shell rechecks on activation
+    /// and updates via ``updateCapabilities(_:)``.
+    public var capabilities: [CerebralContracts.Capability] {
+        capabilitiesLock.lock()
+        defer { capabilitiesLock.unlock() }
+        return currentCapabilities
+    }
+
+    private let capabilitiesLock = NSLock()
+    private var currentCapabilities: [CerebralContracts.Capability]
     private let messageSchemaVersion = "1.0.0"
     /// Emits an already-encoded bridge-event JSON string to the dashboard (Sendable
     /// String — no non-Sendable DTO crosses the transport boundary).
@@ -39,8 +48,24 @@ public final class BridgeSession: @unchecked Sendable {
     ) {
         self.runtime = runtime
         self.configDirectory = configDirectory
-        self.capabilities = capabilities
+        self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
+    }
+
+    /// Replaces the reported capability set (a permission recheck, NIC-83) and
+    /// returns the capabilities whose availability changed, so the caller can
+    /// emit one `bridge.capability.changed` event per transition. Future
+    /// handshakes report the updated set.
+    public func updateCapabilities(
+        _ updated: [CerebralContracts.Capability]
+    ) -> [CerebralContracts.Capability] {
+        capabilitiesLock.lock()
+        defer { capabilitiesLock.unlock() }
+        let previousByID = Dictionary(uniqueKeysWithValues: currentCapabilities.map { ($0.id, $0) })
+        currentCapabilities = updated
+        return updated.filter { capability in
+            previousByID[capability.id]?.available != capability.available
+        }
     }
 
     public func execute(

@@ -147,6 +147,25 @@ public enum BridgeEventFactory {
         }
     }
 
+    /// A `bridge.capability.changed` event (FR-SHL-06, NIC-83): one capability's
+    /// availability transitioned at runtime — e.g. the user granted or revoked a
+    /// platform permission in System Settings. The payload matches the dashboard
+    /// reducer's shape: `{ capability: { id, available, degradedReason } }`.
+    public static func capabilityChangedEvent(
+        _ capability: CerebralContracts.Capability, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Wrapper: Encodable {
+            let capability: CerebralContracts.Capability
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Wrapper(capability: capability)),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .bridgeCapabilityChanged
+        )
+    }
+
     /// A `system.status.changed` event carrying one live metrics snapshot
     /// (NIC-81b). Emitted by the status publisher on its sampling cadence.
     public static func systemStatusEvent(

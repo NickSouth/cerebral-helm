@@ -71,3 +71,133 @@ func preMacPhaseGatesNativeDeclarations() {
 
     #expect(flags.allSatisfy { $0.id == "bridge.bootstrap" || !$0.available })
 }
+
+// MARK: - Permission gating (NIC-83, FR-SAF-07)
+
+import CerebralTools
+
+private struct FakePermissions: PermissionChecking {
+    let statuses: [String: PermissionStatus]
+    func status(of permissionID: String) -> PermissionStatus {
+        statuses[permissionID] ?? .notRequired
+    }
+}
+
+@Test("a denied permission degrades only its capability, with guidance instead of a prompt")
+func deniedPermissionDegradesOnlyItsCapability() {
+    let flags = CompositionCapabilities.bridgeCapabilities(
+        phase: .macOS,
+        nativeCapabilityIDs: ["app.open", "url.open", "system.status.read"],
+        requiredPermissions: [
+            "system.status.read": ["system_metrics_read"],
+            "app.open": ["application_launch"],
+        ],
+        permissions: FakePermissions(statuses: ["system_metrics_read": .denied])
+    )
+    let byID = Dictionary(uniqueKeysWithValues: flags.map { ($0.id, $0) })
+
+    #expect(byID["system.metrics"]?.available == false)
+    #expect(byID["battery"]?.available == false)
+    #expect(byID["system.metrics"]?.degradedReason?.isEmpty == false)
+    // Unrelated, permission-satisfied capabilities stay available (portable
+    // workflows remain available).
+    #expect(byID["native.app.open"]?.available == true)
+    #expect(byID["native.url.open"]?.available == true)
+}
+
+@Test("notDetermined is conservative (unavailable with guidance); granted and notRequired satisfy")
+func permissionStatusMapping() {
+    func metricsFlag(_ status: PermissionStatus) -> CerebralContracts.Capability? {
+        let flags = CompositionCapabilities.bridgeCapabilities(
+            phase: .macOS,
+            nativeCapabilityIDs: ["system.status.read"],
+            requiredPermissions: ["system.status.read": ["system_metrics_read"]],
+            permissions: FakePermissions(statuses: ["system_metrics_read": status])
+        )
+        return flags.first { $0.id == "system.metrics" }
+    }
+
+    #expect(metricsFlag(.granted)?.available == true)
+    #expect(metricsFlag(.notRequired)?.available == true)
+    #expect(metricsFlag(.denied)?.available == false)
+    #expect(metricsFlag(.notDetermined)?.available == false)
+}
+
+@Test("a known TCC permission's guidance carries the System Settings deep link")
+func accessibilityGuidanceCarriesDeepLink() {
+    let flags = CompositionCapabilities.bridgeCapabilities(
+        phase: .macOS,
+        nativeCapabilityIDs: ["app.open"],
+        requiredPermissions: ["app.open": ["accessibility"]],
+        permissions: FakePermissions(statuses: ["accessibility": .denied])
+    )
+    let reason = flags.first { $0.id == "native.app.open" }?.degradedReason ?? ""
+    #expect(reason.contains("Accessibility"))
+    #expect(reason.contains("x-apple.systempreferences:"))
+}
+
+@Test("descriptor permission metadata folds into the per-capability requirement map")
+func descriptorPermissionMapFolds() throws {
+    let descriptors = try ToolDescriptorCatalog.loadDescriptors(
+        directory: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // RuntimeHostTests
+            .deletingLastPathComponent() // Tests
+            .deletingLastPathComponent() // repository root
+            .appendingPathComponent("packages/contracts/fixtures/valid/tools/descriptors", isDirectory: true)
+    )
+    let map = CompositionCapabilities.requiredPermissionsByCapability(descriptors)
+
+    #expect(map["system.status.read"] == ["system_metrics_read"])
+    #expect(map["app.open"] == ["application_launch"])
+    #expect(map["hook.run"] == ["allowlisted_process_execution"])
+}
+
+@Test("a permission recheck reports exactly the transitioned capabilities and updates the handshake set")
+func sessionCapabilityUpdateDiffs() throws {
+    let repositoryRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent() // RuntimeHostTests
+        .deletingLastPathComponent() // Tests
+        .deletingLastPathComponent() // repository root
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot)
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        capabilities: CompositionCapabilities.bridgeCapabilities(
+            phase: .macOS,
+            nativeCapabilityIDs: ["system.status.read"],
+            requiredPermissions: ["system.status.read": ["system_metrics_read"]],
+            permissions: FakePermissions(statuses: ["system_metrics_read": .denied])
+        )
+    )
+    #expect(session.capabilities.first { $0.id == "system.metrics" }?.available == false)
+
+    // The user grants the permission and returns to the app: recheck.
+    let updated = CompositionCapabilities.bridgeCapabilities(
+        phase: .macOS,
+        nativeCapabilityIDs: ["system.status.read"],
+        requiredPermissions: ["system.status.read": ["system_metrics_read"]],
+        permissions: FakePermissions(statuses: ["system_metrics_read": .granted])
+    )
+    let changed = session.updateCapabilities(updated)
+
+    #expect(Set(changed.map(\.id)) == ["system.metrics", "battery"])
+    #expect(session.capabilities.first { $0.id == "system.metrics" }?.available == true)
+    // A recheck with no transition reports nothing.
+    #expect(session.updateCapabilities(updated).isEmpty)
+}
+
+@Test("a capability transition encodes as the reducer-shaped bridge.capability.changed event")
+func capabilityChangedEventShape() throws {
+    let capability = CerebralContracts.Capability(
+        available: true, degradedReason: nil, id: "system.metrics", source: .native
+    )
+    let event = BridgeEventFactory.capabilityChangedEvent(
+        capability, id: "brevt_captest00000001", timestamp: Date(timeIntervalSinceReferenceDate: 0)
+    )
+    let json = String(decoding: try BridgeMessageCoding.encoder().encode(event), as: UTF8.self)
+
+    #expect(event.type == .bridgeCapabilityChanged)
+    #expect(json.contains("\"capability\""))
+    #expect(json.contains("\"id\":\"system.metrics\""))
+    #expect(json.contains("\"available\":true"))
+}

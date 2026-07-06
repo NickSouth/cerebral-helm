@@ -96,4 +96,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openSettings: { [weak self] in self?.coordinator.openSettings() }
         )
     }
+
+    /// Permission recheck (NIC-83): the app becoming active is the moment a user
+    /// returns from System Settings after changing a permission — re-derive the
+    /// capability flags and announce any availability transition.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        bridgeRuntime?.recheckPermissions()
+    }
 }

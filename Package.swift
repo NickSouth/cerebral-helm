@@ -196,6 +196,7 @@ let package = Package(
             dependencies: [
                 "CerebralRuntimeHost",
                 "CerebralCore",
+                "CerebralTools",
                 "CerebralContracts",
             ],
             path: "Tests/RuntimeHostTests"
