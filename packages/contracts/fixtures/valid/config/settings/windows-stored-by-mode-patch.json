@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0",
+  "patchId": "set_windows_by_mode_01",
+  "changes": {
+    "workspace": {
+      "windowsStoredByMode": true
+    }
+  }
+}

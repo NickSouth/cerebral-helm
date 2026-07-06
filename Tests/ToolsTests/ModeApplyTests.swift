@@ -54,6 +54,108 @@ func modeApplyPreservesContext() async throws {
     #expect(try sessionLog.read().first?.context?.id == "cerebralhelm")
 }
 
+// MARK: - Windows Stored by Mode (NIC-85)
+
+private struct FixedSettings: SettingsStore {
+    let stored: StoredSettings
+    func load() throws -> StoredSettings { stored }
+    func apply(_ changes: SettingsChanges) throws {}
+}
+
+@Test("with the toggle on, a switch stores-and-hides the outgoing mode and returns the incoming one")
+func windowsStoredByModeStoresHidesAndRestores() async throws {
+    let stateStore = InMemoryModeStateStore()
+    try stateStore.saveActiveModeID("developer")
+    let workspaceStore = InMemoryModeWorkspaceStore()
+    // Executive's earlier departure stored Safari and Mail; Mail has since quit.
+    try workspaceStore.saveSnapshot(modeID: "executive", bundleIDs: ["com.apple.Safari", "com.apple.Mail"])
+    let handler = ModeApplyHandler(
+        modeIDs: ["developer", "executive"],
+        coordinator: ModeSessionCoordinator(stateStore: stateStore, sessionLog: InMemoryModeSessionLog()),
+        stateStore: stateStore,
+        settings: FixedSettings(stored: StoredSettings(windowsStoredByMode: true)),
+        workspaceStore: workspaceStore,
+        windows: MockWorkspaceWindowsCapability(
+            visibleBundleIDs: ["com.microsoft.VSCode", "com.apple.Terminal"],
+            runningBundleIDs: ["com.apple.Safari"]
+        )
+    )
+
+    let output = try await handler.execute(input: Data(#"{"modeId":"executive"}"#.utf8))
+    let decoded = try CerebralHelmModeApplyOutput(data: output)
+    #expect(decoded.status == .success)
+
+    // The outgoing developer workspace was stored…
+    #expect(try workspaceStore.loadSnapshot(modeID: "developer") == ["com.microsoft.VSCode", "com.apple.Terminal"])
+    // …and both window operations report honestly, including the quit app.
+    let byID = Dictionary(uniqueKeysWithValues: decoded.actions.map { ($0.actionID, $0) })
+    #expect(byID["store-windows"]?.status == .success)
+    #expect(byID["restore-windows"]?.status == .success)
+    #expect(byID["restore-windows"]?.message?.contains("1 of 2") == true)
+}
+
+@Test("with the toggle off, a switch performs no window operations")
+func windowsToggleOffDoesNothing() async throws {
+    let stateStore = InMemoryModeStateStore()
+    try stateStore.saveActiveModeID("developer")
+    let workspaceStore = InMemoryModeWorkspaceStore()
+    let handler = ModeApplyHandler(
+        modeIDs: ["developer", "executive"],
+        coordinator: ModeSessionCoordinator(stateStore: stateStore, sessionLog: InMemoryModeSessionLog()),
+        stateStore: stateStore,
+        settings: FixedSettings(stored: StoredSettings(windowsStoredByMode: false)),
+        workspaceStore: workspaceStore,
+        windows: MockWorkspaceWindowsCapability(visibleBundleIDs: ["com.microsoft.VSCode"])
+    )
+
+    let output = try await handler.execute(input: Data(#"{"modeId":"executive"}"#.utf8))
+    let decoded = try CerebralHelmModeApplyOutput(data: output)
+    #expect(decoded.status == .success)
+    #expect(decoded.actions.isEmpty)
+    #expect(try workspaceStore.loadSnapshot(modeID: "developer") == nil)
+}
+
+@Test("toggle on without the native capability degrades to partial success, and the switch still lands")
+func windowsToggleUnavailableDegradesHonestly() async throws {
+    let stateStore = InMemoryModeStateStore()
+    try stateStore.saveActiveModeID("developer")
+    let handler = ModeApplyHandler(
+        modeIDs: ["developer", "executive"],
+        coordinator: ModeSessionCoordinator(stateStore: stateStore, sessionLog: InMemoryModeSessionLog()),
+        stateStore: stateStore,
+        settings: FixedSettings(stored: StoredSettings(windowsStoredByMode: true)),
+        workspaceStore: InMemoryModeWorkspaceStore(),
+        windows: MockWorkspaceWindowsCapability(matrix: .none)
+    )
+
+    let output = try await handler.execute(input: Data(#"{"modeId":"executive"}"#.utf8))
+    let decoded = try CerebralHelmModeApplyOutput(data: output)
+    #expect(decoded.status == .partialSuccess)
+    #expect(decoded.actions.contains { $0.status == .unavailable })
+    // The switch itself still persisted.
+    #expect(try stateStore.loadActiveModeID() == "executive")
+}
+
+@Test("re-applying the active mode never hides or restores anything")
+func sameModeSwitchSkipsWindowBehavior() async throws {
+    let stateStore = InMemoryModeStateStore()
+    try stateStore.saveActiveModeID("developer")
+    let workspaceStore = InMemoryModeWorkspaceStore()
+    let handler = ModeApplyHandler(
+        modeIDs: ["developer"],
+        coordinator: ModeSessionCoordinator(stateStore: stateStore, sessionLog: InMemoryModeSessionLog()),
+        stateStore: stateStore,
+        settings: FixedSettings(stored: StoredSettings(windowsStoredByMode: true)),
+        workspaceStore: workspaceStore,
+        windows: MockWorkspaceWindowsCapability(visibleBundleIDs: ["com.microsoft.VSCode"])
+    )
+
+    let output = try await handler.execute(input: Data(#"{"modeId":"developer"}"#.utf8))
+    let decoded = try CerebralHelmModeApplyOutput(data: output)
+    #expect(decoded.actions.isEmpty)
+    #expect(try workspaceStore.loadSnapshot(modeID: "developer") == nil)
+}
+
 @Test("mode.apply reports an unconfigured mode as unavailable")
 func modeApplyRejectsUnknownMode() async throws {
     let handler = makeHandler()

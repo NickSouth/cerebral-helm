@@ -30,6 +30,7 @@ func appliedFieldsRoundTrip() throws {
         appearanceReducedMotion: true,
         commandPaletteHotkey: "cmd+shift+space",
         knowledgeRootReference: "workspace",
+        windowsStoredByMode: true,
         extensionsJSON: #"{"x-theme-lab":{"glow":2}}"#
     ))
 
@@ -39,7 +40,22 @@ func appliedFieldsRoundTrip() throws {
     #expect(loaded.appearanceReducedMotion == true)
     #expect(loaded.commandPaletteHotkey == "cmd+shift+space")
     #expect(loaded.knowledgeRootReference == "workspace")
+    #expect(loaded.windowsStoredByMode == true)
     #expect(loaded.extensionsJSON == #"{"x-theme-lab":{"glow":2}}"#)
+}
+
+@Test("the windows-stored-by-mode toggle round-trips and merges like every field")
+func windowsStoredByModeRoundTrips() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(windowsStoredByMode: true))
+    #expect(try store.load().windowsStoredByMode == true)
+
+    // Turning it off is a value, not an absence; unrelated fields survive.
+    try store.apply(SettingsChanges(defaultModeID: "school"))
+    try store.apply(SettingsChanges(windowsStoredByMode: false))
+    let loaded = try store.load()
+    #expect(loaded.windowsStoredByMode == false)
+    #expect(loaded.defaultModeID == "school")
 }
 
 @Test("a partial patch preserves every unrelated stored field")

@@ -13,6 +13,7 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0002_mode_state", sql: modeStateSQL),
         SchemaMigration(id: "0003_note_search", sql: noteSearchSQL),
         SchemaMigration(id: "0004_settings", sql: settingsSQL),
+        SchemaMigration(id: "0005_mode_workspace", sql: modeWorkspaceSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -174,6 +175,19 @@ public enum SchemaMigrations {
         knowledge_root_reference  TEXT,
         extensions                TEXT,
         updated_at                TEXT NOT NULL
+    );
+    """
+
+    /// Migration 0005: "Windows Stored by Mode" (NIC-85). The settings singleton
+    /// gains the toggle column, and per-mode workspace snapshots store the bundle
+    /// ids of the applications visible when the mode was last left.
+    public static let modeWorkspaceSQL = """
+    ALTER TABLE settings ADD COLUMN windows_stored_by_mode INTEGER;
+
+    CREATE TABLE mode_workspace_snapshots (
+        mode_id    TEXT PRIMARY KEY,
+        bundle_ids TEXT NOT NULL,
+        updated_at TEXT NOT NULL
     );
     """
 }

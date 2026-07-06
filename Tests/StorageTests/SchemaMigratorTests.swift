@@ -7,7 +7,7 @@ import CerebralStorage
 private let expectedTables = [
     "schema_migrations", "commands", "command_events", "tool_calls",
     "confirmations", "note_metadata", "mode_sessions", "settings_metadata", "updates",
-    "mode_state", "note_search", "settings",
+    "mode_state", "note_search", "settings", "mode_workspace_snapshots",
 ]
 
 private let expectedIndexes = [

@@ -55,6 +55,15 @@
             }
           }
         },
+        "workspace": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "windowsStoredByMode": {
+              "type": "boolean"
+            }
+          }
+        },
         "extensions": {
           "type": "object",
           "propertyNames": {

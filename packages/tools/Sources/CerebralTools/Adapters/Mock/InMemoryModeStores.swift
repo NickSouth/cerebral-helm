@@ -31,6 +31,25 @@ public final class InMemoryModeStateStore: ModeStateStore, @unchecked Sendable {
     }
 }
 
+/// In-memory ``ModeWorkspaceStore``: the default test/dev binding when no
+/// durable snapshot store is composed ("Windows Stored by Mode", NIC-85).
+public final class InMemoryModeWorkspaceStore: ModeWorkspaceStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshots: [String: [String]] = [:]
+
+    public init() {}
+
+    public func loadSnapshot(modeID: String) throws -> [String]? {
+        lock.lock(); defer { lock.unlock() }
+        return snapshots[modeID]
+    }
+
+    public func saveSnapshot(modeID: String, bundleIDs: [String]) throws {
+        lock.lock(); defer { lock.unlock() }
+        snapshots[modeID] = bundleIDs
+    }
+}
+
 /// In-memory append-only ``ModeSessionLog``: the default test/dev binding when
 /// no durable log is composed.
 public final class InMemoryModeSessionLog: ModeSessionLog, @unchecked Sendable {

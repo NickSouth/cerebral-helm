@@ -129,6 +129,28 @@ public struct SecretResolution: Equatable, Sendable {
     }
 }
 
+// MARK: - workspace windows
+
+/// Hide-and-return of whole applications for "Windows Stored by Mode" (NIC-85).
+///
+/// Permission-free by design: implemented with application-level hide/unhide
+/// (`NSRunningApplication`), never Accessibility window manipulation — geometry
+/// restore is a separate, gated capability. All operations are best-effort and
+/// report the bundle ids actually affected; an id that is not running is simply
+/// not in the result, never an error.
+public protocol WorkspaceWindowsCapability: Sendable {
+    /// Bundle ids of regular, currently visible (un-hidden) applications,
+    /// excluding the host app itself.
+    func visibleApplicationBundleIDs() async throws -> [String]
+
+    /// Hides the given applications; returns the ids actually hidden.
+    func hideApplications(bundleIDs: [String]) async throws -> [String]
+
+    /// Un-hides the given applications where still running; returns the ids
+    /// actually returned. Never launches anything.
+    func unhideApplications(bundleIDs: [String]) async throws -> [String]
+}
+
 // MARK: - window
 
 public protocol WindowCapability: Sendable {

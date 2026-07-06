@@ -63,10 +63,13 @@ public func makeCommandRuntime(
         hookCatalog: hookCatalog,
         modePlanner: modePlanner,
         modeIDs: references.modeIds,
-        // Mode switches persist durably: active mode/context and session history
+        // Mode switches persist durably: active mode/context, session history,
+        // per-mode workspace snapshots, and the settings the switch consults all
         // live in the operational database (FR-MOD-05/06, ADR-006).
         modeStateStore: SQLiteModeStateStore(database: database),
-        modeSessionLog: SQLiteModeSessionLog(database: database)
+        modeSessionLog: SQLiteModeSessionLog(database: database),
+        modeWorkspaceStore: SQLiteModeWorkspaceStore(database: database),
+        settingsStore: SQLiteSettingsStore(database: database)
     )
 
     return CommandRuntime(

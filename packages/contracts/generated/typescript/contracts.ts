@@ -744,6 +744,7 @@ export interface Changes {
     extensions?:    { [key: string]: any };
     hotkeys?:       Hotkeys;
     knowledge?:     Knowledge;
+    workspace?:     Workspace;
 }
 
 export interface Appearance {
@@ -762,6 +763,10 @@ export interface Hotkeys {
 
 export interface Knowledge {
     rootReference?: string;
+}
+
+export interface Workspace {
+    windowsStoredByMode?: boolean;
 }
 
 /**

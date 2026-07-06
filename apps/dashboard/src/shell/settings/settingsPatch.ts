@@ -15,6 +15,7 @@ export interface SettingsPatchChanges {
   };
   readonly hotkeys?: { readonly commandPalette?: string };
   readonly knowledge?: { readonly rootReference?: string };
+  readonly workspace?: { readonly windowsStoredByMode?: boolean };
   readonly extensions?: Readonly<Record<string, unknown>>;
 }
 
@@ -37,6 +38,7 @@ const ALLOWED_CHANGE_KEYS = new Set([
   "appearance",
   "hotkeys",
   "knowledge",
+  "workspace",
   "extensions"
 ]);
 const ALLOWED_APPEARANCE_KEYS = new Set(["density", "reducedMotion"]);
@@ -94,6 +96,16 @@ export function validateSettingsChanges(changes: unknown): PatchValidation {
       ("rootReference" in knowledge && typeof knowledge.rootReference !== "string")
     ) {
       errors.push("knowledge.rootReference must be a string");
+    }
+  }
+
+  if ("workspace" in changes) {
+    const workspace = changes.workspace;
+    if (
+      !isPlainObject(workspace) ||
+      ("windowsStoredByMode" in workspace && typeof workspace.windowsStoredByMode !== "boolean")
+    ) {
+      errors.push("workspace.windowsStoredByMode must be a boolean");
     }
   }
 

@@ -40,14 +40,21 @@ function ReadonlyValue({ children }: { children: ReactNode }) {
 // --- General --------------------------------------------------------------
 
 function GeneralPanel() {
-  const { modes, mode } = useDashboardState();
+  const { modes, mode, capabilities } = useDashboardState();
   const updateSettings = useUpdateSettings();
   const selectId = useId();
   const [defaultModeId, setDefaultModeId] = useState(() => toModeId(mode));
+  const [windowsStoredByMode, setWindowsStoredByMode] = useState(false);
+  const windowsCapability = capabilities?.["native.workspace.windows"];
 
   function onChange(nextId: string) {
     setDefaultModeId(nextId as typeof defaultModeId);
     void updateSettings({ defaultModeId: nextId });
+  }
+
+  function onWindowsToggle(next: boolean) {
+    setWindowsStoredByMode(next);
+    void updateSettings({ workspace: { windowsStoredByMode: next } });
   }
 
   return (
@@ -67,6 +74,27 @@ function GeneralPanel() {
               </option>
             ))}
           </select>
+        </Field>
+      </Section>
+      <Section title="Workspace">
+        <Field
+          label="Windows Stored by Mode"
+          hint={
+            windowsCapability?.available
+              ? "Switching modes hides the outgoing mode's windows and returns the stored ones. Quit apps are never relaunched."
+              : (windowsCapability?.degradedReason ??
+                "Applies on the macOS host: switching modes hides the outgoing mode's windows and returns the stored ones.")
+          }
+        >
+          <label className="settings-switch">
+            <input
+              type="checkbox"
+              checked={windowsStoredByMode}
+              aria-label="Windows Stored by Mode"
+              onChange={(event) => onWindowsToggle(event.target.checked)}
+            />
+            <span className="settings-switch__track" aria-hidden="true" />
+          </label>
         </Field>
       </Section>
       <Section title="About">

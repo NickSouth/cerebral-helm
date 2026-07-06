@@ -15,7 +15,7 @@ func preMacDerivationMatchesPreAdapterDefault() {
 
     #expect(flags.map(\.id) == [
         "bridge.bootstrap", "native.app.open", "native.url.open",
-        "native.hook.run", "system.metrics", "weather", "battery",
+        "native.hook.run", "system.metrics", "native.workspace.windows", "weather", "battery",
     ])
     let bootstrap = flags.first { $0.id == "bridge.bootstrap" }
     #expect(bootstrap?.available == true)

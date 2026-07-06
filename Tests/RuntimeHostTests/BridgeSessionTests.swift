@@ -360,6 +360,25 @@ func acceptedPatchSurvivesRestart() async throws {
     #expect(state.mode == .developer)
 }
 
+@Test("the Windows Stored by Mode toggle persists through the same patch path")
+func windowsStoredByModePatchPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_windows001","changes":{"workspace":{"windowsStoredByMode":true}}}}"#
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+    #expect(try makeSettingsStore(paths).load().windowsStoredByMode == true)
+
+    // An unknown workspace key is rejected wholesale.
+    let rejected = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"workspace":{"minimizeAll":true}}}}"#
+    ))
+    #expect(!(try decode(rejected, as: Accepted.self).accepted))
+}
+
 @Test("a rejected patch persists nothing")
 func rejectedPatchPersistsNothing() async throws {
     let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())

@@ -74,6 +74,7 @@ public enum CompositionCapabilities {
             flag("native.url.open", boundTo: CapabilityMatrix.Capability.urlOpen, whenUnavailable: "Opening URLs is not available yet."),
             flag("native.hook.run", boundTo: CapabilityMatrix.Capability.hookRun, whenUnavailable: "Running configured hooks is not available yet."),
             flag("system.metrics", boundTo: CapabilityMatrix.Capability.systemStatusRead, whenUnavailable: "Live system metrics are not available yet."),
+            flag("native.workspace.windows", boundTo: CapabilityMatrix.Capability.workspaceWindows, whenUnavailable: "Windows Stored by Mode applies on the macOS host."),
             // No weather provider exists in the MVP; the flag stays honest.
             CerebralContracts.Capability(available: false, degradedReason: "Weather is not available yet.", id: "weather", source: .unavailable),
             // Battery rides the system-status adapter; whether this machine has a

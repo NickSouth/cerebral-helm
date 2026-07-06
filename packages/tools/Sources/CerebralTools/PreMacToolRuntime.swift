@@ -23,7 +23,9 @@ public enum PreMacToolRuntime {
         modePlanner: any ActionPlanner = StubModePlanner(),
         modeIDs: Set<String> = [],
         modeStateStore: any ModeStateStore = InMemoryModeStateStore(),
-        modeSessionLog: any ModeSessionLog = InMemoryModeSessionLog()
+        modeSessionLog: any ModeSessionLog = InMemoryModeSessionLog(),
+        modeWorkspaceStore: any ModeWorkspaceStore = InMemoryModeWorkspaceStore(),
+        settingsStore: (any SettingsStore)? = nil
     ) throws -> ToolRegistry {
         let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory)
 
@@ -37,7 +39,10 @@ public enum PreMacToolRuntime {
             "mode.apply": ModeApplyHandler(
                 modeIDs: modeIDs,
                 coordinator: ModeSessionCoordinator(stateStore: modeStateStore, sessionLog: modeSessionLog),
-                stateStore: modeStateStore
+                stateStore: modeStateStore,
+                settings: settingsStore,
+                workspaceStore: modeWorkspaceStore,
+                windows: capabilities.workspaceWindows
             ),
         ]
 

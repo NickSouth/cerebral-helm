@@ -10,6 +10,10 @@ public struct StoredSettings: Equatable, Sendable {
     public var appearanceReducedMotion: Bool?
     public var commandPaletteHotkey: String?
     public var knowledgeRootReference: String?
+    /// "Windows Stored by Mode": a mode switch hides the outgoing mode's
+    /// applications and returns the incoming mode's stored ones (NIC-85).
+    /// `nil`/false = mode switches never hide or return windows.
+    public var windowsStoredByMode: Bool?
     /// The raw JSON of the patch's `extensions` object, preserved verbatim so
     /// unknown-but-safe user fields survive updates (FR-CFG-05).
     public var extensionsJSON: String?
@@ -20,6 +24,7 @@ public struct StoredSettings: Equatable, Sendable {
         appearanceReducedMotion: Bool? = nil,
         commandPaletteHotkey: String? = nil,
         knowledgeRootReference: String? = nil,
+        windowsStoredByMode: Bool? = nil,
         extensionsJSON: String? = nil
     ) {
         self.defaultModeID = defaultModeID
@@ -27,6 +32,7 @@ public struct StoredSettings: Equatable, Sendable {
         self.appearanceReducedMotion = appearanceReducedMotion
         self.commandPaletteHotkey = commandPaletteHotkey
         self.knowledgeRootReference = knowledgeRootReference
+        self.windowsStoredByMode = windowsStoredByMode
         self.extensionsJSON = extensionsJSON
     }
 }
@@ -41,6 +47,7 @@ public struct SettingsChanges: Equatable, Sendable {
     public var appearanceReducedMotion: Bool?
     public var commandPaletteHotkey: String?
     public var knowledgeRootReference: String?
+    public var windowsStoredByMode: Bool?
     /// When present, replaces the stored `extensions` object wholesale.
     public var extensionsJSON: String?
 
@@ -50,6 +57,7 @@ public struct SettingsChanges: Equatable, Sendable {
         appearanceReducedMotion: Bool? = nil,
         commandPaletteHotkey: String? = nil,
         knowledgeRootReference: String? = nil,
+        windowsStoredByMode: Bool? = nil,
         extensionsJSON: String? = nil
     ) {
         self.defaultModeID = defaultModeID
@@ -57,6 +65,7 @@ public struct SettingsChanges: Equatable, Sendable {
         self.appearanceReducedMotion = appearanceReducedMotion
         self.commandPaletteHotkey = commandPaletteHotkey
         self.knowledgeRootReference = knowledgeRootReference
+        self.windowsStoredByMode = windowsStoredByMode
         self.extensionsJSON = extensionsJSON
     }
 
@@ -75,6 +84,9 @@ public struct SettingsChanges: Equatable, Sendable {
         if let knowledge = changes["knowledge"] as? [String: Any] {
             knowledgeRootReference = knowledge["rootReference"] as? String
         }
+        if let workspace = changes["workspace"] as? [String: Any] {
+            windowsStoredByMode = workspace["windowsStoredByMode"] as? Bool
+        }
         if let extensions = changes["extensions"] as? [String: Any],
            let data = try? JSONSerialization.data(withJSONObject: extensions, options: [.sortedKeys]) {
             extensionsJSON = String(decoding: data, as: UTF8.self)
@@ -84,7 +96,8 @@ public struct SettingsChanges: Equatable, Sendable {
     /// Whether the patch carries any persistable field.
     public var isEmpty: Bool {
         defaultModeID == nil && appearanceDensity == nil && appearanceReducedMotion == nil
-            && commandPaletteHotkey == nil && knowledgeRootReference == nil && extensionsJSON == nil
+            && commandPaletteHotkey == nil && knowledgeRootReference == nil
+            && windowsStoredByMode == nil && extensionsJSON == nil
     }
 }
 
