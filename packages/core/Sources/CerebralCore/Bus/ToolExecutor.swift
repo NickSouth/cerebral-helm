@@ -58,11 +58,18 @@ public struct ToolExecutionResult: Sendable {
 public struct ToolExecutor: Sendable {
     private let registry: ToolRegistry
     private let policy: PolicyEngine
+    private let phase: ExecutionPhase
     private let clock: any TimeSource
 
-    public init(registry: ToolRegistry, policy: PolicyEngine, clock: any TimeSource = SystemClock()) {
+    public init(
+        registry: ToolRegistry,
+        policy: PolicyEngine,
+        phase: ExecutionPhase = .preMac,
+        clock: any TimeSource = SystemClock()
+    ) {
         self.registry = registry
         self.policy = policy
+        self.phase = phase
         self.clock = clock
     }
 
@@ -84,12 +91,12 @@ public struct ToolExecutor: Sendable {
         }
 
         // Availability gate (NIC-111). A tool the descriptor (after any stricter
-        // overlay) marks unavailable in the current pre-Mac phase must not run, no
+        // overlay) marks unavailable in the composed phase must not run, no
         // matter how it was reached. This is distinct from `tool.unknown`
         // (unregistered): the tool exists and is bound, but its declared
         // availability forbids execution in this phase, so the handler — including
         // shell-class tools like hook.run — is never invoked.
-        guard tool.availableInPreMac else {
+        guard tool.isAvailable(in: phase) else {
             return ToolExecutionResult(
                 toolID: tool.id,
                 status: .unavailable,

@@ -16,11 +16,12 @@ private func repositoryRoot() -> URL {
         .deletingLastPathComponent()
 }
 
-private func livePlanner() throws -> WorkflowActionPlanner {
+private func livePlanner(phase: ExecutionPhase = .preMac) throws -> WorkflowActionPlanner {
     let root = repositoryRoot()
     return try PreMacToolRuntime.makeActionPlanner(
         descriptorsDirectory: root.appendingPathComponent("config/tools/descriptors", isDirectory: true),
-        configDirectory: root.appendingPathComponent("config", isDirectory: true)
+        configDirectory: root.appendingPathComponent("config", isDirectory: true),
+        phase: phase
     )
 }
 
@@ -36,6 +37,17 @@ func developerModeResolvesToShell() throws {
     // The read-only snapshot runs pre-Mac; the Mac-only steps plan unavailable.
     #expect(plan.actions.contains { $0.status == .success })
     #expect(plan.actions.contains { $0.status == .unavailable })
+}
+
+@Test("composed for the macOS phase, every developer step plans available")
+func developerModePlansFullyAvailableOnMac() throws {
+    // The same workflows and descriptors, with facts computed from
+    // `availability.macOS`: every shipped tool is available on macOS, so no step
+    // plans unavailable and the aggregate risk is unchanged.
+    let plan = try livePlanner(phase: .macOS).plan(modeID: "developer")
+
+    #expect(plan.actions.allSatisfy { $0.status == .success })
+    #expect(RiskAggregation.highest(plan.actions.map(\.risk)) == .shell)
 }
 
 @Test("every shipped mode resolves to a non-empty plan")

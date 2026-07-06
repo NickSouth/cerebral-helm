@@ -52,11 +52,13 @@ public enum PreMacToolRuntime {
     /// tools layer, so the core engine stays pure and convention-free.
     public static func makeActionPlanner(
         descriptorsDirectory: URL,
-        configDirectory: URL
+        configDirectory: URL,
+        phase: ExecutionPhase = .preMac
     ) throws -> WorkflowActionPlanner {
         let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory)
-        let toolFacts = Dictionary(uniqueKeysWithValues: descriptors.map { descriptor in
-            (descriptor.id, ToolPlanningFacts(risk: descriptor.risk, availableInPreMac: descriptor.availability.preMAC))
+        let toolFacts = Dictionary(uniqueKeysWithValues: descriptors.map { descriptor -> (String, ToolPlanningFacts) in
+            let available = phase == .preMac ? descriptor.availability.preMAC : descriptor.availability.macOS
+            return (descriptor.id, ToolPlanningFacts(risk: descriptor.risk, available: available))
         })
 
         let workflows = try WorkflowCatalogLoader.load(configDirectory: configDirectory)
@@ -109,6 +111,7 @@ public enum PreMacToolRuntime {
         hookCatalog: HookCatalog = HookCatalog(),
         modePlanner: any ActionPlanner = StubModePlanner(),
         policy: PolicyEngine = PolicyEngine(),
+        phase: ExecutionPhase = .preMac,
         clock: any TimeSource = SystemClock()
     ) throws -> ToolExecutor {
         let registry = try makeRegistry(
@@ -118,6 +121,6 @@ public enum PreMacToolRuntime {
             hookCatalog: hookCatalog,
             modePlanner: modePlanner
         )
-        return ToolExecutor(registry: registry, policy: policy, clock: clock)
+        return ToolExecutor(registry: registry, policy: policy, phase: phase, clock: clock)
     }
 }

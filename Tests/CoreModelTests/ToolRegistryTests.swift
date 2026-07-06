@@ -149,5 +149,10 @@ func shippedOverlaysAreConsistent() throws {
 
     #expect(registry.tool("system.status.read")?.availableInPreMac == true)
     #expect(registry.tool("hook.run")?.availableInPreMac == false)
+    // Every shipped tool is available on macOS; the phase-matching accessor
+    // reads the right flag for each phase.
+    #expect(registry.tool("hook.run")?.availableOnMacOS == true)
+    #expect(registry.tool("hook.run")?.isAvailable(in: .preMac) == false)
+    #expect(registry.tool("hook.run")?.isAvailable(in: .macOS) == true)
     #expect(registry.toolIDs.count == 7)
 }
