@@ -18,12 +18,14 @@ public enum MacToolCapabilities {
             app: NSWorkspaceAppCapability(apps: references.apps.mapValues(\.target), workspace: workspace),
             url: NSWorkspaceURLCapability(urls: references.urls.mapValues(\.target), workspace: workspace),
             process: ProcessHookCapability(),
-            // NIC-81 (live system status provider) has not landed: honest unavailable.
-            systemStatus: MockSystemStatusCapability(matrix: .none),
+            // One shared instance: the one-shot tool and the status publisher
+            // (NIC-81b) must share the rate-metric delta state.
+            systemStatus: MacSystemStatusCapability(),
             nativeCapabilityIDs: [
                 CapabilityMatrix.Capability.appOpen,
                 CapabilityMatrix.Capability.urlOpen,
                 CapabilityMatrix.Capability.hookRun,
+                CapabilityMatrix.Capability.systemStatusRead,
             ]
         )
     }
