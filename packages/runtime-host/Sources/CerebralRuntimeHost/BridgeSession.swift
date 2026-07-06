@@ -15,6 +15,10 @@ import CerebralCore
 public final class BridgeSession: @unchecked Sendable {
     private let runtime: CommandRuntime
     private let configDirectory: URL
+    /// Durable settings persistence (FR-CFG-04). Optional so a host without a
+    /// database binding (some tests) still validates patches; when absent, an
+    /// accepted patch is validated but not saved — the pre-store behavior.
+    private let settingsStore: (any SettingsStore)?
     /// The composed capability flags the handshake reports (FR-SHL-06), derived at
     /// composition time from the bound capability bundle, phase, and platform
     /// permissions (``CompositionCapabilities``). Defaults to the honest pre-Mac
@@ -44,10 +48,12 @@ public final class BridgeSession: @unchecked Sendable {
         runtime: CommandRuntime,
         configDirectory: URL,
         capabilities: [CerebralContracts.Capability] = CompositionCapabilities.bridgeCapabilities(phase: .preMac, nativeCapabilityIDs: []),
+        settingsStore: (any SettingsStore)? = nil,
         emitEventJSON: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.runtime = runtime
         self.configDirectory = configDirectory
+        self.settingsStore = settingsStore
         self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
     }
@@ -73,7 +79,9 @@ public final class BridgeSession: @unchecked Sendable {
     ) async -> CerebralHelmBridgeOperationResponse {
         switch request.operation {
         case .getBootstrapState:
-            return ok(request, payload: BootstrapComposer.compose(configDirectory: configDirectory))
+            return ok(request, payload: BootstrapComposer.compose(
+                configDirectory: configDirectory, activeModeID: storedDefaultModeID()
+            ))
         case .submitCommand:
             return await submitCommand(request)
         case .applyMode:
@@ -212,10 +220,11 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: DecideConfirmationResult(confirmationId: input.id, decision: input.decision))
     }
 
-    /// Validates a settings patch against the deterministic allowlist (ADR-003):
-    /// unknown or policy-weakening keys are rejected. This enforces the security gate
-    /// and reports acceptance; durable persistence lives with the settings store (not
-    /// yet present), so an accepted patch is validated, not yet saved.
+    /// Validates a settings patch against the deterministic allowlist (ADR-003) and
+    /// persists an accepted patch through the settings store: unknown or
+    /// policy-weakening keys are rejected before anything is saved, and a store
+    /// failure is a structured error — `accepted` is never reported for a patch
+    /// that did not become durable (FR-CFG-04).
     private func updateSettings(
         _ request: CerebralHelmBridgeOperationRequest
     ) -> CerebralHelmBridgeOperationResponse {
@@ -228,7 +237,34 @@ public final class BridgeSession: @unchecked Sendable {
         }
         let changes = (patch["changes"] as? [String: Any]) ?? [:]
         let errors = SettingsPatchValidator.validate(changes: changes)
-        return ok(request, payload: UpdateSettingsResult(accepted: errors.isEmpty))
+        guard errors.isEmpty else {
+            return ok(request, payload: UpdateSettingsResult(accepted: false))
+        }
+        if let settingsStore {
+            do {
+                try settingsStore.apply(SettingsChanges(validatedChanges: changes))
+            } catch {
+                return errorResponse(
+                    request, category: .internalFailure,
+                    code: "settings_not_saved",
+                    message: "The settings change could not be saved."
+                )
+            }
+        }
+        return ok(request, payload: UpdateSettingsResult(accepted: true))
+    }
+
+    /// The stored default mode for bootstrap, if one was saved and still exists in
+    /// config. A stale or unset value falls back to the configured default (the
+    /// composer's own fallback), never an error.
+    private func storedDefaultModeID() -> String? {
+        guard
+            let store = settingsStore,
+            let settings = try? store.load(),
+            let stored = settings.defaultModeID,
+            BootstrapComposer.modeExists(stored, configDirectory: configDirectory)
+        else { return nil }
+        return stored
     }
 
     // MARK: - Confirmation flow

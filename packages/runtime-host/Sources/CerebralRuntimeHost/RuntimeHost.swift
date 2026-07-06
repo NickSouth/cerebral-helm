@@ -89,6 +89,12 @@ public func operationalDatabase(_ paths: WorkspacePaths) throws -> SQLiteDatabas
     return database
 }
 
+/// The durable settings store over the operational database (FR-CFG-04), for hosts
+/// that bind a ``BridgeSession``.
+public func makeSettingsStore(_ paths: WorkspacePaths) throws -> any SettingsStore {
+    SQLiteSettingsStore(database: try operationalDatabase(paths))
+}
+
 /// Writes the command row from its envelope before any event references it (FK
 /// ordering). The raw command text is deliberately not persisted — it can contain
 /// secrets (the NIC-34 leak class); only non-sensitive envelope metadata is stored.

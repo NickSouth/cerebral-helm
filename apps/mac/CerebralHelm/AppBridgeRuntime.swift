@@ -62,6 +62,12 @@ final class AppBridgeRuntime: @unchecked Sendable {
             Self.log.error("Bridge runtime composition failed; the shell has no live runtime.")
             return nil
         }
+        // Settings persist in the operational database (FR-CFG-04); a store that
+        // fails to open degrades to validate-only rather than losing the bridge.
+        let settingsStore = try? makeSettingsStore(paths)
+        if settingsStore == nil {
+            Self.log.error("Settings store failed to open; settings changes will not persist.")
+        }
         session = BridgeSession(
             runtime: runtime,
             configDirectory: paths.configDirectory,
@@ -71,6 +77,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 requiredPermissions: requiredPermissions,
                 permissions: permissionChecker
             ),
+            settingsStore: settingsStore,
             emitEventJSON: { relay.emit($0) }
         )
     }

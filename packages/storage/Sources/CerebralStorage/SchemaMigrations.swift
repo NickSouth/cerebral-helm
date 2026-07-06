@@ -12,6 +12,7 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0001_initial", sql: initialSQL),
         SchemaMigration(id: "0002_mode_state", sql: modeStateSQL),
         SchemaMigration(id: "0003_note_search", sql: noteSearchSQL),
+        SchemaMigration(id: "0004_settings", sql: settingsSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -158,5 +159,21 @@ public enum SchemaMigrations {
         review_after TEXT
     );
     CREATE INDEX idx_note_search_path ON note_search (path);
+    """
+
+    /// Migration 0004: the durable user-settings singleton (FR-CFG-04). One row of
+    /// independent nullable columns — NULL means "never set", so config defaults
+    /// still apply; a patch touches only the columns it carries.
+    public static let settingsSQL = """
+    CREATE TABLE settings (
+        id                        INTEGER PRIMARY KEY CHECK (id = 1),
+        default_mode_id           TEXT,
+        appearance_density        TEXT,
+        appearance_reduced_motion INTEGER,
+        hotkey_command_palette    TEXT,
+        knowledge_root_reference  TEXT,
+        extensions                TEXT,
+        updated_at                TEXT NOT NULL
+    );
     """
 }

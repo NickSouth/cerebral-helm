@@ -255,9 +255,19 @@ func decideUnknownConfirmation() async throws {
     #expect(response.error?.code == "unknown_confirmation")
 }
 
-// MARK: - updateSettings (validate-only)
+// MARK: - updateSettings
 
 private struct Accepted: Decodable { let accepted: Bool }
+
+/// A session with durable settings over the given workspace, so a second session
+/// on the same paths observes the first one's persisted settings (restart shape).
+private func makeSessionWithSettings(_ paths: WorkspacePaths) throws -> BridgeSession {
+    BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        settingsStore: try makeSettingsStore(paths)
+    )
+}
 
 @Test("a valid settings patch is accepted")
 func validSettingsPatchAccepted() async throws {
@@ -268,6 +278,51 @@ func validSettingsPatchAccepted() async throws {
     ))
     #expect(response.status == .ok)
     #expect(try decode(response, as: Accepted.self).accepted)
+}
+
+@Test("an accepted patch is durable: a new session over the same workspace bootstraps the stored default mode")
+func acceptedPatchSurvivesRestart() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let first = try makeSessionWithSettings(paths)
+    let saved = await first.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_abcd1234","changes":{"defaultModeId":"developer"}}}"#
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    // A fresh session over the same workspace (a restart) boots into the stored default.
+    let second = try makeSessionWithSettings(paths)
+    let bootstrap = await second.execute(operationRequest(.getBootstrapState, "{}"))
+    let state = try decode(bootstrap, as: CerebralHelmBridgeBootstrapState.self)
+    #expect(state.mode == .developer)
+}
+
+@Test("a rejected patch persists nothing")
+func rejectedPatchPersistsNothing() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    // One valid field alongside one invalid value: the whole patch is rejected.
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"defaultModeId":"developer","appearance":{"density":"gigantic"}}}}"#
+    ))
+    #expect(!(try decode(response, as: Accepted.self).accepted))
+
+    let bootstrap = await session.execute(operationRequest(.getBootstrapState, "{}"))
+    let state = try decode(bootstrap, as: CerebralHelmBridgeBootstrapState.self)
+    #expect(state.mode == .executive)
+}
+
+@Test("a stored default mode that no longer exists in config falls back to the configured default")
+func staleStoredModeFallsBack() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let store = try makeSettingsStore(paths)
+    try store.apply(SettingsChanges(defaultModeID: "retired-mode"))
+
+    let session = try makeSessionWithSettings(paths)
+    let bootstrap = await session.execute(operationRequest(.getBootstrapState, "{}"))
+    let state = try decode(bootstrap, as: CerebralHelmBridgeBootstrapState.self)
+    #expect(state.mode == .executive)
 }
 
 @Test("a policy-weakening key is rejected — settings cannot widen risk (ADR-003)")
