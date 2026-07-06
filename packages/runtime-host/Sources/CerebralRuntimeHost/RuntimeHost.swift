@@ -23,9 +23,14 @@ import CerebralTools
 /// `phase` selects which descriptor availability flag gates execution and
 /// planning (``ExecutionPhase``). The default `.preMac` keeps the CLI on the
 /// portable mock surface; the macOS shell composes with `.macOS`.
+///
+/// `capabilities` is the native-capability bundle bound beneath the handlers
+/// (``ToolCapabilities``): mocks by default, honest macOS adapters when the
+/// native shell composes them (FR-TOL-04).
 public func makeCommandRuntime(
     paths: WorkspacePaths,
     phase: ExecutionPhase = .preMac,
+    capabilities: ToolCapabilities = .mocks(),
     onEvent: (@Sendable (CommandLifecycleEvent) -> Void)? = nil
 ) throws -> CommandRuntime {
     let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory)
@@ -52,6 +57,7 @@ public func makeCommandRuntime(
     )
     let registry = try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: paths.toolDescriptorsDirectory,
+        capabilities: capabilities,
         knowledge: knowledge,
         hookCatalog: hookCatalog,
         modePlanner: modePlanner

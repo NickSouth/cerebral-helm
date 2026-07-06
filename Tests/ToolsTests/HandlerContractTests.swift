@@ -107,7 +107,7 @@ func invalidInputIsRejected() async throws {
 
 @Test("a disabled native capability yields an unavailable result (FR-SHL-06)")
 func disabledCapabilityIsUnavailable() async throws {
-    let executor = try PreMacToolRuntime.makeExecutor(descriptorsDirectory: descriptorsDirectory(), capabilityMatrix: .none)
+    let executor = try PreMacToolRuntime.makeExecutor(descriptorsDirectory: descriptorsDirectory(), capabilities: .mocks(matrix: .none))
     let result = await executor.execute(ToolInvocation(toolID: "system.status.read", input: Data("{}".utf8)))
 
     #expect(result.status == .unavailable)

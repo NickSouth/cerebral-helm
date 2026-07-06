@@ -60,7 +60,10 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecke
 
         switch BridgeInbound.classify(data) {
         case let .handshake(request):
-            let response = BridgeHandshake.response(to: request, messageID: Self.newMessageID())
+            // Report the capability flags composed at the app layer (FR-SHL-06);
+            // before a session is bound, fall back to the honest pre-adapter set.
+            let capabilities = session?.capabilities ?? BridgeCapabilities.preAdapterDefault()
+            let response = BridgeHandshake.response(to: request, capabilities: capabilities, messageID: Self.newMessageID())
             log.info("Bridge handshake: ui=\(request.uiVersion, privacy: .public) compatible=\(response.compatible, privacy: .public) startup=\(response.startupMode.rawValue, privacy: .public)")
             deliver(response)
 

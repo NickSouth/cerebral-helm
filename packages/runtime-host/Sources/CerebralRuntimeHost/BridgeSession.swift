@@ -15,6 +15,11 @@ import CerebralCore
 public final class BridgeSession: @unchecked Sendable {
     private let runtime: CommandRuntime
     private let configDirectory: URL
+    /// The composed capability flags the handshake reports (FR-SHL-06), derived at
+    /// composition time from the bound capability bundle and phase
+    /// (``CompositionCapabilities``). Defaults to the honest pre-Mac mock set:
+    /// every native capability unavailable.
+    public let capabilities: [CerebralContracts.Capability]
     private let messageSchemaVersion = "1.0.0"
     /// Emits an already-encoded bridge-event JSON string to the dashboard (Sendable
     /// String — no non-Sendable DTO crosses the transport boundary).
@@ -29,10 +34,12 @@ public final class BridgeSession: @unchecked Sendable {
     public init(
         runtime: CommandRuntime,
         configDirectory: URL,
+        capabilities: [CerebralContracts.Capability] = CompositionCapabilities.bridgeCapabilities(phase: .preMac, nativeCapabilityIDs: []),
         emitEventJSON: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.runtime = runtime
         self.configDirectory = configDirectory
+        self.capabilities = capabilities
         self.emitEventJSON = emitEventJSON
     }
 
