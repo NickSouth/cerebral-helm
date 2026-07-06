@@ -14,6 +14,7 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0003_note_search", sql: noteSearchSQL),
         SchemaMigration(id: "0004_settings", sql: settingsSQL),
         SchemaMigration(id: "0005_mode_workspace", sql: modeWorkspaceSQL),
+        SchemaMigration(id: "0006_main_display", sql: mainDisplaySQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -189,5 +190,13 @@ public enum SchemaMigrations {
         bundle_ids TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
+    """
+
+    /// Migration 0006: the "Main display" setting (NIC-120b). The settings
+    /// singleton gains the stable display id the main dashboard backdrop is
+    /// hosted on; NULL or a disconnected/unknown id degrades to the system
+    /// primary display.
+    public static let mainDisplaySQL = """
+    ALTER TABLE settings ADD COLUMN main_display_id TEXT;
     """
 }

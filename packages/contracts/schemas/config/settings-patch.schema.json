@@ -61,6 +61,10 @@
           "properties": {
             "windowsStoredByMode": {
               "type": "boolean"
+            },
+            "mainDisplayId": {
+              "type": "string",
+              "minLength": 1
             }
           }
         },

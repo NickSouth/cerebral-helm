@@ -26,15 +26,36 @@ final class WindowCoordinator: @unchecked Sendable {
     /// The dedicated settings window (backdrop-policy decision): created lazily on
     /// first open, then reused warm. `nil` until then and always `nil` in recovery.
     private var settings: SettingsWindowController?
+    /// One additional backdrop per connected non-main display (NIC-120b), keyed by
+    /// the display's topology id. Created/removed by `reconcileBackdrops` on every
+    /// topology change; each binds the SAME shared session (no second runtime).
+    private var secondaries: [String: DashboardWindowController] = [:]
     private var dashboardRoot: URL?
-    private var occlusionObserver: NSObjectProtocol?
+    private var paths: WorkspacePaths?
+    /// One occlusion observer per backdrop window, keyed by window identity —
+    /// the status publisher pauses only when EVERY backdrop is invisible.
+    private var occlusionObservers: [ObjectIdentifier: NSObjectProtocol] = [:]
     /// The shared bridge session — the confirmation panel submits its
     /// approve/cancel decision through the same versioned operation the
     /// dashboard uses (`decideConfirmation`), never a side channel.
     private var session: BridgeSession?
+    /// The last topology the observer reported, plus its encoded event JSON —
+    /// replayed into webviews created (or loaded) after the event fired, since
+    /// topology is runtime-only state and never part of the bootstrap.
+    private var lastTopology: BridgeEventFactory.DisplayTopologyPayload?
+    private var lastTopologyJSON: String?
+    /// A live main-display override from the settings surface (`setMainDisplay`),
+    /// applied immediately; the durable value arrives via the settings patch and
+    /// is read through `mainDisplayIDProvider` on the next launch.
+    private var liveMainDisplayID: String?
 
-    /// Fired on the main queue whenever the dashboard window becomes visible or
-    /// fully occluded — the shell pauses the status publisher on hidden (NIC-81b).
+    /// Reads the persisted "Main display" id (NIC-120b); wired by `AppDelegate`
+    /// to the runtime's settings store. nil / unknown / disconnected ids all
+    /// degrade to the system primary display.
+    var mainDisplayIDProvider: (() -> String?)?
+
+    /// Fired on the main queue whenever backdrop visibility changes — the shell
+    /// pauses the status publisher only when every backdrop is hidden (NIC-81b).
     var onDashboardVisibilityChange: ((Bool) -> Void)?
 
     /// Ready path: host the dashboard and pre-warm the single command palette against the
@@ -42,28 +63,31 @@ final class WindowCoordinator: @unchecked Sendable {
     func enterReady(dashboardRoot: URL, paths: WorkspacePaths, session: BridgeSession) {
         self.session = session
         self.dashboardRoot = dashboardRoot
+        self.paths = paths
         let dashboard = DashboardWindowController(dashboardRoot: dashboardRoot, paths: paths, session: session)
         // Increment 4: web → native shell actions (e.g. rebinding the palette hotkey from
         // the settings "Hotkeys" panel).
         dashboard.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        // Runtime-only state that predates page load is replayed once the page
+        // can receive it (the initial topology event usually beats the webview).
+        dashboard.onLoaded = { [weak self, weak dashboard] in
+            guard let json = self?.lastTopologyJSON else { return }
+            dashboard?.deliverBridgeEvent(json)
+        }
         self.dashboard = dashboard
         dashboard.show()
 
-        // Visibility signal for the status publisher: a fully occluded or hidden
-        // dashboard needs no live metric sampling (MAC-ADAPTER-3 battery AC).
-        occlusionObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didChangeOcclusionStateNotification,
-            object: dashboard.window,
-            queue: .main
-        ) { [weak self] note in
-            guard let window = note.object as? NSWindow else { return }
-            self?.onDashboardVisibilityChange?(window.occlusionState.contains(.visible))
-        }
+        // Visibility signal for the status publisher: sampling pauses only when
+        // every backdrop is fully occluded or hidden (MAC-ADAPTER-3 battery AC).
+        observeOcclusion(of: dashboard.window)
 
         let palette = CommandPaletteWindowController(dashboardRoot: dashboardRoot, paths: paths, session: session)
         // Increment 2: a conversational palette submission routes to the dashboard's
         // center-panel conversation rather than executing inline.
         palette.onAskHeimlich = { [weak self] text in self?.routeAskHeimlich(text) }
+        // Palette focus targets the main display (NIC-120b), not whichever screen
+        // has keyboard focus.
+        palette.targetScreen = { [weak self] in self?.mainScreen() }
         self.palette = palette
     }
 
@@ -95,7 +119,15 @@ final class WindowCoordinator: @unchecked Sendable {
             handleConfirmationEvent(json)
             return
         }
+        // Topology is runtime-only state: cache the latest snapshot so webviews
+        // created (or finishing load) after this event can be brought current.
+        if json.contains("\"display.topology.changed\"") {
+            lastTopologyJSON = json
+        }
         dashboard?.deliverBridgeEvent(json)
+        for secondary in secondaries.values {
+            secondary.deliverBridgeEvent(json)
+        }
         settings?.deliverBridgeEvent(json)
         if json.contains("\"config.changed\"") {
             palette?.deliverBridgeEvent(json)
@@ -107,18 +139,124 @@ final class WindowCoordinator: @unchecked Sendable {
         palette?.summon()
     }
 
-    /// Display topology changed (NIC-87): a disconnect must not strand critical
-    /// windows. The dashboard backdrop re-fits to the current primary screen
-    /// (NIC-120a); the recovery window is re-hosted onto a live screen when no
-    /// screen shows it; the palette needs nothing — `summon()` re-positions it
-    /// against the current main screen every time.
-    func handleDisplayTopologyChange() {
+    /// Display topology changed (NIC-87/120b): reconcile one backdrop per
+    /// connected display — the main backdrop on the chosen main display (persisted
+    /// setting, degrading to the system primary), a secondary on every other
+    /// display, none left behind for disconnected ones. The recovery window is
+    /// re-hosted onto a live screen when no screen shows it; the palette needs
+    /// nothing — `summon()` re-positions onto the main display every time.
+    func handleDisplayTopologyChange(_ topology: BridgeEventFactory.DisplayTopologyPayload) {
         guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in self?.handleDisplayTopologyChange() }
+            DispatchQueue.main.async { [weak self] in self?.handleDisplayTopologyChange(topology) }
             return
         }
-        dashboard?.fitToPrimaryScreen()
+        lastTopology = topology
+        reconcileBackdrops(topology)
         rehostIfStranded(recovery?.window)
+    }
+
+    /// One backdrop per display (NIC-120b AC). A transitional zero-display
+    /// topology changes nothing — the next event re-reconciles.
+    private func reconcileBackdrops(_ topology: BridgeEventFactory.DisplayTopologyPayload) {
+        guard let dashboard, !topology.displays.isEmpty else { return }
+        let main = mainDescriptor(in: topology)
+        if let main, let mainScreen = screen(for: main) {
+            dashboard.fit(to: mainScreen)
+        }
+
+        var kept: [String: DashboardWindowController] = [:]
+        for descriptor in topology.displays where descriptor.id != main?.id {
+            guard let target = screen(for: descriptor) else { continue }
+            if let existing = secondaries[descriptor.id] {
+                existing.fit(to: target)
+                kept[descriptor.id] = existing
+                continue
+            }
+            guard let session, let dashboardRoot, let paths else { continue }
+            let secondary = DashboardWindowController(
+                dashboardRoot: dashboardRoot, paths: paths, session: session, screen: target
+            )
+            secondary.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+            secondary.onLoaded = { [weak self, weak secondary] in
+                guard let json = self?.lastTopologyJSON else { return }
+                secondary?.deliverBridgeEvent(json)
+            }
+            observeOcclusion(of: secondary.window)
+            secondary.showWithoutFocus()
+            kept[descriptor.id] = secondary
+        }
+        for (id, controller) in secondaries where kept[id] == nil {
+            let window = controller.window
+            stopObservingOcclusion(of: window)
+            // Every reconcile path hops to main first (deliverBridgeEvent /
+            // handleDisplayTopologyChange / script-message handlers), but the
+            // compiler cannot see that through the closure chain — assert it.
+            MainActor.assumeIsolated {
+                window.orderOut(nil)
+            }
+        }
+        secondaries = kept
+        publishBackdropVisibility()
+    }
+
+    /// The display the main backdrop (and palette/conversation focus) belongs on:
+    /// the live settings override, else the persisted setting — either only when
+    /// it names a still-connected, stable-identity display — else the system
+    /// primary. Stale or unknown ids degrade silently, never error (NIC-87 AC).
+    private func mainDescriptor(
+        in topology: BridgeEventFactory.DisplayTopologyPayload
+    ) -> BridgeEventFactory.DisplayDescriptor? {
+        let requested = liveMainDisplayID ?? mainDisplayIDProvider?()
+        if let requested, requested != "system-primary",
+           let match = topology.displays.first(where: { $0.id == requested && $0.stableIdentity }) {
+            return match
+        }
+        return topology.displays.first(where: \.primary) ?? topology.displays.first
+    }
+
+    /// Resolve a topology descriptor to its live `NSScreen` by frame — both sides
+    /// were read from the same screen list, so frames match exactly; a race with
+    /// a mid-flight display change simply misses and the next event re-reconciles.
+    private func screen(for descriptor: BridgeEventFactory.DisplayDescriptor) -> NSScreen? {
+        let frame = NSRect(
+            x: descriptor.frame.x, y: descriptor.frame.y,
+            width: descriptor.frame.width, height: descriptor.frame.height
+        )
+        return NSScreen.screens.first { $0.frame == frame }
+    }
+
+    /// The screen currently hosting the main backdrop (palette targeting).
+    private func mainScreen() -> NSScreen? {
+        guard let topology = lastTopology, let main = mainDescriptor(in: topology) else { return nil }
+        return screen(for: main)
+    }
+
+    // MARK: - Backdrop visibility (status-publisher pause, NIC-81b)
+
+    private func observeOcclusion(of window: NSWindow) {
+        occlusionObservers[ObjectIdentifier(window)] = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.publishBackdropVisibility()
+        }
+    }
+
+    private func stopObservingOcclusion(of window: NSWindow) {
+        if let observer = occlusionObservers.removeValue(forKey: ObjectIdentifier(window)) {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    /// Live metrics keep sampling while ANY backdrop is visible; they pause only
+    /// when every backdrop is hidden or fully covered.
+    private func publishBackdropVisibility() {
+        var windows: [NSWindow] = []
+        if let dashboard { windows.append(dashboard.window) }
+        windows.append(contentsOf: secondaries.values.map(\.window))
+        guard !windows.isEmpty else { return }
+        onDashboardVisibilityChange?(windows.contains { $0.occlusionState.contains(.visible) })
     }
 
     /// Re-center a window on the main screen when no connected screen's visible
@@ -138,9 +276,9 @@ final class WindowCoordinator: @unchecked Sendable {
         window.setFrame(frame, display: true)
     }
 
-    /// Open settings as the **web overlay** over the dashboard (NIC-76 / FR-UI-06): bring the
-    /// dashboard forward and open the overlay via the shell-intent hook. There is no separate
-    /// native settings window — settings never replaces the dashboard, and appears in context.
+    /// Open the dedicated settings window (backdrop-policy decision, 2026-07-06;
+    /// reverses NIC-76's overlay-only presentation — the overlay remains for
+    /// browser previews without a native shell).
     func openSettings() {
         // The dedicated normal-level settings window (backdrop-policy decision):
         // the dashboard never lifts, so settings is a real window that can sit
@@ -148,6 +286,12 @@ final class WindowCoordinator: @unchecked Sendable {
         guard let session, let dashboardRoot else { return }
         let controller = settings ?? SettingsWindowController(dashboardRoot: dashboardRoot, session: session)
         controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        // The "Main display" select needs the current topology (runtime-only
+        // state this lazily-created webview missed).
+        controller.onLoaded = { [weak self, weak controller] in
+            guard let json = self?.lastTopologyJSON else { return }
+            controller?.deliverBridgeEvent(json)
+        }
         settings = controller
         controller.show()
         NSApp.activate(ignoringOtherApps: true)
@@ -235,6 +379,15 @@ final class WindowCoordinator: @unchecked Sendable {
             openSettings()
         case "closeSettings":
             settings?.close()
+        case "setMainDisplay":
+            // Live re-host (NIC-120b): the durable value already went through the
+            // validated settings patch; this applies it without a restart. Stored
+            // verbatim — "system-primary" must override a stale persisted id too.
+            guard let id = body["id"] as? String else { return }
+            liveMainDisplayID = id
+            if let topology = lastTopology {
+                reconcileBackdrops(topology)
+            }
         default:
             return
         }

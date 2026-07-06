@@ -24,9 +24,14 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
     private let bridge = WKWebViewCerebralBridge()
     private let log = Logger(subsystem: "local.cerebralhelm.CerebralHelm", category: "settings")
 
-    /// Web → native shell actions (closeSettings, setPaletteShortcut). Set by
-    /// `WindowCoordinator`, which owns the action routing.
+    /// Web → native shell actions (closeSettings, setPaletteShortcut,
+    /// setMainDisplay). Set by `WindowCoordinator`, which owns the action routing.
     var onShellControl: (([String: Any]) -> Void)?
+
+    /// Fired when the settings page finishes loading. The coordinator replays the
+    /// cached display topology so the "Main display" select is populated — the
+    /// topology events predate this lazily-created webview.
+    var onLoaded: (() -> Void)?
 
     private static var settingsURL: URL {
         URL(string: "\(CerebralSchemeHandler.scheme)://\(CerebralSchemeHandler.host)/index.html?surface=settings")!
@@ -111,6 +116,10 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
     }
 
     // MARK: - WKNavigationDelegate
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        onLoaded?()
+    }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         log.error("Settings surface failed to load: \(error.localizedDescription, privacy: .public)")

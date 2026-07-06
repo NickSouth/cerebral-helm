@@ -31,6 +31,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
     private let toolCapabilities: ToolCapabilities
     private let requiredPermissions: [String: Set<String>]
     private let permissionChecker = MacPermissionChecker()
+    /// The durable settings store the session persists through — kept here so
+    /// the shell can read display-hosting preferences (NIC-120b) until a
+    /// settings-read bridge operation exists.
+    private let settingsStore: (any SettingsStore)?
     private static let log = Logger(subsystem: "local.cerebralhelm.CerebralHelm", category: "bridge")
 
     /// Builds the runtime; returns nil if composition fails (the startup pre-flight has
@@ -80,6 +84,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         if settingsStore == nil {
             Self.log.error("Settings store failed to open; settings changes will not persist.")
         }
+        self.settingsStore = settingsStore
         session = BridgeSession(
             runtime: runtime,
             configDirectory: paths.configDirectory,
@@ -137,6 +142,13 @@ final class AppBridgeRuntime: @unchecked Sendable {
     func setStatusPublishingActive(_ active: Bool) {
         let publisher = statusPublisher
         Task { await publisher.setActive(active) }
+    }
+
+    /// The persisted "Main display" id (NIC-120b) — nil when never set. A stale
+    /// or disconnected id is the coordinator's problem to degrade (system primary).
+    func storedMainDisplayID() -> String? {
+        guard let settingsStore, let settings = try? settingsStore.load() else { return nil }
+        return settings.mainDisplayID
     }
 
     /// Start display-topology observation (NIC-87). Main thread only — the

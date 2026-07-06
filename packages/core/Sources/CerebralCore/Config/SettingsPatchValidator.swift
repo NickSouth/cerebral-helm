@@ -57,11 +57,15 @@ public enum SettingsPatchValidator {
 
         if let workspace = changes["workspace"] {
             if let dict = workspace as? [String: Any] {
-                for key in dict.keys where key != "windowsStoredByMode" {
+                let allowedWorkspaceKeys: Set<String> = ["windowsStoredByMode", "mainDisplayId"]
+                for key in dict.keys where !allowedWorkspaceKeys.contains(key) {
                     errors.append("Unknown workspace setting \"\(key)\".")
                 }
                 if let stored = dict["windowsStoredByMode"], !(stored is Bool) {
                     errors.append("workspace.windowsStoredByMode must be a boolean.")
+                }
+                if let display = dict["mainDisplayId"], !(display is String) || (display as? String)?.isEmpty == true {
+                    errors.append("workspace.mainDisplayId must be a non-empty string.")
                 }
             } else {
                 errors.append("workspace must be an object.")

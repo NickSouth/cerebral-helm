@@ -379,6 +379,25 @@ func windowsStoredByModePatchPersists() async throws {
     #expect(!(try decode(rejected, as: Accepted.self).accepted))
 }
 
+@Test("the main-display setting persists through the same patch path (NIC-120b)")
+func mainDisplayPatchPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_display001","changes":{"workspace":{"mainDisplayId":"37D8832A-2D66-02CA-B9F7-8F30A301B230"}}}}"#
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+    #expect(try makeSettingsStore(paths).load().mainDisplayID == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+
+    // An empty display id is rejected wholesale (the contract requires minLength 1).
+    let rejected = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"workspace":{"mainDisplayId":""}}}}"#
+    ))
+    #expect(!(try decode(rejected, as: Accepted.self).accepted))
+}
+
 @Test("a rejected patch persists nothing")
 func rejectedPatchPersistsNothing() async throws {
     let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())

@@ -14,6 +14,11 @@ public struct StoredSettings: Equatable, Sendable {
     /// applications and returns the incoming mode's stored ones (NIC-85).
     /// `nil`/false = mode switches never hide or return windows.
     public var windowsStoredByMode: Bool?
+    /// The stable display id the shell hosts the *main* dashboard backdrop on —
+    /// conversations and palette focus target it (NIC-120b). `nil`, an unknown
+    /// id, or one no longer connected all degrade to the system primary display;
+    /// the shell never errors on a stale value.
+    public var mainDisplayID: String?
     /// The raw JSON of the patch's `extensions` object, preserved verbatim so
     /// unknown-but-safe user fields survive updates (FR-CFG-05).
     public var extensionsJSON: String?
@@ -25,6 +30,7 @@ public struct StoredSettings: Equatable, Sendable {
         commandPaletteHotkey: String? = nil,
         knowledgeRootReference: String? = nil,
         windowsStoredByMode: Bool? = nil,
+        mainDisplayID: String? = nil,
         extensionsJSON: String? = nil
     ) {
         self.defaultModeID = defaultModeID
@@ -33,6 +39,7 @@ public struct StoredSettings: Equatable, Sendable {
         self.commandPaletteHotkey = commandPaletteHotkey
         self.knowledgeRootReference = knowledgeRootReference
         self.windowsStoredByMode = windowsStoredByMode
+        self.mainDisplayID = mainDisplayID
         self.extensionsJSON = extensionsJSON
     }
 }
@@ -48,6 +55,7 @@ public struct SettingsChanges: Equatable, Sendable {
     public var commandPaletteHotkey: String?
     public var knowledgeRootReference: String?
     public var windowsStoredByMode: Bool?
+    public var mainDisplayID: String?
     /// When present, replaces the stored `extensions` object wholesale.
     public var extensionsJSON: String?
 
@@ -58,6 +66,7 @@ public struct SettingsChanges: Equatable, Sendable {
         commandPaletteHotkey: String? = nil,
         knowledgeRootReference: String? = nil,
         windowsStoredByMode: Bool? = nil,
+        mainDisplayID: String? = nil,
         extensionsJSON: String? = nil
     ) {
         self.defaultModeID = defaultModeID
@@ -66,6 +75,7 @@ public struct SettingsChanges: Equatable, Sendable {
         self.commandPaletteHotkey = commandPaletteHotkey
         self.knowledgeRootReference = knowledgeRootReference
         self.windowsStoredByMode = windowsStoredByMode
+        self.mainDisplayID = mainDisplayID
         self.extensionsJSON = extensionsJSON
     }
 
@@ -86,6 +96,7 @@ public struct SettingsChanges: Equatable, Sendable {
         }
         if let workspace = changes["workspace"] as? [String: Any] {
             windowsStoredByMode = workspace["windowsStoredByMode"] as? Bool
+            mainDisplayID = workspace["mainDisplayId"] as? String
         }
         if let extensions = changes["extensions"] as? [String: Any],
            let data = try? JSONSerialization.data(withJSONObject: extensions, options: [.sortedKeys]) {
@@ -97,7 +108,7 @@ public struct SettingsChanges: Equatable, Sendable {
     public var isEmpty: Bool {
         defaultModeID == nil && appearanceDensity == nil && appearanceReducedMotion == nil
             && commandPaletteHotkey == nil && knowledgeRootReference == nil
-            && windowsStoredByMode == nil && extensionsJSON == nil
+            && windowsStoredByMode == nil && mainDisplayID == nil && extensionsJSON == nil
     }
 }
 

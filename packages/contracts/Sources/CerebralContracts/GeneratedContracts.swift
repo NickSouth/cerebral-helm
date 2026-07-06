@@ -3897,9 +3897,16 @@ public extension Knowledge {
 
 // MARK: - Workspace
 public struct Workspace: Codable {
+    public let mainDisplayID: String?
     public let windowsStoredByMode: Bool?
 
-    public init(windowsStoredByMode: Bool?) {
+    public enum CodingKeys: String, CodingKey {
+        case mainDisplayID = "mainDisplayId"
+        case windowsStoredByMode
+    }
+
+    public init(mainDisplayID: String?, windowsStoredByMode: Bool?) {
+        self.mainDisplayID = mainDisplayID
         self.windowsStoredByMode = windowsStoredByMode
     }
 }
@@ -3923,9 +3930,11 @@ public extension Workspace {
     }
 
     func with(
+        mainDisplayID: String?? = nil,
         windowsStoredByMode: Bool?? = nil
     ) -> Workspace {
         return Workspace(
+            mainDisplayID: mainDisplayID ?? self.mainDisplayID,
             windowsStoredByMode: windowsStoredByMode ?? self.windowsStoredByMode
         )
     }

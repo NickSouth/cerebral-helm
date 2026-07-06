@@ -767,6 +767,7 @@ export interface Knowledge {
 }
 
 export interface Workspace {
+    mainDisplayId?:       string;
     windowsStoredByMode?: boolean;
 }
 

@@ -15,7 +15,7 @@ export interface SettingsPatchChanges {
   };
   readonly hotkeys?: { readonly commandPalette?: string };
   readonly knowledge?: { readonly rootReference?: string };
-  readonly workspace?: { readonly windowsStoredByMode?: boolean };
+  readonly workspace?: { readonly windowsStoredByMode?: boolean; readonly mainDisplayId?: string };
   readonly extensions?: Readonly<Record<string, unknown>>;
 }
 
@@ -106,6 +106,13 @@ export function validateSettingsChanges(changes: unknown): PatchValidation {
       ("windowsStoredByMode" in workspace && typeof workspace.windowsStoredByMode !== "boolean")
     ) {
       errors.push("workspace.windowsStoredByMode must be a boolean");
+    }
+    if (
+      isPlainObject(workspace) &&
+      "mainDisplayId" in workspace &&
+      (typeof workspace.mainDisplayId !== "string" || workspace.mainDisplayId.length === 0)
+    ) {
+      errors.push("workspace.mainDisplayId must be a non-empty string");
     }
   }
 

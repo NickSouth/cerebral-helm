@@ -89,11 +89,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         bridgeRuntime.startStatusPublishing()
 
-        // Display detection (NIC-87): the initial topology snapshot publishes now
-        // (the sink is bound), and every hot-plug transition re-hosts stranded
-        // shell windows before the dashboard is told the topology changed.
-        bridgeRuntime.startDisplayObservation { [weak self] _ in
-            self?.coordinator.handleDisplayTopologyChange()
+        // Display detection (NIC-87/120b): the initial topology snapshot publishes
+        // now (the sink is bound), and every hot-plug transition reconciles the
+        // per-display backdrops before the dashboard is told the topology changed.
+        // The persisted "Main display" choice is read through the runtime until a
+        // settings-read bridge operation exists.
+        coordinator.mainDisplayIDProvider = { [weak bridgeRuntime] in
+            bridgeRuntime?.storedMainDisplayID()
+        }
+        bridgeRuntime.startDisplayObservation { [weak self] topology in
+            self?.coordinator.handleDisplayTopologyChange(topology)
         }
 
         // The menu-bar item + global summon hotkey (NIC-75 / FR-SHL-02). Both the menu

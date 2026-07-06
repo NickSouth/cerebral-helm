@@ -58,6 +58,21 @@ func windowsStoredByModeRoundTrips() throws {
     #expect(loaded.defaultModeID == "school")
 }
 
+@Test("the main-display id round-trips and merges like every field (NIC-120b)")
+func mainDisplayIDRoundTrips() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(mainDisplayID: "37D8832A-2D66-02CA-B9F7-8F30A301B230"))
+    #expect(try store.load().mainDisplayID == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+
+    // Unrelated patches preserve it; a later patch replaces it.
+    try store.apply(SettingsChanges(defaultModeID: "school"))
+    #expect(try store.load().mainDisplayID == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+    try store.apply(SettingsChanges(mainDisplayID: "system-primary"))
+    let loaded = try store.load()
+    #expect(loaded.mainDisplayID == "system-primary")
+    #expect(loaded.defaultModeID == "school")
+}
+
 @Test("a partial patch preserves every unrelated stored field")
 func partialPatchPreservesOtherFields() throws {
     let store = try makeStore()

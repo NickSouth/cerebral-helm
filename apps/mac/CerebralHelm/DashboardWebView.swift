@@ -48,6 +48,11 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
     /// these are Mac-only window/shell concerns. Set by `WindowCoordinator`.
     var onShellControl: (([String: Any]) -> Void)?
 
+    /// Fired when the dashboard page finishes loading. The coordinator replays
+    /// runtime-only state that predates the page (the cached display topology) —
+    /// an event emitted before `__cerebralReceive` exists is otherwise lost.
+    var onLoaded: (() -> Void)?
+
     /// The root of the bundled dashboard build inside the app (`Resources/DashboardBundle`).
     static func bundledDashboardRoot() -> URL? {
         guard let resources = Bundle.main.resourceURL else { return nil }
@@ -56,7 +61,10 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         return FileManager.default.fileExists(atPath: index.path) ? root : nil
     }
 
-    init(dashboardRoot: URL, paths: WorkspacePaths, session: BridgeSession) {
+    /// `screen`: the display this backdrop covers. The main backdrop passes nil
+    /// (primary); secondary backdrops (NIC-120b, one per connected display) pass
+    /// their display's screen. All backdrops share the one `BridgeSession`.
+    init(dashboardRoot: URL, paths: WorkspacePaths, session: BridgeSession, screen: NSScreen? = nil) {
         handler = CerebralSchemeHandler(root: dashboardRoot)
 
         let configuration = WKWebViewConfiguration()
@@ -96,7 +104,7 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         // *behind* normal windows, so opening an app layers it above CerebralHelm
         // instead of switching Spaces. Multi-display backdrops follow in NIC-120b;
         // until then a secondary display shows the plain desktop.
-        let screenFrame = (NSScreen.screens.first ?? NSScreen.main)?.frame
+        let screenFrame = (screen ?? NSScreen.screens.first ?? NSScreen.main)?.frame
             ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
         window = DashboardBackdropWindow(
             contentRect: screenFrame,
@@ -122,14 +130,18 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         window.makeKeyAndOrderFront(nil)
     }
 
-    /// Fit the backdrop to the current primary screen — called at topology
-    /// changes (NIC-87) so a disconnect/resolution change never leaves the
-    /// backdrop mis-sized or stranded. A transitional zero-screen topology
-    /// changes nothing; the next topology event re-fits.
-    func fitToPrimaryScreen() {
-        guard let frame = (NSScreen.screens.first ?? NSScreen.main)?.frame else { return }
-        if window.frame != frame {
-            window.setFrame(frame, display: true)
+    /// Show without taking key focus — secondary backdrops (NIC-120b) must never
+    /// steal typing from whatever the user is doing on the main display.
+    func showWithoutFocus() {
+        window.orderFront(nil)
+    }
+
+    /// Fit the backdrop to the given screen — the coordinator calls this on every
+    /// topology change (NIC-87/120b), so a disconnect, re-arrangement, or
+    /// main-display re-target never leaves a backdrop mis-sized or stranded.
+    func fit(to screen: NSScreen) {
+        if window.frame != screen.frame {
+            window.setFrame(screen.frame, display: true)
         }
     }
 
@@ -165,6 +177,10 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
     }
 
     // MARK: - WKNavigationDelegate (surface load failures)
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        onLoaded?()
+    }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         log.error("Dashboard failed to load: \(error.localizedDescription, privacy: .public)")

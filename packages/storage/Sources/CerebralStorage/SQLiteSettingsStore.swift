@@ -29,6 +29,7 @@ public struct SQLiteSettingsStore: SettingsStore {
             commandPaletteHotkey: row.text("hotkey_command_palette"),
             knowledgeRootReference: row.text("knowledge_root_reference"),
             windowsStoredByMode: row.integer("windows_stored_by_mode").map { $0 != 0 },
+            mainDisplayID: row.text("main_display_id"),
             extensionsJSON: row.text("extensions")
         )
     }
@@ -39,8 +40,8 @@ public struct SQLiteSettingsStore: SettingsStore {
             INSERT INTO settings (
                 id, default_mode_id, appearance_density, appearance_reduced_motion,
                 hotkey_command_palette, knowledge_root_reference, windows_stored_by_mode,
-                extensions, updated_at
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                main_display_id, extensions, updated_at
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 default_mode_id           = COALESCE(excluded.default_mode_id, default_mode_id),
                 appearance_density        = COALESCE(excluded.appearance_density, appearance_density),
@@ -48,6 +49,7 @@ public struct SQLiteSettingsStore: SettingsStore {
                 hotkey_command_palette    = COALESCE(excluded.hotkey_command_palette, hotkey_command_palette),
                 knowledge_root_reference  = COALESCE(excluded.knowledge_root_reference, knowledge_root_reference),
                 windows_stored_by_mode    = COALESCE(excluded.windows_stored_by_mode, windows_stored_by_mode),
+                main_display_id           = COALESCE(excluded.main_display_id, main_display_id),
                 extensions                = COALESCE(excluded.extensions, extensions),
                 updated_at                = excluded.updated_at;
             """,
@@ -58,6 +60,7 @@ public struct SQLiteSettingsStore: SettingsStore {
                 .textOrNull(changes.commandPaletteHotkey),
                 .textOrNull(changes.knowledgeRootReference),
                 changes.windowsStoredByMode.map { SQLiteValue.integer($0 ? 1 : 0) } ?? .null,
+                .textOrNull(changes.mainDisplayID),
                 .textOrNull(changes.extensionsJSON),
                 .timestamp(clock.now()),
             ]

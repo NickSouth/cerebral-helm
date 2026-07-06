@@ -1,4 +1,4 @@
-import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import { DashboardShell } from "../DashboardShell";
 import { DashboardStateProvider } from "../../state/DashboardStateProvider";
 import { BridgeProvider } from "../../state/BridgeProvider";
@@ -87,6 +87,46 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     // Permissions is read-only inspection: real tool ids + the deterministic-policy statement.
     expect(within(dialog).getByText("hook.run")).toBeInTheDocument();
     expect(within(dialog).getByText(/cannot be changed here/)).toBeInTheDocument();
+  });
+
+  it("offers only stable-identity displays for Main display, defaulting to System primary (NIC-120b)", () => {
+    const { bridge } = renderApp();
+    act(() => {
+      bridge.emit({
+        eventId: "brevt_displays0003",
+        type: "display.topology.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-06T16:00:00.000Z",
+        payload: {
+          displays: [
+            {
+              id: "37D8832A-2D66-02CA-B9F7-8F30A301B230",
+              name: "Built-in Display",
+              frame: { x: 0, y: 0, width: 1512, height: 982 },
+              primary: true,
+              stableIdentity: true
+            },
+            {
+              id: "cgid-724554883",
+              name: "Unstable External",
+              frame: { x: 1512, y: 0, width: 2560, height: 1440 },
+              primary: false,
+              stableIdentity: false
+            }
+          ],
+          primaryDisplayId: "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+        }
+      });
+    });
+
+    const dialog = openSettings();
+    const select = within(dialog).getByRole("combobox", { name: "Main display" });
+    expect(select).toHaveValue("system-primary");
+    const labels = within(select)
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    // A session-scoped (non-stable) id must never be offered for persistence.
+    expect(labels).toEqual(["System primary", "Built-in Display (primary)"]);
   });
 
   it("applies the Reduce motion toggle app-wide and submits an accepted patch", async () => {

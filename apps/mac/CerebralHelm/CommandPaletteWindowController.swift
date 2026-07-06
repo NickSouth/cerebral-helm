@@ -51,6 +51,11 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
     /// Heimlich"). The coordinator brings the dashboard forward and opens the conversation.
     var onAskHeimlich: ((String) -> Void)?
 
+    /// The screen the palette should appear on (NIC-120b: palette focus targets
+    /// the main display). Set by the coordinator; nil falls back to the screen
+    /// with keyboard focus.
+    var targetScreen: (() -> NSScreen?)?
+
     private static var paletteURL: URL {
         URL(string: "\(CerebralSchemeHandler.scheme)://\(CerebralSchemeHandler.host)/index.html?surface=palette")!
     }
@@ -147,7 +152,7 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
     }
 
     private func position() {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = targetScreen?() ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
         let x = visible.midX - Self.width / 2
         let height = panel.frame.height // keep whatever the content sized the bar to
