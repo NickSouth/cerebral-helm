@@ -64,9 +64,9 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
 
         // Increment 3: seed the palette with the active mode (and rest of the bootstrap) so
         // its first paint matches the dashboard's theme; `config.changed` events keep it in
-        // sync thereafter.
+        // sync thereafter. Composed by the session so the restored mode applies (FR-MOD-05).
         if let data = try? BridgeMessageCoding.encoder().encode(
-            BootstrapComposer.compose(configDirectory: paths.configDirectory)
+            session.composeBootstrapState()
         ), let json = String(data: data, encoding: .utf8) {
             configuration.userContentController.addUserScript(WKUserScript(
                 source: "window.__cerebralBootstrap = \(json);",

@@ -84,9 +84,7 @@ public final class BridgeSession: @unchecked Sendable {
     ) async -> CerebralHelmBridgeOperationResponse {
         switch request.operation {
         case .getBootstrapState:
-            return ok(request, payload: BootstrapComposer.compose(
-                configDirectory: configDirectory, activeModeID: bootstrapModeID()
-            ))
+            return ok(request, payload: composeBootstrapState())
         case .submitCommand:
             return await submitCommand(request)
         case .applyMode:
@@ -277,6 +275,14 @@ public final class BridgeSession: @unchecked Sendable {
             }
         }
         return ok(request, payload: UpdateSettingsResult(accepted: true))
+    }
+
+    /// The bootstrap state with mode restore applied (FR-MOD-05). This is the
+    /// single composition every surface must use — the `getBootstrapState`
+    /// operation and the shell's synchronous `window.__cerebralBootstrap`
+    /// injection — so a restored mode can never differ by transport.
+    public func composeBootstrapState() -> CerebralHelmBridgeBootstrapState {
+        BootstrapComposer.compose(configDirectory: configDirectory, activeModeID: bootstrapModeID())
     }
 
     /// The mode bootstrap should activate: the last active mode when it still

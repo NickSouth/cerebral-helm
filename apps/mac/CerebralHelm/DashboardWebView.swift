@@ -48,9 +48,10 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
 
         // Inject the bootstrap state synchronously (before the app loads) so the
         // dashboard seeds its store with no round-trip or loading flash; the live
-        // bridge then serves operations and the event stream (NIC-74c).
+        // bridge then serves operations and the event stream (NIC-74c). Composed
+        // by the session so the last active mode restores here too (FR-MOD-05).
         if let data = try? BridgeMessageCoding.encoder().encode(
-            BootstrapComposer.compose(configDirectory: paths.configDirectory)
+            session.composeBootstrapState()
         ), let json = String(data: data, encoding: .utf8) {
             configuration.userContentController.addUserScript(WKUserScript(
                 source: "window.__cerebralBootstrap = \(json);",
