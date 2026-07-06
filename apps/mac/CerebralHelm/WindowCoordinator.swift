@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import CerebralContracts
 import CerebralCore
 import CerebralRuntimeHost
 
@@ -21,7 +22,16 @@ final class WindowCoordinator: @unchecked Sendable {
     private var dashboard: DashboardWindowController?
     private var palette: CommandPaletteWindowController?
     private var recovery: RecoveryWindowController?
+    private var confirmation: ConfirmationWindowController?
+    /// The dedicated settings window (backdrop-policy decision): created lazily on
+    /// first open, then reused warm. `nil` until then and always `nil` in recovery.
+    private var settings: SettingsWindowController?
+    private var dashboardRoot: URL?
     private var occlusionObserver: NSObjectProtocol?
+    /// The shared bridge session — the confirmation panel submits its
+    /// approve/cancel decision through the same versioned operation the
+    /// dashboard uses (`decideConfirmation`), never a side channel.
+    private var session: BridgeSession?
 
     /// Fired on the main queue whenever the dashboard window becomes visible or
     /// fully occluded — the shell pauses the status publisher on hidden (NIC-81b).
@@ -30,6 +40,8 @@ final class WindowCoordinator: @unchecked Sendable {
     /// Ready path: host the dashboard and pre-warm the single command palette against the
     /// shared session. Called once after a clean startup pre-flight.
     func enterReady(dashboardRoot: URL, paths: WorkspacePaths, session: BridgeSession) {
+        self.session = session
+        self.dashboardRoot = dashboardRoot
         let dashboard = DashboardWindowController(dashboardRoot: dashboardRoot, paths: paths, session: session)
         // Increment 4: web → native shell actions (e.g. rebinding the palette hotkey from
         // the settings "Hotkeys" panel).
@@ -74,17 +86,19 @@ final class WindowCoordinator: @unchecked Sendable {
             DispatchQueue.main.async { [weak self] in self?.deliverBridgeEvent(json) }
             return
         }
+        // A pending confirmation must be seen (NIC-76 AC3). The dashboard is a strict
+        // backdrop and never lifts (backdrop-policy decision, 2026-07-06), so the
+        // disclosure renders ONLY on its own floating panel — the dashboard webview
+        // never receives confirmation events (no duplicate in-backdrop overlay).
+        // `confirmation:null` (approved, cancelled, or expired) closes the panel.
+        if json.contains("\"confirmation.changed\"") {
+            handleConfirmationEvent(json)
+            return
+        }
         dashboard?.deliverBridgeEvent(json)
+        settings?.deliverBridgeEvent(json)
         if json.contains("\"config.changed\"") {
             palette?.deliverBridgeEvent(json)
-        }
-        // Increment 5: a pending confirmation must be seen in context (AC3). When a gated
-        // command's disclosure arrives (e.g. one submitted from the palette) while the
-        // dashboard may be backgrounded, surface the dashboard and dismiss the palette; the
-        // neutral-blue confirmation renders in the dashboard's web overlay (design spec §9).
-        // A `confirmation:null` payload is a *clear* (approved/cancelled) — not a new prompt.
-        if json.contains("\"confirmation.changed\"") && !json.contains("\"confirmation\":null") {
-            surfaceConfirmation()
         }
     }
 
@@ -94,15 +108,16 @@ final class WindowCoordinator: @unchecked Sendable {
     }
 
     /// Display topology changed (NIC-87): a disconnect must not strand critical
-    /// windows. The dashboard and recovery windows are re-hosted onto a live
-    /// screen when no screen shows them; the palette needs nothing — `summon()`
-    /// re-positions it against the current main screen every time.
+    /// windows. The dashboard backdrop re-fits to the current primary screen
+    /// (NIC-120a); the recovery window is re-hosted onto a live screen when no
+    /// screen shows it; the palette needs nothing — `summon()` re-positions it
+    /// against the current main screen every time.
     func handleDisplayTopologyChange() {
         guard Thread.isMainThread else {
             DispatchQueue.main.async { [weak self] in self?.handleDisplayTopologyChange() }
             return
         }
-        rehostIfStranded(dashboard?.window)
+        dashboard?.fitToPrimaryScreen()
         rehostIfStranded(recovery?.window)
     }
 
@@ -127,37 +142,101 @@ final class WindowCoordinator: @unchecked Sendable {
     /// dashboard forward and open the overlay via the shell-intent hook. There is no separate
     /// native settings window — settings never replaces the dashboard, and appears in context.
     func openSettings() {
-        guard let dashboard else { return }
-        dashboard.window.makeKeyAndOrderFront(nil)
+        // The dedicated normal-level settings window (backdrop-policy decision):
+        // the dashboard never lifts, so settings is a real window that can sit
+        // above other apps. No-op in recovery (no session/bundle).
+        guard let session, let dashboardRoot else { return }
+        let controller = settings ?? SettingsWindowController(dashboardRoot: dashboardRoot, session: session)
+        controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        settings = controller
+        controller.show()
         NSApp.activate(ignoringOtherApps: true)
-        dashboard.openSettings()
     }
 
     /// Increment 2: dismiss the palette (already done by its control channel), bring the
     /// dashboard forward, and open the conversation in the center panel with the text.
     private func routeAskHeimlich(_ text: String) {
         guard let dashboard else { return }
-        dashboard.window.makeKeyAndOrderFront(nil)
+        // The conversation opens in the backdrop's center panel and may be
+        // covered by other apps — its surfacing UX is deliberately deferred
+        // (backdrop-policy decision, 2026-07-06); do not lift the dashboard.
         NSApp.activate(ignoringOtherApps: true)
         dashboard.openConversation(text)
     }
 
-    /// Increment 5: bring the dashboard forward (dismissing the palette) so a pending
-    /// confirmation is always seen. No-op in recovery.
-    private func surfaceConfirmation() {
+    /// Present or clear the dedicated confirmation panel from one
+    /// `confirmation.changed` event. The panel and the dashboard's web overlay
+    /// render the same policy-owned disclosure; a decision on either surface
+    /// clears both through the runtime's `confirmation:null` event.
+    private func handleConfirmationEvent(_ json: String) {
+        guard
+            let event = try? CerebralHelmBridgeEvent(data: Data(json.utf8)),
+            event.type == .confirmationChanged
+        else { return }
+        guard
+            let confirmationPayload = event.payload["confirmation"],
+            let data = try? JSONEncoder().encode(confirmationPayload),
+            let disclosure = try? CerebralHelmConfirmationDisclosure(data: data)
+        else {
+            // Resolved or invalidated — this surface goes away.
+            confirmation?.close()
+            confirmation = nil
+            return
+        }
         palette?.dismiss()
-        guard let dashboard else { return }
-        dashboard.window.makeKeyAndOrderFront(nil)
+        let controller = ConfirmationWindowController(disclosure: disclosure) { [weak self] id, decision in
+            self?.decideConfirmation(id: id, decision: decision)
+        }
+        confirmation = controller
+        controller.show()
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Increment 4: apply a web-driven shell action. Currently only the palette-hotkey
-    /// rebind from the settings "Hotkeys" panel; the native shell owns the actual
-    /// `KeyboardShortcuts` registration (a Mac-only concern kept off the portable bridge).
+    /// Submit the panel's decision as the versioned `decideConfirmation`
+    /// operation on the shared session — identical semantics to the dashboard
+    /// overlay deciding. The resulting `confirmation:null` event closes the panel.
+    private func decideConfirmation(id: String, decision: String) {
+        guard let session else { return }
+        struct DecisionPayload: Encodable {
+            let id: String
+            let decision: String
+        }
+        struct RequestEnvelope: Encodable {
+            let schemaVersion = "1.0.0"
+            let messageId: String
+            let type = "bridge.operation.request"
+            let operation = "decideConfirmation"
+            let payload: DecisionPayload
+        }
+        let envelope = RequestEnvelope(
+            messageId: "brmsg_" + UUID().uuidString.replacingOccurrences(of: "-", with: ""),
+            payload: DecisionPayload(id: id, decision: decision)
+        )
+        guard
+            let data = try? JSONEncoder().encode(envelope),
+            let request = try? CerebralHelmBridgeOperationRequest(data: data)
+        else { return }
+        Task { _ = await session.execute(request) }
+    }
+
+    /// Apply a web-driven shell action (NIC-76 increment 4, extended by the
+    /// backdrop-policy decision): the palette-hotkey rebind from the settings
+    /// "Hotkeys" panel, plus opening/closing the dedicated settings window (the
+    /// dashboard gear posts `openSettings`; the settings surface's × posts
+    /// `closeSettings`). Window control is a Mac-only concern kept off the
+    /// portable bridge.
     private func handleShellControl(_ body: [String: Any]) {
-        guard (body["action"] as? String) == "setPaletteShortcut",
-              let presetID = body["preset"] as? String,
-              let preset = PaletteShortcutPreset(rawValue: presetID) else { return }
-        preset.apply()
+        switch body["action"] as? String {
+        case "setPaletteShortcut":
+            guard let presetID = body["preset"] as? String,
+                  let preset = PaletteShortcutPreset(rawValue: presetID) else { return }
+            preset.apply()
+        case "openSettings":
+            openSettings()
+        case "closeSettings":
+            settings?.close()
+        default:
+            return
+        }
     }
 }

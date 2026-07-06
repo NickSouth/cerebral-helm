@@ -14,8 +14,28 @@ import os
 /// hardware in NIC-77, not as unverified groundwork here. The React app is unchanged
 /// and still runs against its in-webview mock bridge until NIC-74 wires the native
 /// transport. Navigation failures are logged so a broken bundle is visible.
+/// The backdrop window (NIC-120a): borderless windows refuse key status by
+/// default, but the hosted web input (command bar, conversation, settings)
+/// must accept typing whenever the dashboard is focused.
+private final class DashboardBackdropWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     static let controlHandlerName = "shellControl"
+
+    /// One level below normal windows (NIC-120a backdrop): above the desktop
+    /// and its icons, below every normal app window — opened apps naturally
+    /// layer over the dashboard without a Space switch. Deliberately not a
+    /// Stage Manager / fullscreen API (PRD §3.2 non-goal).
+    ///
+    /// This level is **permanent** (backdrop-policy decision, 2026-07-06): the
+    /// dashboard never rises above normal windows — clicking it must not raise
+    /// it, and minimizing/hiding apps is how it gets revealed. Anything that
+    /// must be seen above other apps gets its own window (palette pattern),
+    /// never a dashboard lift.
+    static let backdropLevel = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
 
     let window: NSWindow
     private let webView: WKWebView
@@ -70,14 +90,24 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
 
         webView = WKWebView(frame: .zero, configuration: configuration)
 
-        window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+        // The desktop backdrop (NIC-120a): borderless and sized to the primary
+        // screen, on all Spaces, stationary through Mission Control transitions.
+        // Fullscreen usage is retired — the dashboard is the persistent surface
+        // *behind* normal windows, so opening an app layers it above CerebralHelm
+        // instead of switching Spaces. Multi-display backdrops follow in NIC-120b;
+        // until then a secondary display shows the plain desktop.
+        let screenFrame = (NSScreen.screens.first ?? NSScreen.main)?.frame
+            ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+        window = DashboardBackdropWindow(
+            contentRect: screenFrame,
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
         window.title = "CerebralHelm"
-        window.center()
+        window.level = Self.backdropLevel
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        window.hasShadow = false
         window.contentView = webView
 
         super.init()
@@ -90,6 +120,17 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
 
     func show() {
         window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Fit the backdrop to the current primary screen — called at topology
+    /// changes (NIC-87) so a disconnect/resolution change never leaves the
+    /// backdrop mis-sized or stranded. A transitional zero-screen topology
+    /// changes nothing; the next topology event re-fits.
+    func fitToPrimaryScreen() {
+        guard let frame = (NSScreen.screens.first ?? NSScreen.main)?.frame else { return }
+        if window.frame != frame {
+            window.setFrame(frame, display: true)
+        }
     }
 
     /// Routes a shared-session bridge event (lifecycle/confirmation/config) to the
@@ -131,5 +172,13 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         log.error("Dashboard navigation failed: \(error.localizedDescription, privacy: .public)")
+    }
+
+    /// WebKit reclaims the content process of fully-occluded windows — a covered
+    /// backdrop qualifies. Reload so revealing the dashboard never shows a dead
+    /// renderer.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        log.error("Dashboard web content process terminated; reloading.")
+        webView.load(URLRequest(url: CerebralSchemeHandler.indexURL))
     }
 }

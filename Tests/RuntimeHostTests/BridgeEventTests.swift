@@ -98,6 +98,46 @@ func displayTopologyWithoutPrimary() {
     #expect(topology.primaryDisplayId == nil)
 }
 
+@Test("a confirmation disclosure survives the event payload round-trip (native panel decode)")
+func confirmationDisclosureRoundTrips() throws {
+    // The shell's confirmation panel decodes the disclosure back out of the
+    // emitted event JSON: payload["confirmation"] (JSONAny) → re-encode →
+    // contract decode. Dates are the risky part — expiresAt is encoded with
+    // fractional seconds by BridgeMessageCoding.
+    let url = repositoryRoot()
+        .appendingPathComponent("packages/contracts/fixtures/valid/tools/confirmations/shell-confirmation-disclosure.json")
+    let disclosure = try CerebralHelmConfirmationDisclosure(fromURL: url)
+
+    let event = BridgeEventFactory.confirmationEvent(
+        disclosure: disclosure, id: "brevt_test00000004", timestamp: Date(timeIntervalSince1970: 1_750_000_000)
+    )
+    let json = try String(data: BridgeMessageCoding.encoder().encode(event), encoding: .utf8)
+
+    // The panel-side decode, exactly as WindowCoordinator performs it.
+    let received = try CerebralHelmBridgeEvent(data: Data(try #require(json).utf8))
+    #expect(received.type == .confirmationChanged)
+    let payload = try #require(received.payload["confirmation"])
+    let data = try JSONEncoder().encode(payload)
+    let decoded = try CerebralHelmConfirmationDisclosure(data: data)
+
+    #expect(decoded.id == disclosure.id)
+    #expect(decoded.actionSummary == disclosure.actionSummary)
+    #expect(decoded.risk == disclosure.risk)
+    #expect(decoded.expiresAt == disclosure.expiresAt)
+    #expect(decoded.arguments.count == disclosure.arguments.count)
+
+    // A cleared confirmation (`confirmation: null`) must NOT decode as a disclosure.
+    let cleared = BridgeEventFactory.confirmationEvent(
+        disclosure: nil, id: "brevt_test00000005", timestamp: Date(timeIntervalSince1970: 1_750_000_000)
+    )
+    let clearedJSON = try String(data: BridgeMessageCoding.encoder().encode(cleared), encoding: .utf8)
+    let clearedEvent = try CerebralHelmBridgeEvent(data: Data(try #require(clearedJSON).utf8))
+    if let clearedPayload = clearedEvent.payload["confirmation"],
+       let clearedData = try? JSONEncoder().encode(clearedPayload) {
+        #expect((try? CerebralHelmConfirmationDisclosure(data: clearedData)) == nil)
+    }
+}
+
 @Test("newEventID matches the contract id pattern")
 func newEventIDPattern() {
     let id = BridgeEventFactory.newEventID()

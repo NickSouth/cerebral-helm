@@ -110,7 +110,7 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
   });
 });
 
-describe("SettingsOverlay Hotkeys panel (NIC-76 / FR-UI-06)", () => {
+describe("Settings surfaces under the native shell (backdrop-policy decision, 2026-07-06)", () => {
   interface ShellControlWindow {
     webkit?: { messageHandlers?: { shellControl?: { postMessage: (m: unknown) => void } } };
   }
@@ -119,19 +119,36 @@ describe("SettingsOverlay Hotkeys panel (NIC-76 / FR-UI-06)", () => {
     delete (window as unknown as ShellControlWindow).webkit;
   });
 
-  it("rebinds the palette shortcut through the native shellControl channel", () => {
+  it("the gear routes to the native settings window instead of the web overlay", () => {
     const postMessage = vi.fn();
     (window as unknown as ShellControlWindow).webkit = {
       messageHandlers: { shellControl: { postMessage } }
     };
     renderApp();
-    const dialog = openSettings();
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Hotkeys" }));
-    const select = within(dialog).getByRole("combobox", { name: "Command palette shortcut" });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    // The dashboard is a strict backdrop: no in-page overlay when a native window exists.
+    expect(postMessage).toHaveBeenCalledWith({ action: "openSettings" });
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+  });
+
+  it("the standalone surface rebinds the palette shortcut and closes via the native channel", async () => {
+    const postMessage = vi.fn();
+    (window as unknown as ShellControlWindow).webkit = {
+      messageHandlers: { shellControl: { postMessage } }
+    };
+    const { SettingsApp } = await import("../../app/SettingsApp");
+    render(<SettingsApp />);
+    const surface = screen.getByRole("main", { name: "Settings" });
+
+    fireEvent.click(within(surface).getByRole("tab", { name: "Hotkeys" }));
+    const select = within(surface).getByRole("combobox", { name: "Command palette shortcut" });
     fireEvent.change(select, { target: { value: "command-shift-space" } });
     expect(postMessage).toHaveBeenCalledWith({
       action: "setPaletteShortcut",
       preset: "command-shift-space"
     });
+
+    fireEvent.click(within(surface).getByRole("button", { name: "Close settings" }));
+    expect(postMessage).toHaveBeenCalledWith({ action: "closeSettings" });
   });
 });

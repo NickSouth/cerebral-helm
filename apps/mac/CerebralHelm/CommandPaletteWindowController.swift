@@ -206,4 +206,13 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         log.error("Palette failed to load: \(error.localizedDescription, privacy: .public)")
     }
+
+    /// WebKit reclaims the content process of long-hidden windows — exactly the
+    /// pre-warmed palette's life. Without a reload the next summon shows the dead
+    /// renderer (a solid green/blank panel, no input). Reload so a summon after
+    /// hours idle still gets a live palette.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        log.error("Palette web content process terminated; reloading.")
+        webView.load(URLRequest(url: Self.paletteURL))
+    }
 }

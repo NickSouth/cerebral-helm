@@ -76,11 +76,6 @@ function SettingsWindow({ closing, onExited }: { closing: boolean; onExited: () 
     }
   }
 
-  const active =
-    SETTINGS_CATEGORIES.find((category) => category.id === activeCategory) ??
-    SETTINGS_CATEGORIES[0];
-  const Panel = SETTINGS_PANELS[active.id];
-
   return (
     <>
       {/* Click-to-dismiss backdrop: a mouse convenience only. The keyboard-accessible dismiss
@@ -102,53 +97,73 @@ function SettingsWindow({ closing, onExited }: { closing: boolean; onExited: () 
         onKeyDown={onKeyDown}
         onAnimationEnd={onAnimationEnd}
       >
-        <nav className="settings-sidebar" aria-label="Settings categories">
-          <div className="settings-sidebar__list" role="tablist" aria-orientation="vertical">
-            {SETTINGS_CATEGORIES.map((category) => {
-              const selected = category.id === active.id;
-              return (
-                <button
-                  key={category.id}
-                  type="button"
-                  role="tab"
-                  className="settings-category"
-                  data-active={selected}
-                  aria-selected={selected}
-                  onClick={() => setCategory(category.id)}
-                >
-                  {category.label}
-                </button>
-              );
-            })}
-          </div>
+        <SettingsSurface />
+      </div>
+    </>
+  );
+}
+
+/**
+ * The two-pane settings surface itself (categories | active panel), shared by the browser
+ * overlay above and the native shell's dedicated settings window (`?surface=settings`,
+ * backdrop-policy decision 2026-07-06). Presentation chrome — scrim, positioning,
+ * animation, or the native window — belongs to the host, not here.
+ */
+export function SettingsSurface() {
+  const { activeCategory, setCategory, closeSettings } = useSettings();
+  const active =
+    SETTINGS_CATEGORIES.find((category) => category.id === activeCategory) ??
+    SETTINGS_CATEGORIES[0];
+  const Panel = SETTINGS_PANELS[active.id];
+
+  return (
+    <>
+      <nav className="settings-sidebar" aria-label="Settings categories">
+        <div className="settings-sidebar__list" role="tablist" aria-orientation="vertical">
+          {SETTINGS_CATEGORIES.map((category) => {
+            const selected = category.id === active.id;
+            return (
+              <button
+                key={category.id}
+                type="button"
+                role="tab"
+                className="settings-category"
+                data-active={selected}
+                aria-selected={selected}
+                onClick={() => setCategory(category.id)}
+              >
+                {category.label}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          className="settings-shutdown"
+          disabled
+          aria-disabled="true"
+          title="Shutting down CerebralHelm requires the macOS host"
+        >
+          <PowerGlyph />
+          <span>Shut down CerebralHelm</span>
+        </button>
+      </nav>
+
+      <div className="settings-content" role="tabpanel" aria-label={active.label}>
+        <header className="settings-content__header">
+          <h2 className="settings-content__title">{active.label}</h2>
+          <p className="settings-content__description">{active.description}</p>
           <button
             type="button"
-            className="settings-shutdown"
-            disabled
-            aria-disabled="true"
-            title="Shutting down CerebralHelm requires the macOS host"
+            className="settings-content__close"
+            aria-label="Close settings"
+            onClick={closeSettings}
           >
-            <PowerGlyph />
-            <span>Shut down CerebralHelm</span>
+            ×
           </button>
-        </nav>
-
-        <div className="settings-content" role="tabpanel" aria-label={active.label}>
-          <header className="settings-content__header">
-            <h2 className="settings-content__title">{active.label}</h2>
-            <p className="settings-content__description">{active.description}</p>
-            <button
-              type="button"
-              className="settings-content__close"
-              aria-label="Close settings"
-              onClick={closeSettings}
-            >
-              ×
-            </button>
-          </header>
-          <div className="settings-content__body">
-            <Panel />
-          </div>
+        </header>
+        <div className="settings-content__body">
+          <Panel />
         </div>
       </div>
     </>
