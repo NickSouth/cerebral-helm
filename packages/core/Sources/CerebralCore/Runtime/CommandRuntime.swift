@@ -60,6 +60,7 @@ public final class CommandRuntime: @unchecked Sendable {
     public init(
         registry: ToolRegistry,
         policy: PolicyEngine = PolicyEngine(),
+        phase: ExecutionPhase = .preMac,
         coordinator: ConfirmationCoordinator,
         factory: CommandFactory,
         references: CommandReferences,
@@ -73,7 +74,7 @@ public final class CommandRuntime: @unchecked Sendable {
         self.parser = DirectCommandParser(references: references)
         self.registry = registry
         self.policy = policy
-        self.executor = ToolExecutor(registry: registry, policy: policy, clock: clock)
+        self.executor = ToolExecutor(registry: registry, policy: policy, phase: phase, clock: clock)
         self.coordinator = coordinator
         self.factory = factory
         self.hookCatalog = hookCatalog

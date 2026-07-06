@@ -1897,3 +1897,18 @@
     background: var(--ch-surface-panel);
   }
 }
+
+/* Charging indicators (NIC-81b): a small bolt beside the System Health battery
+   value, and a contrast-cut bolt over the bottom-bar battery fill. */
+.metric__charging {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-end: 0.25rem;
+  color: var(--ch-status-success);
+  vertical-align: -0.05em;
+}
+
+.battery-glyph__bolt {
+  /* Cut against the tone-colored fill beneath it, whatever the charge tone. */
+  fill: var(--ch-bg-base);
+}

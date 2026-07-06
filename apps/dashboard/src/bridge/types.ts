@@ -112,6 +112,10 @@ export interface NetworkChannel extends MetricChannel {
 /** Battery channel with an optional charge percentage (Mac-only capability; mocked pre-Mac). */
 export interface BatteryChannel extends MetricChannel {
   readonly percent?: number;
+  /** Whether the battery is currently charging, when known (drives the bolt indicator). */
+  readonly charging?: boolean;
+  /** Whether the machine is on external power (plugged in, possibly full and not charging). */
+  readonly pluggedIn?: boolean;
 }
 
 /** Weather channel for the bottom bar (mirrors DashboardWeatherChannel). */

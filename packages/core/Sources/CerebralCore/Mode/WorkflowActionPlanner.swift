@@ -3,16 +3,18 @@ import CerebralContracts
 
 /// The authoritative planning facts the engine reads for one tool, sourced from
 /// its validated descriptor (ADR-003): the descriptor's declared `risk` and
-/// whether the tool is available before the macOS shell. Nothing else about a
-/// tool influences a plan, so a workflow can never declare a weaker risk than the
-/// descriptor allows.
+/// whether the tool is available in the composed execution phase. The composition
+/// layer computes `available` from the descriptor's per-phase availability flags
+/// (``ExecutionPhase``), so the planner itself stays phase-agnostic. Nothing else
+/// about a tool influences a plan, so a workflow can never declare a weaker risk
+/// than the descriptor allows.
 public struct ToolPlanningFacts: Equatable, Sendable {
     public let risk: Risk
-    public let availableInPreMac: Bool
+    public let available: Bool
 
-    public init(risk: Risk, availableInPreMac: Bool) {
+    public init(risk: Risk, available: Bool) {
         self.risk = risk
-        self.availableInPreMac = availableInPreMac
+        self.available = available
     }
 }
 
@@ -21,12 +23,13 @@ public struct ToolPlanningFacts: Equatable, Sendable {
 /// Resolves a mode application and a single quick action through one code path:
 /// both become an ordered ``ModePlan`` of tool invocations. A mode resolves to its
 /// associated workflow (single resolver); a quick action resolves to a workflow
-/// directly. Per-step risk and pre-Mac availability come from the tool descriptor,
+/// directly. Per-step risk and phase availability come from the tool descriptor,
 /// so the plan's aggregate risk (computed downstream by ``RiskAggregation``) is
-/// never weaker than the strictest step (FR-MOD-03). Steps whose tool is not yet
-/// available pre-Mac are planned as `.unavailable` rather than dropped, preserving
-/// partial-success semantics (FR-MOD-04); a step naming an unknown tool is a
-/// structured error, because a missing capability is a new tool, not a silent skip.
+/// never weaker than the strictest step (FR-MOD-03). Steps whose tool is not
+/// available in the composed phase are planned as `.unavailable` rather than
+/// dropped, preserving partial-success semantics (FR-MOD-04); a step naming an
+/// unknown tool is a structured error, because a missing capability is a new
+/// tool, not a silent skip.
 ///
 /// The engine is pure: the same inputs always yield an equal plan. It performs no
 /// I/O — the composition layer loads workflow definitions and descriptor facts and
@@ -97,10 +100,10 @@ public struct WorkflowActionPlanner: ActionPlanner {
                 actionID: step.id,
                 kind: step.tool,
                 risk: facts.risk,
-                status: facts.availableInPreMac ? .success : .unavailable,
-                message: facts.availableInPreMac
+                status: facts.available ? .success : .unavailable,
+                message: facts.available
                     ? nil
-                    : "Tool '\(step.tool)' is unavailable before the macOS shell."
+                    : "Tool '\(step.tool)' is unavailable in this phase."
             )
         }
         return ModePlan(subjectID: subjectID, actions: actions)

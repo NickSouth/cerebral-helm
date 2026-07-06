@@ -82,11 +82,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.coordinator.deliverBridgeEvent(json)
         }
 
+        // Live system metrics stream (NIC-81b): start once the sink is bound, and
+        // pause sampling whenever the dashboard window is fully occluded.
+        coordinator.onDashboardVisibilityChange = { [weak bridgeRuntime] visible in
+            bridgeRuntime?.setStatusPublishingActive(visible)
+        }
+        bridgeRuntime.startStatusPublishing()
+
         // The menu-bar item + global summon hotkey (NIC-75 / FR-SHL-02). Both the menu
         // item and the hotkey drive the coordinator.
         menuBar = MenuBarController(
             summon: { [weak self] in self?.coordinator.summonPalette() },
             openSettings: { [weak self] in self?.coordinator.openSettings() }
         )
+    }
+
+    /// Permission recheck (NIC-83): the app becoming active is the moment a user
+    /// returns from System Settings after changing a permission — re-derive the
+    /// capability flags and announce any availability transition.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        bridgeRuntime?.recheckPermissions()
     }
 }

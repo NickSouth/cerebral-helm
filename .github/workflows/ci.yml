@@ -206,3 +206,11 @@ jobs:
 
       - name: Swift tests
         run: swift test
+
+      # The Keychain adapter contract tests are opt-in and run in their own
+      # invocation (NIC-82/NIC-84): the legacy keychain engine — the only one an
+      # unsigned process may use — is unstable amid the full suite's parallel
+      # allocator load (see NIC-123). Isolated runs are stable; on a locked
+      # headless keychain the tests detect the environment and bail out early.
+      - name: Keychain adapter contract tests (isolated)
+        run: CEREBRAL_KEYCHAIN_TESTS=1 swift test --filter MacAdapterTests

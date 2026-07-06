@@ -19,15 +19,26 @@ import CerebralTools
 /// `onEvent`, when supplied, is invoked for every command lifecycle event *in
 /// addition to* persistence — the macOS bridge uses it to forward the event stream
 /// to the dashboard (NIC-74b). The CLI omits it.
+///
+/// `phase` selects which descriptor availability flag gates execution and
+/// planning (``ExecutionPhase``). The default `.preMac` keeps the CLI on the
+/// portable mock surface; the macOS shell composes with `.macOS`.
+///
+/// `capabilities` is the native-capability bundle bound beneath the handlers
+/// (``ToolCapabilities``): mocks by default, honest macOS adapters when the
+/// native shell composes them (FR-TOL-04).
 public func makeCommandRuntime(
     paths: WorkspacePaths,
+    phase: ExecutionPhase = .preMac,
+    capabilities: ToolCapabilities = .mocks(),
     onEvent: (@Sendable (CommandLifecycleEvent) -> Void)? = nil
 ) throws -> CommandRuntime {
     let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory)
     let hookCatalog = makeHookCatalog(references: references, repositoryRoot: paths.repositoryRoot)
     let modePlanner = try PreMacToolRuntime.makeActionPlanner(
         descriptorsDirectory: paths.toolDescriptorsDirectory,
-        configDirectory: paths.configDirectory
+        configDirectory: paths.configDirectory,
+        phase: phase
     )
     // SQLite is the single source of truth for operational history (ADR-006). One
     // migrated connection backs confirmations, commands, events, tool calls, and
@@ -46,6 +57,7 @@ public func makeCommandRuntime(
     )
     let registry = try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: paths.toolDescriptorsDirectory,
+        capabilities: capabilities,
         knowledge: knowledge,
         hookCatalog: hookCatalog,
         modePlanner: modePlanner
@@ -53,6 +65,7 @@ public func makeCommandRuntime(
 
     return CommandRuntime(
         registry: registry,
+        phase: phase,
         coordinator: ConfirmationCoordinator(store: SQLiteConfirmationStore(database: database)),
         factory: CommandFactory(clock: SystemClock(), identifiers: UUIDIdentifierGenerator()),
         references: references,

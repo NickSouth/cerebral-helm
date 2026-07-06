@@ -2,9 +2,83 @@ import type { BridgeEvent, CerebralBridge } from "../bridge/cerebralBridge";
 import type {
   ConfirmationDisclosure,
   DashboardStateSnapshot,
-  HeimlichState
+  HeimlichState,
+  RegionState,
+  SystemHealthRegion
 } from "../bridge/types";
 import type { DashboardState, DashboardStore } from "./dashboardState";
+
+/** One channel of the native status publisher's `system_metrics` payload (NIC-81b). */
+interface MetricsChannelPayload {
+  readonly availability?: string;
+  readonly value?: number | null;
+  readonly sampledAt?: string | null;
+}
+
+interface MetricsNetworkPayload {
+  readonly availability?: string;
+  readonly uploadMbps?: number | null;
+  readonly downloadMbps?: number | null;
+  readonly sampledAt?: string | null;
+}
+
+interface MetricsBatteryPayload extends MetricsChannelPayload {
+  readonly charging?: boolean | null;
+  readonly pluggedIn?: boolean | null;
+}
+
+interface SystemMetricsPayload {
+  readonly cpu?: MetricsChannelPayload;
+  readonly memory?: MetricsChannelPayload;
+  readonly network?: MetricsNetworkPayload;
+  readonly battery?: MetricsBatteryPayload;
+  readonly display?: MetricsChannelPayload;
+}
+
+/**
+ * Adapter availability → region state. `loading` maps to "empty" (no number to
+ * show yet, honestly); `disconnected` renders as stale so the last value is
+ * visibly out of date rather than silently wrong.
+ */
+function channelState(availability: string | undefined): RegionState {
+  switch (availability) {
+    case "available":
+      return "ready";
+    case "stale":
+    case "disconnected":
+      return "stale";
+    case "loading":
+      return "empty";
+    default:
+      return "unavailable";
+  }
+}
+
+/** Fold one live metrics snapshot into the system-health region shape. */
+function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthRegion {
+  const cpuLive = payload.cpu?.availability === "available";
+  const memoryLive = payload.memory?.availability === "available";
+  const networkState = channelState(payload.network?.availability);
+  const batteryState = channelState(payload.battery?.availability);
+  return {
+    state: "ready",
+    cpuPercent: cpuLive ? (payload.cpu?.value ?? undefined) : undefined,
+    memoryPercent: memoryLive ? (payload.memory?.value ?? undefined) : undefined,
+    network: {
+      state: networkState,
+      label: "Network",
+      uploadMbps: payload.network?.uploadMbps ?? undefined,
+      downloadMbps: payload.network?.downloadMbps ?? undefined
+    },
+    battery: {
+      state: batteryState,
+      label: "Battery",
+      percent: batteryState === "ready" ? (payload.battery?.value ?? undefined) : undefined,
+      charging: batteryState === "ready" ? (payload.battery?.charging ?? undefined) : undefined,
+      pluggedIn: batteryState === "ready" ? (payload.battery?.pluggedIn ?? undefined) : undefined
+    }
+  };
+}
 
 /** How a command-lifecycle status maps onto Heimlich's consciousness state (design spec §5.8). */
 const LIFECYCLE_TO_HEIMLICH: Readonly<Record<string, HeimlichState>> = {
@@ -68,10 +142,21 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
       };
     }
     case "system.status.changed": {
-      // The only status change the shell interprets today (NIC-64): an incompatible bridge
-      // major version forces read-only recovery. Folded into the runtime-only `recovery` widening
-      // (never the bootstrap config), so the posture seam can suppress every mutating control.
       const payload = event.payload as { category?: string; state?: Record<string, unknown> };
+      // A live metrics snapshot from the native status publisher (NIC-81b): fold the
+      // per-channel readings into the system-health region. Runtime-only state — never
+      // folded into the bootstrap config.
+      if (payload.category === "system_metrics") {
+        return {
+          ...state,
+          regions: {
+            ...state.regions,
+            systemHealth: systemHealthFromMetrics(event.payload as SystemMetricsPayload)
+          }
+        };
+      }
+      // Bridge-failure posture (NIC-64): an incompatible bridge major version forces
+      // read-only recovery, suppressing every mutating control via the posture seam.
       if (payload.category !== "bridge_failure" || payload.state?.status !== "read_only") {
         return state;
       }

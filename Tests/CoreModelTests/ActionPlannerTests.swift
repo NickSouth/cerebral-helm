@@ -15,14 +15,14 @@ private func workflow(_ id: String, _ steps: [Step]) -> CerebralHelmWorkflowDefi
     CerebralHelmWorkflowDefinition(extensions: nil, id: id, label: id, schemaVersion: "1.0.0", steps: steps)
 }
 
-/// Descriptor-sourced facts mirroring the shipped tools: read-only tools are
-/// available pre-Mac; the local-write/shell tools are Mac-only.
+/// Descriptor-sourced facts mirroring the shipped tools composed pre-Mac:
+/// read-only tools are available; the local-write/shell tools are Mac-only.
 private let toolFacts: [String: ToolPlanningFacts] = [
-    "system.status.read": ToolPlanningFacts(risk: .readOnly, availableInPreMac: true),
-    "note.search": ToolPlanningFacts(risk: .readOnly, availableInPreMac: true),
-    "app.open": ToolPlanningFacts(risk: .localWrite, availableInPreMac: false),
-    "url.open": ToolPlanningFacts(risk: .localWrite, availableInPreMac: false),
-    "hook.run": ToolPlanningFacts(risk: .shell, availableInPreMac: false),
+    "system.status.read": ToolPlanningFacts(risk: .readOnly, available: true),
+    "note.search": ToolPlanningFacts(risk: .readOnly, available: true),
+    "app.open": ToolPlanningFacts(risk: .localWrite, available: false),
+    "url.open": ToolPlanningFacts(risk: .localWrite, available: false),
+    "hook.run": ToolPlanningFacts(risk: .shell, available: false),
 ]
 
 private func makePlanner() -> WorkflowActionPlanner {

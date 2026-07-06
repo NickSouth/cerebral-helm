@@ -3,21 +3,21 @@ import CerebralContracts
 import CerebralCore
 import CerebralShared
 
-/// Composition root for the pre-Mac tool runtime.
+/// Composition root for the portable tool runtime.
 ///
-/// Assembles the validated registry, portable handlers, mock native adapters, and
-/// mock knowledge service into a ready `ToolExecutor`. This is where the layers
-/// meet — descriptors are authoritative, policy is owned by the engine, handlers
-/// are bound through the registry — without `CerebralTools` depending on the
-/// knowledge package (the service is injected). hook.run (NIC-33-B) and mode.apply
-/// (NIC-33-C) are registered by later increments.
+/// Assembles the validated registry, portable handlers, the injected capability
+/// bundle (``ToolCapabilities`` — mocks by default, honest native adapters on
+/// macOS), and the knowledge service into a ready `ToolExecutor`. This is where
+/// the layers meet — descriptors are authoritative, policy is owned by the
+/// engine, handlers are bound through the registry — without `CerebralTools`
+/// depending on the knowledge package (the service is injected).
 public enum PreMacToolRuntime {
-    /// Builds the validated registry of portable handlers bound to mock adapters.
-    /// `hook.run` (NIC-33-B) is registered with the supplied catalog; mode.apply
-    /// (NIC-33-C) is added by a later increment.
+    /// Builds the validated registry of portable handlers bound to the supplied
+    /// capability bundle (mocks by default; the macOS shell injects honest native
+    /// adapters through the same seam, FR-TOL-04).
     public static func makeRegistry(
         descriptorsDirectory: URL,
-        capabilityMatrix: CapabilityMatrix = .allAvailable,
+        capabilities: ToolCapabilities = .mocks(),
         knowledge: any KnowledgeService = MockKnowledgeService(),
         hookCatalog: HookCatalog = HookCatalog(),
         modePlanner: any ActionPlanner = StubModePlanner()
@@ -25,12 +25,12 @@ public enum PreMacToolRuntime {
         let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory)
 
         let handlers: [String: any ToolHandler] = [
-            "app.open": AppOpenHandler(capability: MockAppCapability(matrix: capabilityMatrix)),
-            "url.open": URLOpenHandler(capability: MockURLCapability(matrix: capabilityMatrix)),
-            "system.status.read": SystemStatusReadHandler(capability: MockSystemStatusCapability(matrix: capabilityMatrix)),
+            "app.open": AppOpenHandler(capability: capabilities.app),
+            "url.open": URLOpenHandler(capability: capabilities.url),
+            "system.status.read": SystemStatusReadHandler(capability: capabilities.systemStatus),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
-            "hook.run": HookRunHandler(catalog: hookCatalog, capability: MockProcessCapability(matrix: capabilityMatrix)),
+            "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
             "mode.apply": ModeApplyHandler(planner: modePlanner),
         ]
 
@@ -52,11 +52,13 @@ public enum PreMacToolRuntime {
     /// tools layer, so the core engine stays pure and convention-free.
     public static func makeActionPlanner(
         descriptorsDirectory: URL,
-        configDirectory: URL
+        configDirectory: URL,
+        phase: ExecutionPhase = .preMac
     ) throws -> WorkflowActionPlanner {
         let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory)
-        let toolFacts = Dictionary(uniqueKeysWithValues: descriptors.map { descriptor in
-            (descriptor.id, ToolPlanningFacts(risk: descriptor.risk, availableInPreMac: descriptor.availability.preMAC))
+        let toolFacts = Dictionary(uniqueKeysWithValues: descriptors.map { descriptor -> (String, ToolPlanningFacts) in
+            let available = phase == .preMac ? descriptor.availability.preMAC : descriptor.availability.macOS
+            return (descriptor.id, ToolPlanningFacts(risk: descriptor.risk, available: available))
         })
 
         let workflows = try WorkflowCatalogLoader.load(configDirectory: configDirectory)
@@ -104,20 +106,21 @@ public enum PreMacToolRuntime {
 
     public static func makeExecutor(
         descriptorsDirectory: URL,
-        capabilityMatrix: CapabilityMatrix = .allAvailable,
+        capabilities: ToolCapabilities = .mocks(),
         knowledge: any KnowledgeService = MockKnowledgeService(),
         hookCatalog: HookCatalog = HookCatalog(),
         modePlanner: any ActionPlanner = StubModePlanner(),
         policy: PolicyEngine = PolicyEngine(),
+        phase: ExecutionPhase = .preMac,
         clock: any TimeSource = SystemClock()
     ) throws -> ToolExecutor {
         let registry = try makeRegistry(
             descriptorsDirectory: descriptorsDirectory,
-            capabilityMatrix: capabilityMatrix,
+            capabilities: capabilities,
             knowledge: knowledge,
             hookCatalog: hookCatalog,
             modePlanner: modePlanner
         )
-        return ToolExecutor(registry: registry, policy: policy, clock: clock)
+        return ToolExecutor(registry: registry, policy: policy, phase: phase, clock: clock)
     }
 }
