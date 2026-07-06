@@ -25,7 +25,8 @@ public enum PreMacToolRuntime {
         modeStateStore: any ModeStateStore = InMemoryModeStateStore(),
         modeSessionLog: any ModeSessionLog = InMemoryModeSessionLog(),
         modeWorkspaceStore: any ModeWorkspaceStore = InMemoryModeWorkspaceStore(),
-        settingsStore: (any SettingsStore)? = nil
+        settingsStore: (any SettingsStore)? = nil,
+        appTargets: [String: String] = [:]
     ) throws -> ToolRegistry {
         let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory)
 
@@ -36,6 +37,7 @@ public enum PreMacToolRuntime {
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
+            "window.arrange": WindowArrangeHandler(capability: capabilities.window, appTargets: appTargets),
             "mode.apply": ModeApplyHandler(
                 modeIDs: modeIDs,
                 coordinator: ModeSessionCoordinator(stateStore: modeStateStore, sessionLog: modeSessionLog),
@@ -103,6 +105,7 @@ public enum PreMacToolRuntime {
         case "note.capture": _ = try CerebralHelmNoteCaptureInput(data: data)
         case "note.search": _ = try CerebralHelmNoteSearchInput(data: data)
         case "mode.apply": _ = try CerebralHelmModeApplyInput(data: data)
+        case "window.arrange": _ = try CerebralHelmWindowArrangeInput(data: data)
         case "system.status.read": _ = try CerebralHelmSystemStatusReadInput(data: data)
         default: break
         }

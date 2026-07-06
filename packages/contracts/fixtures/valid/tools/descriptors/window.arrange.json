@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "window.arrange",
+  "version": "1.0.0",
+  "purpose": "Move and resize configured applications' main windows into named frames through the Accessibility adapter.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/window-arrange-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/window-arrange-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "local_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_local_write",
+  "requiredPermissions": ["accessibility"],
+  "secretReferences": [],
+  "timeoutMs": 10000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["window"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "partial_success", "unavailable", "denied", "timeout", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

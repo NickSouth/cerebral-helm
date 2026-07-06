@@ -338,6 +338,32 @@ func workflowEmitsPerActionProgress() async throws {
     #expect(emitted.allSatisfy { !$0.commandID.isEmpty })
 }
 
+@Test("window.arrange runs as a workflow step and reports honest partials (NIC-88)")
+func windowArrangeRunsAsWorkflowStep() async throws {
+    // The fixture descriptor gates window.arrange to macOS; pre-Mac the step
+    // plans unavailable, so this proves both the step shape and the honest gate.
+    let toolCalls = DataRecorder()
+    let runtime = try makeRuntime(
+        actionPlans: ["dev-layout": ModePlan(subjectID: "dev-layout", actions: [
+            PlannedAction(
+                actionID: "arrange", kind: "window.arrange", risk: .localWrite, status: .unavailable,
+                message: "Mac only.",
+                input: Data(#"{"arrangement":[{"appId":"vscode","frame":"left-half"}]}"#.utf8)
+            ),
+            PlannedAction(actionID: "recent-notes", kind: "note.search", risk: .readOnly, status: .success, input: Data(#"{"query":"today"}"#.utf8)),
+        ])],
+        toolCallSink: { _, data in toolCalls.record(data) }
+    )
+
+    let outcome = await runtime.submit("run dev-layout", source: .cli)
+    guard case let .completed(_, status, _) = outcome else {
+        Issue.record("Expected completed, got \(outcome)"); return
+    }
+    // The search step succeeded; the Mac-only arrange step was honestly skipped.
+    #expect(status == .succeeded)
+    #expect(!toolCalls.text.contains("window.arrange"))
+}
+
 @Test("an unknown workflow id is rejected by the parser with suggestions")
 func unknownWorkflowRejected() async throws {
     let runtime = try makeRuntime(actionPlans: ["morning-brief": ModePlan(subjectID: "morning-brief", actions: [])])

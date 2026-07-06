@@ -153,8 +153,37 @@ public protocol WorkspaceWindowsCapability: Sendable {
 
 // MARK: - window
 
+/// The named-frame vocabulary for window arrangement (NIC-88). Raw values match
+/// the `window-arrange-input` contract enum; frames are resolved against the
+/// primary display's visible area by the platform adapter — callers never supply
+/// coordinates.
+public enum WindowFrame: String, Sendable, CaseIterable {
+    case full
+    case leftHalf = "left-half"
+    case rightHalf = "right-half"
+    case topHalf = "top-half"
+    case bottomHalf = "bottom-half"
+    case leftTwoThirds = "left-two-thirds"
+    case rightThird = "right-third"
+    case centered
+}
+
+/// One application's arrangement outcome — honest partials, never a silent skip.
+public enum WindowArrangeOutcome: Equatable, Sendable {
+    case arranged
+    /// The application is not running; windows are only arranged, never launched.
+    case notRunning
+    /// The application exposes no controllable window (reliability gate, NIC-88).
+    case unsupported(String)
+}
+
 public protocol WindowCapability: Sendable {
     func inspect() async throws -> [WindowInfo]
+
+    /// Move/resize the application's main window into a named frame. Throws
+    /// `NativeCapabilityError.permissionDenied` when the Accessibility permission
+    /// is not granted (FR-SAF-07 — a capability error, never a prompt loop).
+    func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome
 }
 
 public struct WindowInfo: Equatable, Sendable {

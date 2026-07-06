@@ -69,7 +69,10 @@ public func makeCommandRuntime(
         modeStateStore: SQLiteModeStateStore(database: database),
         modeSessionLog: SQLiteModeSessionLog(database: database),
         modeWorkspaceStore: SQLiteModeWorkspaceStore(database: database),
-        settingsStore: SQLiteSettingsStore(database: database)
+        settingsStore: SQLiteSettingsStore(database: database),
+        // window.arrange resolves apps through the same reference catalog as
+        // app.open — configured bundle-id references only, never arbitrary targets.
+        appTargets: references.apps.mapValues(\.target)
     )
 
     return CommandRuntime(

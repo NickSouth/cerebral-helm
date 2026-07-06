@@ -35,6 +35,7 @@ public enum MacToolCapabilities {
                 process: ProcessHookCapability(),
                 systemStatus: systemStatus,
                 workspaceWindows: MacWorkspaceWindowsCapability(),
+                window: AXWindowCapability(),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,
                     CapabilityMatrix.Capability.urlOpen,
@@ -42,6 +43,7 @@ public enum MacToolCapabilities {
                     CapabilityMatrix.Capability.systemStatusRead,
                     CapabilityMatrix.Capability.secret,
                     CapabilityMatrix.Capability.workspaceWindows,
+                    CapabilityMatrix.Capability.window,
                 ]
             ),
             systemStatus: systemStatus,

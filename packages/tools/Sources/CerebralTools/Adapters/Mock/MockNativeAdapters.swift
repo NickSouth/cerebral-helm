@@ -138,15 +138,28 @@ public struct MockWindowCapability: WindowCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault
     public var windows: [WindowInfo]
+    /// Simulated arrangement outcomes by bundle id; an unlisted id is `.notRunning`.
+    public var arrangeOutcomes: [String: WindowArrangeOutcome]
 
-    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none, windows: [WindowInfo] = []) {
+    public init(
+        matrix: CapabilityMatrix = .allAvailable,
+        fault: MockFault = .none,
+        windows: [WindowInfo] = [],
+        arrangeOutcomes: [String: WindowArrangeOutcome] = [:]
+    ) {
         self.matrix = matrix
         self.fault = fault
         self.windows = windows
+        self.arrangeOutcomes = arrangeOutcomes
     }
 
     public func inspect() async throws -> [WindowInfo] {
         try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault)
         return windows
+    }
+
+    public func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome {
+        try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault, subject: bundleID)
+        return arrangeOutcomes[bundleID] ?? .notRunning
     }
 }

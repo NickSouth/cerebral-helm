@@ -1187,6 +1187,61 @@ export interface CerebralHelmURLOpenOutput {
 }
 
 /**
+ * Arrange the main windows of configured applications into named frames (NIC-88).
+ * Applications are configured references (same catalog as app.open) and frames are a fixed
+ * named vocabulary — never arbitrary coordinates, paths, or executables. Usable as a
+ * workflow step; the future layout mode builds on this same tool.
+ */
+export interface CerebralHelmWindowArrangeInput {
+    arrangement: Arrangement[];
+}
+
+export interface Arrangement {
+    appId: string;
+    frame: Frame;
+}
+
+export enum Frame {
+    BottomHalf = "bottom-half",
+    Centered = "centered",
+    Full = "full",
+    LeftHalf = "left-half",
+    LeftTwoThirds = "left-two-thirds",
+    RightHalf = "right-half",
+    RightThird = "right-third",
+    TopHalf = "top-half",
+}
+
+/**
+ * Per-entry arrangement results (NIC-88): apps that are not running or do not expose a
+ * controllable window report partial results, never a silent skip or a fabricated success.
+ */
+export interface CerebralHelmWindowArrangeOutput {
+    entries: Entry[];
+    status:  CerebralHelmWindowArrangeOutputStatus;
+}
+
+export interface Entry {
+    appId:    string;
+    frame:    string;
+    message?: string;
+    status:   EntryStatus;
+}
+
+export enum EntryStatus {
+    Arranged = "arranged",
+    Failed = "failed",
+    NotRunning = "not_running",
+    UnknownApp = "unknown_app",
+    Unsupported = "unsupported",
+}
+
+export enum CerebralHelmWindowArrangeOutputStatus {
+    Arranged = "arranged",
+    Partial = "partial",
+}
+
+/**
  * An ordered, linear, deterministic 1..N-step plan of tool invocations, resolved by the
  * action planner (NIC-38). A quickAction id and a mode application both resolve to this
  * same artifact; a single-step action is simply N=1. Step inputs are resolved statically
