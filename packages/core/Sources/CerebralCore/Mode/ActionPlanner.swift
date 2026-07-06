@@ -1,3 +1,4 @@
+import Foundation
 import CerebralContracts
 
 /// The outcome of one planned action.
@@ -15,13 +16,20 @@ public struct PlannedAction: Equatable, Sendable {
     public let risk: Risk
     public let status: PlannedActionStatus
     public let message: String?
+    /// The step's serialized, already-validated static input — what the runner
+    /// hands the tool when the plan executes. `nil` for plans that only preview.
+    public let input: Data?
 
-    public init(actionID: String, kind: String, risk: Risk, status: PlannedActionStatus, message: String? = nil) {
+    public init(
+        actionID: String, kind: String, risk: Risk, status: PlannedActionStatus,
+        message: String? = nil, input: Data? = nil
+    ) {
         self.actionID = actionID
         self.kind = kind
         self.risk = risk
         self.status = status
         self.message = message
+        self.input = input
     }
 }
 

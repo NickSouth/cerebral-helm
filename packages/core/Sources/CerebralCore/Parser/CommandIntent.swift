@@ -9,6 +9,9 @@ public enum CommandIntent: Equatable, Sendable {
     case captureNote(text: String)
     case searchNotes(query: String)
     case runHook(ReferenceEntry)
+    /// Run a configured workflow / quick action (an ordered plan of tool steps
+    /// resolved by the action planner).
+    case runAction(actionId: String)
 }
 
 /// The outcome of parsing one line of direct input.

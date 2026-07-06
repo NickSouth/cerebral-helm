@@ -20,7 +20,10 @@ public enum PreMacToolRuntime {
         capabilities: ToolCapabilities = .mocks(),
         knowledge: any KnowledgeService = MockKnowledgeService(),
         hookCatalog: HookCatalog = HookCatalog(),
-        modePlanner: any ActionPlanner = StubModePlanner()
+        modePlanner: any ActionPlanner = StubModePlanner(),
+        modeIDs: Set<String> = [],
+        modeStateStore: any ModeStateStore = InMemoryModeStateStore(),
+        modeSessionLog: any ModeSessionLog = InMemoryModeSessionLog()
     ) throws -> ToolRegistry {
         let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory)
 
@@ -31,7 +34,11 @@ public enum PreMacToolRuntime {
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
-            "mode.apply": ModeApplyHandler(planner: modePlanner),
+            "mode.apply": ModeApplyHandler(
+                modeIDs: modeIDs,
+                coordinator: ModeSessionCoordinator(stateStore: modeStateStore, sessionLog: modeSessionLog),
+                stateStore: modeStateStore
+            ),
         ]
 
         var builder = ToolRegistryBuilder()
@@ -45,11 +52,10 @@ public enum PreMacToolRuntime {
     /// Builds the live config-driven action planner (NIC-38).
     ///
     /// Reads each tool's authoritative descriptor for its risk and pre-Mac
-    /// availability, loads the workflow catalog, and maps every configured mode to
-    /// its apply-workflow by the `enter-<modeId>` convention (a mode that has no
-    /// matching workflow is simply left unresolvable, surfacing as a structured
-    /// `unknownMode` rather than a silent success). Composition lives here, at the
-    /// tools layer, so the core engine stays pure and convention-free.
+    /// availability and loads the workflow catalog. Modes map to **no** workflow:
+    /// a mode switch runs no steps (workspace re-scope, NIC-85) — workflows are
+    /// quick actions, resolved by id through `PlanTarget.action`. Composition
+    /// lives here, at the tools layer, so the core engine stays pure.
     public static func makeActionPlanner(
         descriptorsDirectory: URL,
         configDirectory: URL,
@@ -62,16 +68,9 @@ public enum PreMacToolRuntime {
         })
 
         let workflows = try WorkflowCatalogLoader.load(configDirectory: configDirectory)
-        let modeIDs = try ReferenceCatalogLoader.load(configDirectory: configDirectory).modeIds
-        var modeWorkflowIDs: [String: String] = [:]
-        for modeID in modeIDs {
-            let workflowID = "enter-\(modeID)"
-            if workflows[workflowID] != nil { modeWorkflowIDs[modeID] = workflowID }
-        }
-
         return WorkflowActionPlanner(
             workflows: workflows,
-            modeWorkflowIDs: modeWorkflowIDs,
+            modeWorkflowIDs: [:],
             toolFacts: toolFacts,
             validateStepInput: { toolID, input in try validateStepInput(toolID: toolID, input: input) }
         )

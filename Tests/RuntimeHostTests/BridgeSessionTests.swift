@@ -4,6 +4,7 @@ import Testing
 import CerebralContracts
 import CerebralCore
 import CerebralRuntimeHost
+import CerebralStorage
 
 /// NIC-74b: `BridgeSession` maps bridge operation requests onto the live
 /// `CommandRuntime`. These are integration tests — they build a real runtime over
@@ -102,6 +103,21 @@ func applyModeEmitsConfigChanged() async throws {
     #expect(!configEvents.isEmpty)
     let snapshot = (configEvents.first?["payload"] as? [String: Any])?["snapshot"] as? [String: Any]
     #expect(snapshot?["mode"] as? String == "Developer")
+}
+
+@Test("applyMode persists the active mode and records a session durably (FR-MOD-05/06)")
+func applyModePersistsActiveMode() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+    let response = await session.execute(operationRequest(.applyMode, #"{"modeId":"developer"}"#))
+    #expect(response.status == .ok)
+
+    // The switch reached the operational database: active mode + one session row.
+    let database = try operationalDatabase(paths)
+    #expect(try SQLiteModeStateStore(database: database).loadActiveModeID() == "developer")
+    #expect(try SQLiteModeSessionLog(database: database).read().count == 1)
 }
 
 @Test("applyMode rejects an unknown mode and requires a modeId")

@@ -23,8 +23,9 @@ public enum ReferenceCatalogLoader {
         let urls = try loadCatalog(referencesDirectory.appendingPathComponent("urls.json"))
         let hooks = try loadCatalog(referencesDirectory.appendingPathComponent("hooks.json"))
         let modeIds = try loadModeIds(configDirectory.appendingPathComponent("modes", isDirectory: true))
+        let workflowIds = Array((try WorkflowCatalogLoader.load(configDirectory: configDirectory)).keys)
 
-        return CommandReferences(apps: apps, urls: urls, hooks: hooks, modeIds: modeIds)
+        return CommandReferences(apps: apps, urls: urls, hooks: hooks, modeIds: modeIds, workflowIds: workflowIds)
     }
 
     private static func loadCatalog(_ url: URL) throws -> [ReferenceEntry] {

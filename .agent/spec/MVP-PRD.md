@@ -153,7 +153,7 @@ The MVP is successful when the user can complete the following on the target Mac
 | Command palette open | Visible and focused within 200 ms of hotkey under normal load |
 | Deterministic command feedback | Lifecycle acknowledgement within 100 ms; terminal result target under 1 second excluding external process duration |
 | Note capture | Durable file write and visible success under 500 ms for normal local storage |
-| Mode planning | Planned action list produced under 250 ms before native actions begin |
+| Workflow planning | Planned action list produced under 250 ms before native actions begin |
 | Offline core workflows | 100 percent of launch, mode planning, note capture/search, settings, and history functions available without network |
 | Regression quality | All required unit, contract, migration, browser, and macOS smoke tests pass for release |
 | Update preservation | Zero loss or silent reset of knowledge, config overrides, preferences, secrets, or history in the supported update matrix |
@@ -428,13 +428,13 @@ Handshake messages include bridge version, UI version, core version, supported c
 | ID | Requirement | Acceptance |
 |---|---|---|
 | FR-MOD-01 | Modes shall be defined in validated configuration rather than hardcoded UI branches. | Adding or changing supported configuration updates labels, theme tokens, widgets, actions, apps, agents, and project hints without rebuilding core logic. |
-| FR-MOD-02 | Mode application shall create a deterministic ordered action plan before execution. | Preview and tests show the same plan for the same config and environment capabilities. |
-| FR-MOD-03 | Mode risk shall be at least the highest risk of its planned actions. | A mode containing a hook cannot bypass hook confirmation. |
-| FR-MOD-04 | Mode application shall support partial success. | Missing apps or unavailable metrics are reported per action; successful actions and active UI context remain coherent. |
+| FR-MOD-02 | Quick-action workflows shall resolve to a deterministic ordered action plan before execution. | Preview and tests show the same plan for the same config and environment capabilities. |
+| FR-MOD-03 | Workflow risk shall be at least the highest risk of its planned actions. | A workflow containing a hook cannot bypass hook confirmation. |
+| FR-MOD-04 | Workflow execution shall support partial success. | Missing apps or unavailable metrics are reported per action; successful actions and active UI context remain coherent. |
 | FR-MOD-05 | Active mode and project/context shall be persisted separately. | Restart restores the last valid mode and context, or safe defaults if references are missing. |
 | FR-MOD-06 | Mode history shall be recorded as sessions. | Activation, end time, source, project/context, result, and version are queryable. |
 
-> A quick action is a workflow resolved by the same planner; FR-MOD-02 (deterministic ordered plan) and FR-MOD-03 (aggregate risk ≥ highest step) apply identically to a single quick action (N=1) and a mode application.
+> A mode switch changes the active mode, project context, and dashboard surface (theme, quick actions, apps, widgets) and may optionally store and restore window state ("Windows Stored by Mode"); it executes **no** workflow steps. Opening applications, URLs, and hooks always happens through an explicitly triggered quick action — a workflow resolved by the planner, where FR-MOD-02 (deterministic ordered plan) and FR-MOD-03 (aggregate risk ≥ highest step) apply identically to a single-step action (N=1) and a multi-step workflow.
 
 ## 7.6 Knowledge Capture and Search
 

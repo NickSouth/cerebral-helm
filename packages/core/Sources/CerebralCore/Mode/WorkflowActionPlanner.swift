@@ -103,7 +103,8 @@ public struct WorkflowActionPlanner: ActionPlanner {
                 status: facts.available ? .success : .unavailable,
                 message: facts.available
                     ? nil
-                    : "Tool '\(step.tool)' is unavailable in this phase."
+                    : "Tool '\(step.tool)' is unavailable in this phase.",
+                input: inputData
             )
         }
         return ModePlan(subjectID: subjectID, actions: actions)

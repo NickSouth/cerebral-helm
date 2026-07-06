@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
-  "id": "enter-developer",
-  "label": "Enter Developer Mode",
+  "id": "open-developer-layout",
+  "label": "Open Developer Layout",
   "steps": [
     { "id": "snapshot-system", "label": "Snapshot system status", "tool": "system.status.read" },
     { "id": "open-editor", "label": "Open editor", "tool": "app.open", "input": { "appId": "vscode" } },

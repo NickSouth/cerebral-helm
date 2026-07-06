@@ -8,6 +8,7 @@ import Foundation
 /// - `note <text>` — capture a note
 /// - `search <text>` — search notes
 /// - `hook <id>`   — run a configured hook
+/// - `run <id>`    — run a configured workflow / quick action
 ///
 /// Unknown verbs and unresolved references return suggestions without
 /// executing; a token matching more than one catalog returns a reviewable
@@ -22,6 +23,7 @@ public struct DirectCommandParser: Sendable {
         "note <text>",
         "search <text>",
         "hook <id>",
+        "run <action>",
     ]
 
     public init(references: CommandReferences) {
@@ -43,6 +45,8 @@ public struct DirectCommandParser: Sendable {
             return parseMode(remainder)
         case "hook":
             return parseHook(remainder)
+        case "run":
+            return parseRun(remainder)
         case "note":
             return parseFreeText(verb: "note", remainder: remainder) { .captureNote(text: $0) }
         case "search":
@@ -110,6 +114,20 @@ public struct DirectCommandParser: Sendable {
         return .unrecognized(UnrecognizedInput(
             reason: .unresolvedReference(verb: "hook", token: token),
             suggestions: references.hooks.keys.sorted()
+        ))
+    }
+
+    private func parseRun(_ remainder: String) -> ParseResult {
+        let token = firstToken(remainder)
+        guard !token.isEmpty else {
+            return .unrecognized(UnrecognizedInput(reason: .missingArgument(verb: "run"), suggestions: references.workflowIds.sorted()))
+        }
+        if references.workflowIds.contains(token) {
+            return .parsed(.runAction(actionId: token))
+        }
+        return .unrecognized(UnrecognizedInput(
+            reason: .unresolvedReference(verb: "run", token: token),
+            suggestions: references.workflowIds.sorted()
         ))
     }
 

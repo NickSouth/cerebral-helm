@@ -85,7 +85,7 @@ public final class BridgeSession: @unchecked Sendable {
         case .submitCommand:
             return await submitCommand(request)
         case .applyMode:
-            return applyMode(request)
+            return await applyMode(request)
         case .captureNote:
             return await captureNote(request)
         case .searchNotes:
@@ -122,17 +122,19 @@ public final class BridgeSession: @unchecked Sendable {
 
     private func applyMode(
         _ request: CerebralHelmBridgeOperationRequest
-    ) -> CerebralHelmBridgeOperationResponse {
+    ) async -> CerebralHelmBridgeOperationResponse {
         guard let input: ApplyModeInput = decodePayload(request), !input.modeId.isEmpty else {
             return invalidInput(request, "applyMode requires a modeId.")
         }
         guard BootstrapComposer.modeExists(input.modeId, configDirectory: configDirectory) else {
             return ok(request, payload: ApplyModeResult(modeId: input.modeId, status: "error"))
         }
-        // Switching mode re-themes the dashboard: emit the target mode's snapshot as a
-        // config.changed event (parity with the mock). The view switch is not a gated
-        // command — a mode's side-effecting actions (apps/URLs/hooks) are Mac-only and
-        // land with their adapters.
+        // A mode switch is a real command: `mode.apply` persists the active mode
+        // and records a session (FR-MOD-05/06). It runs no workflow steps — the
+        // dashboard swap below and the durable switch are the whole effect
+        // (workspace re-scope, NIC-85).
+        _ = await runtime.submit("mode \(input.modeId)", source: .dashboard)
+        // Re-theme the dashboard by emitting the target mode's snapshot.
         let snapshot = BootstrapComposer.compose(configDirectory: configDirectory, activeModeID: input.modeId)
         emit(BridgeEventFactory.configChangedEvent(
             snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()

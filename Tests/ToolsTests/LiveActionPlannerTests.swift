@@ -4,10 +4,9 @@ import CerebralContracts
 import CerebralCore
 import CerebralTools
 
-// NIC-38 (6b): the live, config-driven action planner built from the shipped
-// descriptors and `config/workflows/*.json`. Proves the authored workflows, the
-// descriptor-sourced risk/availability facts, and the `enter-<mode>` convention
-// resolve end to end through one engine.
+// NIC-38 / NIC-85 re-scope: the live, config-driven action planner built from the
+// shipped descriptors and `config/workflows/*.json`. Workflows are quick actions
+// resolved by id; modes resolve to no workflow (a mode switch runs no steps).
 
 private func repositoryRoot() -> URL {
     URL(fileURLWithPath: #filePath)
@@ -25,55 +24,52 @@ private func livePlanner(phase: ExecutionPhase = .preMac) throws -> WorkflowActi
     )
 }
 
-@Test("applying developer resolves through enter-developer and aggregates to shell")
-func developerModeResolvesToShell() throws {
-    let plan = try livePlanner().plan(modeID: "developer")
+@Test("open-developer-layout resolves and aggregates to shell (FR-MOD-03)")
+func developerLayoutResolvesToShell() throws {
+    let plan = try livePlanner().plan(actionID: "open-developer-layout")
 
-    #expect(plan.subjectID == "developer")
+    #expect(plan.subjectID == "open-developer-layout")
     #expect(plan.actions.contains { $0.kind == "hook.run" })
-    // The hook makes the strictest step `shell` — the governing risk mode.apply
+    // The hook makes the strictest step `shell` — the governing risk the workflow
     // must confirm against (FR-MOD-03).
     #expect(RiskAggregation.highest(plan.actions.map(\.risk)) == .shell)
     // The read-only snapshot runs pre-Mac; the Mac-only steps plan unavailable.
     #expect(plan.actions.contains { $0.status == .success })
     #expect(plan.actions.contains { $0.status == .unavailable })
+    // Every step carries its serialized input for execution.
+    #expect(plan.actions.allSatisfy { $0.input != nil })
 }
 
-@Test("composed for the macOS phase, every developer step plans available")
-func developerModePlansFullyAvailableOnMac() throws {
-    // The same workflows and descriptors, with facts computed from
-    // `availability.macOS`: every shipped tool is available on macOS, so no step
-    // plans unavailable and the aggregate risk is unchanged.
-    let plan = try livePlanner(phase: .macOS).plan(modeID: "developer")
+@Test("composed for the macOS phase, every developer-layout step plans available")
+func developerLayoutPlansFullyAvailableOnMac() throws {
+    let plan = try livePlanner(phase: .macOS).plan(actionID: "open-developer-layout")
 
     #expect(plan.actions.allSatisfy { $0.status == .success })
     #expect(RiskAggregation.highest(plan.actions.map(\.risk)) == .shell)
 }
 
-@Test("every shipped mode resolves to a non-empty plan")
-func allModesResolve() throws {
+@Test("every shipped layout workflow resolves to a non-empty plan")
+func allLayoutWorkflowsResolve() throws {
     let planner = try livePlanner()
-    for modeID in ["executive", "developer", "school", "entertainment"] {
-        let plan = try planner.plan(modeID: modeID)
+    for actionID in [
+        "open-executive-layout", "open-developer-layout",
+        "open-school-layout", "open-entertainment-layout",
+    ] {
+        let plan = try planner.plan(actionID: actionID)
         #expect(!plan.actions.isEmpty)
     }
 }
 
-@Test("a quick action / workflow id resolves directly through the same engine")
-func quickActionResolvesDirectly() throws {
-    let plan = try livePlanner().plan(actionID: "enter-entertainment")
-
-    #expect(plan.subjectID == "enter-entertainment")
-    // The read-only system snapshot runs pre-Mac; the Mac-only app.open steps
-    // carry localWrite risk and plan unavailable.
-    #expect(plan.actions.contains { $0.risk == .localWrite })
-    #expect(plan.actions.contains { $0.status == .success })
-    #expect(plan.actions.contains { $0.status == .unavailable })
+@Test("modes resolve to no workflow — a mode switch plans no steps (NIC-85 re-scope)")
+func modesNoLongerResolveToWorkflows() throws {
+    #expect(throws: ActionPlannerError.unknownMode("developer")) {
+        _ = try livePlanner().plan(modeID: "developer")
+    }
 }
 
-@Test("an unconfigured mode is a structured error on the live planner")
-func unknownModeIsStructuredError() throws {
-    #expect(throws: ActionPlannerError.unknownMode("ghost")) {
-        _ = try livePlanner().plan(modeID: "ghost")
+@Test("an unconfigured action is a structured error on the live planner")
+func unknownActionIsStructuredError() throws {
+    #expect(throws: ActionPlannerError.unknownAction("ghost")) {
+        _ = try livePlanner().plan(actionID: "ghost")
     }
 }

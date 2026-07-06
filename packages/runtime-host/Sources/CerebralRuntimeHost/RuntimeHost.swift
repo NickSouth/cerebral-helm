@@ -60,7 +60,12 @@ public func makeCommandRuntime(
         capabilities: capabilities,
         knowledge: knowledge,
         hookCatalog: hookCatalog,
-        modePlanner: modePlanner
+        modePlanner: modePlanner,
+        modeIDs: references.modeIds,
+        // Mode switches persist durably: active mode/context and session history
+        // live in the operational database (FR-MOD-05/06, ADR-006).
+        modeStateStore: SQLiteModeStateStore(database: database),
+        modeSessionLog: SQLiteModeSessionLog(database: database)
     )
 
     return CommandRuntime(

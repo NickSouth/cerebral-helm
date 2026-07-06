@@ -37,9 +37,27 @@ public final class CommandRuntime: @unchecked Sendable {
         let actionSummary: String
     }
 
+    /// A resolved workflow / quick action awaiting execution: its ordered plan and
+    /// the exact shell invocation for its hook step, if it has exactly one. A plan
+    /// with more than one hook step never carries an invocation, so the allowlist
+    /// can never waive confirmation for it (stricter, FR-SAF-03).
+    private struct ResolvedWorkflow {
+        let workflowID: String
+        let label: String
+        let schemaVersion: String
+        let plan: ModePlan
+        let hookInvocations: [String: HookInvocation]
+        let shellInvocationForPolicy: HookInvocation?
+    }
+
+    private enum PendingWork {
+        case tool(ResolvedInvocation)
+        case workflow(ResolvedWorkflow)
+    }
+
     private struct PendingExecution {
         var machine: CommandLifecycleMachine
-        let invocation: ResolvedInvocation
+        let work: PendingWork
     }
 
     private let lock = NSLock()
@@ -115,7 +133,12 @@ public final class CommandRuntime: @unchecked Sendable {
             guard var entry = take(commandID) else {
                 return .rejected(reason: "No pending command for \(commandID).", suggestions: [])
             }
-            return await run(commandID, &entry.machine, entry.invocation)
+            switch entry.work {
+            case let .tool(invocation):
+                return await run(commandID, &entry.machine, invocation)
+            case let .workflow(workflow):
+                return await runWorkflow(commandID, &entry.machine, workflow)
+            }
         case let .cancelled(_, commandID):
             guard var entry = take(commandID) else {
                 return .rejected(reason: "No pending command for \(commandID).", suggestions: [])
@@ -139,6 +162,10 @@ public final class CommandRuntime: @unchecked Sendable {
         var machine = CommandLifecycleMachine(commandId: envelope.id, factory: factory)
         emit(&machine) { try $0.markReceived(message: "Command received.") }
         emit(&machine) { try $0.markPlanned(message: "Command planned.") }
+
+        if case let .runAction(actionID) = intent {
+            return await startWorkflow(envelope: envelope, actionID: actionID, machine: &machine)
+        }
 
         guard let resolved = resolve(intent) else {
             // No registered tool for this intent (e.g. mode.apply before NIC-33-C).
@@ -168,7 +195,7 @@ public final class CommandRuntime: @unchecked Sendable {
             let request = coordinator.requestConfirmation(
                 plan: makePlan(commandID: envelope.id, resolved: resolved, risk: evaluation.governingRisk, policyReason: evaluation.reason)
             )
-            store(envelope.id, machine: machine, invocation: resolved)
+            store(envelope.id, machine: machine, work: .tool(resolved))
             return .awaitingConfirmation(commandID: envelope.id, disclosure: request.disclosure, token: request.token)
         }
 
@@ -177,6 +204,168 @@ public final class CommandRuntime: @unchecked Sendable {
         // denied command ends `failed` via the legal running → failed edge rather
         // than an illegal planned → failed transition.
         return await run(envelope.id, &machine, resolved)
+    }
+
+    /// Resolves a workflow / quick action into its ordered plan, evaluates policy
+    /// over the plan's aggregate risk (FR-MOD-03: never weaker than the strictest
+    /// step), and executes it — pausing for one aggregate confirmation when the
+    /// governing risk requires it. Steps then run without re-prompting: the
+    /// approval covered the disclosed plan, and the executor still denies any
+    /// policy-denied tool (AC-29.1), so this can gate less than policy but never
+    /// bypass a denial.
+    private func startWorkflow(
+        envelope: CommandEnvelope, actionID: String, machine: inout CommandLifecycleMachine
+    ) async -> CommandRuntimeOutcome {
+        guard let planner = modePlanner else {
+            emit(&machine) { try $0.markRunning(message: "Running.") }
+            emit(&machine) {
+                try $0.markFailed(
+                    error: lifecycleError(.unavailableCapability, "workflow.no_planner", "No action planner is composed."),
+                    message: "No action planner is composed."
+                )
+            }
+            return .completed(commandID: envelope.id, status: machine.status ?? .failed, result: nil)
+        }
+
+        let plan: ModePlan
+        do {
+            plan = try planner.plan(actionID: actionID)
+        } catch {
+            let message = workflowResolveMessage(error, actionID: actionID)
+            emit(&machine) { try $0.markRunning(message: "Running.") }
+            emit(&machine) {
+                try $0.markFailed(
+                    error: lifecycleError(.invalidInput, "workflow.unresolvable", message),
+                    message: message
+                )
+            }
+            return .completed(commandID: envelope.id, status: machine.status ?? .failed, result: nil)
+        }
+
+        // Hook steps execute with their exact configured invocation. Exactly one
+        // hook step also passes its invocation to policy so the user allowlist can
+        // apply (FR-SAF-03); more than one always confirms.
+        var hookInvocations: [String: HookInvocation] = [:]
+        for action in plan.actions where action.kind == "hook.run" {
+            if let input = action.input,
+               let decoded = try? CerebralHelmHookRunInput(data: input),
+               let invocation = hookCatalog.invocation(for: decoded.hookID) {
+                hookInvocations[action.actionID] = invocation
+            }
+        }
+        let workflow = ResolvedWorkflow(
+            workflowID: actionID,
+            label: actionID,
+            schemaVersion: "1.0.0",
+            plan: plan,
+            hookInvocations: hookInvocations,
+            shellInvocationForPolicy: hookInvocations.count == 1 ? hookInvocations.values.first : nil
+        )
+
+        let evaluation = policy.evaluate(
+            PolicyRequest(
+                toolID: actionID,
+                declaredRisk: .readOnly,
+                runtimeRiskPolicy: .highestPlannedAction,
+                plannedActionRisks: plan.actions.map(\.risk),
+                shellInvocation: workflow.shellInvocationForPolicy
+            )
+        )
+
+        if evaluation.decision == .requireConfirmation {
+            emit(&machine) { try $0.requireConfirmation(message: "Awaiting confirmation.") }
+            let request = coordinator.requestConfirmation(
+                plan: makeWorkflowPlan(commandID: envelope.id, workflow: workflow, risk: evaluation.governingRisk, policyReason: evaluation.reason)
+            )
+            store(envelope.id, machine: machine, work: .workflow(workflow))
+            return .awaitingConfirmation(commandID: envelope.id, disclosure: request.disclosure, token: request.token)
+        }
+        return await runWorkflow(envelope.id, &machine, workflow)
+    }
+
+    /// Executes a resolved plan's actions in order through the tool executor.
+    /// A failed or unavailable step never aborts the remaining steps or erases
+    /// prior successes (FR-MOD-04); each step's result is recorded as its own
+    /// tool call. The command succeeds when at least one step succeeded and fails
+    /// only when none did.
+    private func runWorkflow(
+        _ commandID: String, _ machine: inout CommandLifecycleMachine, _ workflow: ResolvedWorkflow
+    ) async -> CommandRuntimeOutcome {
+        emit(&machine) { try $0.markRunning(message: "Running \(workflow.plan.actions.count) actions.") }
+
+        var succeeded = 0, failed = 0, unavailable = 0
+        for action in workflow.plan.actions {
+            guard action.status != .unavailable else {
+                unavailable += 1
+                continue
+            }
+            let startedAt = clock.now()
+            let result = await executor.execute(ToolInvocation(
+                toolID: action.kind,
+                input: action.input ?? Data("{}".utf8),
+                shellInvocation: workflow.hookInvocations[action.actionID]
+            ))
+            recordToolCall(commandID: commandID, toolID: action.kind, input: action.input ?? Data("{}".utf8), result: result, startedAt: startedAt, completedAt: clock.now())
+
+            switch result.status {
+            case .success, .partialSuccess:
+                succeeded += 1
+            case .cancelled:
+                emit(&machine) { try $0.cancel(message: "Cancelled after \(succeeded) of \(workflow.plan.actions.count) actions.") }
+                return .completed(commandID: commandID, status: machine.status ?? .cancelled, result: nil)
+            case .unavailable:
+                unavailable += 1
+            default:
+                failed += 1
+            }
+        }
+
+        let summary = "\(succeeded) succeeded, \(failed) failed, \(unavailable) unavailable of \(workflow.plan.actions.count) actions."
+        if succeeded > 0 {
+            emit(&machine) { try $0.markSucceeded(message: summary) }
+        } else {
+            emit(&machine) {
+                try $0.markFailed(
+                    error: lifecycleError(.internalFailure, "workflow.no_actions_succeeded", summary),
+                    message: summary
+                )
+            }
+        }
+        return .completed(commandID: commandID, status: machine.status ?? .failed, result: nil)
+    }
+
+    private func workflowResolveMessage(_ error: Error, actionID: String) -> String {
+        switch error {
+        case ActionPlannerError.unknownAction:
+            return "No workflow is configured for '\(actionID)'."
+        case let ActionPlannerError.unsupportedTool(action, tool):
+            return "Workflow '\(action)' names unsupported tool '\(tool)'."
+        case let ActionPlannerError.invalidStepInput(action, step, tool, _):
+            return "Workflow '\(action)' step '\(step)' has invalid input for tool '\(tool)'."
+        default:
+            return "Workflow '\(actionID)' could not be resolved."
+        }
+    }
+
+    private func makeWorkflowPlan(
+        commandID: String, workflow: ResolvedWorkflow, risk: Risk, policyReason: String
+    ) -> ConfirmationPlan {
+        ConfirmationPlan(
+            commandID: commandID,
+            toolID: workflow.workflowID,
+            toolVersion: workflow.schemaVersion,
+            toolPurpose: "Run the configured workflow '\(workflow.workflowID)'.",
+            risk: risk,
+            destination: nil,
+            accountOrService: nil,
+            dataLeavingDevice: .none,
+            reversibility: workflow.plan.actions.contains { $0.risk == .shell } ? .unknown : .reversible,
+            arguments: workflow.plan.actions.map {
+                ConfirmationArgument(name: $0.actionID, value: $0.kind, sensitive: false)
+            },
+            actionSummary: "Run workflow '\(workflow.workflowID)' (\(workflow.plan.actions.count) actions).",
+            policyReason: policyReason
+        )
     }
 
     private func run(_ commandID: String, _ machine: inout CommandLifecycleMachine, _ resolved: ResolvedInvocation) async -> CommandRuntimeOutcome {
@@ -259,17 +448,23 @@ public final class CommandRuntime: @unchecked Sendable {
                 actionSummary: "Run hook \(reference.label)."
             )
         case let .applyMode(modeID):
-            guard let planner = modePlanner, let plan = try? planner.plan(modeID: modeID) else { return nil }
+            // A mode switch changes the active mode, context, and dashboard
+            // surface; it runs no workflow steps (workspace re-scope, NIC-85).
+            // Its risk is the descriptor's local_write — there are no planned
+            // actions to aggregate.
             return make(
                 toolID: "mode.apply",
                 input: try? CerebralHelmModeApplyInput(modeID: modeID).jsonData(),
-                plannedActionRisks: plan.actions.map(\.risk),
                 destination: nil,
                 dataLeavingDevice: .none,
-                reversibility: .partiallyReversible,
+                reversibility: .reversible,
                 arguments: [ConfirmationArgument(name: "mode", value: modeID, sensitive: false)],
-                actionSummary: "Apply mode \(modeID)."
+                actionSummary: "Switch to mode \(modeID)."
             )
+        case .runAction:
+            // Workflows resolve through startWorkflow, never through the
+            // single-tool path.
+            return nil
         }
     }
 
@@ -358,10 +553,14 @@ public final class CommandRuntime: @unchecked Sendable {
     /// and output are redacted with the descriptor's declared paths before they
     /// leave the runtime (NIC-34), so no secret reaches the operational log.
     private func recordToolCall(commandID: String, resolved: ResolvedInvocation, result: ToolExecutionResult, startedAt: Date, completedAt: Date) {
-        guard let descriptor = registry.tool(resolved.toolID)?.descriptor else { return }
+        recordToolCall(commandID: commandID, toolID: resolved.toolID, input: resolved.input, result: result, startedAt: startedAt, completedAt: completedAt)
+    }
+
+    private func recordToolCall(commandID: String, toolID: String, input: Data, result: ToolExecutionResult, startedAt: Date, completedAt: Date) {
+        guard let descriptor = registry.tool(toolID)?.descriptor else { return }
         let record = ToolCallRecorder.record(
             descriptor: descriptor,
-            input: resolved.input,
+            input: input,
             result: result,
             startedAt: startedAt,
             completedAt: completedAt
@@ -389,9 +588,9 @@ public final class CommandRuntime: @unchecked Sendable {
         }
     }
 
-    private func store(_ commandID: String, machine: CommandLifecycleMachine, invocation: ResolvedInvocation) {
+    private func store(_ commandID: String, machine: CommandLifecycleMachine, work: PendingWork) {
         lock.lock(); defer { lock.unlock() }
-        pending[commandID] = PendingExecution(machine: machine, invocation: invocation)
+        pending[commandID] = PendingExecution(machine: machine, work: work)
     }
 
     private func take(_ commandID: String) -> PendingExecution? {

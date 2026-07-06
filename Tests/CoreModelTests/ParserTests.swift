@@ -14,7 +14,8 @@ private func sampleParser() -> DirectCommandParser {
         apps: [vscode],
         urls: [github],
         hooks: [ondraft],
-        modeIds: ["developer", "executive"]
+        modeIds: ["developer", "executive"],
+        workflowIds: ["open-developer-layout", "morning-brief"]
     )
     return DirectCommandParser(references: references)
 }
@@ -31,6 +32,18 @@ func supportedGrammarResolves() {
     #expect(parser.parse("note pick up milk") == .parsed(.captureNote(text: "pick up milk")))
     #expect(parser.parse("search updater config") == .parsed(.searchNotes(query: "updater config")))
     #expect(parser.parse("hook ondraft-dev") == .parsed(.runHook(ondraft)))
+    #expect(parser.parse("run open-developer-layout") == .parsed(.runAction(actionId: "open-developer-layout")))
+}
+
+@Test("an unresolved workflow id is unrecognized and suggests configured actions")
+func unresolvedWorkflowIsRejected() {
+    let result = sampleParser().parse("run banana")
+    guard case let .unrecognized(unrecognized) = result else {
+        Issue.record("expected unrecognized, got \(result)")
+        return
+    }
+    #expect(unrecognized.reason == .unresolvedReference(verb: "run", token: "banana"))
+    #expect(unrecognized.suggestions == ["morning-brief", "open-developer-layout"])
 }
 
 @Test("parsing is deterministic and tolerates surrounding whitespace and verb case")
@@ -123,8 +136,10 @@ func loaderReadsRepositoryCatalog() throws {
     #expect(references.urls["github"]?.target == "https://github.com")
     #expect(references.hooks["ondraft-dev"] != nil)
     #expect(references.modeIds.contains("developer"))
+    #expect(references.workflowIds.contains("open-developer-layout"))
 
     let parser = DirectCommandParser(references: references)
     #expect(parser.parse("open vscode") == .parsed(.openApp(references.apps["vscode"]!)))
     #expect(parser.parse("mode developer") == .parsed(.applyMode(modeId: "developer")))
+    #expect(parser.parse("run open-developer-layout") == .parsed(.runAction(actionId: "open-developer-layout")))
 }

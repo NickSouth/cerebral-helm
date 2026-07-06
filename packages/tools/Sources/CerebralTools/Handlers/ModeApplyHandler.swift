@@ -2,50 +2,69 @@ import Foundation
 import CerebralContracts
 import CerebralCore
 
-/// `mode.apply` (NIC-33-C): plan and apply a configured mode with runtime risk at
-/// least as strict as the strictest planned action (FR-MOD-03), supporting
-/// partial success (FR-MOD-04).
+/// `mode.apply`: switch the active mode (workspace re-scope, NIC-85).
 ///
-/// The handler delegates planning to the ``ActionPlanner`` port, aggregates the
-/// plan's risk, and reports a per-action result. Confirmation for the aggregate
-/// risk is enforced upstream by the policy engine's `highest_planned_action`
-/// path, so a mode containing a hook cannot bypass shell confirmation.
+/// A mode switch persists the new active mode and records a mode session
+/// (FR-MOD-05/06) while carrying the active context forward unchanged. It runs
+/// **no workflow steps** — opening apps, URLs, and hooks belongs to explicitly
+/// triggered quick-action workflows (the `run <action>` path), so a mode switch
+/// is a cheap, reversible local write that never needs plan-risk aggregation.
+/// Optional window behaviors ("Windows Stored by Mode") attach here in a later
+/// increment.
 public struct ModeApplyHandler: ToolHandler {
     public let toolID = "mode.apply"
-    private let planner: any ActionPlanner
+    private let modeIDs: Set<String>
+    private let coordinator: ModeSessionCoordinator
+    private let stateStore: any ModeStateStore
+    private let configVersion: String
+    /// Recorded as the session's activation source (FR-MOD-06). The handler does
+    /// not see the command envelope, so the composition supplies the surface
+    /// (every current caller reaches here through the command bus).
+    private let sessionSource: String
 
-    public init(planner: any ActionPlanner) { self.planner = planner }
+    public init(
+        modeIDs: Set<String>,
+        coordinator: ModeSessionCoordinator,
+        stateStore: any ModeStateStore,
+        configVersion: String = ConfigValidator.schemaVersion,
+        sessionSource: String = "command"
+    ) {
+        self.modeIDs = modeIDs
+        self.coordinator = coordinator
+        self.stateStore = stateStore
+        self.configVersion = configVersion
+        self.sessionSource = sessionSource
+    }
 
     public func execute(input: Data) async throws -> Data {
         let decoded: CerebralHelmModeApplyInput
         do { decoded = try CerebralHelmModeApplyInput(data: input) } catch {
             throw ToolHandlerError.invalidInput("mode.apply input does not match its contract.")
         }
-
-        let plan: ModePlan
-        do {
-            plan = try planner.plan(modeID: decoded.modeID)
-        } catch let ActionPlannerError.unknownMode(modeID) {
-            throw ToolHandlerError.unavailable("Mode '\(modeID)' is not configured.")
+        guard modeIDs.contains(decoded.modeID) else {
+            throw ToolHandlerError.unavailable("Mode '\(decoded.modeID)' is not configured.")
         }
 
-        let aggregateRisk = RiskAggregation.highest(plan.actions.map(\.risk)) ?? .localWrite
-        let allSucceeded = plan.actions.allSatisfy { $0.status == .success }
-        let actions = plan.actions.map { action in
-            Action(
-                actionID: action.actionID,
-                kind: action.kind,
-                message: action.message,
-                risk: action.risk,
-                status: ActionStatus(rawValue: action.status.rawValue) ?? .failed
+        // Context is persisted separately from mode (FR-MOD-05): the switch
+        // carries the current context forward, never clears it.
+        let context = (try? stateStore.loadActiveContext()) ?? nil
+        do {
+            try coordinator.recordApplication(
+                modeID: decoded.modeID,
+                context: context,
+                source: sessionSource,
+                result: .success,
+                configVersion: configVersion
             )
+        } catch {
+            throw ToolHandlerError.providerFailure("The mode switch could not be persisted.")
         }
 
         return try CerebralHelmModeApplyOutput(
-            actions: actions,
-            aggregateRisk: aggregateRisk,
+            actions: [],
+            aggregateRisk: .localWrite,
             modeID: decoded.modeID,
-            status: allSucceeded ? .success : .partialSuccess
+            status: .success
         ).jsonData()
     }
 }
