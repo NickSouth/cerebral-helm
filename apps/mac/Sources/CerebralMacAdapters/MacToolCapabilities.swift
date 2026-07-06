@@ -10,13 +10,16 @@ import CerebralTools
 /// and adds its id to `nativeCapabilityIDs`, which also drives the bridge's
 /// handshake capability flags (FR-SHL-06).
 public enum MacToolCapabilities {
-    /// The composed native capability bundle plus the concrete status actor the
-    /// shell needs directly: the status publisher (NIC-81b) streams the same
-    /// instance's rich snapshots, sharing the rate-metric delta state with the
-    /// one-shot `system.status.read` tool.
+    /// The composed native capability bundle plus the concrete adapters the
+    /// shell needs directly: the status actor (the publisher streams the same
+    /// instance's snapshots, sharing rate-metric delta state with the one-shot
+    /// tool) and the Keychain secret store (NIC-82 — carried here rather than on
+    /// `ToolCapabilities` because no tool handler consumes secrets in the MVP;
+    /// config resolution and the settings provisioning flow are its consumers).
     public struct Composition {
         public let capabilities: ToolCapabilities
         public let systemStatus: MacSystemStatusCapability
+        public let secretStore: KeychainSecretCapability
     }
 
     public static func make(
@@ -24,6 +27,7 @@ public enum MacToolCapabilities {
         workspace: any WorkspaceOpening = SystemWorkspace()
     ) -> Composition {
         let systemStatus = MacSystemStatusCapability()
+        let secretStore = KeychainSecretCapability()
         return Composition(
             capabilities: ToolCapabilities(
                 app: NSWorkspaceAppCapability(apps: references.apps.mapValues(\.target), workspace: workspace),
@@ -35,9 +39,11 @@ public enum MacToolCapabilities {
                     CapabilityMatrix.Capability.urlOpen,
                     CapabilityMatrix.Capability.hookRun,
                     CapabilityMatrix.Capability.systemStatusRead,
+                    CapabilityMatrix.Capability.secret,
                 ]
             ),
-            systemStatus: systemStatus
+            systemStatus: systemStatus,
+            secretStore: secretStore
         )
     }
 }
