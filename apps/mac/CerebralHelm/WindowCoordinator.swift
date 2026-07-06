@@ -93,6 +93,36 @@ final class WindowCoordinator: @unchecked Sendable {
         palette?.summon()
     }
 
+    /// Display topology changed (NIC-87): a disconnect must not strand critical
+    /// windows. The dashboard and recovery windows are re-hosted onto a live
+    /// screen when no screen shows them; the palette needs nothing — `summon()`
+    /// re-positions it against the current main screen every time.
+    func handleDisplayTopologyChange() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.handleDisplayTopologyChange() }
+            return
+        }
+        rehostIfStranded(dashboard?.window)
+        rehostIfStranded(recovery?.window)
+    }
+
+    /// Re-center a window on the main screen when no connected screen's visible
+    /// frame intersects it. A transitional zero-screen topology (clamshell mid-
+    /// switch) changes nothing — the next topology event re-checks.
+    private func rehostIfStranded(_ window: NSWindow?) {
+        guard let window else { return }
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return }
+        if screens.contains(where: { $0.visibleFrame.intersects(window.frame) }) { return }
+        let target = (NSScreen.main ?? screens[0]).visibleFrame
+        var frame = window.frame
+        frame.size.width = min(frame.width, target.width)
+        frame.size.height = min(frame.height, target.height)
+        frame.origin.x = target.midX - frame.width / 2
+        frame.origin.y = target.midY - frame.height / 2
+        window.setFrame(frame, display: true)
+    }
+
     /// Open settings as the **web overlay** over the dashboard (NIC-76 / FR-UI-06): bring the
     /// dashboard forward and open the overlay via the shell-intent hook. There is no separate
     /// native settings window — settings never replaces the dashboard, and appears in context.

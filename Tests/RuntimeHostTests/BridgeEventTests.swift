@@ -55,6 +55,49 @@ func workflowProgressEventConverts() throws {
     #expect(decoded.type == .workflowActionProgress)
 }
 
+@Test("a display topology snapshot becomes a display.topology.changed bridge event")
+func displayTopologyEventConverts() throws {
+    let topology = BridgeEventFactory.DisplayTopologyPayload(displays: [
+        BridgeEventFactory.DisplayDescriptor(
+            id: "37D8832A-2D66-02CA-B9F7-8F30A301B230",
+            name: "Built-in Display",
+            frame: WindowRect(x: 0, y: 0, width: 1512, height: 982),
+            primary: true,
+            stableIdentity: true
+        ),
+        BridgeEventFactory.DisplayDescriptor(
+            id: "cgid-724554883",
+            name: "External Display",
+            frame: WindowRect(x: 1512, y: -200, width: 2560, height: 1440),
+            primary: false,
+            stableIdentity: false
+        )
+    ])
+    #expect(topology.primaryDisplayId == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+
+    let bridgeEvent = BridgeEventFactory.displayTopologyChangedEvent(
+        topology, id: "brevt_test00000003", timestamp: Date(timeIntervalSince1970: 1_750_000_000)
+    )
+    #expect(bridgeEvent.type == .displayTopologyChanged)
+    #expect(bridgeEvent.payload["displays"] != nil)
+    #expect(bridgeEvent.payload["primaryDisplayId"] != nil)
+
+    // Round-trips through the contract Codable.
+    let decoded = try CerebralHelmBridgeEvent(data: try bridgeEvent.jsonData())
+    #expect(decoded.type == .displayTopologyChanged)
+}
+
+@Test("a single-display topology with no primary flag reports no primary id")
+func displayTopologyWithoutPrimary() {
+    let topology = BridgeEventFactory.DisplayTopologyPayload(displays: [
+        BridgeEventFactory.DisplayDescriptor(
+            id: "cgid-1", name: "Display", frame: WindowRect(x: 0, y: 0, width: 100, height: 100),
+            primary: false, stableIdentity: false
+        )
+    ])
+    #expect(topology.primaryDisplayId == nil)
+}
+
 @Test("newEventID matches the contract id pattern")
 func newEventIDPattern() {
     let id = BridgeEventFactory.newEventID()

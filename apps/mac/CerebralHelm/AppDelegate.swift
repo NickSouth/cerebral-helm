@@ -89,6 +89,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         bridgeRuntime.startStatusPublishing()
 
+        // Display detection (NIC-87): the initial topology snapshot publishes now
+        // (the sink is bound), and every hot-plug transition re-hosts stranded
+        // shell windows before the dashboard is told the topology changed.
+        bridgeRuntime.startDisplayObservation { [weak self] _ in
+            self?.coordinator.handleDisplayTopologyChange()
+        }
+
         // The menu-bar item + global summon hotkey (NIC-75 / FR-SHL-02). Both the menu
         // item and the hotkey drive the coordinator.
         menuBar = MenuBarController(

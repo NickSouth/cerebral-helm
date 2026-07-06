@@ -180,6 +180,54 @@ public enum BridgeEventFactory {
         )
     }
 
+    /// One connected display in the shell's topology (FR-SHL-06, NIC-87).
+    /// `id` is the CoreGraphics display UUID when the platform can provide one;
+    /// otherwise a session-scoped fallback with `stableIdentity: false`, so
+    /// consumers never persist an identity the platform did not guarantee.
+    public struct DisplayDescriptor: Encodable, Equatable, Sendable {
+        public let id: String
+        public let name: String
+        public let frame: WindowRect
+        public let primary: Bool
+        public let stableIdentity: Bool
+
+        public init(id: String, name: String, frame: WindowRect, primary: Bool, stableIdentity: Bool) {
+            self.id = id
+            self.name = name
+            self.frame = frame
+            self.primary = primary
+            self.stableIdentity = stableIdentity
+        }
+    }
+
+    /// The full display topology snapshot carried by `display.topology.changed`.
+    /// Snapshots are compared whole (Equatable) — the observer only emits on a
+    /// real transition, never on a redundant screen-parameter notification.
+    public struct DisplayTopologyPayload: Encodable, Equatable, Sendable {
+        public let displays: [DisplayDescriptor]
+        public let primaryDisplayId: String?
+
+        public init(displays: [DisplayDescriptor]) {
+            self.displays = displays
+            self.primaryDisplayId = displays.first(where: \.primary)?.id
+        }
+    }
+
+    /// A `display.topology.changed` event (FR-SHL-06, NIC-87): a display was
+    /// connected, disconnected, or rearranged — or the initial snapshot at
+    /// observation start, so the dashboard always holds the current topology.
+    public static func displayTopologyChangedEvent(
+        _ topology: DisplayTopologyPayload, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(topology),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .displayTopologyChanged
+        )
+    }
+
     /// A `workflow.action.progress` event (FR-CMD-05): one step of an executing
     /// workflow / quick action started or reached its terminal status. The
     /// dashboard renders per-action progress from these without parsing logs.

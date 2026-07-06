@@ -46,7 +46,9 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "confirmation.changed",
   "system.status.changed",
   "config.changed",
-  "bridge.capability.changed"
+  "bridge.capability.changed",
+  "workflow.action.progress",
+  "display.topology.changed"
 ]);
 
 /** True when running inside the native shell (the message handler is registered). */

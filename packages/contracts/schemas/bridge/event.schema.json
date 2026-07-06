@@ -22,7 +22,8 @@
         "confirmation.changed",
         "bridge.capability.changed",
         "system.status.changed",
-        "workflow.action.progress"
+        "workflow.action.progress",
+        "display.topology.changed"
       ]
     },
     "timestamp": {

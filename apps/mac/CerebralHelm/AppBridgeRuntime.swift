@@ -22,6 +22,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// Streams live system metrics to the dashboard (NIC-81b). Shares the status
     /// capability actor with the `system.status.read` tool.
     private let statusPublisher: SystemStatusPublisher
+    /// Watches display connect/disconnect/rearrange (NIC-87). Native subscribers
+    /// are told first (window re-hosting), then the dashboard via one
+    /// `display.topology.changed` event.
+    private let displayObserver: DisplayTopologyObserver
     /// Inputs for the runtime permission recheck (NIC-83): the composed bundle,
     /// the descriptor-declared permission requirements, and the platform checker.
     private let toolCapabilities: ToolCapabilities
@@ -53,6 +57,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let descriptors = (try? ToolDescriptorCatalog.loadDescriptors(directory: paths.toolDescriptorsDirectory)) ?? []
         requiredPermissions = CompositionCapabilities.requiredPermissionsByCapability(descriptors)
         statusPublisher = SystemStatusPublisher(status: composition.systemStatus, emit: { relay.emit($0) })
+        displayObserver = DisplayTopologyObserver(emit: { relay.emit($0) })
         guard let runtime = try? makeCommandRuntime(paths: paths, phase: .macOS, capabilities: capabilities, onEvent: { event in
             let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
             guard let payload = try? BridgeMessageCoding.encoder().encode(bridgeEvent),
@@ -132,6 +137,16 @@ final class AppBridgeRuntime: @unchecked Sendable {
     func setStatusPublishingActive(_ active: Bool) {
         let publisher = statusPublisher
         Task { await publisher.setActive(active) }
+    }
+
+    /// Start display-topology observation (NIC-87). Main thread only — the
+    /// native subscriber performs AppKit window work. The initial snapshot is
+    /// published immediately so the dashboard always holds a current topology.
+    func startDisplayObservation(
+        onChange: @escaping (BridgeEventFactory.DisplayTopologyPayload) -> Void
+    ) {
+        displayObserver.onTopologyChange = onChange
+        displayObserver.start()
     }
 }
 

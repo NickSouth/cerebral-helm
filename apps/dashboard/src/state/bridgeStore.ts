@@ -6,7 +6,12 @@ import type {
   RegionState,
   SystemHealthRegion
 } from "../bridge/types";
-import type { DashboardState, DashboardStore, WorkflowRunProgress } from "./dashboardState";
+import type {
+  DashboardState,
+  DashboardStore,
+  DisplayTopology,
+  WorkflowRunProgress
+} from "./dashboardState";
 
 /** One channel of the native status publisher's `system_metrics` payload (NIC-81b). */
 interface MetricsChannelPayload {
@@ -188,6 +193,23 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
         };
       }
       return next;
+    }
+    case "display.topology.changed": {
+      // The shell's full display-topology snapshot (NIC-87): connect, disconnect,
+      // or rearrangement. Runtime-only state — never folded into the bootstrap
+      // config; nothing renders it yet, but the backdrop/main-display work
+      // (NIC-120) reads it from here.
+      const payload = event.payload as Partial<DisplayTopology>;
+      if (!Array.isArray(payload.displays)) {
+        return state;
+      }
+      return {
+        ...state,
+        displayTopology: {
+          displays: payload.displays,
+          primaryDisplayId: payload.primaryDisplayId ?? null
+        }
+      };
     }
     case "system.status.changed": {
       const payload = event.payload as { category?: string; state?: Record<string, unknown> };
