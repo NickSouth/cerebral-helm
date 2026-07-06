@@ -22,6 +22,7 @@ let package = Package(
         .library(name: "CerebralContracts", targets: ["CerebralContracts"]),
         .library(name: "CerebralBridge", targets: ["CerebralBridge"]),
         .library(name: "CerebralRuntimeHost", targets: ["CerebralRuntimeHost"]),
+        .library(name: "CerebralAdapterContractSuite", targets: ["CerebralAdapterContractSuite"]),
         .executable(name: "cerebral", targets: ["cerebral"]),
     ],
     dependencies: [
@@ -74,6 +75,16 @@ let package = Package(
             name: "CerebralKnowledge",
             dependencies: ["CerebralCore", "CerebralShared", "CerebralContracts"],
             path: "packages/knowledge/Sources/CerebralKnowledge"
+        ),
+        // The shared adapter contract suite (FR-TOL-04, MAC-ADAPTER-6): executable
+        // contract cases every capability bundle must satisfy. A library (not a test
+        // target) and test-framework-neutral, so the same cases run under
+        // swift-testing here and under the Xcode test target against the native
+        // adapters. Portable: no AppKit.
+        .target(
+            name: "CerebralAdapterContractSuite",
+            dependencies: ["CerebralTools", "CerebralCore", "CerebralContracts"],
+            path: "packages/tools/Sources/CerebralAdapterContractSuite"
         ),
         .target(
             name: "CerebralStorage",
@@ -149,6 +160,7 @@ let package = Package(
                 "CerebralCore",
                 "CerebralShared",
                 "CerebralContracts",
+                "CerebralAdapterContractSuite",
             ],
             path: "Tests/ToolsTests"
         ),

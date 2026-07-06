@@ -1,43 +1,43 @@
 import Foundation
 import Testing
 
-import CerebralContracts
+import CerebralAdapterContractSuite
 import CerebralCore
 import CerebralTools
 
 /// NIC-33-B (PRE-SAFETY-6): hook.run executes only configured, allowlisted hooks.
 ///
-/// AC-33.2 arbitrary shell input is impossible.
+/// AC-33.2 arbitrary shell input is impossible. The checks live in the shared
+/// contract suite (the exact-invocation execution, stdout/exit-code echo, and the
+/// unregistered-id rejection); this file runs the hook-related cases against the
+/// mock process capability. The native process adapter satisfies the same cases
+/// (MAC-ADAPTER-2/6).
 
 @Test("hook.run executes a registered hook and refuses an arbitrary id (AC-33.2)")
 func hookRunRefusesArbitraryHooks() async throws {
-    let invocation = HookInvocation(
-        executable: "/usr/bin/just",
-        arguments: ["build"],
-        workingDirectory: "/repo",
-        environment: ["CI": "true"]
+    var builder = ToolRegistryBuilder()
+    let descriptors = try ToolDescriptorCatalog.loadDescriptors(
+        directory: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // ToolsTests
+            .deletingLastPathComponent() // Tests
+            .deletingLastPathComponent() // repository root
+            .appendingPathComponent("packages/contracts/fixtures/valid/tools/descriptors", isDirectory: true)
     )
-    let handler = HookRunHandler(
-        catalog: HookCatalog(["ondraft-dev": invocation]),
-        capability: MockProcessCapability(stdout: "built", durationMs: 12)
+    let hookDescriptor = try #require(descriptors.first { $0.id == "hook.run" })
+    try builder.register(
+        descriptor: hookDescriptor,
+        handler: HookRunHandler(
+            catalog: HookCatalog([MockContractComposition.fixtures.hookID: MockContractComposition.hookInvocation]),
+            capability: MockProcessCapability(stdout: "built", durationMs: 12)
+        )
     )
+    let registry = builder.build()
 
-    // A registered hook id runs the exact configured invocation.
-    let output = try await handler.execute(input: Data(#"{"hookId":"ondraft-dev"}"#.utf8))
-    let decoded = try CerebralHelmHookRunOutput(data: output)
-    #expect(decoded.exitCode == 0)
-    #expect(decoded.stdout == "built")
-    #expect(decoded.hookID == "ondraft-dev")
-    #expect(decoded.environment == ["CI": "true"])
+    let hookCases = AdapterContractSuite.handlerCases(
+        registry: registry,
+        fixtures: MockContractComposition.fixtures
+    ).filter { $0.name.hasPrefix("hook.run") }
 
-    // An unregistered id is rejected before any process is touched.
-    do {
-        _ = try await handler.execute(input: Data(#"{"hookId":"rm-rf-slash"}"#.utf8))
-        Issue.record("An unregistered hook id must not execute.")
-    } catch let error as ToolHandlerError {
-        guard case .invalidInput = error else {
-            Issue.record("Expected invalidInput, got \(error)")
-            return
-        }
-    }
+    #expect(hookCases.count == 2)
+    await runContractCases(hookCases)
 }

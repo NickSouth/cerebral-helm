@@ -1,12 +1,15 @@
 import Testing
 
+import CerebralAdapterContractSuite
 import CerebralCore
 import CerebralTools
 
 /// NIC-32 (PRE-SAFETY-5): mock native adapters and capability matrix.
 ///
 /// AC-32.1 every native protocol has a mock; AC-32.2 capability flags drive
-/// unavailable states; AC-32.3 mocks reproduce canonical failure fixtures.
+/// unavailable states; AC-32.3 mocks reproduce canonical failure fixtures. The
+/// canonical-failure and result-shape checks run through the shared contract
+/// suite so the native adapters satisfy the identical cases (MAC-ADAPTER-6).
 
 private func invocation() -> HookInvocation {
     HookInvocation(executable: "/usr/bin/just", arguments: ["build"], workingDirectory: "/repo", environment: ["CI": "true"])
@@ -57,27 +60,55 @@ func capabilityFlagsDriveUnavailable() async throws {
     await #expect(throws: NativeCapabilityError.unavailable) { _ = try await MockURLCapability(matrix: onlyApp).open(urlID: "github") }
 }
 
+@Test("the mock bundle satisfies the shared capability contract cases (FR-TOL-04)")
+func mockBundleSatisfiesCapabilityCases() async {
+    let cases = AdapterContractSuite.capabilityCases(
+        bundle: MockContractComposition.bundle(),
+        fixtures: MockContractComposition.fixtures
+    )
+    #expect(cases.count == 4)
+    await runContractCases(cases)
+}
+
 @Test("mocks reproduce canonical native failure fixtures (AC-32.3)")
 func canonicalFailures() async throws {
-    // Configured application missing.
-    await #expect(throws: NativeCapabilityError.notFound("safari")) {
-        _ = try await MockAppCapability(fault: .notFound).open(appID: "safari")
-    }
-    // Permission denied.
-    await #expect(throws: NativeCapabilityError.permissionDenied) {
-        _ = try await MockProcessCapability(fault: .permissionDenied).run(invocation())
-    }
-    // Tool timeout.
-    await #expect(throws: NativeCapabilityError.timedOut) {
-        _ = try await MockProcessCapability(fault: .timeout).run(invocation())
-    }
-    // Cancellation during execution.
-    await #expect(throws: NativeCapabilityError.cancelled) {
-        _ = try await MockProcessCapability(fault: .cancelled).run(invocation())
-    }
-    // Generic provider failure.
-    await #expect(throws: NativeCapabilityError.adapterFailure("boom")) {
-        _ = try await MockAppCapability(fault: .adapterFailure("boom")).open(appID: "x")
+    // The expectations run through the shared failure-case factory: the mock
+    // provokes each kind by fault injection; the native adapters provoke the
+    // same kinds with genuinely failing inputs (MAC-ADAPTER-6).
+    let cases = AdapterContractSuite.failureCases([
+        FailureExpectation(name: "missing configured application is notFound", expected: .notFound("safari")) {
+            _ = try await MockAppCapability(fault: .notFound).open(appID: "safari")
+        },
+        FailureExpectation(name: "denied process execution is permissionDenied", expected: .permissionDenied) {
+            _ = try await MockProcessCapability(fault: .permissionDenied).run(invocation())
+        },
+        FailureExpectation(name: "exceeded deadline is timedOut", expected: .timedOut) {
+            _ = try await MockProcessCapability(fault: .timeout).run(invocation())
+        },
+        FailureExpectation(name: "cancellation during execution is cancelled", expected: .cancelled) {
+            _ = try await MockProcessCapability(fault: .cancelled).run(invocation())
+        },
+        FailureExpectation(name: "generic adapter failure is adapterFailure", expected: .adapterFailure("boom")) {
+            _ = try await MockAppCapability(fault: .adapterFailure("boom")).open(appID: "x")
+        },
+        FailureExpectation(name: "absent capability is unavailable", expected: .unavailable) {
+            _ = try await MockAppCapability(matrix: .none).open(appID: "vscode")
+        },
+    ])
+    await runContractCases(cases)
+}
+
+@Test("the suite reports a violation when an expected failure unexpectedly succeeds")
+func suiteDetectsViolations() async throws {
+    // Self-check of the shared mechanism: a contract case must throw a
+    // violation, not pass silently, when reality diverges from the expectation.
+    let cases = AdapterContractSuite.failureCases([
+        FailureExpectation(name: "expected-to-fail", expected: .notFound("x")) {
+            _ = try await MockAppCapability().open(appID: "vscode") // succeeds
+        },
+    ])
+    await #expect(throws: AdapterContractViolation.self) {
+        try await cases[0].run()
     }
 }
 
