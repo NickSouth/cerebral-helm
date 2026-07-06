@@ -58,6 +58,13 @@ final class AppBridgeRuntime: @unchecked Sendable {
             guard let payload = try? BridgeMessageCoding.encoder().encode(bridgeEvent),
                   let json = String(data: payload, encoding: .utf8) else { return }
             relay.emit(json)
+        }, onActionProgress: { progress in
+            let bridgeEvent = BridgeEventFactory.workflowActionProgressEvent(
+                progress, id: BridgeEventFactory.newEventID(), timestamp: Date()
+            )
+            guard let payload = try? BridgeMessageCoding.encoder().encode(bridgeEvent),
+                  let json = String(data: payload, encoding: .utf8) else { return }
+            relay.emit(json)
         }) else {
             Self.log.error("Bridge runtime composition failed; the shell has no live runtime.")
             return nil
@@ -78,6 +85,8 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 permissions: permissionChecker
             ),
             settingsStore: settingsStore,
+            // Bootstrap restores the last active mode across restarts (FR-MOD-05).
+            modeStateStore: try? makeModeStateStore(paths),
             emitEventJSON: { relay.emit($0) }
         )
     }

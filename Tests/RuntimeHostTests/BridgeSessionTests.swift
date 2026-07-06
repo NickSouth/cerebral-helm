@@ -120,6 +120,53 @@ func applyModePersistsActiveMode() async throws {
     #expect(try SQLiteModeSessionLog(database: database).read().count == 1)
 }
 
+@Test("a raw 'mode <id>' command also re-themes: one switch, one visible result (NIC-85)")
+func rawModeCommandEmitsConfigChanged() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"mode school","source":"dashboard"}"#)
+    )
+    #expect(response.status == .ok)
+
+    let configEvents = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "config.changed" }
+    let snapshot = (configEvents.first?["payload"] as? [String: Any])?["snapshot"] as? [String: Any]
+    #expect(snapshot?["mode"] as? String == "School")
+}
+
+@Test("bootstrap restores the last active mode over the stored default (FR-MOD-05)")
+func bootstrapRestoresLastActiveMode() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // The stored default says developer…
+    let settings = try makeSettingsStore(paths)
+    try settings.apply(SettingsChanges(defaultModeID: "developer"))
+    // …but the last active mode was school.
+    let first = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory
+    )
+    _ = await first.execute(operationRequest(.applyMode, #"{"modeId":"school"}"#))
+
+    // A restart restores the last active mode, not the default.
+    let second = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        settingsStore: settings,
+        modeStateStore: try makeModeStateStore(paths)
+    )
+    let bootstrap = await second.execute(operationRequest(.getBootstrapState, "{}"))
+    let state = try decode(bootstrap, as: CerebralHelmBridgeBootstrapState.self)
+    #expect(state.mode == .school)
+}
+
 @Test("applyMode rejects an unknown mode and requires a modeId")
 func applyModeValidatesMode() async throws {
     let session = try makeSession()

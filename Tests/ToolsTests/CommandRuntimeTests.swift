@@ -39,7 +39,8 @@ private func makeRuntime(
     actionPlans: [String: ModePlan] = [:],
     modeStateStore: InMemoryModeStateStore = InMemoryModeStateStore(),
     modeSessionLog: InMemoryModeSessionLog = InMemoryModeSessionLog(),
-    toolCallSink: @escaping @Sendable (String, Data) -> Void = { _, _ in }
+    toolCallSink: @escaping @Sendable (String, Data) -> Void = { _, _ in },
+    actionProgressSink: @escaping @Sendable (WorkflowActionProgress) -> Void = { _ in }
 ) throws -> CommandRuntime {
     let hookInvocation = HookInvocation(
         executable: "/usr/bin/just",
@@ -80,8 +81,23 @@ private func makeRuntime(
         hookCatalog: hookCatalog,
         modePlanner: StubModePlanner(actionPlans: actionPlans),
         sink: { recorder.record($0) },
-        toolCallSink: toolCallSink
+        toolCallSink: toolCallSink,
+        actionProgressSink: actionProgressSink
     )
+}
+
+private final class ProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [WorkflowActionProgress] = []
+
+    func record(_ progress: WorkflowActionProgress) {
+        lock.lock(); storage.append(progress); lock.unlock()
+    }
+
+    var all: [WorkflowActionProgress] {
+        lock.lock(); defer { lock.unlock() }
+        return storage
+    }
 }
 
 private final class DataRecorder: @unchecked Sendable {
@@ -296,6 +312,30 @@ func workflowWithNoSuccessesFails() async throws {
         Issue.record("Expected completed, got \(outcome)"); return
     }
     #expect(status == .failed)
+}
+
+@Test("a workflow emits per-action progress: running, terminal, and unavailable steps (FR-CMD-05)")
+func workflowEmitsPerActionProgress() async throws {
+    let progress = ProgressRecorder()
+    let runtime = try makeRuntime(
+        actionPlans: ["brief": ModePlan(subjectID: "brief", actions: [
+            PlannedAction(actionID: "recent-notes", kind: "note.search", risk: .readOnly, status: .success, input: Data(#"{"query":"today"}"#.utf8)),
+            PlannedAction(actionID: "open-editor", kind: "app.open", risk: .localWrite, status: .unavailable, message: "Mac only.", input: Data(#"{"appId":"vscode"}"#.utf8)),
+        ])],
+        actionProgressSink: { progress.record($0) }
+    )
+
+    _ = await runtime.submit("run brief", source: .cli)
+
+    let emitted = progress.all
+    // Step 1: started then succeeded. Step 2: planned-unavailable, one event.
+    #expect(emitted.map(\.status) == [.running, .succeeded, .unavailable])
+    #expect(emitted.map(\.actionID) == ["recent-notes", "recent-notes", "open-editor"])
+    #expect(emitted.allSatisfy { $0.workflowID == "brief" && $0.total == 2 })
+    #expect(emitted.first?.index == 1)
+    #expect(emitted.last?.index == 2)
+    #expect(emitted.last?.message == "Mac only.")
+    #expect(emitted.allSatisfy { !$0.commandID.isEmpty })
 }
 
 @Test("an unknown workflow id is rejected by the parser with suggestions")

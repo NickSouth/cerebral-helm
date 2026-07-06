@@ -14,7 +14,8 @@ export type BridgeEventType =
   | "confirmation.changed"
   | "system.status.changed"
   | "config.changed"
-  | "bridge.capability.changed";
+  | "bridge.capability.changed"
+  | "workflow.action.progress";
 
 export interface BridgeEvent {
   readonly eventId: string;

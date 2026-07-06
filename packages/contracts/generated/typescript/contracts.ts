@@ -376,6 +376,7 @@ export enum CerebralHelmBridgeEventType {
     ConfigChanged = "config.changed",
     ConfirmationChanged = "confirmation.changed",
     SystemStatusChanged = "system.status.changed",
+    WorkflowActionProgress = "workflow.action.progress",
 }
 
 export interface CerebralHelmBridgeHandshakeRequest {

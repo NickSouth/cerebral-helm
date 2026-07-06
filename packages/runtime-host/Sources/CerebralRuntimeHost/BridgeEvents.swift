@@ -180,6 +180,40 @@ public enum BridgeEventFactory {
         )
     }
 
+    /// A `workflow.action.progress` event (FR-CMD-05): one step of an executing
+    /// workflow / quick action started or reached its terminal status. The
+    /// dashboard renders per-action progress from these without parsing logs.
+    public static func workflowActionProgressEvent(
+        _ progress: WorkflowActionProgress, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Payload: Encodable {
+            let commandId: String
+            let workflowId: String
+            let actionId: String
+            let kind: String
+            let status: String
+            let index: Int
+            let total: Int
+            let message: String?
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Payload(
+                commandId: progress.commandID,
+                workflowId: progress.workflowID,
+                actionId: progress.actionID,
+                kind: progress.kind,
+                status: progress.status.rawValue,
+                index: progress.index,
+                total: progress.total,
+                message: progress.message
+            )),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .workflowActionProgress
+        )
+    }
+
     /// Generates a schema-valid event id (`^brevt_[A-Za-z0-9_-]{8,64}$`).
     public static func newEventID() -> String {
         "brevt_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")

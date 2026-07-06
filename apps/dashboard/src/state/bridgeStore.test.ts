@@ -39,6 +39,39 @@ describe("reduceDashboardState", () => {
     expect(reduceDashboardState(base, lifecycleEvent("idle"))).toBe(base);
   });
 
+  it("folds workflow action progress in and clears it on the terminal lifecycle status (NIC-85)", () => {
+    const base = loadBootstrapState();
+    const progress: BridgeEvent = {
+      eventId: "brevt_wfprogress01",
+      type: "workflow.action.progress",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        commandId: "cmd_000000000000000000000001",
+        workflowId: "open-developer-layout",
+        actionId: "open-editor",
+        kind: "app.open",
+        status: "running",
+        index: 2,
+        total: 5
+      }
+    };
+
+    const running = reduceDashboardState(base, progress);
+    expect(running.activeWorkflowRun?.workflowId).toBe("open-developer-layout");
+    expect(running.activeWorkflowRun?.status).toBe("running");
+    expect(running.activeWorkflowRun?.index).toBe(2);
+    expect(running.activeWorkflowRun?.total).toBe(5);
+
+    // The command's terminal lifecycle status ends the live run.
+    const done = reduceDashboardState(running, lifecycleEvent("succeeded"));
+    expect(done.activeWorkflowRun ?? null).toBeNull();
+
+    // A malformed payload never fabricates a run.
+    const malformed = reduceDashboardState(base, { ...progress, payload: { status: "running" } });
+    expect(malformed).toBe(base);
+  });
+
   it("degrades system health when metrics become unavailable", () => {
     const base = loadBootstrapState();
     const event: BridgeEvent = {

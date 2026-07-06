@@ -2,6 +2,44 @@ import Foundation
 import CerebralContracts
 import CerebralShared
 
+/// One step's live progress while a workflow / quick action executes
+/// (FR-CMD-05): emitted when the step starts and again at its terminal status,
+/// so the dashboard can render per-action progress without parsing log strings.
+public struct WorkflowActionProgress: Equatable, Sendable {
+    public enum Status: String, Equatable, Sendable {
+        case running
+        case succeeded
+        case failed
+        case unavailable
+        case cancelled
+    }
+
+    public let commandID: String
+    public let workflowID: String
+    public let actionID: String
+    /// The step's tool id.
+    public let kind: String
+    public let status: Status
+    /// 1-based position of this step in the plan.
+    public let index: Int
+    public let total: Int
+    public let message: String?
+
+    public init(
+        commandID: String, workflowID: String, actionID: String, kind: String,
+        status: Status, index: Int, total: Int, message: String? = nil
+    ) {
+        self.commandID = commandID
+        self.workflowID = workflowID
+        self.actionID = actionID
+        self.kind = kind
+        self.status = status
+        self.index = index
+        self.total = total
+        self.message = message
+    }
+}
+
 /// The result of submitting or deciding a command on the runtime.
 public enum CommandRuntimeOutcome {
     /// The command reached a terminal status. `result` carries the tool's
@@ -73,6 +111,7 @@ public final class CommandRuntime: @unchecked Sendable {
     private let commandSink: @Sendable (CommandEnvelope) -> Void
     private let sink: @Sendable (CommandLifecycleEvent) -> Void
     private let toolCallSink: @Sendable (String, Data) -> Void
+    private let actionProgressSink: @Sendable (WorkflowActionProgress) -> Void
     private var pending: [String: PendingExecution] = [:]
 
     public init(
@@ -87,7 +126,8 @@ public final class CommandRuntime: @unchecked Sendable {
         clock: any TimeSource = SystemClock(),
         commandSink: @escaping @Sendable (CommandEnvelope) -> Void = { _ in },
         sink: @escaping @Sendable (CommandLifecycleEvent) -> Void = { _ in },
-        toolCallSink: @escaping @Sendable (String, Data) -> Void = { _, _ in }
+        toolCallSink: @escaping @Sendable (String, Data) -> Void = { _, _ in },
+        actionProgressSink: @escaping @Sendable (WorkflowActionProgress) -> Void = { _ in }
     ) {
         self.parser = DirectCommandParser(references: references)
         self.registry = registry
@@ -101,6 +141,7 @@ public final class CommandRuntime: @unchecked Sendable {
         self.commandSink = commandSink
         self.sink = sink
         self.toolCallSink = toolCallSink
+        self.actionProgressSink = actionProgressSink
     }
 
     /// Parses and runs one line of input. An allowed command executes; a
@@ -293,12 +334,23 @@ public final class CommandRuntime: @unchecked Sendable {
     ) async -> CommandRuntimeOutcome {
         emit(&machine) { try $0.markRunning(message: "Running \(workflow.plan.actions.count) actions.") }
 
+        let total = workflow.plan.actions.count
+        func progress(_ action: PlannedAction, _ index: Int, _ status: WorkflowActionProgress.Status, _ message: String? = nil) {
+            actionProgressSink(WorkflowActionProgress(
+                commandID: commandID, workflowID: workflow.workflowID,
+                actionID: action.actionID, kind: action.kind,
+                status: status, index: index + 1, total: total, message: message
+            ))
+        }
+
         var succeeded = 0, failed = 0, unavailable = 0
-        for action in workflow.plan.actions {
+        for (index, action) in workflow.plan.actions.enumerated() {
             guard action.status != .unavailable else {
                 unavailable += 1
+                progress(action, index, .unavailable, action.message)
                 continue
             }
+            progress(action, index, .running)
             let startedAt = clock.now()
             let result = await executor.execute(ToolInvocation(
                 toolID: action.kind,
@@ -310,13 +362,17 @@ public final class CommandRuntime: @unchecked Sendable {
             switch result.status {
             case .success, .partialSuccess:
                 succeeded += 1
+                progress(action, index, .succeeded)
             case .cancelled:
+                progress(action, index, .cancelled, result.error?.message)
                 emit(&machine) { try $0.cancel(message: "Cancelled after \(succeeded) of \(workflow.plan.actions.count) actions.") }
                 return .completed(commandID: commandID, status: machine.status ?? .cancelled, result: nil)
             case .unavailable:
                 unavailable += 1
+                progress(action, index, .unavailable, result.error?.message)
             default:
                 failed += 1
+                progress(action, index, .failed, result.error?.message)
             }
         }
 

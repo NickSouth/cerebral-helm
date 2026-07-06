@@ -32,6 +32,29 @@ func lifecycleEventConverts() throws {
     #expect(decoded.timestamp == event.timestamp)
 }
 
+@Test("a workflow action progress becomes a workflow.action.progress bridge event")
+func workflowProgressEventConverts() throws {
+    let progress = WorkflowActionProgress(
+        commandID: "cmd_000000000000000000000001",
+        workflowID: "open-developer-layout",
+        actionID: "open-editor",
+        kind: "app.open",
+        status: .running,
+        index: 2,
+        total: 5
+    )
+    let bridgeEvent = BridgeEventFactory.workflowActionProgressEvent(
+        progress, id: "brevt_test00000002", timestamp: Date(timeIntervalSince1970: 1_750_000_000)
+    )
+    #expect(bridgeEvent.type == .workflowActionProgress)
+    #expect(bridgeEvent.payload["workflowId"] != nil)
+    #expect(bridgeEvent.payload["status"] != nil)
+
+    // Round-trips through the contract Codable.
+    let decoded = try CerebralHelmBridgeEvent(data: try bridgeEvent.jsonData())
+    #expect(decoded.type == .workflowActionProgress)
+}
+
 @Test("newEventID matches the contract id pattern")
 func newEventIDPattern() {
     let id = BridgeEventFactory.newEventID()

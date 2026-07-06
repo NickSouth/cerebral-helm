@@ -6,7 +6,7 @@ import type {
   RegionState,
   SystemHealthRegion
 } from "../bridge/types";
-import type { DashboardState, DashboardStore } from "./dashboardState";
+import type { DashboardState, DashboardStore, WorkflowRunProgress } from "./dashboardState";
 
 /** One channel of the native status publisher's `system_metrics` payload (NIC-81b). */
 interface MetricsChannelPayload {
@@ -120,11 +120,39 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
     }
     case "command.lifecycle.transition": {
       const status = String((event.payload as { currentStatus?: unknown }).currentStatus ?? "");
+      // A terminal command ends any live workflow-run progress (NIC-85).
+      const terminal = status === "succeeded" || status === "failed" || status === "cancelled";
+      const clearedRun = terminal && state.activeWorkflowRun ? null : state.activeWorkflowRun;
       const next = LIFECYCLE_TO_HEIMLICH[status];
-      if (!next || next === state.heimlich.state) {
+      if ((!next || next === state.heimlich.state) && clearedRun === state.activeWorkflowRun) {
         return state;
       }
-      return { ...state, heimlich: { ...state.heimlich, state: next } };
+      return {
+        ...state,
+        heimlich: next ? { ...state.heimlich, state: next } : state.heimlich,
+        activeWorkflowRun: clearedRun
+      };
+    }
+    case "workflow.action.progress": {
+      // One step of an executing quick action started or finished (NIC-85).
+      // Runtime-only state — never folded into the bootstrap config.
+      const payload = event.payload as Partial<WorkflowRunProgress>;
+      if (!payload.workflowId || !payload.actionId || !payload.status) {
+        return state;
+      }
+      return {
+        ...state,
+        activeWorkflowRun: {
+          commandId: String(payload.commandId ?? ""),
+          workflowId: payload.workflowId,
+          actionId: payload.actionId,
+          kind: String(payload.kind ?? ""),
+          status: payload.status,
+          index: Number(payload.index ?? 0),
+          total: Number(payload.total ?? 0),
+          message: payload.message
+        }
+      };
     }
     case "bridge.capability.changed": {
       const capability = (event.payload as { capability?: { id?: string; available?: boolean } })

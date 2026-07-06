@@ -31,7 +31,8 @@ public func makeCommandRuntime(
     paths: WorkspacePaths,
     phase: ExecutionPhase = .preMac,
     capabilities: ToolCapabilities = .mocks(),
-    onEvent: (@Sendable (CommandLifecycleEvent) -> Void)? = nil
+    onEvent: (@Sendable (CommandLifecycleEvent) -> Void)? = nil,
+    onActionProgress: (@Sendable (WorkflowActionProgress) -> Void)? = nil
 ) throws -> CommandRuntime {
     let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory)
     let hookCatalog = makeHookCatalog(references: references, repositoryRoot: paths.repositoryRoot)
@@ -82,7 +83,8 @@ public func makeCommandRuntime(
             onEvent?(event)
         },
         // Already redacted by the runtime; linked to its command by the runtime.
-        toolCallSink: { commandID, data in persistToolCall(commandID, data, into: toolCalls) }
+        toolCallSink: { commandID, data in persistToolCall(commandID, data, into: toolCalls) },
+        actionProgressSink: { progress in onActionProgress?(progress) }
     )
 }
 
@@ -98,6 +100,12 @@ public func operationalDatabase(_ paths: WorkspacePaths) throws -> SQLiteDatabas
 /// that bind a ``BridgeSession``.
 public func makeSettingsStore(_ paths: WorkspacePaths) throws -> any SettingsStore {
     SQLiteSettingsStore(database: try operationalDatabase(paths))
+}
+
+/// The durable mode-state store over the operational database (FR-MOD-05), for
+/// hosts that restore the last active mode at bootstrap.
+public func makeModeStateStore(_ paths: WorkspacePaths) throws -> any ModeStateStore {
+    SQLiteModeStateStore(database: try operationalDatabase(paths))
 }
 
 /// Writes the command row from its envelope before any event references it (FK

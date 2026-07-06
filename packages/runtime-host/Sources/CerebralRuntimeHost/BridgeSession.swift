@@ -19,6 +19,9 @@ public final class BridgeSession: @unchecked Sendable {
     /// database binding (some tests) still validates patches; when absent, an
     /// accepted patch is validated but not saved — the pre-store behavior.
     private let settingsStore: (any SettingsStore)?
+    /// The durable active-mode store (FR-MOD-05). When bound, bootstrap restores
+    /// the last active mode; when absent, the stored default applies.
+    private let modeStateStore: (any ModeStateStore)?
     /// The composed capability flags the handshake reports (FR-SHL-06), derived at
     /// composition time from the bound capability bundle, phase, and platform
     /// permissions (``CompositionCapabilities``). Defaults to the honest pre-Mac
@@ -49,11 +52,13 @@ public final class BridgeSession: @unchecked Sendable {
         configDirectory: URL,
         capabilities: [CerebralContracts.Capability] = CompositionCapabilities.bridgeCapabilities(phase: .preMac, nativeCapabilityIDs: []),
         settingsStore: (any SettingsStore)? = nil,
+        modeStateStore: (any ModeStateStore)? = nil,
         emitEventJSON: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.runtime = runtime
         self.configDirectory = configDirectory
         self.settingsStore = settingsStore
+        self.modeStateStore = modeStateStore
         self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
     }
@@ -80,7 +85,7 @@ public final class BridgeSession: @unchecked Sendable {
         switch request.operation {
         case .getBootstrapState:
             return ok(request, payload: BootstrapComposer.compose(
-                configDirectory: configDirectory, activeModeID: storedDefaultModeID()
+                configDirectory: configDirectory, activeModeID: bootstrapModeID()
             ))
         case .submitCommand:
             return await submitCommand(request)
@@ -117,7 +122,25 @@ public final class BridgeSession: @unchecked Sendable {
         let source = input.source.flatMap(CommandSource.init(rawValue:)) ?? .dashboard
         let outcome = await runtime.submit(input.rawInput, source: source)
         registerAwaitingConfirmation(outcome)
+        emitConfigChangedIfModeApplied(outcome)
         return ok(request, payload: receipt(for: outcome))
+    }
+
+    /// A raw `mode <id>` command (palette, CLI-over-bridge) that succeeded also
+    /// re-themes the dashboard, exactly like the `applyMode` operation — one
+    /// switch, one visible result, regardless of which surface asked.
+    private func emitConfigChangedIfModeApplied(_ outcome: CommandRuntimeOutcome) {
+        guard
+            case let .completed(_, status, result) = outcome,
+            status == .succeeded,
+            let result, result.toolID == "mode.apply",
+            let output = result.output,
+            let decoded = try? CerebralHelmModeApplyOutput(data: output)
+        else { return }
+        let snapshot = BootstrapComposer.compose(configDirectory: configDirectory, activeModeID: decoded.modeID)
+        emit(BridgeEventFactory.configChangedEvent(
+            snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
     }
 
     private func applyMode(
@@ -256,10 +279,16 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: UpdateSettingsResult(accepted: true))
     }
 
-    /// The stored default mode for bootstrap, if one was saved and still exists in
-    /// config. A stale or unset value falls back to the configured default (the
-    /// composer's own fallback), never an error.
-    private func storedDefaultModeID() -> String? {
+    /// The mode bootstrap should activate: the last active mode when it still
+    /// exists in config (FR-MOD-05 restart restore), else the stored default
+    /// mode, else `nil` for the configured default. Stale references fall back,
+    /// never error.
+    private func bootstrapModeID() -> String? {
+        if let store = modeStateStore,
+           let lastActive = try? store.loadActiveModeID(),
+           BootstrapComposer.modeExists(lastActive, configDirectory: configDirectory) {
+            return lastActive
+        }
         guard
             let store = settingsStore,
             let settings = try? store.load(),

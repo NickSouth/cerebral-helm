@@ -19,15 +19,36 @@ export interface RecoveryPosture {
 }
 
 /**
+ * Live progress of one executing workflow / quick action, folded from
+ * `workflow.action.progress` events (FR-CMD-05, NIC-85). Carries the latest
+ * step's status and position so a renderer can show "2 of 5 — app.open".
+ * Cleared when the command reaches a terminal lifecycle status.
+ */
+export interface WorkflowRunProgress {
+  readonly commandId: string;
+  readonly workflowId: string;
+  readonly actionId: string;
+  /** The step's tool id. */
+  readonly kind: string;
+  readonly status: "running" | "succeeded" | "failed" | "unavailable" | "cancelled";
+  /** 1-based position of this step in the plan. */
+  readonly index: number;
+  readonly total: number;
+  readonly message?: string;
+}
+
+/**
  * The slice of dashboard state the UI renders: the bootstrap snapshot plus runtime-only state
  * folded in from the bridge event stream. `activeConfirmation` is the policy-owned confirmation
  * disclosure delivered by `confirmation.changed` (NIC-62); `recovery` is the read-only recovery
- * posture delivered by `system.status.changed` (NIC-64). Both are absent until an event arrives
- * and are never part of the static bootstrap config (the runtime-only widening pattern).
+ * posture delivered by `system.status.changed` (NIC-64); `activeWorkflowRun` is the live
+ * per-action progress of an executing quick action (NIC-85). All are absent until an event
+ * arrives and are never part of the static bootstrap config (the runtime-only widening pattern).
  */
 export type DashboardState = DashboardBootstrapState & {
   readonly activeConfirmation?: ConfirmationDisclosure | null;
   readonly recovery?: RecoveryPosture | null;
+  readonly activeWorkflowRun?: WorkflowRunProgress | null;
 };
 
 /**
