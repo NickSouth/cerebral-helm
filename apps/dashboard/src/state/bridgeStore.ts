@@ -155,19 +155,39 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
       };
     }
     case "bridge.capability.changed": {
-      const capability = (event.payload as { capability?: { id?: string; available?: boolean } })
-        .capability;
-      const metricsDown = capability?.id === "system.metrics" && capability.available === false;
-      if (!metricsDown || state.regions.systemHealth.state === "stale") {
+      const capability = (
+        event.payload as {
+          capability?: { id?: string; available?: boolean; degradedReason?: string | null };
+        }
+      ).capability;
+      if (!capability?.id || typeof capability.available !== "boolean") {
         return state;
       }
-      return {
+      // Fold the capability into the availability map native-gated controls read
+      // (FR-SHL-06): the handshake set is replayed through this same event type,
+      // and runtime permission rechecks (NIC-83) update it live.
+      let next: DashboardState = {
         ...state,
-        regions: {
-          ...state.regions,
-          systemHealth: { ...state.regions.systemHealth, state: "stale" }
+        capabilities: {
+          ...state.capabilities,
+          [capability.id]: {
+            available: capability.available,
+            degradedReason: capability.degradedReason ?? null
+          }
         }
       };
+      // Losing live metrics additionally marks system health stale.
+      const metricsDown = capability.id === "system.metrics" && capability.available === false;
+      if (metricsDown && next.regions.systemHealth.state !== "stale") {
+        next = {
+          ...next,
+          regions: {
+            ...next.regions,
+            systemHealth: { ...next.regions.systemHealth, state: "stale" }
+          }
+        };
+      }
+      return next;
     }
     case "system.status.changed": {
       const payload = event.payload as { category?: string; state?: Record<string, unknown> };

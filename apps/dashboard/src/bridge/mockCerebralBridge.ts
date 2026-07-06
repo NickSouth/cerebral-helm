@@ -79,7 +79,60 @@ export function createMockCerebralBridge(
     getRecentActivity() {
       return Promise.resolve(RECENT_ACTIVITY);
     },
-    submitCommand() {
+    submitCommand(input) {
+      // A `run <workflowId>` submission simulates the runtime's workflow execution
+      // (NIC-85): a canned two-step progress sequence bracketed by lifecycle
+      // transitions, so the progress renderer and store paths are exercisable in
+      // the browser. It is visibly a simulation — the mock never claims a native
+      // step actually ran.
+      const workflowId = input.rawInput.startsWith("run ")
+        ? input.rawInput.slice("run ".length).trim()
+        : null;
+      if (workflowId) {
+        const commandId = "cmd_000000000000000000000002";
+        const at = "2026-06-23T16:00:00.000Z";
+        const progress = (
+          actionId: string,
+          status: string,
+          index: number,
+          suffix: string
+        ): BridgeEvent => ({
+          eventId: `brevt_run_${workflowId}_${suffix}`,
+          type: "workflow.action.progress",
+          schemaVersion: "1.0.0",
+          timestamp: at,
+          payload: {
+            commandId,
+            workflowId,
+            actionId,
+            kind: "mock.step",
+            status,
+            index,
+            total: 2
+          }
+        });
+        const lifecycle = (currentStatus: string): BridgeEvent => ({
+          eventId: `brevt_run_${workflowId}_${currentStatus}`,
+          type: "command.lifecycle.transition",
+          schemaVersion: "1.0.0",
+          timestamp: at,
+          payload: { commandId, currentStatus }
+        });
+        // Staggered so the progress line is actually visible in the browser; the
+        // sequence and payloads stay deterministic.
+        emit(lifecycle("running"));
+        emit(progress("step-one", "running", 1, "1r"));
+        const later: ReadonlyArray<[BridgeEvent, number]> = [
+          [progress("step-one", "succeeded", 1, "1s"), 400],
+          [progress("step-two", "running", 2, "2r"), 500],
+          [progress("step-two", "succeeded", 2, "2s"), 900],
+          [lifecycle("succeeded"), 1000]
+        ];
+        for (const [event, delay] of later) {
+          setTimeout(() => emit(event), delay);
+        }
+        return Promise.resolve({ commandId, accepted: true });
+      }
       return Promise.resolve({ commandId: "cmd_000000000000000000000001", accepted: true });
     },
     applyMode(input) {

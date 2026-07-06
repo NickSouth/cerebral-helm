@@ -442,6 +442,15 @@
   font-size: var(--ch-font-size-label);
 }
 
+/* Live per-action progress of an executing quick action (NIC-85): a quiet status
+   line under the grid; content is announced via aria-live. */
+.quick-actions__progress {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  text-align: center;
+}
+
 /* A wired (live) quick action reads as actionable — solid border, primary text, pointer. */
 .quick-action--wired {
   color: var(--ch-text-primary);

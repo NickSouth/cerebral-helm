@@ -2,6 +2,10 @@ import { Panel } from "./Panel";
 import { AppGlyph } from "./AppGlyph";
 import { useActiveMode } from "./useActiveMode";
 import { appDefinition } from "../appCatalog/appCatalog";
+import { useBridge } from "../state/BridgeProvider";
+import { useConversation } from "../state/ConversationProvider";
+import { useDashboardState } from "../state/DashboardStateProvider";
+import { useUiPosture } from "../state/useUiPosture";
 
 /** The five app slots + a sixth "More Apps" control (design spec §5.6: one-to-five apps + More). */
 const APP_SLOTS = 5;
@@ -52,32 +56,62 @@ function AppsGridGlyph() {
  * C1 Quick Apps (design spec §5.6): the active mode's configured app shortcuts, padded to five
  * fixed slots (empty slots show a "Pin app" placeholder), plus a final "More Apps" control — six
  * boxes spanning the panel edge-to-edge. Each slot mirrors the mode toggle: icon over label.
- * Apps render with placeholder category glyphs (real OS icons on Mac). Launching, pinning, and
- * app discovery are Mac-only capabilities, so every control is honest-disabled pre-Mac.
+ * Apps render with placeholder category glyphs (real OS icons on Mac).
+ *
+ * Launch tiles are live exactly when the runtime reports `native.app.open` available
+ * (FR-SHL-06): a tile dispatches the deterministic `open <id>` command through the bridge —
+ * the same envelope as the palette (FR-CMD-01) — and surfaces a rejected reference honestly.
+ * Pinning and app discovery remain Mac capabilities that land with their adapters, so those
+ * controls stay honest-disabled.
  */
 export function QuickApps() {
   const { quickApps } = useActiveMode();
+  const bridge = useBridge();
+  const { acknowledge } = useConversation();
+  const { readOnly } = useUiPosture();
+  const state = useDashboardState();
   const apps = quickApps.slice(0, APP_SLOTS);
   const emptySlots = Math.max(0, APP_SLOTS - apps.length);
+
+  const appOpen = state.capabilities?.["native.app.open"];
+  const canLaunch = appOpen?.available === true && !readOnly;
+  const disabledReason = readOnly
+    ? "Unavailable while the app is in read-only recovery"
+    : (appOpen?.degradedReason ?? "Launching apps is available on the macOS host");
+
+  const launch = (id: string, label: string) => {
+    void bridge
+      .submitCommand({ rawInput: `open ${id}`, source: "dashboard" })
+      .then((receipt) => {
+        if (!receipt.accepted) {
+          acknowledge(`I couldn't open ${label} — it isn't a configured app reference.`);
+        }
+      })
+      .catch(() => {
+        acknowledge(`Opening ${label} failed — the bridge did not accept the command.`);
+      });
+  };
 
   return (
     <Panel label="Quick Apps" labelId="region-quick-apps">
       <ul className="quick-apps">
         {apps.map((id) => {
           const app = appDefinition(id);
+          const label = app?.label ?? id;
           return (
             <li key={id}>
               <button
                 type="button"
                 className="quick-app"
-                disabled
-                aria-disabled="true"
-                title="Launching apps is available on the macOS host"
+                disabled={!canLaunch}
+                aria-disabled={!canLaunch}
+                title={canLaunch ? `Open ${label}` : disabledReason}
+                onClick={canLaunch ? () => launch(id, label) : undefined}
               >
                 <span className="quick-app__icon">
                   <AppGlyph category={app?.category ?? "files"} />
                 </span>
-                <span className="quick-app__label">{app?.label ?? id}</span>
+                <span className="quick-app__label">{label}</span>
               </button>
             </li>
           );

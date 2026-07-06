@@ -19,6 +19,18 @@ export interface RecoveryPosture {
 }
 
 /**
+ * One native capability's reported availability (FR-SHL-06), folded from the
+ * handshake's capability set (replayed by the transport as
+ * `bridge.capability.changed` events) and from runtime permission rechecks
+ * (NIC-83). Controls gate on this — honest-disabled when unavailable, never
+ * fake-successful.
+ */
+export interface CapabilityAvailability {
+  readonly available: boolean;
+  readonly degradedReason?: string | null;
+}
+
+/**
  * Live progress of one executing workflow / quick action, folded from
  * `workflow.action.progress` events (FR-CMD-05, NIC-85). Carries the latest
  * step's status and position so a renderer can show "2 of 5 — app.open".
@@ -49,6 +61,7 @@ export type DashboardState = DashboardBootstrapState & {
   readonly activeConfirmation?: ConfirmationDisclosure | null;
   readonly recovery?: RecoveryPosture | null;
   readonly activeWorkflowRun?: WorkflowRunProgress | null;
+  readonly capabilities?: Readonly<Record<string, CapabilityAvailability>>;
 };
 
 /**

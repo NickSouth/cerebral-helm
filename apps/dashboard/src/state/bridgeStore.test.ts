@@ -84,6 +84,33 @@ describe("reduceDashboardState", () => {
     expect(reduceDashboardState(base, event).regions.systemHealth.state).toBe("stale");
   });
 
+  it("folds every capability change into the availability map (FR-SHL-06)", () => {
+    const base = loadBootstrapState();
+    const capabilityEvent = (id: string, available: boolean): BridgeEvent => ({
+      eventId: `brevt_cap_${id}`,
+      type: "bridge.capability.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: { capability: { id, available, degradedReason: available ? null : "Denied." } }
+    });
+
+    const granted = reduceDashboardState(base, capabilityEvent("native.app.open", true));
+    expect(granted.capabilities?.["native.app.open"]?.available).toBe(true);
+
+    // A later revocation flips the same entry and keeps others.
+    const revoked = reduceDashboardState(granted, capabilityEvent("native.app.open", false));
+    expect(revoked.capabilities?.["native.app.open"]?.available).toBe(false);
+    expect(revoked.capabilities?.["native.app.open"]?.degradedReason).toBe("Denied.");
+
+    // A malformed payload never fabricates an entry.
+    expect(
+      reduceDashboardState(base, {
+        ...capabilityEvent("x", true),
+        payload: { capability: { id: "x" } }
+      })
+    ).toBe(base);
+  });
+
   it("folds a confirmation disclosure in on confirmation.changed and back out on null", () => {
     const base = loadBootstrapState();
     expect(base.activeConfirmation ?? null).toBeNull();

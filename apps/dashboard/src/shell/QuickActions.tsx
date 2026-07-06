@@ -3,6 +3,7 @@ import { humanizeId } from "./labels";
 import { resolveQuickAction } from "./quickActionHandlers";
 import { useBridge } from "../state/BridgeProvider";
 import { useConversation } from "../state/ConversationProvider";
+import { useDashboardState } from "../state/DashboardStateProvider";
 import { useUiPosture } from "../state/useUiPosture";
 
 /**
@@ -41,11 +42,14 @@ export function QuickActions() {
   const bridge = useBridge();
   const { acknowledge } = useConversation();
   const { readOnly } = useUiPosture();
+  const { activeWorkflowRun } = useDashboardState();
   const deps = { bridge, acknowledge };
 
   // Read-only recovery exposes no mutating controls: every action stays disabled (NIC-64 AC).
+  // While a workflow is executing, its actions are also disabled — one run at a time.
+  const running = activeWorkflowRun != null;
   const resolve = (action: string | null) =>
-    action && !readOnly ? resolveQuickAction(action, deps) : null;
+    action && !readOnly && !running ? resolveQuickAction(action, deps) : null;
   const bars = quickActions.slice(0, 4);
   const boxes = quickActions.slice(4, 8);
 
@@ -71,6 +75,13 @@ export function QuickActions() {
           />
         ))}
       </div>
+      {activeWorkflowRun ? (
+        <p className="quick-actions__progress" role="status" aria-live="polite">
+          {humanizeId(activeWorkflowRun.workflowId)}: step {activeWorkflowRun.index} of{" "}
+          {activeWorkflowRun.total} — {humanizeId(activeWorkflowRun.actionId)} (
+          {activeWorkflowRun.status})
+        </p>
+      ) : null}
     </div>
   );
 }
