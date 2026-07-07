@@ -10,7 +10,10 @@ import type { DashboardState } from "../state/dashboardState";
 /** NIC-119 part 1 (NIC-85): quick app tiles reflect capability flags and dispatch
  *  `open <id>` through the bridge — honest-disabled when the capability is absent. */
 
-function renderQuickApps(mutate?: (base: DashboardState) => DashboardState) {
+function renderQuickApps(
+  mutate?: (base: DashboardState) => DashboardState,
+  spies?: { onUpdateQuickApps?: (input: { modeId: string; quickApps: readonly string[] }) => void }
+) {
   const bridge = createMockCerebralBridge();
   const submissions: string[] = [];
   const spyBridge = {
@@ -18,6 +21,10 @@ function renderQuickApps(mutate?: (base: DashboardState) => DashboardState) {
     submitCommand(input: { rawInput: string; source: string }) {
       submissions.push(input.rawInput);
       return bridge.submitCommand(input);
+    },
+    updateQuickApps(input: { modeId: string; quickApps: readonly string[] }) {
+      spies?.onUpdateQuickApps?.(input);
+      return bridge.updateQuickApps(input);
     }
   };
   const base = loadBootstrapState();
@@ -34,6 +41,16 @@ function renderQuickApps(mutate?: (base: DashboardState) => DashboardState) {
   return { submissions };
 }
 
+/** Pin one app into the active (Executive) mode — modes ship clean-slate now. */
+function withPinnedApp(base: DashboardState): DashboardState {
+  return {
+    ...base,
+    modes: base.modes.map((mode) =>
+      mode.id === "executive" ? { ...mode, quickApps: ["vscode"] } : mode
+    )
+  };
+}
+
 function firstAppTile(): HTMLButtonElement {
   const list = screen.getByRole("list");
   const tile = list.querySelector<HTMLButtonElement>("button.quick-app");
@@ -45,7 +62,7 @@ function firstAppTile(): HTMLButtonElement {
 
 describe("QuickApps", () => {
   it("stays honest-disabled while native.app.open is not reported available", () => {
-    renderQuickApps();
+    renderQuickApps(withPinnedApp);
     const tile = firstAppTile();
     expect(tile).toBeDisabled();
     expect(tile.title).toMatch(/macOS host/);
@@ -53,7 +70,7 @@ describe("QuickApps", () => {
 
   it("reports the capability's own degraded reason when one is given", () => {
     renderQuickApps((base) => ({
-      ...base,
+      ...withPinnedApp(base),
       capabilities: {
         "native.app.open": { available: false, degradedReason: "Permission denied by the user." }
       }
@@ -61,9 +78,15 @@ describe("QuickApps", () => {
     expect(firstAppTile().title).toBe("Permission denied by the user.");
   });
 
+  it("ships a clean slate: no placeholder tiles, five Pin app slots (release MVP)", () => {
+    renderQuickApps();
+    expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(5);
+    expect(document.querySelectorAll("button.quick-app:not(.quick-app--pin):not(.quick-app--more)")).toHaveLength(0);
+  });
+
   it("dispatches `open <id>` through the bridge when the capability is available", () => {
     const { submissions } = renderQuickApps((base) => ({
-      ...base,
+      ...withPinnedApp(base),
       capabilities: { "native.app.open": { available: true } }
     }));
     const tile = firstAppTile();
@@ -106,10 +129,44 @@ describe("QuickApps", () => {
     // The mock discovery catalog renders by app name — real icons come from the Mac adapter.
     expect(await screen.findByText("Safari")).toBeInTheDocument();
     expect(screen.getByText("Visual Studio Code")).toBeInTheDocument();
-    // The picker never launches: entries are not buttons, just listed apps.
+    // The picker never launches: entries are not launch buttons, just listed apps.
     expect(screen.queryByRole("button", { name: "Safari" })).toBeNull();
 
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "All applications" })).toBeNull();
+  });
+
+  it("pins a reference-backed app through updateQuickApps; unbacked apps say so (NIC-119c)", async () => {
+    const updates: Array<{ modeId: string; quickApps: readonly string[] }> = [];
+    renderQuickApps((base) => ({
+      ...base,
+      capabilities: { "native.apps.list": { available: true } }
+    }), {
+      onUpdateQuickApps: (input) => updates.push(input)
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
+    await screen.findByRole("dialog", { name: "All applications" });
+
+    // Safari has no configured reference — honest hint, no pin control.
+    expect(await screen.findAllByText("Not a configured app reference")).not.toHaveLength(0);
+
+    // Terminal is reference-backed: pinning submits mode id + the extended slot set.
+    const pins = screen.getAllByRole("button", { name: "Pin" });
+    fireEvent.click(pins[0]);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].modeId).toMatch(/^[a-z][a-z0-9-]*$/);
+    expect(updates[0].quickApps).toContain("terminal");
+  });
+
+  it("empty Pin app slots open the picker when discovery is available", async () => {
+    renderQuickApps((base) => ({
+      ...base,
+      capabilities: { "native.apps.list": { available: true } }
+    }));
+    const pinSlot = screen.getAllByRole("button", { name: "Pin app" })[0];
+    expect(pinSlot).toBeEnabled();
+    fireEvent.click(pinSlot);
+    expect(await screen.findByRole("dialog", { name: "All applications" })).toBeInTheDocument();
   });
 });

@@ -121,8 +121,9 @@ func removeRevertsToShippedDefault() throws {
         Issue.record("expected the removal to apply")
         return
     }
-    // Back to the shipped developer.json quick apps.
-    #expect(active.mode(id: "developer")?.quickApps == ["vscode", "terminal", "github", "docker", "linear"])
+    // Back to the shipped developer.json quick apps — clean slate since the
+    // release-MVP decision (users pin their own; modes ship none).
+    #expect(active.mode(id: "developer")?.quickApps == [])
     #expect(!FileManager.default.fileExists(atPath: overrideFile(paths, "developer").path))
 
     // Removing an already-absent override still reports the active config.

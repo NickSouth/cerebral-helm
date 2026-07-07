@@ -28,6 +28,16 @@ public struct MacAppDiscoveryCapability: AppDiscoveryCapability {
     }
 
     public func listApplications(includeIcons: Bool) async throws -> AppDiscoveryResult {
+        Self.enumerate(searchDirectories: searchDirectories, includeIcons: includeIcons)
+    }
+
+    /// The synchronous enumeration core — also called directly by the shell at
+    /// startup (icons off) to auto-mint app references before the runtime
+    /// composes, so every installed app is openable by id from first launch.
+    public static func enumerate(
+        searchDirectories: [URL]? = nil, includeIcons: Bool
+    ) -> AppDiscoveryResult {
+        let searchDirectories = searchDirectories ?? MacAppDiscoveryCapability().searchDirectories
         let fileManager = FileManager.default
         var seen = Set<String>()
         var apps: [InstalledApplication] = []

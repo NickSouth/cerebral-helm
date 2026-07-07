@@ -473,6 +473,7 @@ export enum Operation {
     SearchNotes = "searchNotes",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",
+    UpdateQuickApps = "updateQuickApps",
     UpdateSettings = "updateSettings",
 }
 

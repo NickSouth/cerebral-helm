@@ -30,7 +30,8 @@ const bridgeOperations = new Set([
   "updateSettings",
   "subscribe",
   "getRecentActivity",
-  "listApps"
+  "listApps",
+  "updateQuickApps"
 ]);
 
 function readJson(filePath) {

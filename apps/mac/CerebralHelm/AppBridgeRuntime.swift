@@ -48,7 +48,24 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // The native shell composes for the macOS phase with the native capability
         // bundle (NIC-78/79): NSWorkspace app/url adapters are honest; the not-yet-
         // implemented slots (hooks, system status) truthfully report unavailable.
-        guard let references = try? ReferenceCatalogLoader.load(configDirectory: paths.configDirectory) else {
+        // Auto-mint app references (NIC-119, owner decision): every installed
+        // application without a configured reference gets one minted into the
+        // user catalog under the state root BEFORE the runtime composes, so all
+        // apps are pinnable and `open <id>`-able from this launch. Icons are
+        // skipped — this is the fast enumeration.
+        if let shipped = try? ReferenceCatalogLoader.load(configDirectory: paths.configDirectory) {
+            let installed = MacAppDiscoveryCapability.enumerate(includeIcons: false).apps.map {
+                UserAppReferences.DiscoveredApp(bundleID: $0.bundleID, name: $0.name)
+            }
+            UserAppReferences.mint(
+                discovered: installed,
+                shipped: Array(shipped.apps.values),
+                stateRoot: paths.stateRoot
+            )
+        }
+        guard let references = try? ReferenceCatalogLoader.load(
+            configDirectory: paths.configDirectory, stateRoot: paths.stateRoot
+        ) else {
             Self.log.error("Reference catalog failed to load; the shell has no live runtime.")
             return nil
         }
@@ -88,6 +105,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
         session = BridgeSession(
             runtime: runtime,
             configDirectory: paths.configDirectory,
+            // The full workspace enables the user-overrides layer: bootstrap
+            // composes pinned quick apps in, and updateQuickApps writes through
+            // the validated override path (NIC-119c).
+            workspace: paths,
             capabilities: CompositionCapabilities.bridgeCapabilities(
                 phase: .macOS,
                 capabilities: capabilities,

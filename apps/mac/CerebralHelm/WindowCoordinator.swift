@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import CerebralContracts
 import CerebralCore
+import CerebralMacAdapters
 import CerebralRuntimeHost
 
 /// The single owner of the shell's native window roles (NIC-76 / FR-SHL-04): the
@@ -53,6 +54,10 @@ final class WindowCoordinator: @unchecked Sendable {
     /// to the runtime's settings store. nil / unknown / disconnected ids all
     /// degrade to the system primary display.
     var mainDisplayIDProvider: (() -> String?)?
+
+    /// The login-item seam (NIC-89): the Startup panel toggles through it, and
+    /// the OS's resulting status flows straight back — never a stored flag.
+    var loginItem: (any LoginItemManaging) = SMAppServiceLoginItem()
 
     /// Fired on the main queue whenever backdrop visibility changes — the shell
     /// pauses the status publisher only when every backdrop is hidden (NIC-81b).
@@ -298,6 +303,9 @@ final class WindowCoordinator: @unchecked Sendable {
         }
         settings = controller
         controller.show()
+        // A reused warm window seeds status only at creation; the user can flip
+        // the login item in System Settings while we run — push the live truth.
+        controller.pushLoginItemStatus(loginItem.status().rawValue)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -383,6 +391,13 @@ final class WindowCoordinator: @unchecked Sendable {
             openSettings()
         case "closeSettings":
             settings?.close()
+        case "setLoginItem":
+            // Launch-at-login toggle (NIC-89): register/unregister via the
+            // SMAppService seam and push the OS's resulting status back to the
+            // panel — including requires-approval, which the panel explains.
+            guard let enabled = body["enabled"] as? Bool else { return }
+            let status = (try? loginItem.setEnabled(enabled)) ?? loginItem.status()
+            settings?.pushLoginItemStatus(status.rawValue)
         case "setMainDisplay":
             // Live re-host (NIC-120b): the durable value already went through the
             // validated settings patch; this applies it without a restart. Stored

@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Panel } from "./Panel";
 import { AppGlyph } from "./AppGlyph";
 import { MoreAppsPicker } from "./MoreAppsPicker";
+import { toModeId } from "../tokens/tokens";
+import type { DiscoveredApp } from "../bridge/cerebralBridge";
 import { useActiveMode } from "./useActiveMode";
 import { appDefinition } from "../appCatalog/appCatalog";
 import { useBridge } from "../state/BridgeProvider";
@@ -90,6 +92,51 @@ export function QuickApps() {
     : (appsList?.degradedReason ?? "App discovery is available on the macOS host");
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  // Real OS icons on tiles (NIC-119): once discovery is available, map each
+  // configured reference id onto its discovered app (icon + real name). The
+  // category glyph stays the honest fallback for anything unmatched.
+  const [discovered, setDiscovered] = useState<ReadonlyMap<string, DiscoveredApp>>(new Map());
+  useEffect(() => {
+    if (!canDiscover) {
+      return;
+    }
+    let cancelled = false;
+    void bridge
+      .listApps()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        const byReference = new Map<string, DiscoveredApp>();
+        for (const app of result.apps) {
+          if (app.referenceId) {
+            byReference.set(app.referenceId, app);
+          }
+        }
+        setDiscovered(byReference);
+      })
+      .catch(() => {
+        // Discovery failing never degrades the tiles — glyphs remain.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canDiscover, bridge]);
+
+  // Left-click unpin path (owner decision): every pinned tile carries its own
+  // unpin control — no trip through the picker. The write rides the same
+  // validated override path; the config.changed snapshot removes the tile.
+  const unpin = (id: string) => {
+    void bridge
+      .updateQuickApps({
+        modeId: toModeId(state.mode),
+        quickApps: quickApps.filter((pinned) => pinned !== id)
+      })
+      .catch(() => {
+        acknowledge("Unpinning failed — the change could not be written.");
+      });
+  };
+
   const launch = (id: string, label: string) => {
     void bridge
       .submitCommand({ rawInput: `open ${id}`, source: "dashboard" })
@@ -108,9 +155,21 @@ export function QuickApps() {
       <ul className="quick-apps">
         {apps.map((id) => {
           const app = appDefinition(id);
-          const label = app?.label ?? id;
+          const discoveredApp = discovered.get(id);
+          const label = app?.label ?? discoveredApp?.name ?? id;
           return (
-            <li key={id}>
+            <li key={id} className="quick-app-slot">
+              {!readOnly ? (
+                <button
+                  type="button"
+                  className="quick-app__unpin"
+                  aria-label={`Unpin ${label}`}
+                  title={`Unpin ${label}`}
+                  onClick={() => unpin(id)}
+                >
+                  ×
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="quick-app"
@@ -120,7 +179,15 @@ export function QuickApps() {
                 onClick={canLaunch ? () => launch(id, label) : undefined}
               >
                 <span className="quick-app__icon">
-                  <AppGlyph category={app?.category ?? "files"} />
+                  {discoveredApp?.iconPng ? (
+                    <img
+                      className="quick-app__real-icon"
+                      src={`data:image/png;base64,${discoveredApp.iconPng}`}
+                      alt=""
+                    />
+                  ) : (
+                    <AppGlyph category={app?.category ?? "files"} />
+                  )}
                 </span>
                 <span className="quick-app__label">{label}</span>
               </button>
@@ -132,9 +199,10 @@ export function QuickApps() {
             <button
               type="button"
               className="quick-app quick-app--pin"
-              disabled
-              aria-disabled="true"
-              title="Pin an app to this slot (available on the macOS host)"
+              disabled={!canDiscover}
+              aria-disabled={!canDiscover}
+              title={canDiscover ? "Pin an app to this slot" : discoverDisabledReason}
+              onClick={canDiscover ? () => setPickerOpen(true) : undefined}
             >
               <span className="quick-app__icon" aria-hidden="true">
                 <PinGlyph />

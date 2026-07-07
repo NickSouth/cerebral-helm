@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useBridge } from "../state/BridgeProvider";
+import { useDashboardState } from "../state/DashboardStateProvider";
+import { useActiveMode } from "./useActiveMode";
+import { toModeId } from "../tokens/tokens";
 import type { DiscoveredApp } from "../bridge/cerebralBridge";
 import { AppGlyph } from "./AppGlyph";
+
+const MAX_QUICK_APPS = 5;
 
 type PickerState =
   | { readonly status: "loading" }
@@ -11,14 +16,25 @@ type PickerState =
 /**
  * The More Apps picker (NIC-119): installed applications from the read-only
  * `apps.list` discovery capability, with real OS icons where the adapter could
- * render one (the category glyph is the honest fallback). Purely informational
- * this increment — it never launches anything, and pinning apps into slots
- * arrives with the validated config-write wiring (NIC-119c).
+ * render one (the category glyph is the honest fallback). It never launches
+ * anything.
+ *
+ * Pinning (NIC-119c): a discovered app backed by a configured app reference can
+ * be pinned into (or unpinned from) the active mode's five quick-app slots. The
+ * write rides the validated config-override path — the bridge rejects unknown
+ * references, and an accepted write re-emits the mode snapshot so tiles refresh
+ * everywhere. Apps without a configured reference say so honestly; arbitrary
+ * paths can never enter the slots from here.
  */
 export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
   const bridge = useBridge();
+  const state = useDashboardState();
+  const { quickApps } = useActiveMode();
+  const modeId = toModeId(state.mode);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<PickerState>({ status: "loading" });
+  const [picker, setPicker] = useState<PickerState>({ status: "loading" });
+  const [busy, setBusy] = useState(false);
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -30,12 +46,12 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
       .listApps()
       .then((result) => {
         if (!cancelled) {
-          setState({ status: "ready", apps: result.apps, truncated: result.truncated });
+          setPicker({ status: "ready", apps: result.apps, truncated: result.truncated });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setState({ status: "error", message: "App discovery is unavailable right now." });
+          setPicker({ status: "error", message: "App discovery is unavailable right now." });
         }
       });
     return () => {
@@ -48,6 +64,64 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
       event.preventDefault();
       onClose();
     }
+  }
+
+  function submitQuickApps(next: readonly string[]) {
+    setBusy(true);
+    setWriteError(null);
+    bridge
+      .updateQuickApps({ modeId, quickApps: next })
+      .then((result) => {
+        if (!result.accepted) {
+          setWriteError(result.errors[0] ?? "The change was rejected by config validation.");
+        }
+        // An accepted write refreshes the tiles via the bridge's config.changed
+        // snapshot — no optimistic state here, the config is the truth.
+      })
+      .catch(() => {
+        setWriteError("The change could not be written.");
+      })
+      .finally(() => setBusy(false));
+  }
+
+  function pin(referenceId: string) {
+    submitQuickApps([...quickApps, referenceId]);
+  }
+
+  function unpin(referenceId: string) {
+    submitQuickApps(quickApps.filter((id) => id !== referenceId));
+  }
+
+  const slotsFull = quickApps.length >= MAX_QUICK_APPS;
+
+  function pinControl(app: DiscoveredApp) {
+    if (!app.referenceId) {
+      return <span className="apps-picker__unpinnable">Not a configured app reference</span>;
+    }
+    const referenceId = app.referenceId;
+    if (quickApps.includes(referenceId)) {
+      return (
+        <button
+          type="button"
+          className="apps-picker__pin"
+          disabled={busy}
+          onClick={() => unpin(referenceId)}
+        >
+          Unpin
+        </button>
+      );
+    }
+    return (
+      <button
+        type="button"
+        className="apps-picker__pin"
+        disabled={busy || slotsFull}
+        title={slotsFull ? "All five quick-app slots are full — unpin one first." : undefined}
+        onClick={() => pin(referenceId)}
+      >
+        Pin
+      </button>
+    );
   }
 
   return (
@@ -77,14 +151,14 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
             ×
           </button>
         </header>
-        {state.status === "loading" ? (
+        {picker.status === "loading" ? (
           <p className="apps-picker__note">Discovering installed applications…</p>
         ) : null}
-        {state.status === "error" ? <p className="apps-picker__note">{state.message}</p> : null}
-        {state.status === "ready" ? (
+        {picker.status === "error" ? <p className="apps-picker__note">{picker.message}</p> : null}
+        {picker.status === "ready" ? (
           <>
             <ul className="apps-picker__grid">
-              {state.apps.map((app) => (
+              {picker.apps.map((app) => (
                 <li key={app.bundleId} className="apps-picker__item" title={app.bundleId}>
                   <span className="apps-picker__icon" aria-hidden="true">
                     {app.iconPng ? (
@@ -94,13 +168,14 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
                     )}
                   </span>
                   <span className="apps-picker__name">{app.name}</span>
+                  {pinControl(app)}
                 </li>
               ))}
             </ul>
-            {state.truncated ? (
+            {writeError ? <p className="apps-picker__note">{writeError}</p> : null}
+            {picker.truncated ? (
               <p className="apps-picker__note">Showing the first entries — the full list was capped.</p>
             ) : null}
-            <p className="apps-picker__note">Pinning apps into slots arrives with the next increment.</p>
           </>
         ) : null}
       </div>

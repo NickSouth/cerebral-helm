@@ -1,5 +1,6 @@
 import AppKit
 import CerebralCore
+import CerebralMacAdapters
 
 /// The macOS application lifecycle owner (NIC-72 / FR-SHL-01, FR-SHL-05; NIC-73 / FR-SHL-03).
 ///
@@ -18,6 +19,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var bridgeRuntime: AppBridgeRuntime?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Single-instance guard (NIC-89): a duplicate launch — e.g. the login
+        // item firing while the app is already open — focuses the existing
+        // instance and exits BEFORE the startup pre-flight, so two processes
+        // never race the same operational database.
+        if let existing = SingleInstanceGuard.existingInstance(bundleID: Bundle.main.bundleIdentifier) {
+            existing.activate()
+            NSApp.terminate(nil)
+            return
+        }
         switch Bootstrap.run() {
         case let .ready(paths):
             enterReady(paths)

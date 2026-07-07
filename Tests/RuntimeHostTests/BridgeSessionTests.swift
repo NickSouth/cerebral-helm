@@ -343,10 +343,123 @@ func listAppsReturnsDiscovery() async throws {
     #expect(result.truncated == false)
 }
 
+@Test("listApps auto-mints references so every discovered app is pinnable (owner decision)")
+func listAppsMintsAndPins() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let runtime = try makeCommandRuntime(paths: paths, phase: .macOS, capabilities: .mocks())
+    let session = BridgeSession(
+        runtime: runtime, configDirectory: paths.configDirectory, workspace: paths
+    )
+
+    // Discovery mints references for the mock catalog (Safari/Mail/Notes have
+    // no shipped reference) — every app comes back reference-backed.
+    let response = await session.execute(operationRequest(.listApps, "{}"))
+    struct App: Decodable { let name: String; let referenceId: String? }
+    struct Result: Decodable { let apps: [App] }
+    let result = try decode(response, as: Result.self)
+    #expect(result.apps.allSatisfy { $0.referenceId != nil })
+
+    // A freshly minted reference pins through the validated path immediately.
+    let safariRef = try #require(result.apps.first { $0.name == "Safari" }?.referenceId)
+    let pin = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["\#(safariRef)"]}"#
+    ))
+    #expect(try decode(pin, as: QuickAppsResult.self).accepted)
+    let developer = session.composeBootstrapState().modes.first { $0.id == "developer" }
+    #expect(developer?.quickApps == [safariRef])
+}
+
 @Test("listApps is a structured unavailable pre-Mac, never a mock success")
 func listAppsUnavailablePreMac() async throws {
     let session = try makeSession()
     let response = await session.execute(operationRequest(.listApps, "{}"))
+    #expect(response.status == .error)
+    #expect(response.error?.category == .unavailableCapability)
+}
+
+// MARK: - updateQuickApps (NIC-119c)
+
+private struct QuickAppsResult: Decodable {
+    let accepted: Bool
+    let quickApps: [String]
+    let errors: [String]
+}
+
+/// A workspace-bound session: the user-overrides layer is live (bootstrap
+/// composes through the loader; updateQuickApps writes overrides).
+private func makeWorkspaceSession() throws -> (BridgeSession, WorkspacePaths) {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+    return (session, paths)
+}
+
+@Test("a pin writes the override through the validated path and bootstrap composes it back (NIC-119c)")
+func pinnedQuickAppsSurviveTheReadSide() async throws {
+    let (session, paths) = try makeWorkspaceSession()
+
+    let response = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["xcode","terminal"]}"#
+    ))
+    let result = try decode(response, as: QuickAppsResult.self)
+    #expect(result.accepted)
+    #expect(result.errors.isEmpty)
+
+    // The override file exists at its canonical path (a manual edit would land
+    // in the same place — one write path).
+    let overrideURL = paths.overridesDirectory.appendingPathComponent("developer.json")
+    #expect(FileManager.default.fileExists(atPath: overrideURL.path))
+
+    // The read side: THIS session and a fresh one both compose the pinned set.
+    let developer = session.composeBootstrapState().modes.first { $0.id == "developer" }
+    #expect(developer?.quickApps == ["xcode", "terminal"])
+    let (restarted, _) = try (BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    ), ())
+    let restored = restarted.composeBootstrapState().modes.first { $0.id == "developer" }
+    #expect(restored?.quickApps == ["xcode", "terminal"])
+}
+
+@Test("a pin naming an unconfigured reference is rejected wholesale (no arbitrary paths)")
+func unknownReferenceIsRejected() async throws {
+    let (session, paths) = try makeWorkspaceSession()
+    let response = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["vscode","/usr/bin/evil"]}"#
+    ))
+    let result = try decode(response, as: QuickAppsResult.self)
+    #expect(!result.accepted)
+    #expect(result.errors.count == 1)
+    #expect(FileManager.default.fileExists(atPath: paths.overridesDirectory.appendingPathComponent("developer.json").path) == false)
+}
+
+@Test("a pin against an unconfigured mode is rejected and rolled back")
+func unknownModeIsRejected() async throws {
+    let (session, paths) = try makeWorkspaceSession()
+    let response = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"garage","quickApps":["vscode"]}"#
+    ))
+    let result = try decode(response, as: QuickAppsResult.self)
+    #expect(!result.accepted)
+    #expect(!result.errors.isEmpty)
+    #expect(FileManager.default.fileExists(atPath: paths.overridesDirectory.appendingPathComponent("garage.json").path) == false)
+}
+
+@Test("a session without a workspace reports pinning unavailable, never a silent no-op")
+func pinningWithoutWorkspaceIsUnavailable() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["vscode"]}"#
+    ))
     #expect(response.status == .error)
     #expect(response.error?.category == .unavailableCapability)
 }

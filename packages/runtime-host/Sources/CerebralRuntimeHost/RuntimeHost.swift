@@ -34,7 +34,7 @@ public func makeCommandRuntime(
     onEvent: (@Sendable (CommandLifecycleEvent) -> Void)? = nil,
     onActionProgress: (@Sendable (WorkflowActionProgress) -> Void)? = nil
 ) throws -> CommandRuntime {
-    let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory)
+    let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory, stateRoot: paths.stateRoot)
     let hookCatalog = makeHookCatalog(references: references, repositoryRoot: paths.repositoryRoot)
     let modePlanner = try PreMacToolRuntime.makeActionPlanner(
         descriptorsDirectory: paths.toolDescriptorsDirectory,

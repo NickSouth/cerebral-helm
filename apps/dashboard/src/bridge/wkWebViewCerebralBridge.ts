@@ -13,6 +13,7 @@ import type {
   RecentActivityQuery,
   SearchNotesResult,
   Unsubscribe,
+  UpdateQuickAppsResult,
   UpdateSettingsResult
 } from "./cerebralBridge";
 
@@ -243,6 +244,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     listApps() {
       return operation<ListAppsResult>("listApps", {});
+    },
+    updateQuickApps(input) {
+      return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);

@@ -171,6 +171,39 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
   });
 
+  it("Launch at login reflects live OS status, toggles via shellControl, and explains approval (NIC-89)", async () => {
+    const postMessage = vi.fn();
+    (window as unknown as ShellControlWindow).webkit = {
+      messageHandlers: { shellControl: { postMessage } }
+    };
+    interface LoginWindow {
+      __cerebralLoginItem?: { status?: string };
+      __cerebralLoginItemUpdate?: (status: string) => void;
+    }
+    (window as unknown as LoginWindow).__cerebralLoginItem = { status: "not-registered" };
+
+    const { SettingsApp } = await import("../../app/SettingsApp");
+    render(<SettingsApp />);
+    const surface = screen.getByRole("main", { name: "Settings" });
+
+    const toggle = within(surface).getByLabelText("Launch at login");
+    expect(toggle).toBeEnabled();
+    expect(toggle).not.toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(postMessage).toHaveBeenCalledWith({ action: "setLoginItem", enabled: true });
+
+    // The native shell pushes the OS's resulting status back — including the
+    // requires-approval state, which the panel explains.
+    act(() => {
+      (window as unknown as LoginWindow).__cerebralLoginItemUpdate?.("requires-approval");
+    });
+    expect(within(surface).getByLabelText("Launch at login")).toBeChecked();
+    expect(within(surface).getByText(/Waiting for approval/)).toBeInTheDocument();
+
+    delete (window as unknown as LoginWindow).__cerebralLoginItem;
+  });
+
   it("the standalone surface rebinds the palette shortcut and closes via the native channel", async () => {
     const postMessage = vi.fn();
     (window as unknown as ShellControlWindow).webkit = {

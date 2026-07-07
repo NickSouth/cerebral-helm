@@ -30,7 +30,8 @@
         "updateSettings",
         "subscribe",
         "getRecentActivity",
-        "listApps"
+        "listApps",
+        "updateQuickApps"
       ]
     },
     "status": {

@@ -2331,6 +2331,7 @@ public enum Operation: String, Codable {
     case searchNotes = "searchNotes"
     case submitCommand = "submitCommand"
     case subscribe = "subscribe"
+    case updateQuickApps = "updateQuickApps"
     case updateSettings = "updateSettings"
 }
 

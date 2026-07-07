@@ -16,10 +16,21 @@ public enum ReferenceCatalogLoader {
         let id: String
     }
 
-    public static func load(configDirectory: URL) throws -> CommandReferences {
+    /// `stateRoot`, when given, additionally merges the user's auto-minted app
+    /// references (``UserAppReferences``, NIC-119): shipped entries win on both
+    /// id and target, so minting can never shadow or redefine a shipped
+    /// reference. URLs and hooks have no user layer — those stay curated config.
+    public static func load(configDirectory: URL, stateRoot: URL? = nil) throws -> CommandReferences {
         let referencesDirectory = configDirectory.appendingPathComponent("references", isDirectory: true)
 
-        let apps = try loadCatalog(referencesDirectory.appendingPathComponent("apps.json"))
+        var apps = try loadCatalog(referencesDirectory.appendingPathComponent("apps.json"))
+        if let stateRoot {
+            let shippedIDs = Set(apps.map(\.id))
+            let shippedTargets = Set(apps.map(\.target))
+            apps += UserAppReferences.load(stateRoot: stateRoot).filter {
+                !shippedIDs.contains($0.id) && !shippedTargets.contains($0.target)
+            }
+        }
         let urls = try loadCatalog(referencesDirectory.appendingPathComponent("urls.json"))
         let hooks = try loadCatalog(referencesDirectory.appendingPathComponent("hooks.json"))
         let modeIds = try loadModeIds(configDirectory.appendingPathComponent("modes", isDirectory: true))

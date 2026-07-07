@@ -97,10 +97,23 @@ export interface DiscoveredApp {
   readonly bundleId: string;
   readonly name: string;
   readonly iconPng?: string;
+  /** The configured app reference this bundle id backs. Only reference-backed
+   *  apps are pinnable (NIC-119c) — never arbitrary paths. */
+  readonly referenceId?: string | null;
 }
 export interface ListAppsResult {
   readonly apps: readonly DiscoveredApp[];
   readonly truncated: boolean;
+}
+
+export interface UpdateQuickAppsInput {
+  readonly modeId: string;
+  readonly quickApps: readonly string[];
+}
+export interface UpdateQuickAppsResult {
+  readonly accepted: boolean;
+  readonly quickApps: readonly string[];
+  readonly errors: readonly string[];
 }
 
 // --- FR-OBS-04 read surface (shape from get-recent-activity-response fixture) ---
@@ -160,6 +173,8 @@ export interface CerebralBridge {
   updateSettings(input: UpdateSettingsInput): Promise<UpdateSettingsResult>;
   /** Read-only application discovery for the More Apps picker (NIC-119). */
   listApps(): Promise<ListAppsResult>;
+  /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */
+  updateQuickApps(input: UpdateQuickAppsInput): Promise<UpdateQuickAppsResult>;
   /** Subscribe to the bridge event stream; returns an unsubscribe handle. */
   subscribe(listener: BridgeEventListener): Unsubscribe;
 }

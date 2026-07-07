@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { useDashboardState } from "../../state/DashboardStateProvider";
 import { useAppearance } from "../../state/AppearanceProvider";
 import { toModeId } from "../../tokens/tokens";
@@ -47,6 +47,53 @@ function ReadonlyValue({ children }: { children: ReactNode }) {
  * how the user returns to the default.
  */
 const SYSTEM_PRIMARY = "system-primary";
+
+interface LoginItemWindow extends Window {
+  __cerebralLoginItem?: { status?: string };
+  __cerebralLoginItemUpdate?: (status: string) => void;
+}
+
+/**
+ * "Launch at login" (NIC-89): the value is the LIVE OS login-item status seeded
+ * and pushed by the native shell over the private shellControl channel — never
+ * the settings store, which could silently diverge from System Settings. In a
+ * plain browser there is no shell, so the toggle is honest-disabled.
+ */
+function LaunchAtLoginField() {
+  const [status, setStatus] = useState<string | null>(
+    () => (window as LoginItemWindow).__cerebralLoginItem?.status ?? null
+  );
+
+  useEffect(() => {
+    (window as LoginItemWindow).__cerebralLoginItemUpdate = (next) => setStatus(next);
+    return () => {
+      delete (window as LoginItemWindow).__cerebralLoginItemUpdate;
+    };
+  }, []);
+
+  const available = status !== null;
+  const checked = status === "enabled" || status === "requires-approval";
+  const hint = !available
+    ? "Available on the macOS host."
+    : status === "requires-approval"
+      ? "Waiting for approval — allow CerebralHelm under System Settings → General → Login Items."
+      : "Opens CerebralHelm automatically when you log in.";
+
+  return (
+    <Field label="Launch at login" hint={hint}>
+      <label className="settings-switch">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={!available}
+          aria-label="Launch at login"
+          onChange={(event) => postShellControl("setLoginItem", { enabled: event.target.checked })}
+        />
+        <span className="settings-switch__track" aria-hidden="true" />
+      </label>
+    </Field>
+  );
+}
 
 function GeneralPanel() {
   const { modes, mode, capabilities, displayTopology } = useDashboardState();
@@ -98,6 +145,7 @@ function GeneralPanel() {
             ))}
           </select>
         </Field>
+        <LaunchAtLoginField />
       </Section>
       <Section title="Workspace">
         <Field

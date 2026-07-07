@@ -2026,3 +2026,69 @@
   font-size: var(--ch-font-size-sm);
   color: var(--ch-text-muted);
 }
+
+/* Real OS icons on quick-app tiles + pin controls in the picker (NIC-119c). */
+
+.quick-app__real-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+}
+
+.apps-picker__pin {
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+  background: none;
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+  padding: 1px var(--ch-space-2);
+  cursor: pointer;
+}
+
+.apps-picker__pin:hover:not(:disabled) {
+  background: var(--ch-surface-base);
+}
+
+.apps-picker__pin:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.apps-picker__unpinnable {
+  font-size: 0.62rem;
+  color: var(--ch-text-muted);
+}
+
+/* Tile-level unpin (owner decision): a small × revealed on hover/focus. */
+
+.quick-app-slot {
+  position: relative;
+}
+
+.quick-app__unpin {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-raised);
+  color: var(--ch-text-muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.quick-app-slot:hover .quick-app__unpin,
+.quick-app__unpin:focus-visible {
+  opacity: 1;
+}
+
+.quick-app__unpin:hover {
+  color: var(--ch-text-primary);
+}

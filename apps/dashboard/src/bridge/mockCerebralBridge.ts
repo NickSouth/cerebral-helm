@@ -183,16 +183,32 @@ export function createMockCerebralBridge(
     listApps() {
       // A representative installed-app set for browser previews of the More Apps
       // picker (NIC-119). No icons — the honest non-Mac fallback glyph renders.
+      // `referenceId` mirrors the bridge's join onto configured app references:
+      // only reference-backed apps are pinnable.
       return Promise.resolve({
         apps: [
-          { bundleId: "com.apple.Safari", name: "Safari" },
-          { bundleId: "com.apple.mail", name: "Mail" },
-          { bundleId: "com.apple.Notes", name: "Notes" },
-          { bundleId: "com.microsoft.VSCode", name: "Visual Studio Code" },
-          { bundleId: "com.anthropic.claudefordesktop", name: "Claude" }
+          { bundleId: "com.apple.Safari", name: "Safari", referenceId: null },
+          { bundleId: "com.apple.mail", name: "Mail", referenceId: null },
+          { bundleId: "com.apple.Terminal", name: "Terminal", referenceId: "terminal" },
+          { bundleId: "com.microsoft.VSCode", name: "Visual Studio Code", referenceId: "vscode" },
+          { bundleId: "com.anthropic.claudefordesktop", name: "Claude", referenceId: "claude-desktop" }
         ],
         truncated: false
       });
+    },
+    updateQuickApps(input) {
+      // Stand in for the validated override path (NIC-119c): the same
+      // reference-existence check the bridge applies, accepted otherwise.
+      const known = new Set(["terminal", "vscode", "claude-desktop", "xcode"]);
+      const unknown = input.quickApps.filter((id) => !known.has(id));
+      if (unknown.length > 0) {
+        return Promise.resolve({
+          accepted: false,
+          quickApps: input.quickApps,
+          errors: unknown.map((id) => `"${id}" is not a configured app reference.`)
+        });
+      }
+      return Promise.resolve({ accepted: true, quickApps: input.quickApps, errors: [] });
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);

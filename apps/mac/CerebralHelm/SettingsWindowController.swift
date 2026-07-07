@@ -1,6 +1,7 @@
 import AppKit
 import WebKit
 import CerebralCore
+import CerebralMacAdapters
 import CerebralRuntimeHost
 import os
 
@@ -66,6 +67,14 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
             forMainFrameOnly: true
         ))
 
+        // Seed the Startup panel with the LIVE login-item status (NIC-89): the OS
+        // is the source of truth — the settings store never carries this flag.
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "window.__cerebralLoginItem = { status: \"\(SMAppServiceLoginItem().status().rawValue)\" };",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+
         webView = WKWebView(frame: .zero, configuration: configuration)
 
         // Sized to the web surface's design dimensions (design spec §10); resizable
@@ -105,6 +114,16 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
     /// re-gate the panels live). The coordinator decides which events arrive here.
     func deliverBridgeEvent(_ json: String) {
         bridge.deliverBridgeEvent(json)
+    }
+
+    /// Push the current login-item status into the Startup panel (NIC-89): after
+    /// a toggle, and on every reopen of this warm window — the document-start
+    /// seed only reflects creation time, and the user can flip the login item in
+    /// System Settings while we run.
+    func pushLoginItemStatus(_ status: String) {
+        webView.evaluateJavaScript(
+            "window.__cerebralLoginItemUpdate && window.__cerebralLoginItemUpdate(\"\(status)\");"
+        )
     }
 
     // MARK: - WKScriptMessageHandler (web → native shell control)
