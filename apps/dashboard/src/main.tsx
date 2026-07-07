@@ -32,6 +32,14 @@ if (surface === "palette") {
       </React.StrictMode>
     );
   });
+} else if (surface === "companion") {
+  void import("./app/CompanionApp").then(({ CompanionApp }) => {
+    root.render(
+      <React.StrictMode>
+        <CompanionApp />
+      </React.StrictMode>
+    );
+  });
 } else {
   void import("./app/AppRoot").then(({ AppRoot }) => {
     root.render(

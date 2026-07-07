@@ -28,10 +28,11 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
     /// setMainDisplay). Set by `WindowCoordinator`, which owns the action routing.
     var onShellControl: (([String: Any]) -> Void)?
 
-    /// Fired when the settings page finishes loading. The coordinator replays the
-    /// cached display topology so the "Main display" select is populated — the
-    /// topology events predate this lazily-created webview.
-    var onLoaded: (() -> Void)?
+    /// Fired when this webview's bridge completes its handshake — the earliest
+    /// moment events can be received (`didFinish` is too early: the surface
+    /// module loads via dynamic import afterwards). The coordinator replays the
+    /// cached display topology so the "Main display" select is populated.
+    var onBridgeReady: (() -> Void)?
 
     private static var settingsURL: URL {
         URL(string: "\(CerebralSchemeHandler.scheme)://\(CerebralSchemeHandler.host)/index.html?surface=settings")!
@@ -87,6 +88,7 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         configuration.userContentController.add(self, name: DashboardWindowController.controlHandlerName)
         bridge.attach(to: webView)
         bridge.bind(session: session)
+        bridge.onHandshake = { [weak self] in self?.onBridgeReady?() }
         webView.navigationDelegate = self
         webView.load(URLRequest(url: Self.settingsURL))
     }
@@ -116,10 +118,6 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
     }
 
     // MARK: - WKNavigationDelegate
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        onLoaded?()
-    }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         log.error("Settings surface failed to load: \(error.localizedDescription, privacy: .public)")

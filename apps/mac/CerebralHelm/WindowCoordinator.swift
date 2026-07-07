@@ -68,9 +68,10 @@ final class WindowCoordinator: @unchecked Sendable {
         // Increment 4: web → native shell actions (e.g. rebinding the palette hotkey from
         // the settings "Hotkeys" panel).
         dashboard.onShellControl = { [weak self] body in self?.handleShellControl(body) }
-        // Runtime-only state that predates page load is replayed once the page
-        // can receive it (the initial topology event usually beats the webview).
-        dashboard.onLoaded = { [weak self, weak dashboard] in
+        // Runtime-only state that predates the web bridge is replayed once the
+        // handshake proves the page can receive it (the initial topology event
+        // always beats the webview's dynamic surface import).
+        dashboard.onBridgeReady = { [weak self, weak dashboard] in
             guard let json = self?.lastTopologyJSON else { return }
             dashboard?.deliverBridgeEvent(json)
         }
@@ -173,11 +174,14 @@ final class WindowCoordinator: @unchecked Sendable {
                 continue
             }
             guard let session, let dashboardRoot, let paths else { continue }
+            // Secondaries host the reduced companion surface (owner decision,
+            // 2026-07-06): the Heimlich stream + bottom bar only — no command
+            // bar, quick actions, or conversation off the main display.
             let secondary = DashboardWindowController(
-                dashboardRoot: dashboardRoot, paths: paths, session: session, screen: target
+                dashboardRoot: dashboardRoot, paths: paths, session: session, screen: target, surface: .companion
             )
             secondary.onShellControl = { [weak self] body in self?.handleShellControl(body) }
-            secondary.onLoaded = { [weak self, weak secondary] in
+            secondary.onBridgeReady = { [weak self, weak secondary] in
                 guard let json = self?.lastTopologyJSON else { return }
                 secondary?.deliverBridgeEvent(json)
             }
@@ -288,7 +292,7 @@ final class WindowCoordinator: @unchecked Sendable {
         controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
         // The "Main display" select needs the current topology (runtime-only
         // state this lazily-created webview missed).
-        controller.onLoaded = { [weak self, weak controller] in
+        controller.onBridgeReady = { [weak self, weak controller] in
             guard let json = self?.lastTopologyJSON else { return }
             controller?.deliverBridgeEvent(json)
         }

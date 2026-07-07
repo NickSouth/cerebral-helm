@@ -48,10 +48,11 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
     /// these are Mac-only window/shell concerns. Set by `WindowCoordinator`.
     var onShellControl: (([String: Any]) -> Void)?
 
-    /// Fired when the dashboard page finishes loading. The coordinator replays
-    /// runtime-only state that predates the page (the cached display topology) —
-    /// an event emitted before `__cerebralReceive` exists is otherwise lost.
-    var onLoaded: (() -> Void)?
+    /// Fired when this webview's bridge completes its handshake — the earliest
+    /// moment events can actually be received. The coordinator replays
+    /// runtime-only state that predates the page (the cached display topology);
+    /// an event emitted before the web bridge exists is otherwise lost.
+    var onBridgeReady: (() -> Void)?
 
     /// The root of the bundled dashboard build inside the app (`Resources/DashboardBundle`).
     static func bundledDashboardRoot() -> URL? {
@@ -61,10 +62,35 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         return FileManager.default.fileExists(atPath: index.path) ? root : nil
     }
 
+    /// The page this backdrop hosts: the full dashboard (main), or the reduced
+    /// companion surface (secondaries — Heimlich stream + bottom bar only).
+    enum Surface {
+        case dashboard
+        case companion
+
+        var url: URL {
+            switch self {
+            case .dashboard:
+                return CerebralSchemeHandler.indexURL
+            case .companion:
+                return URL(string: "\(CerebralSchemeHandler.scheme)://\(CerebralSchemeHandler.host)/index.html?surface=companion")!
+            }
+        }
+    }
+
+    private let surface: Surface
+
     /// `screen`: the display this backdrop covers. The main backdrop passes nil
     /// (primary); secondary backdrops (NIC-120b, one per connected display) pass
     /// their display's screen. All backdrops share the one `BridgeSession`.
-    init(dashboardRoot: URL, paths: WorkspacePaths, session: BridgeSession, screen: NSScreen? = nil) {
+    init(
+        dashboardRoot: URL,
+        paths: WorkspacePaths,
+        session: BridgeSession,
+        screen: NSScreen? = nil,
+        surface: Surface = .dashboard
+    ) {
+        self.surface = surface
         handler = CerebralSchemeHandler(root: dashboardRoot)
 
         let configuration = WKWebViewConfiguration()
@@ -121,9 +147,10 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         super.init()
         bridge.attach(to: webView)
         bridge.bind(session: session)
+        bridge.onHandshake = { [weak self] in self?.onBridgeReady?() }
         configuration.userContentController.add(self, name: Self.controlHandlerName)
         webView.navigationDelegate = self
-        webView.load(URLRequest(url: CerebralSchemeHandler.indexURL))
+        webView.load(URLRequest(url: surface.url))
     }
 
     func show() {
@@ -178,10 +205,6 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
 
     // MARK: - WKNavigationDelegate (surface load failures)
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        onLoaded?()
-    }
-
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         log.error("Dashboard failed to load: \(error.localizedDescription, privacy: .public)")
     }
@@ -195,6 +218,6 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
     /// renderer.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         log.error("Dashboard web content process terminated; reloading.")
-        webView.load(URLRequest(url: CerebralSchemeHandler.indexURL))
+        webView.load(URLRequest(url: surface.url))
     }
 }
