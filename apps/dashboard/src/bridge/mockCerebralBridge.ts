@@ -180,6 +180,20 @@ export function createMockCerebralBridge(
       const { valid } = validateSettingsChanges(changes);
       return Promise.resolve({ accepted: valid });
     },
+    listApps() {
+      // A representative installed-app set for browser previews of the More Apps
+      // picker (NIC-119). No icons — the honest non-Mac fallback glyph renders.
+      return Promise.resolve({
+        apps: [
+          { bundleId: "com.apple.Safari", name: "Safari" },
+          { bundleId: "com.apple.mail", name: "Mail" },
+          { bundleId: "com.apple.Notes", name: "Notes" },
+          { bundleId: "com.microsoft.VSCode", name: "Visual Studio Code" },
+          { bundleId: "com.anthropic.claudefordesktop", name: "Claude" }
+        ],
+        truncated: false
+      });
+    },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);
       return () => {

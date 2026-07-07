@@ -318,6 +318,39 @@ func decideUnknownConfirmation() async throws {
     #expect(response.error?.code == "unknown_confirmation")
 }
 
+// MARK: - listApps
+
+private struct AppsResult: Decodable {
+    struct App: Decodable {
+        let bundleId: String
+        let name: String
+        let iconPng: String?
+    }
+    let apps: [App]
+    let truncated: Bool
+}
+
+@Test("listApps unwraps the apps.list tool output for the More Apps picker (NIC-119)")
+func listAppsReturnsDiscovery() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let runtime = try makeCommandRuntime(paths: paths, phase: .macOS, capabilities: .mocks())
+    let session = BridgeSession(runtime: runtime, configDirectory: paths.configDirectory)
+
+    let response = await session.execute(operationRequest(.listApps, "{}"))
+    #expect(response.status == .ok)
+    let result = try decode(response, as: AppsResult.self)
+    #expect(result.apps.map(\.name) == ["Safari", "Mail", "Notes"])
+    #expect(result.truncated == false)
+}
+
+@Test("listApps is a structured unavailable pre-Mac, never a mock success")
+func listAppsUnavailablePreMac() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.listApps, "{}"))
+    #expect(response.status == .error)
+    #expect(response.error?.category == .unavailableCapability)
+}
+
 // MARK: - updateSettings
 
 private struct Accepted: Decodable { let accepted: Bool }

@@ -8,6 +8,7 @@ import type {
   CerebralBridge,
   CommandReceipt,
   DecideConfirmationResult,
+  ListAppsResult,
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
@@ -239,6 +240,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     updateSettings(input) {
       return operation<UpdateSettingsResult>("updateSettings", { ...input });
+    },
+    listApps() {
+      return operation<ListAppsResult>("listApps", {});
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);

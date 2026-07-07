@@ -469,6 +469,7 @@ export enum Operation {
     DecideConfirmation = "decideConfirmation",
     GetBootstrapState = "getBootstrapState",
     GetRecentActivity = "getRecentActivity",
+    ListApps = "listApps",
     SearchNotes = "searchNotes",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",
@@ -843,6 +844,21 @@ export interface CerebralHelmAppOpenOutput {
     alreadyRunning: boolean;
     appId:          string;
     launched:       boolean;
+}
+
+export interface CerebralHelmAppsListInput {
+    includeIcons?: boolean;
+}
+
+export interface CerebralHelmAppsListOutput {
+    apps:      App[];
+    truncated: boolean;
+}
+
+export interface App {
+    bundleId: string;
+    iconPng?: string;
+    name:     string;
 }
 
 export interface CerebralHelmConfirmationDisclosure {

@@ -1921,3 +1921,108 @@
   /* Cut against the tone-colored fill beneath it, whatever the charge tone. */
   fill: var(--ch-bg-base);
 }
+
+/* --- More Apps picker (NIC-119): read-only installed-app discovery --------- */
+
+.apps-picker-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 980;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.apps-picker {
+  position: fixed;
+  z-index: 990;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(720px, 90vw);
+  max-height: min(560px, 82vh);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--ch-radius-lg);
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-raised);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.apps-picker:focus {
+  outline: none;
+}
+
+.apps-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ch-space-3) var(--ch-space-4);
+  border-bottom: 1px solid var(--ch-panel-border);
+}
+
+.apps-picker__title {
+  margin: 0;
+  font-size: var(--ch-font-size-md);
+  color: var(--ch-text-primary);
+}
+
+.apps-picker__close {
+  border: none;
+  background: none;
+  color: var(--ch-text-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.apps-picker__close:hover {
+  color: var(--ch-text-primary);
+}
+
+.apps-picker__grid {
+  list-style: none;
+  margin: 0;
+  padding: var(--ch-space-4);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--ch-space-3);
+  overflow-y: auto;
+}
+
+.apps-picker__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ch-space-1);
+  text-align: center;
+}
+
+.apps-picker__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: var(--ch-text-muted);
+}
+
+.apps-picker__icon img {
+  width: 40px;
+  height: 40px;
+}
+
+.apps-picker__name {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.apps-picker__note {
+  margin: 0;
+  padding: var(--ch-space-2) var(--ch-space-4) var(--ch-space-3);
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}

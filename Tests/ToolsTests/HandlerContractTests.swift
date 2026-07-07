@@ -73,3 +73,21 @@ func readOnlyKnowledgeRootDeniesCapture() async throws {
     #expect(result.status == .denied)
     #expect(result.error?.category == .permissionDenied)
 }
+
+@Test("apps.list maps discovery results into contract-valid output (NIC-119)")
+func appsListHandlerMapsOutput() async throws {
+    let handler = AppsListHandler(capability: MockAppDiscoveryCapability())
+    let output = try await handler.execute(input: Data("{}".utf8))
+    let decoded = try CerebralHelmAppsListOutput(data: output)
+    #expect(decoded.apps.map(\.name) == ["Safari", "Mail", "Notes"])
+    #expect(decoded.apps.map(\.bundleID) == ["com.apple.Safari", "com.apple.mail", "com.apple.Notes"])
+    #expect(decoded.truncated == false)
+}
+
+@Test("apps.list with the capability unavailable is a structured unavailable, never a mock success")
+func appsListUnavailableIsStructured() async throws {
+    let handler = AppsListHandler(capability: MockAppDiscoveryCapability(matrix: .none))
+    await #expect(throws: ToolHandlerError.self) {
+        _ = try await handler.execute(input: Data("{}".utf8))
+    }
+}

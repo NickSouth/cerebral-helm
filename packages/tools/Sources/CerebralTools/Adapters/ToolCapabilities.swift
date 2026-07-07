@@ -17,6 +17,7 @@ public struct ToolCapabilities: Sendable {
     public let systemStatus: any SystemStatusCapability
     public let workspaceWindows: any WorkspaceWindowsCapability
     public let window: any WindowCapability
+    public let appDiscovery: any AppDiscoveryCapability
     /// Stable capability IDs (``CapabilityMatrix/Capability/appOpen`` etc.) bound
     /// to honest native implementations in this bundle. Empty for the mock bundle.
     public let nativeCapabilityIDs: Set<String>
@@ -28,6 +29,7 @@ public struct ToolCapabilities: Sendable {
         systemStatus: any SystemStatusCapability,
         workspaceWindows: any WorkspaceWindowsCapability = MockWorkspaceWindowsCapability(matrix: .none),
         window: any WindowCapability = MockWindowCapability(matrix: .none),
+        appDiscovery: any AppDiscoveryCapability = MockAppDiscoveryCapability(matrix: .none),
         nativeCapabilityIDs: Set<String> = []
     ) {
         self.app = app
@@ -36,6 +38,7 @@ public struct ToolCapabilities: Sendable {
         self.systemStatus = systemStatus
         self.workspaceWindows = workspaceWindows
         self.window = window
+        self.appDiscovery = appDiscovery
         self.nativeCapabilityIDs = nativeCapabilityIDs
     }
 
@@ -48,7 +51,8 @@ public struct ToolCapabilities: Sendable {
             process: MockProcessCapability(matrix: matrix),
             systemStatus: MockSystemStatusCapability(matrix: matrix),
             workspaceWindows: MockWorkspaceWindowsCapability(matrix: matrix),
-            window: MockWindowCapability(matrix: matrix)
+            window: MockWindowCapability(matrix: matrix),
+            appDiscovery: MockAppDiscoveryCapability(matrix: matrix)
         )
     }
 }

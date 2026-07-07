@@ -83,12 +83,33 @@ describe("QuickApps", () => {
     expect(firstAppTile()).toBeDisabled();
   });
 
-  it("pin and More Apps controls remain honest-disabled (discovery/pinning land later)", () => {
+  it("pin controls remain honest-disabled and More Apps gates on native.apps.list (NIC-119)", () => {
     renderQuickApps((base) => ({
       ...base,
       capabilities: { "native.app.open": { available: true } }
     }));
     const more = screen.getByRole("button", { name: /More Apps/ });
     expect(more).toBeDisabled();
+    expect(more.title).toMatch(/macOS host/);
+  });
+
+  it("More Apps opens the read-only discovery picker when the capability is available", async () => {
+    renderQuickApps((base) => ({
+      ...base,
+      capabilities: { "native.apps.list": { available: true } }
+    }));
+    const more = screen.getByRole("button", { name: /More Apps/ });
+    expect(more).toBeEnabled();
+
+    fireEvent.click(more);
+    const dialog = await screen.findByRole("dialog", { name: "All applications" });
+    // The mock discovery catalog renders by app name — real icons come from the Mac adapter.
+    expect(await screen.findByText("Safari")).toBeInTheDocument();
+    expect(screen.getByText("Visual Studio Code")).toBeInTheDocument();
+    // The picker never launches: entries are not buttons, just listed apps.
+    expect(screen.queryByRole("button", { name: "Safari" })).toBeNull();
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "All applications" })).toBeNull();
   });
 });

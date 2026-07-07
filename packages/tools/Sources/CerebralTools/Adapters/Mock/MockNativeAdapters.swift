@@ -177,3 +177,30 @@ public struct MockWindowCapability: WindowCapability {
         return arrangeOutcomes[bundleID] ?? .notRunning
     }
 }
+
+/// Deterministic app-discovery mock (NIC-119): a fixed representative catalog,
+/// gated like every mock. Icons are omitted — the honest non-Mac fallback.
+public struct MockAppDiscoveryCapability: AppDiscoveryCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+    public var apps: [InstalledApplication]
+
+    public init(
+        matrix: CapabilityMatrix = .allAvailable,
+        fault: MockFault = .none,
+        apps: [InstalledApplication] = [
+            InstalledApplication(bundleID: "com.apple.Safari", name: "Safari", iconPNGBase64: nil),
+            InstalledApplication(bundleID: "com.apple.mail", name: "Mail", iconPNGBase64: nil),
+            InstalledApplication(bundleID: "com.apple.Notes", name: "Notes", iconPNGBase64: nil),
+        ]
+    ) {
+        self.matrix = matrix
+        self.fault = fault
+        self.apps = apps
+    }
+
+    public func listApplications(includeIcons: Bool) async throws -> AppDiscoveryResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.appsList, matrix: matrix, fault: fault)
+        return AppDiscoveryResult(apps: apps, truncated: false)
+    }
+}

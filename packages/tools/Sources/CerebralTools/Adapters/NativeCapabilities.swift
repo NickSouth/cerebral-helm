@@ -110,6 +110,40 @@ public protocol SystemStatusCapability: Sendable {
     func readMetrics(_ ids: [SystemMetricID]) async throws -> [SystemMetricReading]
 }
 
+// MARK: - apps.list
+
+/// One installed application, discovered read-only (NIC-119). `iconPNGBase64`
+/// is a size-capped PNG rendered by the platform adapter; nil when no icon
+/// could be produced — the UI falls back honestly, this layer never invents one.
+public struct InstalledApplication: Equatable, Sendable {
+    public let bundleID: String
+    public let name: String
+    public let iconPNGBase64: String?
+
+    public init(bundleID: String, name: String, iconPNGBase64: String?) {
+        self.bundleID = bundleID
+        self.name = name
+        self.iconPNGBase64 = iconPNGBase64
+    }
+}
+
+/// The complete discovery result; `truncated` is honest about any cap applied.
+public struct AppDiscoveryResult: Equatable, Sendable {
+    public let apps: [InstalledApplication]
+    public let truncated: Bool
+
+    public init(apps: [InstalledApplication], truncated: Bool) {
+        self.apps = apps
+        self.truncated = truncated
+    }
+}
+
+/// Read-only enumeration of installed applications (NIC-119): feeds the More
+/// Apps picker and pinning. Never launches, moves, or modifies anything.
+public protocol AppDiscoveryCapability: Sendable {
+    func listApplications(includeIcons: Bool) async throws -> AppDiscoveryResult
+}
+
 // MARK: - secret
 
 public protocol SecretCapability: Sendable {

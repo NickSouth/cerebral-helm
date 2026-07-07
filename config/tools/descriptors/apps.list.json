@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "apps.list",
+  "version": "1.0.0",
+  "purpose": "Enumerate installed applications (name, bundle identifier, icon) read-only; never launches anything.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/apps-list-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/apps-list-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "read_only",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "allow_read_without_confirmation",
+  "requiredPermissions": [],
+  "secretReferences": [],
+  "timeoutMs": 10000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": true,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["apps.list"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "timeout", "failure", "cancelled"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

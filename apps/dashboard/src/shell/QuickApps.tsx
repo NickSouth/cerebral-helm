@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Panel } from "./Panel";
 import { AppGlyph } from "./AppGlyph";
+import { MoreAppsPicker } from "./MoreAppsPicker";
 import { useActiveMode } from "./useActiveMode";
 import { appDefinition } from "../appCatalog/appCatalog";
 import { useBridge } from "../state/BridgeProvider";
@@ -79,6 +81,15 @@ export function QuickApps() {
     ? "Unavailable while the app is in read-only recovery"
     : (appOpen?.degradedReason ?? "Launching apps is available on the macOS host");
 
+  // More Apps rides the read-only discovery capability (NIC-119) — honest-disabled
+  // until the runtime reports it, like every native-gated control.
+  const appsList = state.capabilities?.["native.apps.list"];
+  const canDiscover = appsList?.available === true && !readOnly;
+  const discoverDisabledReason = readOnly
+    ? "Unavailable while the app is in read-only recovery"
+    : (appsList?.degradedReason ?? "App discovery is available on the macOS host");
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   const launch = (id: string, label: string) => {
     void bridge
       .submitCommand({ rawInput: `open ${id}`, source: "dashboard" })
@@ -136,9 +147,10 @@ export function QuickApps() {
           <button
             type="button"
             className="quick-app quick-app--more"
-            disabled
-            aria-disabled="true"
-            title="App discovery is available on the macOS host"
+            disabled={!canDiscover}
+            aria-disabled={!canDiscover}
+            title={canDiscover ? "Browse installed applications" : discoverDisabledReason}
+            onClick={canDiscover ? () => setPickerOpen(true) : undefined}
           >
             <span className="quick-app__icon" aria-hidden="true">
               <AppsGridGlyph />
@@ -147,6 +159,7 @@ export function QuickApps() {
           </button>
         </li>
       </ul>
+      {pickerOpen ? <MoreAppsPicker onClose={() => setPickerOpen(false)} /> : null}
     </Panel>
   );
 }

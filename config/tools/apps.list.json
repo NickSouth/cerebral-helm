@@ -1,0 +1,6 @@
+{
+  "id": "apps.list",
+  "risk": "read_only",
+  "timeoutMs": 10000,
+  "availableInPreMac": false
+}

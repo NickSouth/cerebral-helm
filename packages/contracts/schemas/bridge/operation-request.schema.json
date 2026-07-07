@@ -29,7 +29,8 @@
         "decideConfirmation",
         "updateSettings",
         "subscribe",
-        "getRecentActivity"
+        "getRecentActivity",
+        "listApps"
       ]
     },
     "payload": {

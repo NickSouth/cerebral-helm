@@ -9,6 +9,7 @@ import Foundation
 /// - `search <text>` — search notes
 /// - `hook <id>`   — run a configured hook
 /// - `run <id>`    — run a configured workflow / quick action
+/// - `apps`        — list installed applications (read-only discovery)
 ///
 /// Unknown verbs and unresolved references return suggestions without
 /// executing; a token matching more than one catalog returns a reviewable
@@ -24,6 +25,7 @@ public struct DirectCommandParser: Sendable {
         "search <text>",
         "hook <id>",
         "run <action>",
+        "apps",
     ]
 
     public init(references: CommandReferences) {
@@ -51,6 +53,9 @@ public struct DirectCommandParser: Sendable {
             return parseFreeText(verb: "note", remainder: remainder) { .captureNote(text: $0) }
         case "search":
             return parseFreeText(verb: "search", remainder: remainder) { .searchNotes(query: $0) }
+        case "apps":
+            // Argument-free by design: discovery is all-or-nothing and read-only.
+            return .parsed(.listApps)
         default:
             return .unrecognized(UnrecognizedInput(reason: .unknownVerb(verb), suggestions: Self.supportedPatterns))
         }

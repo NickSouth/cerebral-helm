@@ -36,6 +36,7 @@ public enum MacToolCapabilities {
                 systemStatus: systemStatus,
                 workspaceWindows: MacWorkspaceWindowsCapability(),
                 window: AXWindowCapability(),
+                appDiscovery: MacAppDiscoveryCapability(),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,
                     CapabilityMatrix.Capability.urlOpen,
@@ -44,6 +45,7 @@ public enum MacToolCapabilities {
                     CapabilityMatrix.Capability.secret,
                     CapabilityMatrix.Capability.workspaceWindows,
                     CapabilityMatrix.Capability.window,
+                    CapabilityMatrix.Capability.appsList,
                 ]
             ),
             systemStatus: systemStatus,

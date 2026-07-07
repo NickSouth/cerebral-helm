@@ -12,6 +12,9 @@ public enum CommandIntent: Equatable, Sendable {
     /// Run a configured workflow / quick action (an ordered plan of tool steps
     /// resolved by the action planner).
     case runAction(actionId: String)
+    /// List installed applications, read-only (NIC-119 discovery — feeds the
+    /// More Apps picker; never launches anything).
+    case listApps
 }
 
 /// The outcome of parsing one line of direct input.

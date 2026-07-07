@@ -24,8 +24,9 @@ public struct CapabilityMatrix: Sendable {
         public static let secret = "secret"
         public static let window = "window"
         public static let workspaceWindows = "workspace.windows"
+        public static let appsList = "apps.list"
 
-        public static let all: Set<String> = [appOpen, urlOpen, hookRun, systemStatusRead, secret, window, workspaceWindows]
+        public static let all: Set<String> = [appOpen, urlOpen, hookRun, systemStatusRead, secret, window, workspaceWindows, appsList]
     }
 
     /// Every mock capability available — the contract-suite default.

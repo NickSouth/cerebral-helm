@@ -1,0 +1,14 @@
+{
+  "apps": [
+    {
+      "bundleId": "com.apple.Safari",
+      "name": "Safari",
+      "iconPng": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    },
+    {
+      "bundleId": "com.anthropic.claudefordesktop",
+      "name": "Claude"
+    }
+  ],
+  "truncated": false
+}

@@ -90,6 +90,19 @@ export interface RecentActivityQuery {
   readonly limit?: number;
 }
 
+/** One installed application from read-only discovery (NIC-119). `iconPng` is a
+ *  size-capped base64 PNG; absent means no icon could be rendered — the UI shows
+ *  its honest placeholder glyph. */
+export interface DiscoveredApp {
+  readonly bundleId: string;
+  readonly name: string;
+  readonly iconPng?: string;
+}
+export interface ListAppsResult {
+  readonly apps: readonly DiscoveredApp[];
+  readonly truncated: boolean;
+}
+
 // --- FR-OBS-04 read surface (shape from get-recent-activity-response fixture) ---
 
 export interface ActivityCommand {
@@ -145,6 +158,8 @@ export interface CerebralBridge {
   searchNotes(input: SearchNotesInput): Promise<SearchNotesResult>;
   decideConfirmation(input: DecideConfirmationInput): Promise<DecideConfirmationResult>;
   updateSettings(input: UpdateSettingsInput): Promise<UpdateSettingsResult>;
+  /** Read-only application discovery for the More Apps picker (NIC-119). */
+  listApps(): Promise<ListAppsResult>;
   /** Subscribe to the bridge event stream; returns an unsubscribe handle. */
   subscribe(listener: BridgeEventListener): Unsubscribe;
 }

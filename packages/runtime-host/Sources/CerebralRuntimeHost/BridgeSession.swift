@@ -99,6 +99,8 @@ public final class BridgeSession: @unchecked Sendable {
             return await decideConfirmation(request)
         case .updateSettings:
             return updateSettings(request)
+        case .listApps:
+            return await listApps(request)
         default:
             // captureNote (confirmation-gated local_write returning a synchronous
             // noteId) and subscribe follow later.
@@ -211,6 +213,32 @@ public final class BridgeSession: @unchecked Sendable {
             NoteHit(noteId: $0.noteID, title: $0.title, excerpt: $0.excerpt)
         }
         return ok(request, payload: SearchNotesResult(results: hits))
+    }
+
+    /// Read-only application discovery (NIC-119): wraps the `apps` command so the
+    /// More Apps picker rides the same command bus as every other input source,
+    /// and unwraps the tool output for the dashboard. Pre-Mac (or on any tool
+    /// failure) this is a structured unavailable — the picker renders honestly.
+    private func listApps(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let outcome = await runtime.submit("apps", source: .dashboard)
+        guard
+            case let .completed(_, status, result) = outcome,
+            status == .succeeded,
+            let data = result?.output,
+            let output = try? CerebralHelmAppsListOutput(data: data)
+        else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "apps_list_unavailable",
+                message: "Application discovery is unavailable."
+            )
+        }
+        let apps = output.apps.map {
+            DiscoveredApp(bundleId: $0.bundleID, name: $0.name, iconPng: $0.iconPNG)
+        }
+        return ok(request, payload: ListAppsResult(apps: apps, truncated: output.truncated))
     }
 
     /// The recent-activity read surface. A fresh session has no activity; the durable
@@ -376,6 +404,15 @@ public final class BridgeSession: @unchecked Sendable {
     }
     private struct UpdateSettingsResult: Encodable {
         let accepted: Bool
+    }
+    private struct DiscoveredApp: Encodable {
+        let bundleId: String
+        let name: String
+        let iconPng: String?
+    }
+    private struct ListAppsResult: Encodable {
+        let apps: [DiscoveredApp]
+        let truncated: Bool
     }
     /// Mirrors the bridge `getRecentActivity` payload wrapper `{ recentActivity: … }`.
     private struct RecentActivityEnvelope: Encodable {

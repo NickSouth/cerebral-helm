@@ -492,6 +492,16 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [],
                 actionSummary: "Search notes for \(query)."
             )
+        case .listApps:
+            return make(
+                toolID: "apps.list",
+                input: try? CerebralHelmAppsListInput(includeIcons: true).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [],
+                actionSummary: "List installed applications."
+            )
         case let .runHook(reference):
             return make(
                 toolID: "hook.run",

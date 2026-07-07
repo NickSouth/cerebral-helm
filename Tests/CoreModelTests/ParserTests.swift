@@ -33,6 +33,7 @@ func supportedGrammarResolves() {
     #expect(parser.parse("search updater config") == .parsed(.searchNotes(query: "updater config")))
     #expect(parser.parse("hook ondraft-dev") == .parsed(.runHook(ondraft)))
     #expect(parser.parse("run open-developer-layout") == .parsed(.runAction(actionId: "open-developer-layout")))
+    #expect(parser.parse("apps") == .parsed(.listApps))
 }
 
 @Test("an unresolved workflow id is unrecognized and suggests configured actions")

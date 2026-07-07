@@ -34,6 +34,7 @@ public enum PreMacToolRuntime {
             "app.open": AppOpenHandler(capability: capabilities.app),
             "url.open": URLOpenHandler(capability: capabilities.url),
             "system.status.read": SystemStatusReadHandler(capability: capabilities.systemStatus),
+            "apps.list": AppsListHandler(capability: capabilities.appDiscovery),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
@@ -108,6 +109,7 @@ public enum PreMacToolRuntime {
         case "mode.apply": _ = try CerebralHelmModeApplyInput(data: data)
         case "window.arrange": _ = try CerebralHelmWindowArrangeInput(data: data)
         case "system.status.read": _ = try CerebralHelmSystemStatusReadInput(data: data)
+        case "apps.list": _ = try CerebralHelmAppsListInput(data: data)
         default: break
         }
     }
