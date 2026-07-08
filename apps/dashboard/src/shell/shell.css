@@ -13,14 +13,10 @@
   overflow: hidden;
 }
 
-/* Edge sweep: ONE thin diagonal band of light travels across the whole dashboard, top-left →
-   bottom-right. It is a single viewport-fixed gradient (background-attachment: fixed) shared by
-   every component and masked to each panel's border ring — so wherever the band overlaps an
-   outline, that part of the border glows, and every component lights up from the SAME band in one
-   coordinated sweep (no independent spins). A repeating gradient shifted by exactly one period
-   makes it a seamless continuous loop (a new band enters top-left as the last exits bottom-right).
-   NOTE: no `filter`/`transform` on this element — either would re-anchor the fixed background to the
-   element and break the shared coordinate system. Freezes under prefers-reduced-motion. */
+/* Ambient beam reflections: every outlined surface hosts a BeamOverlay (below) whose light
+   tiles are translated by useAmbientBeam so all outlines reflect slices of the SAME
+   viewport-space beam — one coordinated sweep, no independent spins. Freezes under
+   prefers-reduced-motion (the driver hook is disabled; the tiles stay parked off-screen). */
 .shell-panel,
 .heimlich,
 .bottom-bar,
@@ -33,44 +29,22 @@
   border-radius: var(--ch-radius-md);
 }
 
-/* TWO radial "flashlights" (bright core → soft falloff) are shared viewport-fixed gradients masked
-   to each outline, so only the borders REFLECT the light — each fades in as its beam nears and out
-   as it passes (by proximity, not by crawling around corners). Both centers are driven by JS
-   (useAmbientBeam) through --beam-x/--beam-y and --beam2-x/--beam2-y: each pass enters from a random
-   direction, sweeps across, then waits a random 0.5–2s off-screen before the next — unsynced, so 0,
-   1, or 2 beams may be visible and they can come from anywhere. `mix-blend-mode: screen` makes the
-   accent add light. No filter (it would re-anchor the fixed background and break the shared beams). */
-.shell-panel::after,
-.heimlich::after,
-.bottom-bar::after,
-.command-surface--launcher::after {
-  content: "";
+/* TWO radial "flashlights" (bright core → soft falloff) masked to each outline, so only the
+   borders REFLECT the light — each fades in as its beam nears and out as it passes (by
+   proximity, not by crawling around corners). Each pass enters from a random direction, sweeps
+   across, then waits a random 0.5–2s off-screen before the next — unsynced, so 0, 1, or 2 beams
+   may be visible and they can come from anywhere. `mix-blend-mode: screen` makes the accent add
+   light. The tiles move by `transform` ONLY (written per frame by useAmbientBeam) — that stays
+   on the compositor with zero repaint. Do NOT swap this back to a fixed-attachment
+   background-position animation: per-frame re-raster of these masked overlays grew the web
+   process by tens of MB/s to multiple GB (NIC-122). */
+.beam-overlay {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   padding: 1.5px;
-  background-image:
-    radial-gradient(
-      circle 480px at center,
-      color-mix(in srgb, var(--ch-accent-primary) 72%, transparent) 0%,
-      color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 42%,
-      transparent 100%
-    ),
-    radial-gradient(
-      circle 480px at center,
-      color-mix(in srgb, var(--ch-accent-primary) 72%, transparent) 0%,
-      color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 42%,
-      transparent 100%
-    );
-  background-repeat: no-repeat;
-  background-size: 1050px 1050px;
-  background-attachment: fixed;
-  /* Two independent beams: each gradient layer follows its own center vars (set by useAmbientBeam),
-     offset by half the 1050px tile so the var IS the center. Both default off-screen until their
-     first pass runs (and under prefers-reduced-motion, where the hook is disabled). */
-  background-position:
-    calc(var(--beam-x, -3000px) - 525px) calc(var(--beam-y, -3000px) - 525px),
-    calc(var(--beam2-x, -3000px) - 525px) calc(var(--beam2-y, -3000px) - 525px);
+  /* Clips the moving light tiles (and their compositor layers) to the surface. */
+  overflow: hidden;
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -81,6 +55,25 @@
   mask-composite: exclude;
   pointer-events: none;
   mix-blend-mode: screen;
+}
+
+/* One light tile per beam (data-beam="a"/"b"), sized so the tile IS the old 1050px background
+   tile with the beam at its center. Parked off-screen until the beam's first pass (and
+   permanently under prefers-reduced-motion, where the driver hook never runs). */
+.beam-overlay__light {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1050px;
+  height: 1050px;
+  background: radial-gradient(
+    circle 480px at center,
+    color-mix(in srgb, var(--ch-accent-primary) 72%, transparent) 0%,
+    color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 42%,
+    transparent 100%
+  );
+  transform: translate3d(-3000px, -3000px, 0);
+  will-change: transform;
 }
 
 /* The column area (search + three columns). Caps at a max width and centers on very wide screens

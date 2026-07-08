@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { BeamOverlay } from "./BeamOverlay";
 import { rankSuggestions } from "./commandSuggestions";
 
 /** Magnifying-glass glyph for the persistent launcher. */
@@ -174,6 +175,8 @@ export function CommandSurface({
           ))}
         </ul>
       ) : null}
+      {/* Only the launcher carries the beam ring (matching its outline styling). */}
+      {variant === "launcher" ? <BeamOverlay /> : null}
     </div>
   );
 }

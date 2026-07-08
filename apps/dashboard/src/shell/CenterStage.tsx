@@ -1,3 +1,4 @@
+import { BeamOverlay } from "./BeamOverlay";
 import { QuickApps } from "./QuickApps";
 import { QuickActions } from "./QuickActions";
 import { ConversationOverlay } from "./ConversationOverlay";
@@ -36,6 +37,7 @@ export function CenterStage() {
           <QuickActions />
         </div>
         {conversation.open ? <ConversationOverlay /> : null}
+        <BeamOverlay />
       </section>
     </main>
   );

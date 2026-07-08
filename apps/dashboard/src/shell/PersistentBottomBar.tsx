@@ -6,6 +6,7 @@ import { useUiPosture } from "../state/useUiPosture";
 import { armModeWave } from "./modeWave";
 import { heimlichStateLabel } from "./labels";
 import { BatteryGlyph } from "./BatteryGlyph";
+import { BeamOverlay } from "./BeamOverlay";
 import { WeatherGlyph } from "./WeatherGlyph";
 import { HealthGlyph } from "./HealthGlyph";
 import { HeimlichAvatar } from "./HeimlichAvatar";
@@ -279,6 +280,7 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
           <SettingsGlyph />
         </button>
       </div>
+      <BeamOverlay />
     </footer>
   );
 }
