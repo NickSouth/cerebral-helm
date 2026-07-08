@@ -36,7 +36,9 @@ function PowerGlyph() {
 const EXIT_FALLBACK_MS = 400;
 
 function SettingsWindow({ closing, onExited }: { closing: boolean; onExited: () => void }) {
-  const { activeCategory, setCategory, closeSettings } = useSettings();
+  // Category state moved into SettingsSurface with the pane extraction
+  // (the dedicated settings window); the dialog wrapper only closes.
+  const { closeSettings } = useSettings();
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
