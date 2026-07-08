@@ -14,6 +14,7 @@ export type BridgeEventType =
   | "confirmation.changed"
   | "system.status.changed"
   | "config.changed"
+  | "mode.quickapps.changed"
   | "bridge.capability.changed"
   | "workflow.action.progress"
   | "display.topology.changed";

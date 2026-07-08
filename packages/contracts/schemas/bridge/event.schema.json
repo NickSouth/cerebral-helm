@@ -19,6 +19,7 @@
       "enum": [
         "command.lifecycle.transition",
         "config.changed",
+        "mode.quickapps.changed",
         "confirmation.changed",
         "bridge.capability.changed",
         "system.status.changed",

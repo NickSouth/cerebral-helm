@@ -125,7 +125,7 @@ export function QuickApps() {
 
   // Left-click unpin path (owner decision): every pinned tile carries its own
   // unpin control — no trip through the picker. The write rides the same
-  // validated override path; the config.changed snapshot removes the tile.
+  // validated override path; the mode.quickapps.changed event removes the tile.
   const unpin = (id: string) => {
     void bridge
       .updateQuickApps({

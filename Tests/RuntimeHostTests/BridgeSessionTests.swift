@@ -427,6 +427,43 @@ func pinnedQuickAppsSurviveTheReadSide() async throws {
     #expect(restored?.quickApps == ["xcode", "terminal"])
 }
 
+@Test("an accepted pin emits mode.quickapps.changed carrying the new slots (NIC-149)")
+func acceptedPinEmitsQuickAppsChanged() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["xcode","terminal"]}"#
+    ))
+    #expect(try decode(response, as: QuickAppsResult.self).accepted)
+
+    let quickAppsEvents = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.quickapps.changed" }
+    #expect(quickAppsEvents.count == 1)
+    let payload = quickAppsEvents.first?["payload"] as? [String: Any]
+    #expect(payload?["modeId"] as? String == "developer")
+    #expect(payload?["quickApps"] as? [String] == ["xcode", "terminal"])
+
+    // A rejected write emits nothing — the config is unchanged.
+    let rejected = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["/usr/bin/evil"]}"#
+    ))
+    #expect(try decode(rejected, as: QuickAppsResult.self).accepted == false)
+    let after = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.quickapps.changed" }
+    #expect(after.count == 1)
+}
+
 @Test("a pin naming an unconfigured reference is rejected wholesale (no arbitrary paths)")
 func unknownReferenceIsRejected() async throws {
     let (session, paths) = try makeWorkspaceSession()

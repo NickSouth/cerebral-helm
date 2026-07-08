@@ -2028,7 +2028,37 @@
   border-radius: 5px;
 }
 
-.apps-picker__pin {
+/* The app tile is the primary launch control (NIC-149): icon + name in one
+   button, mirroring a quick-app tile. Disabled = honest (no capability or no
+   configured reference), never hidden. */
+.apps-picker__launch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ch-space-1);
+  border: none;
+  background: none;
+  padding: 0;
+  max-width: 100%;
+  cursor: pointer;
+}
+
+.apps-picker__launch:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.apps-picker__launch:hover:not(:disabled) .apps-picker__icon {
+  color: var(--ch-text-primary);
+}
+
+.apps-picker__actions {
+  display: flex;
+  gap: var(--ch-space-1);
+}
+
+.apps-picker__pin,
+.apps-picker__open {
   border: 1px solid var(--ch-panel-border);
   border-radius: var(--ch-radius-sm);
   background: none;
@@ -2038,11 +2068,13 @@
   cursor: pointer;
 }
 
-.apps-picker__pin:hover:not(:disabled) {
+.apps-picker__pin:hover:not(:disabled),
+.apps-picker__open:hover:not(:disabled) {
   background: var(--ch-surface-base);
 }
 
-.apps-picker__pin:disabled {
+.apps-picker__pin:disabled,
+.apps-picker__open:disabled {
   opacity: 0.5;
   cursor: default;
 }

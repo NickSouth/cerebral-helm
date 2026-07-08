@@ -39,6 +39,47 @@ describe("reduceDashboardState", () => {
     expect(reduceDashboardState(base, lifecycleEvent("idle"))).toBe(base);
   });
 
+  it("folds a quick-apps rewrite into the matching mode (NIC-149)", () => {
+    const base = loadBootstrapState();
+    const target = base.modes.find((mode) => mode.quickApps.length > 0) ?? base.modes[0];
+    const event: BridgeEvent = {
+      eventId: "brevt_quickapps0001",
+      type: "mode.quickapps.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-08T16:00:00.000Z",
+      payload: { modeId: target.id, quickApps: ["vscode", "terminal"] }
+    };
+
+    const next = reduceDashboardState(base, event);
+    expect(next.modes.find((mode) => mode.id === target.id)?.quickApps).toEqual([
+      "vscode",
+      "terminal"
+    ]);
+    // Only the named mode changes; every other mode keeps its reference.
+    for (const mode of next.modes) {
+      if (mode.id !== target.id) {
+        expect(mode).toBe(base.modes.find((other) => other.id === mode.id));
+      }
+    }
+
+    // Redundant and malformed rewrites return the same reference (no re-render).
+    expect(reduceDashboardState(next, { ...event, eventId: "brevt_quickapps0002" })).toBe(next);
+    expect(
+      reduceDashboardState(next, {
+        ...event,
+        eventId: "brevt_quickapps0003",
+        payload: { modeId: "no-such-mode", quickApps: ["vscode"] }
+      })
+    ).toBe(next);
+    expect(
+      reduceDashboardState(next, {
+        ...event,
+        eventId: "brevt_quickapps0004",
+        payload: { quickApps: ["vscode"] }
+      })
+    ).toBe(next);
+  });
+
   it("folds a display topology snapshot into state (NIC-87)", () => {
     const base = loadBootstrapState();
     const event: BridgeEvent = {

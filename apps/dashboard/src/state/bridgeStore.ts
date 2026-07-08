@@ -85,6 +85,11 @@ function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthReg
   };
 }
 
+/** Same slots in the same order — the no-op guard for quick-app updates. */
+function sameQuickApps(current: readonly string[], next: readonly string[]): boolean {
+  return current.length === next.length && current.every((id, index) => id === next[index]);
+}
+
 /** How a command-lifecycle status maps onto Heimlich's consciousness state (design spec §5.8). */
 const LIFECYCLE_TO_HEIMLICH: Readonly<Record<string, HeimlichState>> = {
   received: "thinking",
@@ -122,6 +127,25 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
         return state;
       }
       return { ...state, ...snapshot };
+    }
+    case "mode.quickapps.changed": {
+      // One mode's quick-app slots were rewritten through the validated override
+      // path (NIC-149). A dedicated per-widget event: `config.changed` is a mode
+      // *switch* whose snapshot omits `modes`, so it can never carry this.
+      const payload = event.payload as { modeId?: string; quickApps?: readonly string[] };
+      if (!payload.modeId || !Array.isArray(payload.quickApps)) {
+        return state;
+      }
+      const target = state.modes.find((mode) => mode.id === payload.modeId);
+      if (!target || sameQuickApps(target.quickApps, payload.quickApps)) {
+        return state;
+      }
+      return {
+        ...state,
+        modes: state.modes.map((mode) =>
+          mode.id === payload.modeId ? { ...mode, quickApps: payload.quickApps ?? [] } : mode
+        )
+      };
     }
     case "command.lifecycle.transition": {
       const status = String((event.payload as { currentStatus?: unknown }).currentStatus ?? "");

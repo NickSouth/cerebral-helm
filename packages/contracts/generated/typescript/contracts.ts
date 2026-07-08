@@ -376,6 +376,7 @@ export enum CerebralHelmBridgeEventType {
     ConfigChanged = "config.changed",
     ConfirmationChanged = "confirmation.changed",
     DisplayTopologyChanged = "display.topology.changed",
+    ModeQuickappsChanged = "mode.quickapps.changed",
     SystemStatusChanged = "system.status.changed",
     WorkflowActionProgress = "workflow.action.progress",
 }

@@ -48,6 +48,7 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "confirmation.changed",
   "system.status.changed",
   "config.changed",
+  "mode.quickapps.changed",
   "bridge.capability.changed",
   "workflow.action.progress",
   "display.topology.changed"

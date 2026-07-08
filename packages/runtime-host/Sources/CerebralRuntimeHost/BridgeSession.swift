@@ -289,8 +289,8 @@ public final class BridgeSession: @unchecked Sendable {
     /// (NIC-119c): every id must name a configured app reference (existence
     /// check), then `ConfigOverrideWriter` writes the per-mode override and
     /// re-activates the layered config — a rejected candidate is rolled back on
-    /// disk and reported, never half-applied. An applied write re-emits the
-    /// active mode's snapshot so every surface's tiles refresh immediately.
+    /// disk and reported, never half-applied. An applied write emits
+    /// `mode.quickapps.changed` so every surface's tiles refresh immediately.
     private func updateQuickApps(
         _ request: CerebralHelmBridgeOperationRequest
     ) -> CerebralHelmBridgeOperationResponse {
@@ -319,10 +319,12 @@ public final class BridgeSession: @unchecked Sendable {
         )
         switch ConfigOverrideWriter(workspace: workspace).write(override) {
         case .applied:
-            // Refresh every surface: tiles re-render from the merged snapshot.
-            let snapshot = composeState(activeModeID: bootstrapModeID())
-            emit(BridgeEventFactory.configChangedEvent(
-                snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
+            // Refresh every surface: a dedicated per-widget event carries the new
+            // slots (NIC-149). `config.changed` cannot — its snapshot omits `modes`
+            // and the dashboard ignores it when the active mode is unchanged.
+            emit(BridgeEventFactory.quickAppsChangedEvent(
+                modeId: input.modeId, quickApps: input.quickApps,
+                id: BridgeEventFactory.newEventID(), timestamp: Date()
             ))
             return ok(request, payload: UpdateQuickAppsResult(
                 accepted: true, quickApps: input.quickApps, errors: []
