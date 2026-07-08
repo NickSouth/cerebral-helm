@@ -51,6 +51,11 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
     /// Heimlich"). The coordinator brings the dashboard forward and opens the conversation.
     var onAskHeimlich: ((String) -> Void)?
 
+    /// The screen the palette should appear on (NIC-120b: palette focus targets
+    /// the main display). Set by the coordinator; nil falls back to the screen
+    /// with keyboard focus.
+    var targetScreen: (() -> NSScreen?)?
+
     private static var paletteURL: URL {
         URL(string: "\(CerebralSchemeHandler.scheme)://\(CerebralSchemeHandler.host)/index.html?surface=palette")!
     }
@@ -64,9 +69,9 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
 
         // Increment 3: seed the palette with the active mode (and rest of the bootstrap) so
         // its first paint matches the dashboard's theme; `config.changed` events keep it in
-        // sync thereafter.
+        // sync thereafter. Composed by the session so the restored mode applies (FR-MOD-05).
         if let data = try? BridgeMessageCoding.encoder().encode(
-            BootstrapComposer.compose(configDirectory: paths.configDirectory)
+            session.composeBootstrapState()
         ), let json = String(data: data, encoding: .utf8) {
             configuration.userContentController.addUserScript(WKUserScript(
                 source: "window.__cerebralBootstrap = \(json);",
@@ -147,7 +152,7 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
     }
 
     private func position() {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = targetScreen?() ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
         let x = visible.midX - Self.width / 2
         let height = panel.frame.height // keep whatever the content sized the bar to
@@ -205,5 +210,14 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         log.error("Palette failed to load: \(error.localizedDescription, privacy: .public)")
+    }
+
+    /// WebKit reclaims the content process of long-hidden windows — exactly the
+    /// pre-warmed palette's life. Without a reload the next summon shows the dead
+    /// renderer (a solid green/blank panel, no input). Reload so a summon after
+    /// hours idle still gets a live palette.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        log.error("Palette web content process terminated; reloading.")
+        webView.load(URLRequest(url: Self.paletteURL))
     }
 }

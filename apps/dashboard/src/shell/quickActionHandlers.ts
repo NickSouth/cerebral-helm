@@ -38,16 +38,42 @@ const HANDLERS = {
 } satisfies Record<string, (deps: QuickActionDeps) => Promise<void>>;
 
 const WIRED_ACTIONS = wiringManifest.wiredActions as Readonly<
-  Record<string, { readonly handler?: string }>
+  Record<string, { readonly handler?: string; readonly workflow?: string }>
 >;
 
 /**
+ * Dispatch a workflow-backed quick action: `run <workflowId>` through the same command
+ * bus as the palette (FR-CMD-01). The runtime plans the workflow, gates its aggregate
+ * risk, and executes step by step; live progress arrives as `workflow.action.progress`
+ * events, so this only surfaces a rejected dispatch — never a fabricated result.
+ */
+function runWorkflow(workflowId: string, { bridge, acknowledge }: QuickActionDeps): void {
+  void bridge
+    .submitCommand({ rawInput: `run ${workflowId}`, source: "dashboard" })
+    .then((receipt) => {
+      if (!receipt.accepted) {
+        acknowledge(`I couldn't run ${workflowId} — it isn't a configured workflow.`);
+      }
+    })
+    .catch(() => {
+      acknowledge(`Running ${workflowId} failed — the bridge did not accept the command.`);
+    });
+}
+
+/**
  * Resolve a quick-action id to its click handler, or `null` if the id is a placeholder. A wired
- * action whose handler has no implementation here throws — the wiring gate makes that
- * unreachable in a valid build, so the throw is a developer-error guard, not a runtime path.
+ * action names exactly one target: a `handler` implemented above, or a `workflow` run through
+ * the command bus. A wired handler with no implementation here throws — the wiring gate makes
+ * that unreachable in a valid build, so the throw is a developer-error guard, not a runtime path.
  */
 export function resolveQuickAction(actionId: string, deps: QuickActionDeps): (() => void) | null {
   const target = WIRED_ACTIONS[actionId];
+  if (target?.workflow) {
+    const workflowId = target.workflow;
+    return () => {
+      runWorkflow(workflowId, deps);
+    };
+  }
   if (!target?.handler) {
     return null;
   }

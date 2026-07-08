@@ -1,10 +1,11 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { useDashboardState } from "../../state/DashboardStateProvider";
 import { useAppearance } from "../../state/AppearanceProvider";
 import { toModeId } from "../../tokens/tokens";
 import { Unavailable } from "../../components/Unavailable";
 import { humanizeId } from "../labels";
 import { useUpdateSettings } from "./useUpdateSettings";
+import { postShellControl } from "../shellControl";
 import { PERMISSION_TOOLS } from "./permissionsCatalog";
 import wiredManifest from "../quickActions.manifest.json";
 import type { SettingsCategoryId } from "./categories";
@@ -39,15 +40,91 @@ function ReadonlyValue({ children }: { children: ReactNode }) {
 
 // --- General --------------------------------------------------------------
 
+/**
+ * The persisted sentinel for "no explicit main display" — never a real display
+ * id, so the shell's lookup misses and falls back to the system primary. The
+ * settings-patch contract has no clear/reset semantics, so an explicit value is
+ * how the user returns to the default.
+ */
+const SYSTEM_PRIMARY = "system-primary";
+
+interface LoginItemWindow extends Window {
+  __cerebralLoginItem?: { status?: string };
+  __cerebralLoginItemUpdate?: (status: string) => void;
+}
+
+/**
+ * "Launch at login" (NIC-89): the value is the LIVE OS login-item status seeded
+ * and pushed by the native shell over the private shellControl channel — never
+ * the settings store, which could silently diverge from System Settings. In a
+ * plain browser there is no shell, so the toggle is honest-disabled.
+ */
+function LaunchAtLoginField() {
+  const [status, setStatus] = useState<string | null>(
+    () => (window as LoginItemWindow).__cerebralLoginItem?.status ?? null
+  );
+
+  useEffect(() => {
+    (window as LoginItemWindow).__cerebralLoginItemUpdate = (next) => setStatus(next);
+    return () => {
+      delete (window as LoginItemWindow).__cerebralLoginItemUpdate;
+    };
+  }, []);
+
+  const available = status !== null;
+  const checked = status === "enabled" || status === "requires-approval";
+  const hint = !available
+    ? "Available on the macOS host."
+    : status === "requires-approval"
+      ? "Waiting for approval — allow CerebralHelm under System Settings → General → Login Items."
+      : "Opens CerebralHelm automatically when you log in.";
+
+  return (
+    <Field label="Launch at login" hint={hint}>
+      <label className="settings-switch">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={!available}
+          aria-label="Launch at login"
+          onChange={(event) => postShellControl("setLoginItem", { enabled: event.target.checked })}
+        />
+        <span className="settings-switch__track" aria-hidden="true" />
+      </label>
+    </Field>
+  );
+}
+
 function GeneralPanel() {
-  const { modes, mode } = useDashboardState();
+  const { modes, mode, capabilities, displayTopology } = useDashboardState();
   const updateSettings = useUpdateSettings();
   const selectId = useId();
   const [defaultModeId, setDefaultModeId] = useState(() => toModeId(mode));
+  const [windowsStoredByMode, setWindowsStoredByMode] = useState(false);
+  const [mainDisplayId, setMainDisplayId] = useState(SYSTEM_PRIMARY);
+  const windowsCapability = capabilities?.["native.workspace.windows"];
+  // Only stable identities may be persisted (NIC-87 safe-degradation rule): a
+  // session-scoped fallback id would silently stop matching after reconnect.
+  const selectableDisplays = (displayTopology?.displays ?? []).filter(
+    (display) => display.stableIdentity
+  );
 
   function onChange(nextId: string) {
     setDefaultModeId(nextId as typeof defaultModeId);
     void updateSettings({ defaultModeId: nextId });
+  }
+
+  function onWindowsToggle(next: boolean) {
+    setWindowsStoredByMode(next);
+    void updateSettings({ workspace: { windowsStoredByMode: next } });
+  }
+
+  function onMainDisplayChange(nextId: string) {
+    setMainDisplayId(nextId);
+    // Durable via the validated settings path; the shellControl post applies it
+    // live (the shell re-hosts backdrops without waiting for a restart).
+    void updateSettings({ workspace: { mainDisplayId: nextId } });
+    postShellControl("setMainDisplay", { id: nextId });
   }
 
   return (
@@ -64,6 +141,47 @@ function GeneralPanel() {
             {modes.map((modeView) => (
               <option key={modeView.id} value={modeView.id}>
                 {modeView.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <LaunchAtLoginField />
+      </Section>
+      <Section title="Workspace">
+        <Field
+          label="Windows Stored by Mode"
+          hint={
+            windowsCapability?.available
+              ? "Switching modes hides the outgoing mode's windows and returns the stored ones. Quit apps are never relaunched."
+              : (windowsCapability?.degradedReason ??
+                "Applies on the macOS host: switching modes hides the outgoing mode's windows and returns the stored ones.")
+          }
+        >
+          <label className="settings-switch">
+            <input
+              type="checkbox"
+              checked={windowsStoredByMode}
+              aria-label="Windows Stored by Mode"
+              onChange={(event) => onWindowsToggle(event.target.checked)}
+            />
+            <span className="settings-switch__track" aria-hidden="true" />
+          </label>
+        </Field>
+        <Field
+          label="Main display"
+          hint="Where the dashboard's conversation and the command palette appear. Displays without a stable identity fall back to the system primary."
+        >
+          <select
+            className="settings-select"
+            value={mainDisplayId}
+            aria-label="Main display"
+            onChange={(event) => onMainDisplayChange(event.target.value)}
+          >
+            <option value={SYSTEM_PRIMARY}>System primary</option>
+            {selectableDisplays.map((display) => (
+              <option key={display.id} value={display.id}>
+                {display.name}
+                {display.primary ? " (primary)" : ""}
               </option>
             ))}
           </select>

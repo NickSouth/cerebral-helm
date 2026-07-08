@@ -12,7 +12,7 @@
     "directive": "Greet by time of day and surface today's priorities.",
     "fallback": "Good day."
   },
-  "quickApps": ["chrome", "gmail", "finder", "claude-desktop"],
+  "quickApps": [],
   "quickActions": [
     "daily-brief",
     "open-calendar",
@@ -27,6 +27,9 @@
     "left": "market-brief",
     "right": "projects"
   },
-  "projectHints": ["quarterly-planning", "board-prep"],
+  "projectHints": [
+    "quarterly-planning",
+    "board-prep"
+  ],
   "layoutId": "executive.default"
 }

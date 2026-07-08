@@ -31,9 +31,10 @@ public func makeCommandRuntime(
     paths: WorkspacePaths,
     phase: ExecutionPhase = .preMac,
     capabilities: ToolCapabilities = .mocks(),
-    onEvent: (@Sendable (CommandLifecycleEvent) -> Void)? = nil
+    onEvent: (@Sendable (CommandLifecycleEvent) -> Void)? = nil,
+    onActionProgress: (@Sendable (WorkflowActionProgress) -> Void)? = nil
 ) throws -> CommandRuntime {
-    let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory)
+    let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory, stateRoot: paths.stateRoot)
     let hookCatalog = makeHookCatalog(references: references, repositoryRoot: paths.repositoryRoot)
     let modePlanner = try PreMacToolRuntime.makeActionPlanner(
         descriptorsDirectory: paths.toolDescriptorsDirectory,
@@ -60,7 +61,18 @@ public func makeCommandRuntime(
         capabilities: capabilities,
         knowledge: knowledge,
         hookCatalog: hookCatalog,
-        modePlanner: modePlanner
+        modePlanner: modePlanner,
+        modeIDs: references.modeIds,
+        // Mode switches persist durably: active mode/context, session history,
+        // per-mode workspace snapshots, and the settings the switch consults all
+        // live in the operational database (FR-MOD-05/06, ADR-006).
+        modeStateStore: SQLiteModeStateStore(database: database),
+        modeSessionLog: SQLiteModeSessionLog(database: database),
+        modeWorkspaceStore: SQLiteModeWorkspaceStore(database: database),
+        settingsStore: SQLiteSettingsStore(database: database),
+        // window.arrange resolves apps through the same reference catalog as
+        // app.open — configured bundle-id references only, never arbitrary targets.
+        appTargets: references.apps.mapValues(\.target)
     )
 
     return CommandRuntime(
@@ -77,7 +89,8 @@ public func makeCommandRuntime(
             onEvent?(event)
         },
         // Already redacted by the runtime; linked to its command by the runtime.
-        toolCallSink: { commandID, data in persistToolCall(commandID, data, into: toolCalls) }
+        toolCallSink: { commandID, data in persistToolCall(commandID, data, into: toolCalls) },
+        actionProgressSink: { progress in onActionProgress?(progress) }
     )
 }
 
@@ -87,6 +100,18 @@ public func operationalDatabase(_ paths: WorkspacePaths) throws -> SQLiteDatabas
     let database = try SQLiteDatabase(location: .file(paths.operationalDatabasePath))
     try SchemaMigrator().migrate(database)
     return database
+}
+
+/// The durable settings store over the operational database (FR-CFG-04), for hosts
+/// that bind a ``BridgeSession``.
+public func makeSettingsStore(_ paths: WorkspacePaths) throws -> any SettingsStore {
+    SQLiteSettingsStore(database: try operationalDatabase(paths))
+}
+
+/// The durable mode-state store over the operational database (FR-MOD-05), for
+/// hosts that restore the last active mode at bootstrap.
+public func makeModeStateStore(_ paths: WorkspacePaths) throws -> any ModeStateStore {
+    SQLiteModeStateStore(database: try operationalDatabase(paths))
 }
 
 /// Writes the command row from its envelope before any event references it (FK

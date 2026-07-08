@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
-  "id": "enter-executive",
-  "label": "Enter Executive Mode",
+  "id": "open-executive-layout",
+  "label": "Open Executive Layout",
   "steps": [
     { "id": "snapshot-system", "label": "Snapshot system status", "tool": "system.status.read" },
     { "id": "open-dashboard", "label": "Open dashboard browser", "tool": "app.open", "input": { "appId": "chrome" } },

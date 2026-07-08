@@ -96,6 +96,21 @@
   outline: none;
 }
 
+/* Standalone surface (`?surface=settings`): the native settings window IS the
+   chrome — fill the webview edge-to-edge, no float, no border/shadow, and no
+   corner-emergence animation (the native window animates itself). */
+.settings-window[data-standalone="true"] {
+  top: 0;
+  left: 0;
+  transform: none;
+  width: 100vw;
+  height: 100vh;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+}
+
 /* Left rail: category list on top, shutdown pinned to the bottom. */
 .settings-sidebar {
   display: flex;

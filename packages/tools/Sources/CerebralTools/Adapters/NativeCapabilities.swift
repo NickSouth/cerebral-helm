@@ -110,6 +110,40 @@ public protocol SystemStatusCapability: Sendable {
     func readMetrics(_ ids: [SystemMetricID]) async throws -> [SystemMetricReading]
 }
 
+// MARK: - apps.list
+
+/// One installed application, discovered read-only (NIC-119). `iconPNGBase64`
+/// is a size-capped PNG rendered by the platform adapter; nil when no icon
+/// could be produced — the UI falls back honestly, this layer never invents one.
+public struct InstalledApplication: Equatable, Sendable {
+    public let bundleID: String
+    public let name: String
+    public let iconPNGBase64: String?
+
+    public init(bundleID: String, name: String, iconPNGBase64: String?) {
+        self.bundleID = bundleID
+        self.name = name
+        self.iconPNGBase64 = iconPNGBase64
+    }
+}
+
+/// The complete discovery result; `truncated` is honest about any cap applied.
+public struct AppDiscoveryResult: Equatable, Sendable {
+    public let apps: [InstalledApplication]
+    public let truncated: Bool
+
+    public init(apps: [InstalledApplication], truncated: Bool) {
+        self.apps = apps
+        self.truncated = truncated
+    }
+}
+
+/// Read-only enumeration of installed applications (NIC-119): feeds the More
+/// Apps picker and pinning. Never launches, moves, or modifies anything.
+public protocol AppDiscoveryCapability: Sendable {
+    func listApplications(includeIcons: Bool) async throws -> AppDiscoveryResult
+}
+
 // MARK: - secret
 
 public protocol SecretCapability: Sendable {
@@ -129,10 +163,79 @@ public struct SecretResolution: Equatable, Sendable {
     }
 }
 
+// MARK: - workspace windows
+
+/// Hide-and-return of whole applications for "Windows Stored by Mode" (NIC-85).
+///
+/// Permission-free by design: implemented with application-level hide/unhide
+/// (`NSRunningApplication`), never Accessibility window manipulation — geometry
+/// restore is a separate, gated capability. All operations are best-effort and
+/// report the bundle ids actually affected; an id that is not running is simply
+/// not in the result, never an error.
+///
+/// DECISION (NIC-85, 2026-07-06): storage is app-level, so an application used
+/// in two modes shares all of its windows between them — opening a
+/// hidden-by-mode app surfaces every window (macOS activation un-hides the whole
+/// app; there is no universal new-window API). Accepted MVP behavior; per-mode
+/// window sets belong to the post-MVP deeper-window-management pool (PRD §5.3),
+/// where an opt-in `createsNewApplicationInstance` reference flag is the known
+/// 80% approach for single-instance-forwarding apps like Chrome.
+public protocol WorkspaceWindowsCapability: Sendable {
+    /// Bundle ids of regular, currently visible (un-hidden) applications,
+    /// excluding the host app itself.
+    func visibleApplicationBundleIDs() async throws -> [String]
+
+    /// Hides the given applications; returns the ids actually hidden.
+    func hideApplications(bundleIDs: [String]) async throws -> [String]
+
+    /// Un-hides the given applications where still running; returns the ids
+    /// actually returned. Never launches anything.
+    func unhideApplications(bundleIDs: [String]) async throws -> [String]
+}
+
 // MARK: - window
+
+/// The named-frame vocabulary for window arrangement (NIC-88). Raw values match
+/// the `window-arrange-input` contract enum; frames are resolved against the
+/// primary display's visible area by the platform adapter — callers never supply
+/// coordinates.
+public enum WindowFrame: String, Sendable, CaseIterable {
+    case full
+    case leftHalf = "left-half"
+    case rightHalf = "right-half"
+    case topHalf = "top-half"
+    case bottomHalf = "bottom-half"
+    case leftTwoThirds = "left-two-thirds"
+    case rightThird = "right-third"
+    case centered
+}
+
+/// One application's arrangement outcome — honest partials, never a silent skip.
+public enum WindowArrangeOutcome: Equatable, Sendable {
+    case arranged
+    /// The application is not running; windows are only arranged, never launched.
+    case notRunning
+    /// The application exposes no controllable window (reliability gate, NIC-88).
+    case unsupported(String)
+}
 
 public protocol WindowCapability: Sendable {
     func inspect() async throws -> [WindowInfo]
+
+    /// Move/resize the application's main window into a named frame. Throws
+    /// `NativeCapabilityError.permissionDenied` when the Accessibility permission
+    /// is not granted (FR-SAF-07 — a capability error, never a prompt loop).
+    func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome
+
+    /// Read the application's main window frame for a workspace snapshot
+    /// ("Windows Stored by Mode" geometry, NIC-85). `nil` when the application
+    /// is not running or exposes no readable window; throws `permissionDenied`
+    /// when Accessibility is not granted.
+    func captureFrame(bundleID: String) async throws -> WindowRect?
+
+    /// Reapply a stored main-window frame. Same outcome vocabulary as `arrange`;
+    /// throws `permissionDenied` when Accessibility is not granted.
+    func restoreFrame(bundleID: String, rect: WindowRect) async throws -> WindowArrangeOutcome
 }
 
 public struct WindowInfo: Equatable, Sendable {

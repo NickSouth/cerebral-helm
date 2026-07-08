@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/apps-list-output.schema.json",
+  "title": "CerebralHelm Apps List Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apps", "truncated"],
+  "properties": {
+    "apps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["bundleId", "name"],
+        "properties": {
+          "bundleId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "iconPng": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "maxLength": 131072
+          }
+        }
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  }
+}

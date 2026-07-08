@@ -375,7 +375,9 @@ export enum CerebralHelmBridgeEventType {
     CommandLifecycleTransition = "command.lifecycle.transition",
     ConfigChanged = "config.changed",
     ConfirmationChanged = "confirmation.changed",
+    DisplayTopologyChanged = "display.topology.changed",
     SystemStatusChanged = "system.status.changed",
+    WorkflowActionProgress = "workflow.action.progress",
 }
 
 export interface CerebralHelmBridgeHandshakeRequest {
@@ -467,9 +469,11 @@ export enum Operation {
     DecideConfirmation = "decideConfirmation",
     GetBootstrapState = "getBootstrapState",
     GetRecentActivity = "getRecentActivity",
+    ListApps = "listApps",
     SearchNotes = "searchNotes",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",
+    UpdateQuickApps = "updateQuickApps",
     UpdateSettings = "updateSettings",
 }
 
@@ -743,6 +747,7 @@ export interface Changes {
     extensions?:    { [key: string]: any };
     hotkeys?:       Hotkeys;
     knowledge?:     Knowledge;
+    workspace?:     Workspace;
 }
 
 export interface Appearance {
@@ -761,6 +766,11 @@ export interface Hotkeys {
 
 export interface Knowledge {
     rootReference?: string;
+}
+
+export interface Workspace {
+    mainDisplayId?:       string;
+    windowsStoredByMode?: boolean;
 }
 
 /**
@@ -835,6 +845,21 @@ export interface CerebralHelmAppOpenOutput {
     alreadyRunning: boolean;
     appId:          string;
     launched:       boolean;
+}
+
+export interface CerebralHelmAppsListInput {
+    includeIcons?: boolean;
+}
+
+export interface CerebralHelmAppsListOutput {
+    apps:      App[];
+    truncated: boolean;
+}
+
+export interface App {
+    bundleId: string;
+    iconPng?: string;
+    name:     string;
 }
 
 export interface CerebralHelmConfirmationDisclosure {
@@ -1178,6 +1203,61 @@ export interface CerebralHelmURLOpenOutput {
     opened:      boolean;
     resolvedUrl: string;
     urlId:       string;
+}
+
+/**
+ * Arrange the main windows of configured applications into named frames (NIC-88).
+ * Applications are configured references (same catalog as app.open) and frames are a fixed
+ * named vocabulary — never arbitrary coordinates, paths, or executables. Usable as a
+ * workflow step; the future layout mode builds on this same tool.
+ */
+export interface CerebralHelmWindowArrangeInput {
+    arrangement: Arrangement[];
+}
+
+export interface Arrangement {
+    appId: string;
+    frame: Frame;
+}
+
+export enum Frame {
+    BottomHalf = "bottom-half",
+    Centered = "centered",
+    Full = "full",
+    LeftHalf = "left-half",
+    LeftTwoThirds = "left-two-thirds",
+    RightHalf = "right-half",
+    RightThird = "right-third",
+    TopHalf = "top-half",
+}
+
+/**
+ * Per-entry arrangement results (NIC-88): apps that are not running or do not expose a
+ * controllable window report partial results, never a silent skip or a fabricated success.
+ */
+export interface CerebralHelmWindowArrangeOutput {
+    entries: Entry[];
+    status:  CerebralHelmWindowArrangeOutputStatus;
+}
+
+export interface Entry {
+    appId:    string;
+    frame:    string;
+    message?: string;
+    status:   EntryStatus;
+}
+
+export enum EntryStatus {
+    Arranged = "arranged",
+    Failed = "failed",
+    NotRunning = "not_running",
+    UnknownApp = "unknown_app",
+    Unsupported = "unsupported",
+}
+
+export enum CerebralHelmWindowArrangeOutputStatus {
+    Arranged = "arranged",
+    Partial = "partial",
 }
 
 /**

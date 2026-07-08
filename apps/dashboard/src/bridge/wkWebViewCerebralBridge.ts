@@ -8,10 +8,12 @@ import type {
   CerebralBridge,
   CommandReceipt,
   DecideConfirmationResult,
+  ListAppsResult,
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
   Unsubscribe,
+  UpdateQuickAppsResult,
   UpdateSettingsResult
 } from "./cerebralBridge";
 
@@ -46,7 +48,9 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "confirmation.changed",
   "system.status.changed",
   "config.changed",
-  "bridge.capability.changed"
+  "bridge.capability.changed",
+  "workflow.action.progress",
+  "display.topology.changed"
 ]);
 
 /** True when running inside the native shell (the message handler is registered). */
@@ -87,6 +91,17 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     }
   }
 
+  // The handshake's capability replay must reach the store even if the response
+  // lands before the store subscribes: buffer it and flush to the first listener.
+  const bufferedCapabilityEvents: BridgeEvent[] = [];
+  function dispatchOrBufferCapability(event: BridgeEvent): void {
+    if (listeners.size === 0) {
+      bufferedCapabilityEvents.push(event);
+      return;
+    }
+    dispatchEvent(event);
+  }
+
   // Native → dashboard: operation responses (correlated by messageId), the handshake
   // response, and the event stream.
   win.__cerebralReceive = (json: string) => {
@@ -114,6 +129,24 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     }
 
     if (type === "bridge.handshake.response") {
+      // Replay the handshake's capability set as capability-changed events so the
+      // store's availability map seeds without widening the bootstrap contract
+      // (FR-SHL-06); runtime rechecks (NIC-83) then flow through the same type.
+      const capabilities = message.capabilities as
+        | ReadonlyArray<{ id?: string; available?: boolean; degradedReason?: string | null }>
+        | undefined;
+      for (const capability of capabilities ?? []) {
+        if (!capability?.id) {
+          continue;
+        }
+        dispatchOrBufferCapability({
+          eventId: newMessageId().replace("brmsg_", "brevt_"),
+          type: "bridge.capability.changed",
+          schemaVersion: SCHEMA_VERSION,
+          timestamp: new Date().toISOString(),
+          payload: { capability }
+        });
+      }
       // An incompatible major version forces read-only recovery, surfaced through the
       // same status event the store folds (FR-SHL-05).
       if (message.compatible === false) {
@@ -209,8 +242,21 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     updateSettings(input) {
       return operation<UpdateSettingsResult>("updateSettings", { ...input });
     },
+    listApps() {
+      return operation<ListAppsResult>("listApps", {});
+    },
+    updateQuickApps(input) {
+      return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });
+    },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);
+      // Deliver any capability replay that arrived before the first subscriber.
+      while (bufferedCapabilityEvents.length > 0) {
+        const event = bufferedCapabilityEvents.shift();
+        if (event) {
+          listener(event);
+        }
+      }
       return () => {
         listeners.delete(listener);
       };

@@ -163,7 +163,7 @@ SQLite stores commands, command events, tool calls, confirmations, note metadata
 - Route every MCP tool call back through CerebralHelm policy and event logging.
 - Do not use Claude Agent SDK plugins as CerebralHelm's application extension system.
 
-The MVP tool namespace is `app.open`, `url.open`, `hook.run`, `note.capture`, `note.search`, `mode.apply`, and `system.status.read`.
+The MVP tool namespace is `app.open`, `url.open`, `hook.run`, `note.capture`, `note.search`, `mode.apply`, `system.status.read`, and `window.arrange` (named-frame arrangement of configured apps; usable as a workflow step, reused by the future layout mode).
 
 ## Native Platform Adapters
 

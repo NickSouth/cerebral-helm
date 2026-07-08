@@ -5,8 +5,11 @@
     {
       "id": "executive",
       "label": "Executive",
-      "theme": { "accentPrimary": "executive.primary", "accentSecondary": "executive.secondary" },
-      "quickApps": ["chrome", "gmail", "finder", "claude-desktop"],
+      "theme": {
+        "accentPrimary": "executive.primary",
+        "accentSecondary": "executive.secondary"
+      },
+      "quickApps": [],
       "quickActions": [
         "daily-brief",
         "open-calendar",
@@ -17,7 +20,10 @@
         "start-focus-block",
         "open-news-brief"
       ],
-      "widgets": { "left": "market-brief", "right": "projects" },
+      "widgets": {
+        "left": "market-brief",
+        "right": "projects"
+      },
       "greeting": {
         "persona": "Friendly Assistant",
         "directive": "Greet by time of day and surface today's priorities.",
@@ -30,8 +36,11 @@
     {
       "id": "developer",
       "label": "Developer",
-      "theme": { "accentPrimary": "developer.primary", "accentSecondary": "developer.secondary" },
-      "quickApps": ["vscode", "terminal", "github", "docker", "linear"],
+      "theme": {
+        "accentPrimary": "developer.primary",
+        "accentSecondary": "developer.secondary"
+      },
+      "quickApps": [],
       "quickActions": [
         "open-developer-layout",
         "open-workspace",
@@ -42,7 +51,10 @@
         "review-pull-requests",
         "capture-note"
       ],
-      "widgets": { "left": "project-git-status", "right": "repositories" },
+      "widgets": {
+        "left": "project-git-status",
+        "right": "repositories"
+      },
       "greeting": {
         "persona": "Development copilot",
         "directive": "Greet and point to the active project's next task.",
@@ -55,8 +67,11 @@
     {
       "id": "school",
       "label": "School",
-      "theme": { "accentPrimary": "school.primary", "accentSecondary": "school.secondary" },
-      "quickApps": ["canvas", "drive", "claude-desktop", "gmail", "quizlet"],
+      "theme": {
+        "accentPrimary": "school.primary",
+        "accentSecondary": "school.secondary"
+      },
+      "quickApps": [],
       "quickActions": [
         "open-school-layout",
         "open-schedule",
@@ -67,7 +82,10 @@
         "summarize-notes",
         "open-courses"
       ],
-      "widgets": { "left": "deadlines", "right": "courses" },
+      "widgets": {
+        "left": "deadlines",
+        "right": "courses"
+      },
       "greeting": {
         "persona": "Academic partner",
         "directive": "Greet and nudge toward the next deadline.",
@@ -80,8 +98,11 @@
     {
       "id": "entertainment",
       "label": "Entertainment",
-      "theme": { "accentPrimary": "entertainment.primary", "accentSecondary": "entertainment.secondary" },
-      "quickApps": ["spotify", "youtube", "steam", "discord", "photos"],
+      "theme": {
+        "accentPrimary": "entertainment.primary",
+        "accentSecondary": "entertainment.secondary"
+      },
+      "quickApps": [],
       "quickActions": [
         "open-entertainment-layout",
         "open-media",
@@ -92,7 +113,10 @@
         "browse-library",
         "start-party-mode"
       ],
-      "widgets": { "left": "spotify", "right": "media-list" },
+      "widgets": {
+        "left": "spotify",
+        "right": "media-list"
+      },
       "greeting": {
         "persona": "Downtime concierge",
         "directive": "Greet and suggest something to unwind with.",

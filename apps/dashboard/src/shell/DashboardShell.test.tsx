@@ -129,7 +129,6 @@ describe("DashboardShell structure", () => {
 describe("DashboardShell config-driven content (one view, four modes, no per-mode conditional)", () => {
   it("populates Developer mode from its config and region data", () => {
     renderShell("mode.developer.ready");
-    expect(screen.getByText("VS Code")).toBeInTheDocument();
     expect(screen.getByText("Ready to build.")).toBeInTheDocument();
     expect(screen.getByText("dev · checks passing")).toBeInTheDocument();
     expect(screen.getByText("cerebral-helm")).toBeInTheDocument();
@@ -139,11 +138,9 @@ describe("DashboardShell config-driven content (one view, four modes, no per-mod
 
   it("renders Executive purely from config — no Developer content leaks", () => {
     renderShell("mode.executive.ready");
-    expect(screen.getByText("Chrome")).toBeInTheDocument();
     expect(screen.getByText("Good day.")).toBeInTheDocument();
     expect(screen.getByText("Market Brief")).toBeInTheDocument();
     expect(screen.getByText("Markets up modestly")).toBeInTheDocument();
-    expect(screen.queryByText("VS Code")).toBeNull();
     expect(screen.queryByText("Ready to build.")).toBeNull();
   });
 
@@ -167,15 +164,14 @@ describe("DashboardShell config-driven content (one view, four modes, no per-mod
 describe("DashboardShell mode switching (D2)", () => {
   it("switches mode on click via applyMode — re-themes and re-populates without remounting", () => {
     renderShell(); // Executive default
-    expect(screen.getByText("Chrome")).toBeInTheDocument();
+    expect(screen.getByText("Good day.")).toBeInTheDocument();
     expect(selectedModeButton()).toHaveTextContent("Executive");
 
     fireEvent.click(screen.getByRole("button", { name: "Developer" }));
 
     expect(selectedModeButton()).toHaveTextContent("Developer");
-    expect(screen.getByText("VS Code")).toBeInTheDocument();
     expect(screen.getByText("Ready to build.")).toBeInTheDocument();
-    expect(screen.queryByText("Chrome")).toBeNull();
+    expect(screen.queryByText("Good day.")).toBeNull();
   });
 });
 

@@ -1,0 +1,6 @@
+{
+  "arrangement": [
+    { "appId": "vscode", "frame": "left-two-thirds" },
+    { "appId": "terminal", "frame": "right-third" }
+  ]
+}

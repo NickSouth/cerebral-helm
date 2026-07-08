@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
-  "id": "enter-school",
-  "label": "Enter School Mode",
+  "id": "open-school-layout",
+  "label": "Open School Layout",
   "steps": [
     { "id": "snapshot-system", "label": "Snapshot system status", "tool": "system.status.read" },
     { "id": "recent-notes", "label": "Surface recent notes", "tool": "note.search", "input": { "query": "today" } },

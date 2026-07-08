@@ -29,7 +29,9 @@ const bridgeOperations = new Set([
   "decideConfirmation",
   "updateSettings",
   "subscribe",
-  "getRecentActivity"
+  "getRecentActivity",
+  "listApps",
+  "updateQuickApps"
 ]);
 
 function readJson(filePath) {

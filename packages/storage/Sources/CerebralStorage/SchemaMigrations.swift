@@ -12,6 +12,9 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0001_initial", sql: initialSQL),
         SchemaMigration(id: "0002_mode_state", sql: modeStateSQL),
         SchemaMigration(id: "0003_note_search", sql: noteSearchSQL),
+        SchemaMigration(id: "0004_settings", sql: settingsSQL),
+        SchemaMigration(id: "0005_mode_workspace", sql: modeWorkspaceSQL),
+        SchemaMigration(id: "0006_main_display", sql: mainDisplaySQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -158,5 +161,42 @@ public enum SchemaMigrations {
         review_after TEXT
     );
     CREATE INDEX idx_note_search_path ON note_search (path);
+    """
+
+    /// Migration 0004: the durable user-settings singleton (FR-CFG-04). One row of
+    /// independent nullable columns — NULL means "never set", so config defaults
+    /// still apply; a patch touches only the columns it carries.
+    public static let settingsSQL = """
+    CREATE TABLE settings (
+        id                        INTEGER PRIMARY KEY CHECK (id = 1),
+        default_mode_id           TEXT,
+        appearance_density        TEXT,
+        appearance_reduced_motion INTEGER,
+        hotkey_command_palette    TEXT,
+        knowledge_root_reference  TEXT,
+        extensions                TEXT,
+        updated_at                TEXT NOT NULL
+    );
+    """
+
+    /// Migration 0005: "Windows Stored by Mode" (NIC-85). The settings singleton
+    /// gains the toggle column, and per-mode workspace snapshots store the bundle
+    /// ids of the applications visible when the mode was last left.
+    public static let modeWorkspaceSQL = """
+    ALTER TABLE settings ADD COLUMN windows_stored_by_mode INTEGER;
+
+    CREATE TABLE mode_workspace_snapshots (
+        mode_id    TEXT PRIMARY KEY,
+        bundle_ids TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    """
+
+    /// Migration 0006: the "Main display" setting (NIC-120b). The settings
+    /// singleton gains the stable display id the main dashboard backdrop is
+    /// hosted on; NULL or a disconnected/unknown id degrades to the system
+    /// primary display.
+    public static let mainDisplaySQL = """
+    ALTER TABLE settings ADD COLUMN main_display_id TEXT;
     """
 }

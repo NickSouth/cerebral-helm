@@ -29,7 +29,9 @@
         "decideConfirmation",
         "updateSettings",
         "subscribe",
-        "getRecentActivity"
+        "getRecentActivity",
+        "listApps",
+        "updateQuickApps"
       ]
     },
     "status": {

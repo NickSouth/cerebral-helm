@@ -24,16 +24,21 @@ public struct CommandReferences: Sendable {
     public let urls: [String: ReferenceEntry]
     public let hooks: [String: ReferenceEntry]
     public let modeIds: Set<String>
+    /// Configured workflow / quick-action ids (`config/workflows/*.json`),
+    /// resolvable through the `run <action>` verb.
+    public let workflowIds: Set<String>
 
     public init(
         apps: [ReferenceEntry] = [],
         urls: [ReferenceEntry] = [],
         hooks: [ReferenceEntry] = [],
-        modeIds: [String] = []
+        modeIds: [String] = [],
+        workflowIds: [String] = []
     ) {
         self.apps = Dictionary(apps.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         self.urls = Dictionary(urls.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         self.hooks = Dictionary(hooks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         self.modeIds = Set(modeIds)
+        self.workflowIds = Set(workflowIds)
     }
 }

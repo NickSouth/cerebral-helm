@@ -55,6 +55,19 @@
             }
           }
         },
+        "workspace": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "windowsStoredByMode": {
+              "type": "boolean"
+            },
+            "mainDisplayId": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
         "extensions": {
           "type": "object",
           "propertyNames": {

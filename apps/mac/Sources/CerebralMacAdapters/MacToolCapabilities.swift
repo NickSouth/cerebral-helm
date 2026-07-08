@@ -34,12 +34,18 @@ public enum MacToolCapabilities {
                 url: NSWorkspaceURLCapability(urls: references.urls.mapValues(\.target), workspace: workspace),
                 process: ProcessHookCapability(),
                 systemStatus: systemStatus,
+                workspaceWindows: MacWorkspaceWindowsCapability(),
+                window: AXWindowCapability(),
+                appDiscovery: MacAppDiscoveryCapability(),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,
                     CapabilityMatrix.Capability.urlOpen,
                     CapabilityMatrix.Capability.hookRun,
                     CapabilityMatrix.Capability.systemStatusRead,
                     CapabilityMatrix.Capability.secret,
+                    CapabilityMatrix.Capability.workspaceWindows,
+                    CapabilityMatrix.Capability.window,
+                    CapabilityMatrix.Capability.appsList,
                 ]
             ),
             systemStatus: systemStatus,

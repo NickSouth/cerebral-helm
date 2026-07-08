@@ -79,7 +79,60 @@ export function createMockCerebralBridge(
     getRecentActivity() {
       return Promise.resolve(RECENT_ACTIVITY);
     },
-    submitCommand() {
+    submitCommand(input) {
+      // A `run <workflowId>` submission simulates the runtime's workflow execution
+      // (NIC-85): a canned two-step progress sequence bracketed by lifecycle
+      // transitions, so the progress renderer and store paths are exercisable in
+      // the browser. It is visibly a simulation — the mock never claims a native
+      // step actually ran.
+      const workflowId = input.rawInput.startsWith("run ")
+        ? input.rawInput.slice("run ".length).trim()
+        : null;
+      if (workflowId) {
+        const commandId = "cmd_000000000000000000000002";
+        const at = "2026-06-23T16:00:00.000Z";
+        const progress = (
+          actionId: string,
+          status: string,
+          index: number,
+          suffix: string
+        ): BridgeEvent => ({
+          eventId: `brevt_run_${workflowId}_${suffix}`,
+          type: "workflow.action.progress",
+          schemaVersion: "1.0.0",
+          timestamp: at,
+          payload: {
+            commandId,
+            workflowId,
+            actionId,
+            kind: "mock.step",
+            status,
+            index,
+            total: 2
+          }
+        });
+        const lifecycle = (currentStatus: string): BridgeEvent => ({
+          eventId: `brevt_run_${workflowId}_${currentStatus}`,
+          type: "command.lifecycle.transition",
+          schemaVersion: "1.0.0",
+          timestamp: at,
+          payload: { commandId, currentStatus }
+        });
+        // Staggered so the progress line is actually visible in the browser; the
+        // sequence and payloads stay deterministic.
+        emit(lifecycle("running"));
+        emit(progress("step-one", "running", 1, "1r"));
+        const later: ReadonlyArray<[BridgeEvent, number]> = [
+          [progress("step-one", "succeeded", 1, "1s"), 400],
+          [progress("step-two", "running", 2, "2r"), 500],
+          [progress("step-two", "succeeded", 2, "2s"), 900],
+          [lifecycle("succeeded"), 1000]
+        ];
+        for (const [event, delay] of later) {
+          setTimeout(() => emit(event), delay);
+        }
+        return Promise.resolve({ commandId, accepted: true });
+      }
       return Promise.resolve({ commandId: "cmd_000000000000000000000001", accepted: true });
     },
     applyMode(input) {
@@ -126,6 +179,36 @@ export function createMockCerebralBridge(
       const changes = (input.patch as { changes?: unknown }).changes;
       const { valid } = validateSettingsChanges(changes);
       return Promise.resolve({ accepted: valid });
+    },
+    listApps() {
+      // A representative installed-app set for browser previews of the More Apps
+      // picker (NIC-119). No icons — the honest non-Mac fallback glyph renders.
+      // `referenceId` mirrors the bridge's join onto configured app references:
+      // only reference-backed apps are pinnable.
+      return Promise.resolve({
+        apps: [
+          { bundleId: "com.apple.Safari", name: "Safari", referenceId: null },
+          { bundleId: "com.apple.mail", name: "Mail", referenceId: null },
+          { bundleId: "com.apple.Terminal", name: "Terminal", referenceId: "terminal" },
+          { bundleId: "com.microsoft.VSCode", name: "Visual Studio Code", referenceId: "vscode" },
+          { bundleId: "com.anthropic.claudefordesktop", name: "Claude", referenceId: "claude-desktop" }
+        ],
+        truncated: false
+      });
+    },
+    updateQuickApps(input) {
+      // Stand in for the validated override path (NIC-119c): the same
+      // reference-existence check the bridge applies, accepted otherwise.
+      const known = new Set(["terminal", "vscode", "claude-desktop", "xcode"]);
+      const unknown = input.quickApps.filter((id) => !known.has(id));
+      if (unknown.length > 0) {
+        return Promise.resolve({
+          accepted: false,
+          quickApps: input.quickApps,
+          errors: unknown.map((id) => `"${id}" is not a configured app reference.`)
+        });
+      }
+      return Promise.resolve({ accepted: true, quickApps: input.quickApps, errors: [] });
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);

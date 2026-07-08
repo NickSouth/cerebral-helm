@@ -1,0 +1,24 @@
+/* Companion surface (`?surface=companion`, secondary displays — NIC-120b).
+   The Heimlich stream fills the display; the persistent bottom bar keeps its
+   dashboard styling and hugs the bottom edge with the shell's outer gutter. */
+
+.companion-root {
+  /* No global border-box reset exists (app.css opts in per surface): without it,
+     the padding stacks ON TOP of 100vh and the bottom bar scrolls off-screen. */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: var(--ch-space-4);
+  gap: var(--ch-space-4);
+  background: var(--ch-surface-base);
+  /* A backdrop never scrolls, whatever its content does. */
+  overflow: hidden;
+}
+
+.companion-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}

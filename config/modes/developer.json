@@ -12,7 +12,7 @@
     "directive": "Greet and point to the active project's next task.",
     "fallback": "Ready to build."
   },
-  "quickApps": ["vscode", "terminal", "github", "docker", "linear"],
+  "quickApps": [],
   "quickActions": [
     "open-developer-layout",
     "open-workspace",
@@ -27,6 +27,9 @@
     "left": "project-git-status",
     "right": "repositories"
   },
-  "projectHints": ["cerebralhelm", "active-pull-request"],
+  "projectHints": [
+    "cerebralhelm",
+    "active-pull-request"
+  ],
   "layoutId": "developer.default"
 }

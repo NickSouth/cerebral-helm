@@ -36,7 +36,11 @@ private func makeRuntime(
     policy: PolicyEngine = PolicyEngine(),
     recorder: EventRecorder = EventRecorder(),
     hookEnvironment: [String: String] = ["CI": "true"],
-    toolCallSink: @escaping @Sendable (String, Data) -> Void = { _, _ in }
+    actionPlans: [String: ModePlan] = [:],
+    modeStateStore: InMemoryModeStateStore = InMemoryModeStateStore(),
+    modeSessionLog: InMemoryModeSessionLog = InMemoryModeSessionLog(),
+    toolCallSink: @escaping @Sendable (String, Data) -> Void = { _, _ in },
+    actionProgressSink: @escaping @Sendable (WorkflowActionProgress) -> Void = { _ in }
 ) throws -> CommandRuntime {
     let hookInvocation = HookInvocation(
         executable: "/usr/bin/just",
@@ -48,13 +52,17 @@ private func makeRuntime(
     let registry = try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: descriptorsDirectory(),
         knowledge: knowledge,
-        hookCatalog: hookCatalog
+        hookCatalog: hookCatalog,
+        modeIDs: ["developer"],
+        modeStateStore: modeStateStore,
+        modeSessionLog: modeSessionLog
     )
     let references = CommandReferences(
         apps: [ReferenceEntry(id: "vscode", label: "VS Code", target: "com.microsoft.VSCode")],
         urls: [ReferenceEntry(id: "github", label: "GitHub", target: "https://github.com")],
         hooks: [ReferenceEntry(id: "ondraft-dev", label: "On Draft Dev", target: "/scripts/ondraft.sh")],
-        modeIds: ["developer"]
+        modeIds: ["developer"],
+        workflowIds: Array(actionPlans.keys)
     )
     let factory = CommandFactory(
         clock: FixedClock(Date(timeIntervalSinceReferenceDate: 0), step: 1),
@@ -71,10 +79,25 @@ private func makeRuntime(
         factory: factory,
         references: references,
         hookCatalog: hookCatalog,
-        modePlanner: StubModePlanner(),
+        modePlanner: StubModePlanner(actionPlans: actionPlans),
         sink: { recorder.record($0) },
-        toolCallSink: toolCallSink
+        toolCallSink: toolCallSink,
+        actionProgressSink: actionProgressSink
     )
+}
+
+private final class ProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [WorkflowActionProgress] = []
+
+    func record(_ progress: WorkflowActionProgress) {
+        lock.lock(); storage.append(progress); lock.unlock()
+    }
+
+    var all: [WorkflowActionProgress] {
+        lock.lock(); defer { lock.unlock() }
+        return storage
+    }
 }
 
 private final class DataRecorder: @unchecked Sendable {
@@ -187,24 +210,170 @@ func deniedCommandNeverExecutes() async throws {
     #expect(recorder.statuses == [.received, .planned, .running, .failed])
 }
 
-@Test("a mode whose plan contains a hook aggregates to shell and requires confirmation (FR-MOD-03)")
-func modeWithHookAggregatesToShell() async throws {
-    let runtime = try makeRuntime()
+@Test("a mode switch runs without confirmation and persists the active mode (NIC-85 re-scope)")
+func modeSwitchPersistsWithoutConfirmation() async throws {
+    let stateStore = InMemoryModeStateStore()
+    let sessionLog = InMemoryModeSessionLog()
+    let runtime = try makeRuntime(modeStateStore: stateStore, modeSessionLog: sessionLog)
 
-    let pending = await runtime.submit("mode developer", source: .cli)
-    guard case let .awaitingConfirmation(_, disclosure, token) = pending else {
-        Issue.record("Expected awaitingConfirmation, got \(pending)"); return
-    }
-    // The disclosure shows the aggregate risk, not the declared local_write.
-    #expect(disclosure.tool.id == "mode.apply")
-    #expect(disclosure.risk == .shell)
-
-    let decided = await runtime.decide(token: token, decision: .approve)
-    guard case let .completed(_, status, result) = decided else {
-        Issue.record("Expected completed, got \(decided)"); return
+    // A mode switch runs no workflow steps, so it is a plain local write: no
+    // confirmation pause, straight to completion.
+    let outcome = await runtime.submit("mode developer", source: .cli)
+    guard case let .completed(_, status, result) = outcome else {
+        Issue.record("Expected completed, got \(outcome)"); return
     }
     #expect(status == .succeeded)
     #expect(result?.status == .success)
+    #expect(try stateStore.loadActiveModeID() == "developer")
+    #expect(try sessionLog.read().count == 1)
+}
+
+// MARK: - Workflow / quick-action execution (NIC-85, FR-MOD-02/03/04)
+
+@Test("a multi-step workflow executes each available step in order and succeeds")
+func workflowExecutesEachStep() async throws {
+    let recorder = EventRecorder()
+    let toolCalls = DataRecorder()
+    let runtime = try makeRuntime(
+        recorder: recorder,
+        actionPlans: ["morning-brief": ModePlan(subjectID: "morning-brief", actions: [
+            PlannedAction(actionID: "snapshot", kind: "system.status.read", risk: .readOnly, status: .success, input: Data("{}".utf8)),
+            PlannedAction(actionID: "recent-notes", kind: "note.search", risk: .readOnly, status: .success, input: Data(#"{"query":"today"}"#.utf8)),
+        ])],
+        toolCallSink: { _, data in toolCalls.record(data) }
+    )
+
+    let outcome = await runtime.submit("run morning-brief", source: .cli)
+    guard case let .completed(_, status, _) = outcome else {
+        Issue.record("Expected completed, got \(outcome)"); return
+    }
+    #expect(status == .succeeded)
+    #expect(recorder.statuses == [.received, .planned, .running, .succeeded])
+    // Each step is recorded as its own tool call.
+    #expect(toolCalls.text.contains("system.status.read"))
+    #expect(toolCalls.text.contains("note.search"))
+}
+
+@Test("a failed step does not abort the remaining steps (FR-MOD-04)")
+func workflowFailedStepContinues() async throws {
+    let runtime = try makeRuntime(
+        actionPlans: ["brief": ModePlan(subjectID: "brief", actions: [
+            // Invalid note.capture input: the handler rejects it, the step fails.
+            PlannedAction(actionID: "bad-capture", kind: "note.capture", risk: .localWrite, status: .success, input: Data(#"{"bogus":true}"#.utf8)),
+            PlannedAction(actionID: "recent-notes", kind: "note.search", risk: .readOnly, status: .success, input: Data(#"{"query":"today"}"#.utf8)),
+        ])]
+    )
+
+    let outcome = await runtime.submit("run brief", source: .cli)
+    guard case let .completed(_, status, _) = outcome else {
+        Issue.record("Expected completed, got \(outcome)"); return
+    }
+    // The later step still ran and succeeded, so the workflow is a success
+    // (partial): the failure is per-action, never a rollback.
+    #expect(status == .succeeded)
+}
+
+@Test("a workflow containing a hook aggregates to shell and requires one confirmation (FR-MOD-03)")
+func workflowWithHookRequiresConfirmation() async throws {
+    let runtime = try makeRuntime(
+        actionPlans: ["dev-setup": ModePlan(subjectID: "dev-setup", actions: [
+            PlannedAction(actionID: "run-hook", kind: "hook.run", risk: .shell, status: .success, input: Data(#"{"hookId":"ondraft-dev"}"#.utf8)),
+            PlannedAction(actionID: "recent-notes", kind: "note.search", risk: .readOnly, status: .success, input: Data(#"{"query":"today"}"#.utf8)),
+        ])]
+    )
+
+    let pending = await runtime.submit("run dev-setup", source: .cli)
+    guard case let .awaitingConfirmation(_, disclosure, token) = pending else {
+        Issue.record("Expected awaitingConfirmation, got \(pending)"); return
+    }
+    // One aggregate confirmation for the whole plan, at the strictest step's risk.
+    #expect(disclosure.tool.id == "dev-setup")
+    #expect(disclosure.risk == .shell)
+
+    let decided = await runtime.decide(token: token, decision: .approve)
+    guard case let .completed(_, status, _) = decided else {
+        Issue.record("Expected completed, got \(decided)"); return
+    }
+    // Pre-Mac the hook step terminates unavailable at the executor's availability
+    // gate (NIC-111); the search step succeeds, so the workflow ends succeeded.
+    #expect(status == .succeeded)
+}
+
+@Test("a workflow in which no step succeeds ends failed, never silently succeeded")
+func workflowWithNoSuccessesFails() async throws {
+    let runtime = try makeRuntime(
+        actionPlans: ["mac-only": ModePlan(subjectID: "mac-only", actions: [
+            PlannedAction(actionID: "open-editor", kind: "app.open", risk: .localWrite, status: .unavailable, message: "Mac only.", input: Data(#"{"appId":"vscode"}"#.utf8)),
+        ])]
+    )
+
+    let outcome = await runtime.submit("run mac-only", source: .cli)
+    guard case let .completed(_, status, _) = outcome else {
+        Issue.record("Expected completed, got \(outcome)"); return
+    }
+    #expect(status == .failed)
+}
+
+@Test("a workflow emits per-action progress: running, terminal, and unavailable steps (FR-CMD-05)")
+func workflowEmitsPerActionProgress() async throws {
+    let progress = ProgressRecorder()
+    let runtime = try makeRuntime(
+        actionPlans: ["brief": ModePlan(subjectID: "brief", actions: [
+            PlannedAction(actionID: "recent-notes", kind: "note.search", risk: .readOnly, status: .success, input: Data(#"{"query":"today"}"#.utf8)),
+            PlannedAction(actionID: "open-editor", kind: "app.open", risk: .localWrite, status: .unavailable, message: "Mac only.", input: Data(#"{"appId":"vscode"}"#.utf8)),
+        ])],
+        actionProgressSink: { progress.record($0) }
+    )
+
+    _ = await runtime.submit("run brief", source: .cli)
+
+    let emitted = progress.all
+    // Step 1: started then succeeded. Step 2: planned-unavailable, one event.
+    #expect(emitted.map(\.status) == [.running, .succeeded, .unavailable])
+    #expect(emitted.map(\.actionID) == ["recent-notes", "recent-notes", "open-editor"])
+    #expect(emitted.allSatisfy { $0.workflowID == "brief" && $0.total == 2 })
+    #expect(emitted.first?.index == 1)
+    #expect(emitted.last?.index == 2)
+    #expect(emitted.last?.message == "Mac only.")
+    #expect(emitted.allSatisfy { !$0.commandID.isEmpty })
+}
+
+@Test("window.arrange runs as a workflow step and reports honest partials (NIC-88)")
+func windowArrangeRunsAsWorkflowStep() async throws {
+    // The fixture descriptor gates window.arrange to macOS; pre-Mac the step
+    // plans unavailable, so this proves both the step shape and the honest gate.
+    let toolCalls = DataRecorder()
+    let runtime = try makeRuntime(
+        actionPlans: ["dev-layout": ModePlan(subjectID: "dev-layout", actions: [
+            PlannedAction(
+                actionID: "arrange", kind: "window.arrange", risk: .localWrite, status: .unavailable,
+                message: "Mac only.",
+                input: Data(#"{"arrangement":[{"appId":"vscode","frame":"left-half"}]}"#.utf8)
+            ),
+            PlannedAction(actionID: "recent-notes", kind: "note.search", risk: .readOnly, status: .success, input: Data(#"{"query":"today"}"#.utf8)),
+        ])],
+        toolCallSink: { _, data in toolCalls.record(data) }
+    )
+
+    let outcome = await runtime.submit("run dev-layout", source: .cli)
+    guard case let .completed(_, status, _) = outcome else {
+        Issue.record("Expected completed, got \(outcome)"); return
+    }
+    // The search step succeeded; the Mac-only arrange step was honestly skipped.
+    #expect(status == .succeeded)
+    #expect(!toolCalls.text.contains("window.arrange"))
+}
+
+@Test("an unknown workflow id is rejected by the parser with suggestions")
+func unknownWorkflowRejected() async throws {
+    let runtime = try makeRuntime(actionPlans: ["morning-brief": ModePlan(subjectID: "morning-brief", actions: [])])
+
+    let outcome = await runtime.submit("run nope", source: .cli)
+    guard case let .rejected(reason, suggestions) = outcome else {
+        Issue.record("Expected rejected, got \(outcome)"); return
+    }
+    #expect(reason.contains("nope"))
+    #expect(suggestions == ["morning-brief"])
 }
 
 @Test("a secret in a captured note body never reaches the tool-call log (AC-34.1, AC-34.2)")
