@@ -309,15 +309,16 @@ final class WindowCoordinator: @unchecked Sendable {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Increment 2: dismiss the palette (already done by its control channel), bring the
-    /// dashboard forward, and open the conversation in the center panel with the text.
+    /// Dismiss the palette (already done by its control channel), bring the dashboard forward,
+    /// and dispatch the submitted text through the dashboard's command bus. The Heimlich chat
+    /// was removed (NIC-124): a command's result surfaces in the dashboard status line, and an
+    /// unrecognized command reports the honest not-implemented state — no conversation opens.
     private func routeAskHeimlich(_ text: String) {
         guard let dashboard else { return }
-        // The conversation opens in the backdrop's center panel and may be
-        // covered by other apps — its surfacing UX is deliberately deferred
-        // (backdrop-policy decision, 2026-07-06); do not lift the dashboard.
+        // The dashboard is the backdrop and may be covered by other apps; its surfacing UX is
+        // deliberately deferred (backdrop-policy decision, 2026-07-06); do not lift it.
         NSApp.activate(ignoringOtherApps: true)
-        dashboard.openConversation(text)
+        dashboard.submitCommand(text)
     }
 
     /// Present or clear the dedicated confirmation panel from one

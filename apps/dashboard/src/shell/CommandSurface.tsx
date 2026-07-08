@@ -25,12 +25,12 @@ function SearchGlyph() {
 }
 
 /**
- * The shared command/search input, used in two distinct placements (course-correction C):
- * the persistent top **launcher** (C0 — global, always visible, "Ask Heimlich first") and the
- * in-conversation **docked** input (continues the current exchange). One input model, two
- * roles — not two duplicate searches, and no floating command-palette modal. Suggestions are
- * capability-aware; unknown text always offers "Ask Heimlich"; unavailable actions are shown
- * disabled (NIC-58).
+ * The shared command/search input. Used as the persistent top **launcher** (C0 — global, always
+ * visible) on the dashboard and inside the floating command palette. Suggestions are
+ * capability-aware and command-matching only; unavailable actions are shown disabled (NIC-58).
+ * The Heimlich "Ask" affordance was removed with the chat surface (NIC-124) — free text that
+ * matches no command is still submittable (it reports the honest not-implemented state), but it
+ * is no longer offered as a suggestion.
  */
 export function CommandSurface({
   variant,
@@ -93,12 +93,16 @@ export function CommandSurface({
   }
 
   const trimmed = value.trim();
-  // Only the global launcher surfaces the suggestion list; the docked input continues the
-  // current exchange directly. A read-only surface never shows actionable suggestions. In
-  // spotlight mode (the floating palette) the list stays hidden until the user types.
-  const showSuggestions =
-    focused && variant === "launcher" && !disabled && (!spotlight || trimmed.length > 0);
   const suggestions = rankSuggestions(value);
+  // Only the global launcher surfaces the suggestion list. A read-only surface never shows
+  // actionable suggestions. In spotlight mode (the floating palette) the list stays hidden until
+  // the user types. With the "Ask Heimlich" row gone (NIC-124), an empty match set shows nothing.
+  const showSuggestions =
+    focused &&
+    variant === "launcher" &&
+    !disabled &&
+    (!spotlight || trimmed.length > 0) &&
+    suggestions.length > 0;
 
   return (
     <div
@@ -138,19 +142,6 @@ export function CommandSurface({
       />
       {showSuggestions ? (
         <ul className="command-suggestions" aria-label="Command suggestions">
-          <li>
-            {/* Ask Heimlich is always first, even when an action matches (design spec §5.5). */}
-            <button
-              type="button"
-              className="command-suggestion command-suggestion--ask"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                submit(value);
-              }}
-            >
-              Ask Heimlich{trimmed ? ` using “${trimmed}”` : ""}
-            </button>
-          </li>
           {suggestions.map((suggestion) => (
             <li key={suggestion.id}>
               <button

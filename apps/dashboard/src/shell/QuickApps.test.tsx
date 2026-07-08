@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QuickApps } from "./QuickApps";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
-import { ConversationProvider } from "../state/ConversationProvider";
+import { ActionStatusProvider } from "../state/ActionStatusProvider";
 import { createBridgeStore } from "../state/bridgeStore";
 import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
 import type { DashboardState } from "../state/dashboardState";
@@ -32,9 +32,9 @@ function renderQuickApps(
   render(
     <BridgeProvider bridge={spyBridge}>
       <DashboardStateProvider store={store}>
-        <ConversationProvider>
+        <ActionStatusProvider>
           <QuickApps />
-        </ConversationProvider>
+        </ActionStatusProvider>
       </DashboardStateProvider>
     </BridgeProvider>
   );
@@ -81,7 +81,9 @@ describe("QuickApps", () => {
   it("ships a clean slate: no placeholder tiles, five Pin app slots (release MVP)", () => {
     renderQuickApps();
     expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(5);
-    expect(document.querySelectorAll("button.quick-app:not(.quick-app--pin):not(.quick-app--more)")).toHaveLength(0);
+    expect(
+      document.querySelectorAll("button.quick-app:not(.quick-app--pin):not(.quick-app--more)")
+    ).toHaveLength(0);
   });
 
   it("dispatches `open <id>` through the bridge when the capability is available", () => {
@@ -196,21 +198,22 @@ describe("QuickApps", () => {
 
     // The mock bridge emits mode.quickapps.changed on the accepted write — a
     // pinned tile appears and its picker control flips to Unpin, no restart.
-    await waitFor(() =>
-      expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(4)
-    );
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(4));
     expect(await screen.findByRole("button", { name: "Unpin" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Unpin Terminal" })).toBeInTheDocument();
   });
 
   it("pins a reference-backed app through updateQuickApps; unbacked apps say so (NIC-119c)", async () => {
     const updates: Array<{ modeId: string; quickApps: readonly string[] }> = [];
-    renderQuickApps((base) => ({
-      ...base,
-      capabilities: { "native.apps.list": { available: true } }
-    }), {
-      onUpdateQuickApps: (input) => updates.push(input)
-    });
+    renderQuickApps(
+      (base) => ({
+        ...base,
+        capabilities: { "native.apps.list": { available: true } }
+      }),
+      {
+        onUpdateQuickApps: (input) => updates.push(input)
+      }
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
     await screen.findByRole("dialog", { name: "All applications" });

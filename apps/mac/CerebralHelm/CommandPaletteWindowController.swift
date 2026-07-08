@@ -190,8 +190,9 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
                 setPanelHeight(CGFloat(truncating: height))
             }
         case "askHeimlich":
-            // Increment 2: a conversational submission dismisses the palette and routes to
-            // the dashboard's center-panel conversation (via the coordinator).
+            // A palette submission dismisses the palette and routes to the dashboard's command
+            // bus via the coordinator (the Heimlich chat was removed — NIC-124). The control
+            // action keeps its `askHeimlich` name to avoid churn across the native boundary.
             dismiss()
             onAskHeimlich?((body["text"] as? String) ?? "")
         default:

@@ -5,26 +5,28 @@ import { PersistentBottomBar } from "./PersistentBottomBar";
 import { ConfirmationOverlay } from "./ConfirmationOverlay";
 import { SettingsOverlay } from "./settings/SettingsOverlay";
 import { CommandSurface } from "./CommandSurface";
+import { ActionStatusIndicator } from "./ActionStatusIndicator";
 import { SystemStatusBanner } from "./SystemStatusBanner";
 import { BrandMark, BrandWordmark } from "./BrandMark";
 import { DashboardSkeleton } from "./DashboardSkeleton";
-import { useConversation } from "../state/ConversationProvider";
+import { useBridge } from "../state/BridgeProvider";
+import { useActionStatus } from "../state/ActionStatusProvider";
 import { useSettings } from "../state/SettingsProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { useAmbientBeam } from "./useAmbientBeam";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 /** The native shell's intent channel into the dashboard (NIC-76 window-role choreography). */
 interface ShellIntentWindow extends Window {
   __cerebralShell?: {
-    openConversation?: (text: string) => void;
+    submitCommand?: (text: string) => void;
     openSettings?: () => void;
   };
 }
 
 /**
  * The shared three-zone shell (design spec §10 composition, constitution §6): one layout
- * grammar for every mode — a top-row global Ask-Heimlich launcher over the center, a left
+ * grammar for every mode — a top-row global command launcher over the center, a left
  * information rail, the calm dominant Heimlich center, a right operational rail, and a
  * persistent bottom bar on its own track. The launcher (C0) lives on its own header row so
  * the rails begin at the Quick Apps line and run to the bottom (visual reference, Plate 01).
@@ -37,24 +39,49 @@ interface ShellIntentWindow extends Window {
  * layer + the viewport-height root font-size).
  */
 export function DashboardShell() {
-  const conversation = useConversation();
+  const bridge = useBridge();
+  const { announce } = useActionStatus();
   const settings = useSettings();
   const posture = useUiPosture();
   const shellRef = useRef<HTMLDivElement>(null);
   useAmbientBeam(shellRef);
 
+  // Dispatch a raw command through the shared bridge (FR-CMD-01), from the top launcher or the
+  // native shell-intent hook. An accepted command surfaces its result through the event stream /
+  // the top-left status line. A rejected command has no wired capability yet (the Heimlich chat
+  // was removed — NIC-124), so we report the honest MVP state rather than opening a conversation.
+  const runCommand = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        return;
+      }
+      void bridge
+        .submitCommand({ rawInput: trimmed, source: "dashboard" })
+        .then((receipt) => {
+          if (!receipt.accepted) {
+            announce("Heimlich not implemented");
+          }
+        })
+        .catch(() => {
+          announce("The command could not be sent.", "error");
+        });
+    },
+    [bridge, announce]
+  );
+
   // Register the native shell's intent hook so the menu bar / command palette can drive the
-  // dashboard: "Ask Heimlich" opens the center-panel conversation, and "Settings…" opens the
+  // dashboard: a command submission dispatches through the bridge, and "Settings…" opens the
   // web settings overlay (NIC-76). Registered once; it calls the latest handlers via refs so
   // the callbacks never go stale.
-  const submitRef = useRef(conversation.submit);
-  submitRef.current = conversation.submit;
+  const runCommandRef = useRef(runCommand);
+  runCommandRef.current = runCommand;
   const openSettingsRef = useRef(settings.openSettings);
   openSettingsRef.current = settings.openSettings;
   useEffect(() => {
     const shellWindow = window as ShellIntentWindow;
     shellWindow.__cerebralShell = {
-      openConversation: (text: string) => submitRef.current(text),
+      submitCommand: (text: string) => runCommandRef.current(text),
       openSettings: () => openSettingsRef.current()
     };
     return () => {
@@ -72,12 +99,14 @@ export function DashboardShell() {
         </div>
       ) : (
         <div className="dashboard-canvas">
+          {/* Top-left header cell: the single execution-feedback surface (NIC-124). */}
+          <ActionStatusIndicator />
           <div className="shell-search">
             <CommandSurface
               variant="launcher"
-              placeholder="Ask Heimlich or type a command…"
-              ariaLabel="Ask Heimlich or type a command"
-              onSubmit={conversation.submit}
+              placeholder="Type a command…"
+              ariaLabel="Type a command"
+              onSubmit={runCommand}
               disabled={posture.readOnly}
             />
           </div>

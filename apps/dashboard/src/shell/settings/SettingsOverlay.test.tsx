@@ -2,7 +2,7 @@ import { act, render, screen, within, fireEvent, waitFor } from "@testing-librar
 import { DashboardShell } from "../DashboardShell";
 import { DashboardStateProvider } from "../../state/DashboardStateProvider";
 import { BridgeProvider } from "../../state/BridgeProvider";
-import { ConversationProvider } from "../../state/ConversationProvider";
+import { ActionStatusProvider } from "../../state/ActionStatusProvider";
 import { SettingsProvider } from "../../state/SettingsProvider";
 import { AppearanceProvider } from "../../state/AppearanceProvider";
 import { ThemeProvider } from "../../app/ThemeProvider";
@@ -20,11 +20,11 @@ function renderApp() {
         <DashboardStateProvider store={store}>
           <AppearanceProvider>
             <ThemeProvider>
-              <ConversationProvider>
+              <ActionStatusProvider>
                 <SettingsProvider>
                   <DashboardShell />
                 </SettingsProvider>
-              </ConversationProvider>
+              </ActionStatusProvider>
             </ThemeProvider>
           </AppearanceProvider>
         </DashboardStateProvider>

@@ -178,13 +178,13 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         bridge.deliverBridgeEvent(json)
     }
 
-    /// Opens the Heimlich conversation in the center panel with `text` (NIC-76 / the
-    /// palette's "Ask Heimlich" routing). Calls the dashboard's injected shell-intent hook;
-    /// it is a no-op if the dashboard React tree has not mounted yet.
-    func openConversation(_ text: String) {
+    /// Dispatches a raw command `text` through the dashboard's command bus (NIC-76 / the
+    /// palette's routing; the Heimlich chat was removed in NIC-124). Calls the dashboard's
+    /// injected shell-intent hook; it is a no-op if the dashboard React tree has not mounted yet.
+    func submitCommand(_ text: String) {
         guard let literal = try? JSONEncoder().encode(text),
               let literalString = String(data: literal, encoding: .utf8) else { return }
-        let script = "window.__cerebralShell && window.__cerebralShell.openConversation(\(literalString));"
+        let script = "window.__cerebralShell && window.__cerebralShell.submitCommand(\(literalString));"
         webView.evaluateJavaScript(script)
     }
 

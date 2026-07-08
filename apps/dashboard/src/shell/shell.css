@@ -96,14 +96,44 @@
      product brand takes the header row's right cell (top-right corner). */
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
-    ".    search brand"
-    "left center right";
+    "status search brand"
+    "left   center right";
   gap: var(--ch-space-3);
 }
 
 .shell-search {
   grid-area: search;
   min-width: 0;
+}
+
+/* Top-left header cell: the single execution-feedback surface (NIC-124) — live quick-action
+   progress and transient action results. A persistent (aria-live) region that collapses to
+   nothing when idle. Errors tint red and carry an X icon. */
+.action-status {
+  grid-area: status;
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.action-status__text {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  margin: 0;
+  min-width: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.action-status[data-severity="error"] .action-status__text {
+  color: var(--ch-status-error);
+}
+
+.action-status__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
 /* Top-right product brand: the CerebralHelm wordmark with the helm mark in the corner itself.
@@ -435,15 +465,6 @@
   font-size: var(--ch-font-size-label);
 }
 
-/* Live per-action progress of an executing quick action (NIC-85): a quiet status
-   line under the grid; content is announced via aria-live. */
-.quick-actions__progress {
-  margin: 0;
-  font-size: var(--ch-font-size-label);
-  color: var(--ch-text-muted);
-  text-align: center;
-}
-
 /* A wired (live) quick action reads as actionable — solid border, primary text, pointer. */
 .quick-action--wired {
   color: var(--ch-text-primary);
@@ -523,13 +544,12 @@
    the mode accent tokens, so it re-tints per mode automatically. */
 .mode-switcher__option[data-active="true"] {
   border-color: var(--ch-accent-primary);
-  background:
-    linear-gradient(
-      150deg,
-      color-mix(in srgb, var(--ch-accent-primary) 44%, transparent) 0%,
-      color-mix(in srgb, var(--ch-accent-primary) 18%, transparent) 52%,
-      color-mix(in srgb, var(--ch-accent-secondary) 14%, transparent) 100%
-    );
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--ch-accent-primary) 44%, transparent) 0%,
+    color-mix(in srgb, var(--ch-accent-primary) 18%, transparent) 52%,
+    color-mix(in srgb, var(--ch-accent-secondary) 14%, transparent) 100%
+  );
   color: var(--ch-accent-primary);
 }
 
@@ -758,13 +778,12 @@
 /* Selected mode in the menu: the same golden/mode-color light gradient as the rail switcher. */
 .bottom-bar__mode-option[data-active="true"] {
   border-color: var(--ch-accent-primary);
-  background:
-    linear-gradient(
-      150deg,
-      color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 0%,
-      color-mix(in srgb, var(--ch-accent-primary) 16%, transparent) 60%,
-      color-mix(in srgb, var(--ch-accent-secondary) 12%, transparent) 100%
-    );
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 0%,
+    color-mix(in srgb, var(--ch-accent-primary) 16%, transparent) 60%,
+    color-mix(in srgb, var(--ch-accent-secondary) 12%, transparent) 100%
+  );
   color: var(--ch-accent-primary);
 }
 
@@ -1405,10 +1424,6 @@
   cursor: not-allowed;
 }
 
-.command-suggestion--ask {
-  color: var(--ch-accent-secondary);
-}
-
 .command-suggestion__badge {
   font-size: var(--ch-font-size-label);
   color: var(--ch-status-neutral);
@@ -1429,77 +1444,10 @@
   font-size: var(--ch-font-size-sm);
 }
 
-/* Conversation overlay — composited over the still-running ambient field (NIC-60 renders the
-   field and tunes the scrim); never replaces the center (course-correction A.3). */
+/* The Heimlich center is a positioning context for the ambient beam overlay (the conversation
+   overlay that also lived here was removed — NIC-124). */
 .heimlich {
   position: relative;
-}
-
-.conversation {
-  position: absolute;
-  inset: 0;
-  z-index: var(--ch-z-raised);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ch-space-3);
-  padding: var(--ch-space-5);
-  border-radius: var(--ch-radius-lg);
-  background: var(--ch-surface-raised);
-}
-
-.conversation__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.conversation__close {
-  font: inherit;
-  font-size: var(--ch-font-size-sm);
-  padding: var(--ch-space-1) var(--ch-space-3);
-  border: 1px solid var(--ch-panel-border);
-  border-radius: var(--ch-radius-pill);
-  background: var(--ch-surface-panel);
-  color: var(--ch-text-muted);
-  cursor: pointer;
-}
-
-.conversation__transcript {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  flex: 1 1 auto;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ch-space-3);
-}
-
-.conversation__message {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ch-space-1);
-  max-width: 80%;
-  padding: var(--ch-space-2) var(--ch-space-3);
-  border-radius: var(--ch-radius-md);
-  background: var(--ch-surface-panel);
-}
-
-.conversation__message--user {
-  align-self: flex-end;
-  border: 1px solid var(--ch-accent-primary);
-}
-
-.conversation__role {
-  font-size: var(--ch-font-size-label);
-  letter-spacing: var(--ch-font-label-tracking);
-  text-transform: uppercase;
-  color: var(--ch-text-faint);
-}
-
-.conversation__text {
-  font-size: var(--ch-font-size-sm);
-  color: var(--ch-text-primary);
 }
 
 /* Animated mode transition (course-correction D.1): the palette cross-fades — not an instant
@@ -1548,8 +1496,9 @@
 @media (max-width: 1439px) {
   .dashboard-canvas {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(4, auto);
+    grid-template-rows: repeat(5, auto);
     grid-template-areas:
+      "status"
       "search"
       "center"
       "left"

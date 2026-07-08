@@ -25,7 +25,7 @@ describe("CommandPaletteApp (NIC-75 floating palette route)", () => {
     expect(screen.queryByRole("img", { name: "CerebralHelm" })).toBeNull();
   });
 
-  it("routes a submission to the dashboard's Ask-Heimlich conversation", () => {
+  it("routes a submission to the dashboard's command bus via the askHeimlich control channel", () => {
     const postMessage = installPaletteControl();
     render(<CommandPaletteApp />);
     const input = screen.getByLabelText("Command palette");
