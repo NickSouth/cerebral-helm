@@ -1,4 +1,4 @@
-import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import { DashboardShell } from "../DashboardShell";
 import { DashboardStateProvider } from "../../state/DashboardStateProvider";
 import { BridgeProvider } from "../../state/BridgeProvider";
@@ -89,6 +89,46 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(within(dialog).getByText(/cannot be changed here/)).toBeInTheDocument();
   });
 
+  it("offers only stable-identity displays for Main display, defaulting to System primary (NIC-120b)", () => {
+    const { bridge } = renderApp();
+    act(() => {
+      bridge.emit({
+        eventId: "brevt_displays0003",
+        type: "display.topology.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-06T16:00:00.000Z",
+        payload: {
+          displays: [
+            {
+              id: "37D8832A-2D66-02CA-B9F7-8F30A301B230",
+              name: "Built-in Display",
+              frame: { x: 0, y: 0, width: 1512, height: 982 },
+              primary: true,
+              stableIdentity: true
+            },
+            {
+              id: "cgid-724554883",
+              name: "Unstable External",
+              frame: { x: 1512, y: 0, width: 2560, height: 1440 },
+              primary: false,
+              stableIdentity: false
+            }
+          ],
+          primaryDisplayId: "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+        }
+      });
+    });
+
+    const dialog = openSettings();
+    const select = within(dialog).getByRole("combobox", { name: "Main display" });
+    expect(select).toHaveValue("system-primary");
+    const labels = within(select)
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    // A session-scoped (non-stable) id must never be offered for persistence.
+    expect(labels).toEqual(["System primary", "Built-in Display (primary)"]);
+  });
+
   it("applies the Reduce motion toggle app-wide and submits an accepted patch", async () => {
     const { bridge } = renderApp();
     const accepted: boolean[] = [];
@@ -110,7 +150,7 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
   });
 });
 
-describe("SettingsOverlay Hotkeys panel (NIC-76 / FR-UI-06)", () => {
+describe("Settings surfaces under the native shell (backdrop-policy decision, 2026-07-06)", () => {
   interface ShellControlWindow {
     webkit?: { messageHandlers?: { shellControl?: { postMessage: (m: unknown) => void } } };
   }
@@ -119,19 +159,69 @@ describe("SettingsOverlay Hotkeys panel (NIC-76 / FR-UI-06)", () => {
     delete (window as unknown as ShellControlWindow).webkit;
   });
 
-  it("rebinds the palette shortcut through the native shellControl channel", () => {
+  it("the gear routes to the native settings window instead of the web overlay", () => {
     const postMessage = vi.fn();
     (window as unknown as ShellControlWindow).webkit = {
       messageHandlers: { shellControl: { postMessage } }
     };
     renderApp();
-    const dialog = openSettings();
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Hotkeys" }));
-    const select = within(dialog).getByRole("combobox", { name: "Command palette shortcut" });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    // The dashboard is a strict backdrop: no in-page overlay when a native window exists.
+    expect(postMessage).toHaveBeenCalledWith({ action: "openSettings" });
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+  });
+
+  it("Launch at login reflects live OS status, toggles via shellControl, and explains approval (NIC-89)", async () => {
+    const postMessage = vi.fn();
+    (window as unknown as ShellControlWindow).webkit = {
+      messageHandlers: { shellControl: { postMessage } }
+    };
+    interface LoginWindow {
+      __cerebralLoginItem?: { status?: string };
+      __cerebralLoginItemUpdate?: (status: string) => void;
+    }
+    (window as unknown as LoginWindow).__cerebralLoginItem = { status: "not-registered" };
+
+    const { SettingsApp } = await import("../../app/SettingsApp");
+    render(<SettingsApp />);
+    const surface = screen.getByRole("main", { name: "Settings" });
+
+    const toggle = within(surface).getByLabelText("Launch at login");
+    expect(toggle).toBeEnabled();
+    expect(toggle).not.toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(postMessage).toHaveBeenCalledWith({ action: "setLoginItem", enabled: true });
+
+    // The native shell pushes the OS's resulting status back — including the
+    // requires-approval state, which the panel explains.
+    act(() => {
+      (window as unknown as LoginWindow).__cerebralLoginItemUpdate?.("requires-approval");
+    });
+    expect(within(surface).getByLabelText("Launch at login")).toBeChecked();
+    expect(within(surface).getByText(/Waiting for approval/)).toBeInTheDocument();
+
+    delete (window as unknown as LoginWindow).__cerebralLoginItem;
+  });
+
+  it("the standalone surface rebinds the palette shortcut and closes via the native channel", async () => {
+    const postMessage = vi.fn();
+    (window as unknown as ShellControlWindow).webkit = {
+      messageHandlers: { shellControl: { postMessage } }
+    };
+    const { SettingsApp } = await import("../../app/SettingsApp");
+    render(<SettingsApp />);
+    const surface = screen.getByRole("main", { name: "Settings" });
+
+    fireEvent.click(within(surface).getByRole("tab", { name: "Hotkeys" }));
+    const select = within(surface).getByRole("combobox", { name: "Command palette shortcut" });
     fireEvent.change(select, { target: { value: "command-shift-space" } });
     expect(postMessage).toHaveBeenCalledWith({
       action: "setPaletteShortcut",
       preset: "command-shift-space"
     });
+
+    fireEvent.click(within(surface).getByRole("button", { name: "Close settings" }));
+    expect(postMessage).toHaveBeenCalledWith({ action: "closeSettings" });
   });
 });

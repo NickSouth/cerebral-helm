@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/window-arrange-input.schema.json",
+  "title": "CerebralHelm Window Arrange Input",
+  "description": "Arrange the main windows of configured applications into named frames (NIC-88). Applications are configured references (same catalog as app.open) and frames are a fixed named vocabulary — never arbitrary coordinates, paths, or executables. Usable as a workflow step; the future layout mode builds on this same tool.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["arrangement"],
+  "properties": {
+    "arrangement": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["appId", "frame"],
+        "properties": {
+          "appId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "minLength": 1
+          },
+          "frame": {
+            "type": "string",
+            "enum": [
+              "full",
+              "left-half",
+              "right-half",
+              "top-half",
+              "bottom-half",
+              "left-two-thirds",
+              "right-third",
+              "centered"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

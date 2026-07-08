@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "brevt_000000000000000000000002",
+  "type": "workflow.action.progress",
+  "timestamp": "2026-06-23T16:00:00.030Z",
+  "payload": {
+    "commandId": "cmd_000000000000000000000001",
+    "workflowId": "open-developer-layout",
+    "actionId": "open-editor",
+    "kind": "app.open",
+    "status": "running",
+    "index": 2,
+    "total": 5
+  }
+}

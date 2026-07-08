@@ -113,6 +113,31 @@ public struct SystemStatusReadHandler: ToolHandler {
     }
 }
 
+// MARK: - apps.list
+
+public struct AppsListHandler: ToolHandler {
+    public let toolID = "apps.list"
+    private let capability: any AppDiscoveryCapability
+
+    public init(capability: any AppDiscoveryCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmAppsListInput
+        do { decoded = try CerebralHelmAppsListInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("apps.list input does not match its contract.")
+        }
+        do {
+            let result = try await capability.listApplications(includeIcons: decoded.includeIcons ?? true)
+            let apps = result.apps.map { app in
+                App(bundleID: app.bundleID, iconPNG: app.iconPNGBase64, name: app.name)
+            }
+            return try CerebralHelmAppsListOutput(apps: apps, truncated: result.truncated).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 // MARK: - note.capture
 
 public struct NoteCaptureHandler: ToolHandler {

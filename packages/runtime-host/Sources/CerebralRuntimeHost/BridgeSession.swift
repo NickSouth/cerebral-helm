@@ -15,6 +15,32 @@ import CerebralCore
 public final class BridgeSession: @unchecked Sendable {
     private let runtime: CommandRuntime
     private let configDirectory: URL
+    /// The full workspace, when the host has one (the shell). Enables the
+    /// user-overrides read side (bootstrap composes through `ConfigLoader`, so
+    /// pinned quick apps appear — NIC-119c) and the validated override write
+    /// path. nil = shipped-defaults composition (tests, workspace-less hosts).
+    private let workspace: WorkspacePaths?
+    /// Durable settings persistence (FR-CFG-04). Optional so a host without a
+    /// database binding (some tests) still validates patches; when absent, an
+    /// accepted patch is validated but not saved — the pre-store behavior.
+    private let settingsStore: (any SettingsStore)?
+    /// The durable active-mode store (FR-MOD-05). When bound, bootstrap restores
+    /// the last active mode; when absent, the stored default applies.
+    private let modeStateStore: (any ModeStateStore)?
+    /// The composed capability flags the handshake reports (FR-SHL-06), derived at
+    /// composition time from the bound capability bundle, phase, and platform
+    /// permissions (``CompositionCapabilities``). Defaults to the honest pre-Mac
+    /// mock set: every native capability unavailable. Mutable because permission
+    /// state can change while running (NIC-83) — the shell rechecks on activation
+    /// and updates via ``updateCapabilities(_:)``.
+    public var capabilities: [CerebralContracts.Capability] {
+        capabilitiesLock.lock()
+        defer { capabilitiesLock.unlock() }
+        return currentCapabilities
+    }
+
+    private let capabilitiesLock = NSLock()
+    private var currentCapabilities: [CerebralContracts.Capability]
     private let messageSchemaVersion = "1.0.0"
     /// Emits an already-encoded bridge-event JSON string to the dashboard (Sendable
     /// String — no non-Sendable DTO crosses the transport boundary).
@@ -29,11 +55,45 @@ public final class BridgeSession: @unchecked Sendable {
     public init(
         runtime: CommandRuntime,
         configDirectory: URL,
+        workspace: WorkspacePaths? = nil,
+        capabilities: [CerebralContracts.Capability] = CompositionCapabilities.bridgeCapabilities(phase: .preMac, nativeCapabilityIDs: []),
+        settingsStore: (any SettingsStore)? = nil,
+        modeStateStore: (any ModeStateStore)? = nil,
         emitEventJSON: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.runtime = runtime
         self.configDirectory = configDirectory
+        self.workspace = workspace
+        self.settingsStore = settingsStore
+        self.modeStateStore = modeStateStore
+        self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
+    }
+
+    /// The one composition every snapshot/bootstrap emission uses: through the
+    /// layered loader (user overrides included) when a workspace is bound, else
+    /// the shipped defaults.
+    private func composeState(activeModeID: String?) -> CerebralHelmBridgeBootstrapState {
+        if let workspace {
+            return BootstrapComposer.compose(workspace: workspace, activeModeID: activeModeID)
+        }
+        return BootstrapComposer.compose(configDirectory: configDirectory, activeModeID: activeModeID)
+    }
+
+    /// Replaces the reported capability set (a permission recheck, NIC-83) and
+    /// returns the capabilities whose availability changed, so the caller can
+    /// emit one `bridge.capability.changed` event per transition. Future
+    /// handshakes report the updated set.
+    public func updateCapabilities(
+        _ updated: [CerebralContracts.Capability]
+    ) -> [CerebralContracts.Capability] {
+        capabilitiesLock.lock()
+        defer { capabilitiesLock.unlock() }
+        let previousByID = Dictionary(uniqueKeysWithValues: currentCapabilities.map { ($0.id, $0) })
+        currentCapabilities = updated
+        return updated.filter { capability in
+            previousByID[capability.id]?.available != capability.available
+        }
     }
 
     public func execute(
@@ -41,11 +101,11 @@ public final class BridgeSession: @unchecked Sendable {
     ) async -> CerebralHelmBridgeOperationResponse {
         switch request.operation {
         case .getBootstrapState:
-            return ok(request, payload: BootstrapComposer.compose(configDirectory: configDirectory))
+            return ok(request, payload: composeBootstrapState())
         case .submitCommand:
             return await submitCommand(request)
         case .applyMode:
-            return applyMode(request)
+            return await applyMode(request)
         case .captureNote:
             return await captureNote(request)
         case .searchNotes:
@@ -56,6 +116,10 @@ public final class BridgeSession: @unchecked Sendable {
             return await decideConfirmation(request)
         case .updateSettings:
             return updateSettings(request)
+        case .listApps:
+            return await listApps(request)
+        case .updateQuickApps:
+            return updateQuickApps(request)
         default:
             // captureNote (confirmation-gated local_write returning a synchronous
             // noteId) and subscribe follow later.
@@ -77,23 +141,43 @@ public final class BridgeSession: @unchecked Sendable {
         let source = input.source.flatMap(CommandSource.init(rawValue:)) ?? .dashboard
         let outcome = await runtime.submit(input.rawInput, source: source)
         registerAwaitingConfirmation(outcome)
+        emitConfigChangedIfModeApplied(outcome)
         return ok(request, payload: receipt(for: outcome))
+    }
+
+    /// A raw `mode <id>` command (palette, CLI-over-bridge) that succeeded also
+    /// re-themes the dashboard, exactly like the `applyMode` operation — one
+    /// switch, one visible result, regardless of which surface asked.
+    private func emitConfigChangedIfModeApplied(_ outcome: CommandRuntimeOutcome) {
+        guard
+            case let .completed(_, status, result) = outcome,
+            status == .succeeded,
+            let result, result.toolID == "mode.apply",
+            let output = result.output,
+            let decoded = try? CerebralHelmModeApplyOutput(data: output)
+        else { return }
+        let snapshot = composeState(activeModeID: decoded.modeID)
+        emit(BridgeEventFactory.configChangedEvent(
+            snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
     }
 
     private func applyMode(
         _ request: CerebralHelmBridgeOperationRequest
-    ) -> CerebralHelmBridgeOperationResponse {
+    ) async -> CerebralHelmBridgeOperationResponse {
         guard let input: ApplyModeInput = decodePayload(request), !input.modeId.isEmpty else {
             return invalidInput(request, "applyMode requires a modeId.")
         }
         guard BootstrapComposer.modeExists(input.modeId, configDirectory: configDirectory) else {
             return ok(request, payload: ApplyModeResult(modeId: input.modeId, status: "error"))
         }
-        // Switching mode re-themes the dashboard: emit the target mode's snapshot as a
-        // config.changed event (parity with the mock). The view switch is not a gated
-        // command — a mode's side-effecting actions (apps/URLs/hooks) are Mac-only and
-        // land with their adapters.
-        let snapshot = BootstrapComposer.compose(configDirectory: configDirectory, activeModeID: input.modeId)
+        // A mode switch is a real command: `mode.apply` persists the active mode
+        // and records a session (FR-MOD-05/06). It runs no workflow steps — the
+        // dashboard swap below and the durable switch are the whole effect
+        // (workspace re-scope, NIC-85).
+        _ = await runtime.submit("mode \(input.modeId)", source: .dashboard)
+        // Re-theme the dashboard by emitting the target mode's snapshot.
+        let snapshot = composeState(activeModeID: input.modeId)
         emit(BridgeEventFactory.configChangedEvent(
             snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
@@ -150,6 +234,119 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: SearchNotesResult(results: hits))
     }
 
+    /// Read-only application discovery (NIC-119): wraps the `apps` command so the
+    /// More Apps picker rides the same command bus as every other input source,
+    /// and unwraps the tool output for the dashboard. Pre-Mac (or on any tool
+    /// failure) this is a structured unavailable — the picker renders honestly.
+    private func listApps(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let outcome = await runtime.submit("apps", source: .dashboard)
+        guard
+            case let .completed(_, status, result) = outcome,
+            status == .succeeded,
+            let data = result?.output,
+            let output = try? CerebralHelmAppsListOutput(data: data)
+        else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "apps_list_unavailable",
+                message: "Application discovery is unavailable."
+            )
+        }
+        // Auto-mint (owner decision, 2026-07-06): any discovered app that no
+        // reference targets gets one minted now, so a mid-session install is
+        // pinnable immediately. (`open <minted-id>` resolves from the next
+        // launch — the parser's references compose at startup.)
+        if let workspace {
+            let shipped = (try? ReferenceCatalogLoader.load(configDirectory: configDirectory))
+                .map { Array($0.apps.values) } ?? []
+            UserAppReferences.mint(
+                discovered: output.apps.map {
+                    UserAppReferences.DiscoveredApp(bundleID: $0.bundleID, name: $0.name)
+                },
+                shipped: shipped,
+                stateRoot: workspace.stateRoot
+            )
+        }
+        // Join discovered apps onto the configured app references by bundle id
+        // (the reference `target`). `referenceId` is the pinnable key: only a
+        // discovered app backed by a configured reference may enter a mode's
+        // quick-app slots (NIC-119 — no arbitrary paths, ever).
+        let referencesByTarget = appReferencesByTarget()
+        let apps = output.apps.map {
+            DiscoveredApp(
+                bundleId: $0.bundleID,
+                name: $0.name,
+                iconPng: $0.iconPNG,
+                referenceId: referencesByTarget[$0.bundleID]
+            )
+        }
+        return ok(request, payload: ListAppsResult(apps: apps, truncated: output.truncated))
+    }
+
+    /// Sets a mode's quick-app slots through the validated config-write path
+    /// (NIC-119c): every id must name a configured app reference (existence
+    /// check), then `ConfigOverrideWriter` writes the per-mode override and
+    /// re-activates the layered config — a rejected candidate is rolled back on
+    /// disk and reported, never half-applied. An applied write re-emits the
+    /// active mode's snapshot so every surface's tiles refresh immediately.
+    private func updateQuickApps(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) -> CerebralHelmBridgeOperationResponse {
+        guard let input: UpdateQuickAppsInput = decodePayload(request), !input.modeId.isEmpty else {
+            return invalidInput(request, "updateQuickApps requires a modeId and quickApps array.")
+        }
+        guard let workspace else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "overrides_unavailable",
+                message: "Pinning requires a durable workspace."
+            )
+        }
+        let known = Set(appReferencesByTarget().values)
+        let unknown = input.quickApps.filter { !known.contains($0) }
+        guard unknown.isEmpty else {
+            return ok(request, payload: UpdateQuickAppsResult(
+                accepted: false,
+                quickApps: input.quickApps,
+                errors: unknown.map { "\"\($0)\" is not a configured app reference." }
+            ))
+        }
+
+        let override = CerebralHelmModeOverride(
+            extensions: nil, id: input.modeId, quickApps: input.quickApps, schemaVersion: "1.0.0"
+        )
+        switch ConfigOverrideWriter(workspace: workspace).write(override) {
+        case .applied:
+            // Refresh every surface: tiles re-render from the merged snapshot.
+            let snapshot = composeState(activeModeID: bootstrapModeID())
+            emit(BridgeEventFactory.configChangedEvent(
+                snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
+            ))
+            return ok(request, payload: UpdateQuickAppsResult(
+                accepted: true, quickApps: input.quickApps, errors: []
+            ))
+        case let .rejected(errors):
+            return ok(request, payload: UpdateQuickAppsResult(
+                accepted: false,
+                quickApps: input.quickApps,
+                errors: errors.map(\.message)
+            ))
+        }
+    }
+
+    /// Configured app references keyed by their bundle-id target.
+    private func appReferencesByTarget() -> [String: String] {
+        guard let references = try? ReferenceCatalogLoader.load(configDirectory: configDirectory, stateRoot: workspace?.stateRoot) else {
+            return [:]
+        }
+        return Dictionary(
+            references.apps.values.map { ($0.target, $0.id) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
     /// The recent-activity read surface. A fresh session has no activity; the durable
     /// DB-backed history read is a follow-on increment, so this returns the honest
     /// empty envelope (the dashboard renders an empty feed rather than fabricated rows).
@@ -180,10 +377,11 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: DecideConfirmationResult(confirmationId: input.id, decision: input.decision))
     }
 
-    /// Validates a settings patch against the deterministic allowlist (ADR-003):
-    /// unknown or policy-weakening keys are rejected. This enforces the security gate
-    /// and reports acceptance; durable persistence lives with the settings store (not
-    /// yet present), so an accepted patch is validated, not yet saved.
+    /// Validates a settings patch against the deterministic allowlist (ADR-003) and
+    /// persists an accepted patch through the settings store: unknown or
+    /// policy-weakening keys are rejected before anything is saved, and a store
+    /// failure is a structured error — `accepted` is never reported for a patch
+    /// that did not become durable (FR-CFG-04).
     private func updateSettings(
         _ request: CerebralHelmBridgeOperationRequest
     ) -> CerebralHelmBridgeOperationResponse {
@@ -196,7 +394,48 @@ public final class BridgeSession: @unchecked Sendable {
         }
         let changes = (patch["changes"] as? [String: Any]) ?? [:]
         let errors = SettingsPatchValidator.validate(changes: changes)
-        return ok(request, payload: UpdateSettingsResult(accepted: errors.isEmpty))
+        guard errors.isEmpty else {
+            return ok(request, payload: UpdateSettingsResult(accepted: false))
+        }
+        if let settingsStore {
+            do {
+                try settingsStore.apply(SettingsChanges(validatedChanges: changes))
+            } catch {
+                return errorResponse(
+                    request, category: .internalFailure,
+                    code: "settings_not_saved",
+                    message: "The settings change could not be saved."
+                )
+            }
+        }
+        return ok(request, payload: UpdateSettingsResult(accepted: true))
+    }
+
+    /// The bootstrap state with mode restore applied (FR-MOD-05). This is the
+    /// single composition every surface must use — the `getBootstrapState`
+    /// operation and the shell's synchronous `window.__cerebralBootstrap`
+    /// injection — so a restored mode can never differ by transport.
+    public func composeBootstrapState() -> CerebralHelmBridgeBootstrapState {
+        composeState(activeModeID: bootstrapModeID())
+    }
+
+    /// The mode bootstrap should activate: the last active mode when it still
+    /// exists in config (FR-MOD-05 restart restore), else the stored default
+    /// mode, else `nil` for the configured default. Stale references fall back,
+    /// never error.
+    private func bootstrapModeID() -> String? {
+        if let store = modeStateStore,
+           let lastActive = try? store.loadActiveModeID(),
+           BootstrapComposer.modeExists(lastActive, configDirectory: configDirectory) {
+            return lastActive
+        }
+        guard
+            let store = settingsStore,
+            let settings = try? store.load(),
+            let stored = settings.defaultModeID,
+            BootstrapComposer.modeExists(stored, configDirectory: configDirectory)
+        else { return nil }
+        return stored
     }
 
     // MARK: - Confirmation flow
@@ -271,6 +510,26 @@ public final class BridgeSession: @unchecked Sendable {
     }
     private struct UpdateSettingsResult: Encodable {
         let accepted: Bool
+    }
+    private struct DiscoveredApp: Encodable {
+        let bundleId: String
+        let name: String
+        let iconPng: String?
+        /// The configured app reference this bundle id backs (nil = not pinnable).
+        let referenceId: String?
+    }
+    private struct ListAppsResult: Encodable {
+        let apps: [DiscoveredApp]
+        let truncated: Bool
+    }
+    private struct UpdateQuickAppsInput: Decodable {
+        let modeId: String
+        let quickApps: [String]
+    }
+    private struct UpdateQuickAppsResult: Encodable {
+        let accepted: Bool
+        let quickApps: [String]
+        let errors: [String]
     }
     /// Mirrors the bridge `getRecentActivity` payload wrapper `{ recentActivity: … }`.
     private struct RecentActivityEnvelope: Encodable {

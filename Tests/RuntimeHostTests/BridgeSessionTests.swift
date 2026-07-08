@@ -4,6 +4,7 @@ import Testing
 import CerebralContracts
 import CerebralCore
 import CerebralRuntimeHost
+import CerebralStorage
 
 /// NIC-74b: `BridgeSession` maps bridge operation requests onto the live
 /// `CommandRuntime`. These are integration tests — they build a real runtime over
@@ -102,6 +103,68 @@ func applyModeEmitsConfigChanged() async throws {
     #expect(!configEvents.isEmpty)
     let snapshot = (configEvents.first?["payload"] as? [String: Any])?["snapshot"] as? [String: Any]
     #expect(snapshot?["mode"] as? String == "Developer")
+}
+
+@Test("applyMode persists the active mode and records a session durably (FR-MOD-05/06)")
+func applyModePersistsActiveMode() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+    let response = await session.execute(operationRequest(.applyMode, #"{"modeId":"developer"}"#))
+    #expect(response.status == .ok)
+
+    // The switch reached the operational database: active mode + one session row.
+    let database = try operationalDatabase(paths)
+    #expect(try SQLiteModeStateStore(database: database).loadActiveModeID() == "developer")
+    #expect(try SQLiteModeSessionLog(database: database).read().count == 1)
+}
+
+@Test("a raw 'mode <id>' command also re-themes: one switch, one visible result (NIC-85)")
+func rawModeCommandEmitsConfigChanged() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"mode school","source":"dashboard"}"#)
+    )
+    #expect(response.status == .ok)
+
+    let configEvents = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "config.changed" }
+    let snapshot = (configEvents.first?["payload"] as? [String: Any])?["snapshot"] as? [String: Any]
+    #expect(snapshot?["mode"] as? String == "School")
+}
+
+@Test("bootstrap restores the last active mode over the stored default (FR-MOD-05)")
+func bootstrapRestoresLastActiveMode() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // The stored default says developer…
+    let settings = try makeSettingsStore(paths)
+    try settings.apply(SettingsChanges(defaultModeID: "developer"))
+    // …but the last active mode was school.
+    let first = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory
+    )
+    _ = await first.execute(operationRequest(.applyMode, #"{"modeId":"school"}"#))
+
+    // A restart restores the last active mode, not the default.
+    let second = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        settingsStore: settings,
+        modeStateStore: try makeModeStateStore(paths)
+    )
+    let bootstrap = await second.execute(operationRequest(.getBootstrapState, "{}"))
+    let state = try decode(bootstrap, as: CerebralHelmBridgeBootstrapState.self)
+    #expect(state.mode == .school)
 }
 
 @Test("applyMode rejects an unknown mode and requires a modeId")
@@ -255,9 +318,165 @@ func decideUnknownConfirmation() async throws {
     #expect(response.error?.code == "unknown_confirmation")
 }
 
-// MARK: - updateSettings (validate-only)
+// MARK: - listApps
+
+private struct AppsResult: Decodable {
+    struct App: Decodable {
+        let bundleId: String
+        let name: String
+        let iconPng: String?
+    }
+    let apps: [App]
+    let truncated: Bool
+}
+
+@Test("listApps unwraps the apps.list tool output for the More Apps picker (NIC-119)")
+func listAppsReturnsDiscovery() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let runtime = try makeCommandRuntime(paths: paths, phase: .macOS, capabilities: .mocks())
+    let session = BridgeSession(runtime: runtime, configDirectory: paths.configDirectory)
+
+    let response = await session.execute(operationRequest(.listApps, "{}"))
+    #expect(response.status == .ok)
+    let result = try decode(response, as: AppsResult.self)
+    #expect(result.apps.map(\.name) == ["Safari", "Mail", "Notes"])
+    #expect(result.truncated == false)
+}
+
+@Test("listApps auto-mints references so every discovered app is pinnable (owner decision)")
+func listAppsMintsAndPins() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let runtime = try makeCommandRuntime(paths: paths, phase: .macOS, capabilities: .mocks())
+    let session = BridgeSession(
+        runtime: runtime, configDirectory: paths.configDirectory, workspace: paths
+    )
+
+    // Discovery mints references for the mock catalog (Safari/Mail/Notes have
+    // no shipped reference) — every app comes back reference-backed.
+    let response = await session.execute(operationRequest(.listApps, "{}"))
+    struct App: Decodable { let name: String; let referenceId: String? }
+    struct Result: Decodable { let apps: [App] }
+    let result = try decode(response, as: Result.self)
+    #expect(result.apps.allSatisfy { $0.referenceId != nil })
+
+    // A freshly minted reference pins through the validated path immediately.
+    let safariRef = try #require(result.apps.first { $0.name == "Safari" }?.referenceId)
+    let pin = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["\#(safariRef)"]}"#
+    ))
+    #expect(try decode(pin, as: QuickAppsResult.self).accepted)
+    let developer = session.composeBootstrapState().modes.first { $0.id == "developer" }
+    #expect(developer?.quickApps == [safariRef])
+}
+
+@Test("listApps is a structured unavailable pre-Mac, never a mock success")
+func listAppsUnavailablePreMac() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.listApps, "{}"))
+    #expect(response.status == .error)
+    #expect(response.error?.category == .unavailableCapability)
+}
+
+// MARK: - updateQuickApps (NIC-119c)
+
+private struct QuickAppsResult: Decodable {
+    let accepted: Bool
+    let quickApps: [String]
+    let errors: [String]
+}
+
+/// A workspace-bound session: the user-overrides layer is live (bootstrap
+/// composes through the loader; updateQuickApps writes overrides).
+private func makeWorkspaceSession() throws -> (BridgeSession, WorkspacePaths) {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+    return (session, paths)
+}
+
+@Test("a pin writes the override through the validated path and bootstrap composes it back (NIC-119c)")
+func pinnedQuickAppsSurviveTheReadSide() async throws {
+    let (session, paths) = try makeWorkspaceSession()
+
+    let response = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["xcode","terminal"]}"#
+    ))
+    let result = try decode(response, as: QuickAppsResult.self)
+    #expect(result.accepted)
+    #expect(result.errors.isEmpty)
+
+    // The override file exists at its canonical path (a manual edit would land
+    // in the same place — one write path).
+    let overrideURL = paths.overridesDirectory.appendingPathComponent("developer.json")
+    #expect(FileManager.default.fileExists(atPath: overrideURL.path))
+
+    // The read side: THIS session and a fresh one both compose the pinned set.
+    let developer = session.composeBootstrapState().modes.first { $0.id == "developer" }
+    #expect(developer?.quickApps == ["xcode", "terminal"])
+    let (restarted, _) = try (BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    ), ())
+    let restored = restarted.composeBootstrapState().modes.first { $0.id == "developer" }
+    #expect(restored?.quickApps == ["xcode", "terminal"])
+}
+
+@Test("a pin naming an unconfigured reference is rejected wholesale (no arbitrary paths)")
+func unknownReferenceIsRejected() async throws {
+    let (session, paths) = try makeWorkspaceSession()
+    let response = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["vscode","/usr/bin/evil"]}"#
+    ))
+    let result = try decode(response, as: QuickAppsResult.self)
+    #expect(!result.accepted)
+    #expect(result.errors.count == 1)
+    #expect(FileManager.default.fileExists(atPath: paths.overridesDirectory.appendingPathComponent("developer.json").path) == false)
+}
+
+@Test("a pin against an unconfigured mode is rejected and rolled back")
+func unknownModeIsRejected() async throws {
+    let (session, paths) = try makeWorkspaceSession()
+    let response = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"garage","quickApps":["vscode"]}"#
+    ))
+    let result = try decode(response, as: QuickAppsResult.self)
+    #expect(!result.accepted)
+    #expect(!result.errors.isEmpty)
+    #expect(FileManager.default.fileExists(atPath: paths.overridesDirectory.appendingPathComponent("garage.json").path) == false)
+}
+
+@Test("a session without a workspace reports pinning unavailable, never a silent no-op")
+func pinningWithoutWorkspaceIsUnavailable() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["vscode"]}"#
+    ))
+    #expect(response.status == .error)
+    #expect(response.error?.category == .unavailableCapability)
+}
+
+// MARK: - updateSettings
 
 private struct Accepted: Decodable { let accepted: Bool }
+
+/// A session with durable settings over the given workspace, so a second session
+/// on the same paths observes the first one's persisted settings (restart shape).
+private func makeSessionWithSettings(_ paths: WorkspacePaths) throws -> BridgeSession {
+    BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        settingsStore: try makeSettingsStore(paths)
+    )
+}
 
 @Test("a valid settings patch is accepted")
 func validSettingsPatchAccepted() async throws {
@@ -268,6 +487,89 @@ func validSettingsPatchAccepted() async throws {
     ))
     #expect(response.status == .ok)
     #expect(try decode(response, as: Accepted.self).accepted)
+}
+
+@Test("an accepted patch is durable: a new session over the same workspace bootstraps the stored default mode")
+func acceptedPatchSurvivesRestart() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let first = try makeSessionWithSettings(paths)
+    let saved = await first.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_abcd1234","changes":{"defaultModeId":"developer"}}}"#
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    // A fresh session over the same workspace (a restart) boots into the stored default.
+    let second = try makeSessionWithSettings(paths)
+    let bootstrap = await second.execute(operationRequest(.getBootstrapState, "{}"))
+    let state = try decode(bootstrap, as: CerebralHelmBridgeBootstrapState.self)
+    #expect(state.mode == .developer)
+}
+
+@Test("the Windows Stored by Mode toggle persists through the same patch path")
+func windowsStoredByModePatchPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_windows001","changes":{"workspace":{"windowsStoredByMode":true}}}}"#
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+    #expect(try makeSettingsStore(paths).load().windowsStoredByMode == true)
+
+    // An unknown workspace key is rejected wholesale.
+    let rejected = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"workspace":{"minimizeAll":true}}}}"#
+    ))
+    #expect(!(try decode(rejected, as: Accepted.self).accepted))
+}
+
+@Test("the main-display setting persists through the same patch path (NIC-120b)")
+func mainDisplayPatchPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_display001","changes":{"workspace":{"mainDisplayId":"37D8832A-2D66-02CA-B9F7-8F30A301B230"}}}}"#
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+    #expect(try makeSettingsStore(paths).load().mainDisplayID == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+
+    // An empty display id is rejected wholesale (the contract requires minLength 1).
+    let rejected = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"workspace":{"mainDisplayId":""}}}}"#
+    ))
+    #expect(!(try decode(rejected, as: Accepted.self).accepted))
+}
+
+@Test("a rejected patch persists nothing")
+func rejectedPatchPersistsNothing() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    // One valid field alongside one invalid value: the whole patch is rejected.
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"defaultModeId":"developer","appearance":{"density":"gigantic"}}}}"#
+    ))
+    #expect(!(try decode(response, as: Accepted.self).accepted))
+
+    let bootstrap = await session.execute(operationRequest(.getBootstrapState, "{}"))
+    let state = try decode(bootstrap, as: CerebralHelmBridgeBootstrapState.self)
+    #expect(state.mode == .executive)
+}
+
+@Test("a stored default mode that no longer exists in config falls back to the configured default")
+func staleStoredModeFallsBack() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let store = try makeSettingsStore(paths)
+    try store.apply(SettingsChanges(defaultModeID: "retired-mode"))
+
+    let session = try makeSessionWithSettings(paths)
+    let bootstrap = await session.execute(operationRequest(.getBootstrapState, "{}"))
+    let state = try decode(bootstrap, as: CerebralHelmBridgeBootstrapState.self)
+    #expect(state.mode == .executive)
 }
 
 @Test("a policy-weakening key is rejected — settings cannot widen risk (ADR-003)")

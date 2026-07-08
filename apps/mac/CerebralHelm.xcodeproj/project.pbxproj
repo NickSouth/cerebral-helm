@@ -20,12 +20,15 @@
 		CE000000000000000000002D /* WKWebViewCerebralBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000002C /* WKWebViewCerebralBridge.swift */; };
 		CE000000000000000000002B /* CerebralBridge in Frameworks */ = {isa = PBXBuildFile; productRef = CE000000000000000000002A /* CerebralBridge */; };
 		CE000000000000000000002F /* CerebralRuntimeHost in Frameworks */ = {isa = PBXBuildFile; productRef = CE000000000000000000002E /* CerebralRuntimeHost */; };
+		CE0000000000000000000041 /* CerebralMacAdapters in Frameworks */ = {isa = PBXBuildFile; productRef = CE0000000000000000000040 /* CerebralMacAdapters */; };
 		CE0000000000000000000032 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = CE0000000000000000000031 /* KeyboardShortcuts */; };
 		CE0000000000000000000034 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000033 /* MenuBarController.swift */; };
 		CE0000000000000000000036 /* PaletteShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000035 /* PaletteShortcut.swift */; };
 		CE0000000000000000000038 /* AppBridgeRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000037 /* AppBridgeRuntime.swift */; };
 		CE000000000000000000003A /* CommandPaletteWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000039 /* CommandPaletteWindowController.swift */; };
 		CE000000000000000000003E /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000003D /* WindowCoordinator.swift */; };
+		CE0000000000000000000043 /* ConfirmationWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000042 /* ConfirmationWindowController.swift */; };
+		CE0000000000000000000045 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000044 /* SettingsWindowController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +48,8 @@
 		CE0000000000000000000037 /* AppBridgeRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBridgeRuntime.swift; sourceTree = "<group>"; };
 		CE0000000000000000000039 /* CommandPaletteWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteWindowController.swift; sourceTree = "<group>"; };
 		CE000000000000000000003D /* WindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCoordinator.swift; sourceTree = "<group>"; };
+		CE0000000000000000000042 /* ConfirmationWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmationWindowController.swift; sourceTree = "<group>"; };
+		CE0000000000000000000044 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,6 +61,7 @@
 				CE0000000000000000000023 /* CerebralStorage in Frameworks */,
 				CE000000000000000000002B /* CerebralBridge in Frameworks */,
 				CE000000000000000000002F /* CerebralRuntimeHost in Frameworks */,
+				CE0000000000000000000041 /* CerebralMacAdapters in Frameworks */,
 				CE0000000000000000000032 /* KeyboardShortcuts in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -97,6 +103,8 @@
 				CE0000000000000000000037 /* AppBridgeRuntime.swift */,
 				CE0000000000000000000039 /* CommandPaletteWindowController.swift */,
 				CE000000000000000000003D /* WindowCoordinator.swift */,
+				CE0000000000000000000042 /* ConfirmationWindowController.swift */,
+				CE0000000000000000000044 /* SettingsWindowController.swift */,
 			);
 			path = CerebralHelm;
 			sourceTree = "<group>";
@@ -122,6 +130,7 @@
 				CE0000000000000000000022 /* CerebralStorage */,
 				CE000000000000000000002A /* CerebralBridge */,
 				CE000000000000000000002E /* CerebralRuntimeHost */,
+				CE0000000000000000000040 /* CerebralMacAdapters */,
 				CE0000000000000000000031 /* KeyboardShortcuts */,
 			);
 			productName = CerebralHelm;
@@ -194,6 +203,8 @@
 				CE0000000000000000000038 /* AppBridgeRuntime.swift in Sources */,
 				CE000000000000000000003A /* CommandPaletteWindowController.swift in Sources */,
 				CE000000000000000000003E /* WindowCoordinator.swift in Sources */,
+				CE0000000000000000000043 /* ConfirmationWindowController.swift in Sources */,
+				CE0000000000000000000045 /* SettingsWindowController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -342,6 +353,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CE0000000000000000000017 /* XCLocalSwiftPackageReference "../.." */;
 			productName = CerebralRuntimeHost;
+		};
+		CE0000000000000000000040 /* CerebralMacAdapters */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CE0000000000000000000017 /* XCLocalSwiftPackageReference "../.." */;
+			productName = CerebralMacAdapters;
 		};
 		CE0000000000000000000031 /* KeyboardShortcuts */ = {
 			isa = XCSwiftPackageProductDependency;

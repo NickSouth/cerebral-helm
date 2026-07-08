@@ -2,9 +2,88 @@ import type { BridgeEvent, CerebralBridge } from "../bridge/cerebralBridge";
 import type {
   ConfirmationDisclosure,
   DashboardStateSnapshot,
-  HeimlichState
+  HeimlichState,
+  RegionState,
+  SystemHealthRegion
 } from "../bridge/types";
-import type { DashboardState, DashboardStore } from "./dashboardState";
+import type {
+  DashboardState,
+  DashboardStore,
+  DisplayTopology,
+  WorkflowRunProgress
+} from "./dashboardState";
+
+/** One channel of the native status publisher's `system_metrics` payload (NIC-81b). */
+interface MetricsChannelPayload {
+  readonly availability?: string;
+  readonly value?: number | null;
+  readonly sampledAt?: string | null;
+}
+
+interface MetricsNetworkPayload {
+  readonly availability?: string;
+  readonly uploadMbps?: number | null;
+  readonly downloadMbps?: number | null;
+  readonly sampledAt?: string | null;
+}
+
+interface MetricsBatteryPayload extends MetricsChannelPayload {
+  readonly charging?: boolean | null;
+  readonly pluggedIn?: boolean | null;
+}
+
+interface SystemMetricsPayload {
+  readonly cpu?: MetricsChannelPayload;
+  readonly memory?: MetricsChannelPayload;
+  readonly network?: MetricsNetworkPayload;
+  readonly battery?: MetricsBatteryPayload;
+  readonly display?: MetricsChannelPayload;
+}
+
+/**
+ * Adapter availability → region state. `loading` maps to "empty" (no number to
+ * show yet, honestly); `disconnected` renders as stale so the last value is
+ * visibly out of date rather than silently wrong.
+ */
+function channelState(availability: string | undefined): RegionState {
+  switch (availability) {
+    case "available":
+      return "ready";
+    case "stale":
+    case "disconnected":
+      return "stale";
+    case "loading":
+      return "empty";
+    default:
+      return "unavailable";
+  }
+}
+
+/** Fold one live metrics snapshot into the system-health region shape. */
+function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthRegion {
+  const cpuLive = payload.cpu?.availability === "available";
+  const memoryLive = payload.memory?.availability === "available";
+  const networkState = channelState(payload.network?.availability);
+  const batteryState = channelState(payload.battery?.availability);
+  return {
+    state: "ready",
+    cpuPercent: cpuLive ? (payload.cpu?.value ?? undefined) : undefined,
+    memoryPercent: memoryLive ? (payload.memory?.value ?? undefined) : undefined,
+    network: {
+      state: networkState,
+      label: "Network",
+      uploadMbps: payload.network?.uploadMbps ?? undefined,
+      downloadMbps: payload.network?.downloadMbps ?? undefined
+    },
+    battery: {
+      state: batteryState,
+      label: "Battery",
+      percent: batteryState === "ready" ? (payload.battery?.value ?? undefined) : undefined,
+      charging: batteryState === "ready" ? (payload.battery?.charging ?? undefined) : undefined,
+      pluggedIn: batteryState === "ready" ? (payload.battery?.pluggedIn ?? undefined) : undefined
+    }
+  };
+}
 
 /** How a command-lifecycle status maps onto Heimlich's consciousness state (design spec §5.8). */
 const LIFECYCLE_TO_HEIMLICH: Readonly<Record<string, HeimlichState>> = {
@@ -46,32 +125,108 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
     }
     case "command.lifecycle.transition": {
       const status = String((event.payload as { currentStatus?: unknown }).currentStatus ?? "");
+      // A terminal command ends any live workflow-run progress (NIC-85).
+      const terminal = status === "succeeded" || status === "failed" || status === "cancelled";
+      const clearedRun = terminal && state.activeWorkflowRun ? null : state.activeWorkflowRun;
       const next = LIFECYCLE_TO_HEIMLICH[status];
-      if (!next || next === state.heimlich.state) {
-        return state;
-      }
-      return { ...state, heimlich: { ...state.heimlich, state: next } };
-    }
-    case "bridge.capability.changed": {
-      const capability = (event.payload as { capability?: { id?: string; available?: boolean } })
-        .capability;
-      const metricsDown = capability?.id === "system.metrics" && capability.available === false;
-      if (!metricsDown || state.regions.systemHealth.state === "stale") {
+      if ((!next || next === state.heimlich.state) && clearedRun === state.activeWorkflowRun) {
         return state;
       }
       return {
         ...state,
-        regions: {
-          ...state.regions,
-          systemHealth: { ...state.regions.systemHealth, state: "stale" }
+        heimlich: next ? { ...state.heimlich, state: next } : state.heimlich,
+        activeWorkflowRun: clearedRun
+      };
+    }
+    case "workflow.action.progress": {
+      // One step of an executing quick action started or finished (NIC-85).
+      // Runtime-only state — never folded into the bootstrap config.
+      const payload = event.payload as Partial<WorkflowRunProgress>;
+      if (!payload.workflowId || !payload.actionId || !payload.status) {
+        return state;
+      }
+      return {
+        ...state,
+        activeWorkflowRun: {
+          commandId: String(payload.commandId ?? ""),
+          workflowId: payload.workflowId,
+          actionId: payload.actionId,
+          kind: String(payload.kind ?? ""),
+          status: payload.status,
+          index: Number(payload.index ?? 0),
+          total: Number(payload.total ?? 0),
+          message: payload.message
+        }
+      };
+    }
+    case "bridge.capability.changed": {
+      const capability = (
+        event.payload as {
+          capability?: { id?: string; available?: boolean; degradedReason?: string | null };
+        }
+      ).capability;
+      if (!capability?.id || typeof capability.available !== "boolean") {
+        return state;
+      }
+      // Fold the capability into the availability map native-gated controls read
+      // (FR-SHL-06): the handshake set is replayed through this same event type,
+      // and runtime permission rechecks (NIC-83) update it live.
+      let next: DashboardState = {
+        ...state,
+        capabilities: {
+          ...state.capabilities,
+          [capability.id]: {
+            available: capability.available,
+            degradedReason: capability.degradedReason ?? null
+          }
+        }
+      };
+      // Losing live metrics additionally marks system health stale.
+      const metricsDown = capability.id === "system.metrics" && capability.available === false;
+      if (metricsDown && next.regions.systemHealth.state !== "stale") {
+        next = {
+          ...next,
+          regions: {
+            ...next.regions,
+            systemHealth: { ...next.regions.systemHealth, state: "stale" }
+          }
+        };
+      }
+      return next;
+    }
+    case "display.topology.changed": {
+      // The shell's full display-topology snapshot (NIC-87): connect, disconnect,
+      // or rearrangement. Runtime-only state — never folded into the bootstrap
+      // config; nothing renders it yet, but the backdrop/main-display work
+      // (NIC-120) reads it from here.
+      const payload = event.payload as Partial<DisplayTopology>;
+      if (!Array.isArray(payload.displays)) {
+        return state;
+      }
+      return {
+        ...state,
+        displayTopology: {
+          displays: payload.displays,
+          primaryDisplayId: payload.primaryDisplayId ?? null
         }
       };
     }
     case "system.status.changed": {
-      // The only status change the shell interprets today (NIC-64): an incompatible bridge
-      // major version forces read-only recovery. Folded into the runtime-only `recovery` widening
-      // (never the bootstrap config), so the posture seam can suppress every mutating control.
       const payload = event.payload as { category?: string; state?: Record<string, unknown> };
+      // A live metrics snapshot from the native status publisher (NIC-81b): fold the
+      // per-channel readings into the system-health region. Runtime-only state — never
+      // folded into the bootstrap config.
+      if (payload.category === "system_metrics") {
+        return {
+          ...state,
+          regions: {
+            ...state.regions,
+            systemHealth: systemHealthFromMetrics(event.payload as SystemMetricsPayload)
+          }
+        };
+      }
+      // Bridge-failure posture (NIC-64): an incompatible bridge major version forces
+      // read-only recovery, suppressing every mutating control via the posture seam.
       if (payload.category !== "bridge_failure" || payload.state?.status !== "read_only") {
         return state;
       }

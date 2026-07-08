@@ -12,7 +12,7 @@
     "directive": "Greet and suggest something to unwind with.",
     "fallback": "Time to unwind."
   },
-  "quickApps": ["spotify", "youtube", "steam", "discord", "photos"],
+  "quickApps": [],
   "quickActions": [
     "open-entertainment-layout",
     "open-media",
@@ -27,6 +27,8 @@
     "left": "spotify",
     "right": "media-list"
   },
-  "projectHints": ["weekend-plans"],
+  "projectHints": [
+    "weekend-plans"
+  ],
   "layoutId": "entertainment.default"
 }

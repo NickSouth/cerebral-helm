@@ -25,6 +25,14 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecke
     private var session: BridgeSession?
     private let log = Logger(subsystem: "local.cerebralhelm.CerebralHelm", category: "bridge")
 
+    /// Fired after every handshake from this webview — the earliest moment the
+    /// web side provably has `__cerebralReceive` installed. `didFinish` is too
+    /// early: the surface module (and its receiver) loads via dynamic import
+    /// *after* main-frame navigation completes, so events delivered on
+    /// `didFinish` are silently dropped. The shell replays runtime-only state
+    /// (the cached display topology) on this signal instead.
+    var onHandshake: (() -> Void)?
+
     /// Registers the message handler on a configuration before the web view is built.
     func install(on configuration: WKWebViewConfiguration) {
         configuration.userContentController.add(self, name: Self.handlerName)
@@ -60,9 +68,13 @@ final class WKWebViewCerebralBridge: NSObject, WKScriptMessageHandler, @unchecke
 
         switch BridgeInbound.classify(data) {
         case let .handshake(request):
-            let response = BridgeHandshake.response(to: request, messageID: Self.newMessageID())
+            // Report the capability flags composed at the app layer (FR-SHL-06);
+            // before a session is bound, fall back to the honest pre-adapter set.
+            let capabilities = session?.capabilities ?? BridgeCapabilities.preAdapterDefault()
+            let response = BridgeHandshake.response(to: request, capabilities: capabilities, messageID: Self.newMessageID())
             log.info("Bridge handshake: ui=\(request.uiVersion, privacy: .public) compatible=\(response.compatible, privacy: .public) startup=\(response.startupMode.rawValue, privacy: .public)")
             deliver(response)
+            onHandshake?()
 
         case let .operation(request):
             guard let session else {

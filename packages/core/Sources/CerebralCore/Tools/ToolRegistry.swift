@@ -9,9 +9,21 @@ public struct RegisteredTool: Sendable {
     public let effectiveTimeoutMs: Int
     /// Descriptor pre-Mac availability, possibly disabled by a stricter overlay.
     public let availableInPreMac: Bool
+    /// Descriptor macOS availability. The config overlay's only availability
+    /// field is pre-Mac-scoped (`availableInPreMac`), so this comes from the
+    /// descriptor alone.
+    public let availableOnMacOS: Bool
 
     public var id: String { descriptor.id }
     public var risk: Risk { descriptor.risk }
+
+    /// Whether this tool may execute in the composed phase.
+    public func isAvailable(in phase: ExecutionPhase) -> Bool {
+        switch phase {
+        case .preMac: return availableInPreMac
+        case .macOS: return availableOnMacOS
+        }
+    }
 }
 
 /// The validated tool registry: the single source of bound, executable tools
@@ -106,7 +118,8 @@ public struct ToolRegistryBuilder {
             descriptor: descriptor,
             handler: handler,
             effectiveTimeoutMs: effectiveTimeoutMs,
-            availableInPreMac: availableInPreMac
+            availableInPreMac: availableInPreMac,
+            availableOnMacOS: descriptor.availability.macOS
         )
     }
 

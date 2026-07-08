@@ -1,0 +1,134 @@
+// NIC-82 (MAC-ADAPTER-4): Keychain secret-store adapter.
+//
+// These tests hit the real login Keychain, isolated under a unique per-run
+// service namespace with unconditional cleanup — never fixture values, never a
+// shared service (MAC-ADAPTER-4 AC: contract tests use isolated test values).
+// On a locked/headless keychain (some CI runners) the probe below bails out
+// early rather than failing on environment. Gated so the Linux CI package build
+// compiles this target empty.
+//
+// OPT-IN (CEREBRAL_KEYCHAIN_TESTS=1): the legacy keychain engine (the only one
+// an unsigned/ad-hoc process may use — see KeychainSecretCapability) corrupts
+// process memory when it runs amid the full suite's parallel allocator load
+// (SIGBUS in CSSM, reproduced consistently; isolated runs are stable). Run these
+// tests in their own invocation:
+//     CEREBRAL_KEYCHAIN_TESTS=1 swift test --filter MacAdapterTests
+#if canImport(AppKit)
+import Foundation
+import Testing
+
+import CerebralMacAdapters
+import CerebralTools
+
+/// A per-run isolated adapter plus cleanup. The service name embeds the pid and
+/// a counter so concurrent suites can never see each other's items.
+private let serviceCounter = NSLock()
+private nonisolated(unsafe) var serviceSequence = 0
+private func isolatedAdapter() -> KeychainSecretCapability {
+    serviceCounter.lock()
+    serviceSequence += 1
+    let sequence = serviceSequence
+    serviceCounter.unlock()
+    let pid = ProcessInfo.processInfo.processIdentifier
+    return KeychainSecretCapability(service: "local.cerebralhelm.test.\(pid).\(sequence)")
+}
+
+/// `true` when the run opted into real-keychain tests AND the environment has a
+/// usable keychain. A locked or unavailable keychain (headless CI) is an
+/// environment limitation, not an adapter defect.
+private func keychainUsable(_ adapter: KeychainSecretCapability) async -> Bool {
+    guard ProcessInfo.processInfo.environment["CEREBRAL_KEYCHAIN_TESTS"] == "1" else { return false }
+    do {
+        try await adapter.store(reference: "probe", value: "p")
+        try await adapter.delete(reference: "probe")
+        return true
+    } catch NativeCapabilityError.permissionDenied, NativeCapabilityError.unavailable {
+        return false
+    } catch {
+        return true // real defects should surface in the tests, not be skipped
+    }
+}
+
+@Test("secrets round-trip: create, resolve, read, update, delete (FR-CFG-03)")
+func secretRoundTrip() async throws {
+    let adapter = isolatedAdapter()
+    guard await keychainUsable(adapter) else { return }
+    defer { try? adapter.deleteAll() }
+
+    // Unresolved before creation — not an error.
+    #expect(try await adapter.resolve(reference: "openai_api_key").isResolved == false)
+
+    try await adapter.store(reference: "openai_api_key", value: "test-value-1")
+    let resolution = try await adapter.resolve(reference: "openai_api_key")
+    #expect(resolution.isResolved)
+    #expect(resolution.reference == "openai_api_key")
+    #expect(try await adapter.readValue(reference: "openai_api_key") == "test-value-1")
+
+    // Update replaces the value in place.
+    try await adapter.store(reference: "openai_api_key", value: "test-value-2")
+    #expect(try await adapter.readValue(reference: "openai_api_key") == "test-value-2")
+
+    try await adapter.delete(reference: "openai_api_key")
+    #expect(try await adapter.resolve(reference: "openai_api_key").isResolved == false)
+}
+
+@Test("a missing reference is notFound on read and delete, unresolved on resolve")
+func missingReferenceSemantics() async throws {
+    let adapter = isolatedAdapter()
+    guard await keychainUsable(adapter) else { return }
+    defer { try? adapter.deleteAll() }
+
+    // resolve: absence is an answer, not an error.
+    #expect(try await adapter.resolve(reference: "ghost_key").isResolved == false)
+
+    do {
+        _ = try await adapter.readValue(reference: "ghost_key")
+        Issue.record("Expected notFound reading a missing secret")
+    } catch let error as NativeCapabilityError {
+        guard case .notFound = error else { Issue.record("Expected .notFound, got \(error)"); return }
+    }
+    do {
+        try await adapter.delete(reference: "ghost_key")
+        Issue.record("Expected notFound deleting a missing secret")
+    } catch let error as NativeCapabilityError {
+        guard case .notFound = error else { Issue.record("Expected .notFound, got \(error)"); return }
+    }
+}
+
+@Test("resolution never carries the secret value, and an invalid reference name is rejected")
+func resolutionCarriesNoValueAndValidatesNames() async throws {
+    let adapter = isolatedAdapter()
+    guard await keychainUsable(adapter) else { return }
+    defer { try? adapter.deleteAll() }
+
+    try await adapter.store(reference: "db_password", value: "s3cret-value")
+    let resolution = try await adapter.resolve(reference: "db_password")
+    // The port's shape enforces value-free resolution (reference + flag only);
+    // assert the runtime values confirm it.
+    #expect(resolution == SecretResolution(reference: "db_password", isResolved: true))
+
+    // Names outside the descriptor schema's logical-reference pattern never
+    // reach the keychain.
+    do {
+        _ = try await adapter.resolve(reference: "Not A Name!")
+        Issue.record("Expected an invalid reference to be rejected")
+    } catch let error as NativeCapabilityError {
+        guard case .adapterFailure = error else { Issue.record("Expected .adapterFailure, got \(error)"); return }
+    }
+}
+
+@Test("adapters with different service namespaces cannot see each other's secrets")
+func serviceNamespacesAreIsolated() async throws {
+    let first = isolatedAdapter()
+    let second = isolatedAdapter()
+    guard await keychainUsable(first) else { return }
+    defer {
+        try? first.deleteAll()
+        try? second.deleteAll()
+    }
+
+    try await first.store(reference: "shared_name", value: "first-value")
+    #expect(try await first.resolve(reference: "shared_name").isResolved == true)
+    #expect(try await second.resolve(reference: "shared_name").isResolved == false)
+}
+#endif

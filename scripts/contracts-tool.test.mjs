@@ -16,7 +16,9 @@ const mvpToolIds = new Set([
   "note.capture",
   "note.search",
   "mode.apply",
-  "system.status.read"
+  "system.status.read",
+  "window.arrange",
+  "apps.list"
 ]);
 
 const riskClasses = new Set([

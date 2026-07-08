@@ -134,6 +134,33 @@ describe("wkWebViewCerebralBridge", () => {
     expect(events).toHaveLength(1);
   });
 
+  it("passes workflow progress and display topology events through the type gate", () => {
+    installChannel();
+    const bridge = createWKWebViewCerebralBridge();
+    const events: BridgeEvent[] = [];
+    bridge.subscribe((e) => events.push(e));
+
+    reply({
+      type: "workflow.action.progress",
+      eventId: "brevt_00000003",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-06T00:00:00.000Z",
+      payload: { workflowId: "open-developer-layout", actionId: "open-editor", status: "running" }
+    });
+    reply({
+      type: "display.topology.changed",
+      eventId: "brevt_00000004",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-06T00:00:01.000Z",
+      payload: { displays: [], primaryDisplayId: null }
+    });
+
+    expect(events.map((e) => e.type)).toEqual([
+      "workflow.action.progress",
+      "display.topology.changed"
+    ]);
+  });
+
   it("getBootstrapState returns the injected bootstrap without a round-trip", async () => {
     installChannel();
     win.__cerebralBootstrap = { mode: "Executive", modes: [] };

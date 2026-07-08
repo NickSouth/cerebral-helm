@@ -275,7 +275,9 @@
                   "enum": ["ready", "empty", "stale", "unavailable"]
                 },
                 "label": { "type": "string" },
-                "percent": { "type": "number", "minimum": 0, "maximum": 100, "description": "Charge level 0–100, when known (Mac-only capability)." }
+                "percent": { "type": "number", "minimum": 0, "maximum": 100, "description": "Charge level 0–100, when known (Mac-only capability)." },
+                "charging": { "type": "boolean", "description": "Whether the battery is currently charging, when known (Mac-only capability)." },
+                "pluggedIn": { "type": "boolean", "description": "Whether the machine is on external power, when known (a full battery on AC is plugged in but not charging)." }
               }
             }
           }

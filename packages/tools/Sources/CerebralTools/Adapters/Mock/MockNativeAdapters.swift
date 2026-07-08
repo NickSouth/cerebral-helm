@@ -138,15 +138,69 @@ public struct MockWindowCapability: WindowCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault
     public var windows: [WindowInfo]
+    /// Simulated arrangement/restore outcomes by bundle id; an unlisted id is `.notRunning`.
+    public var arrangeOutcomes: [String: WindowArrangeOutcome]
+    /// Simulated readable main-window frames by bundle id (geometry capture).
+    public var capturedFrames: [String: WindowRect]
 
-    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none, windows: [WindowInfo] = []) {
+    public init(
+        matrix: CapabilityMatrix = .allAvailable,
+        fault: MockFault = .none,
+        windows: [WindowInfo] = [],
+        arrangeOutcomes: [String: WindowArrangeOutcome] = [:],
+        capturedFrames: [String: WindowRect] = [:]
+    ) {
         self.matrix = matrix
         self.fault = fault
         self.windows = windows
+        self.arrangeOutcomes = arrangeOutcomes
+        self.capturedFrames = capturedFrames
     }
 
     public func inspect() async throws -> [WindowInfo] {
         try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault)
         return windows
+    }
+
+    public func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome {
+        try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault, subject: bundleID)
+        return arrangeOutcomes[bundleID] ?? .notRunning
+    }
+
+    public func captureFrame(bundleID: String) async throws -> WindowRect? {
+        try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault, subject: bundleID)
+        return capturedFrames[bundleID]
+    }
+
+    public func restoreFrame(bundleID: String, rect: WindowRect) async throws -> WindowArrangeOutcome {
+        try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault, subject: bundleID)
+        return arrangeOutcomes[bundleID] ?? .notRunning
+    }
+}
+
+/// Deterministic app-discovery mock (NIC-119): a fixed representative catalog,
+/// gated like every mock. Icons are omitted — the honest non-Mac fallback.
+public struct MockAppDiscoveryCapability: AppDiscoveryCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+    public var apps: [InstalledApplication]
+
+    public init(
+        matrix: CapabilityMatrix = .allAvailable,
+        fault: MockFault = .none,
+        apps: [InstalledApplication] = [
+            InstalledApplication(bundleID: "com.apple.Safari", name: "Safari", iconPNGBase64: nil),
+            InstalledApplication(bundleID: "com.apple.mail", name: "Mail", iconPNGBase64: nil),
+            InstalledApplication(bundleID: "com.apple.Notes", name: "Notes", iconPNGBase64: nil),
+        ]
+    ) {
+        self.matrix = matrix
+        self.fault = fault
+        self.apps = apps
+    }
+
+    public func listApplications(includeIcons: Bool) async throws -> AppDiscoveryResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.appsList, matrix: matrix, fault: fault)
+        return AppDiscoveryResult(apps: apps, truncated: false)
     }
 }

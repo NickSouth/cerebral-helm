@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/apps-list-input.schema.json",
+  "title": "CerebralHelm Apps List Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "includeIcons": {
+      "type": "boolean"
+    }
+  }
+}

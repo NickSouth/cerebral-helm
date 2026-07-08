@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
-  "id": "enter-entertainment",
-  "label": "Enter Entertainment Mode",
+  "id": "open-entertainment-layout",
+  "label": "Open Entertainment Layout",
   "steps": [
     { "id": "snapshot-system", "label": "Snapshot system status", "tool": "system.status.read" },
     { "id": "open-media", "label": "Open media player", "tool": "app.open", "input": { "appId": "spotify" } },

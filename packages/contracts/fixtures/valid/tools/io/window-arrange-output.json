@@ -1,0 +1,12 @@
+{
+  "status": "partial",
+  "entries": [
+    { "appId": "vscode", "frame": "left-two-thirds", "status": "arranged" },
+    {
+      "appId": "terminal",
+      "frame": "right-third",
+      "status": "not_running",
+      "message": "Terminal is not running; windows are only arranged, never launched."
+    }
+  ]
+}

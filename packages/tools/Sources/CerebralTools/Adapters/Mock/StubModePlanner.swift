@@ -1,17 +1,20 @@
 import CerebralCore
 
-/// Deterministic stub action planner for the pre-Mac foundation.
+/// Deterministic stub action planner for tests and the pre-Mac foundation.
 ///
 /// Stands in for the config-driven `WorkflowActionPlanner` (NIC-38) behind the
 /// Core ``ActionPlanner`` port. Its plans include mock per-action outcomes so
-/// mode.apply can demonstrate aggregate risk (FR-MOD-03) and partial success
-/// (FR-MOD-04) without real native execution. It resolves modes only; a quick
-/// action id ends as `unknownAction` until the live planner is bound.
+/// workflow execution can demonstrate aggregate risk (FR-MOD-03) and partial
+/// success (FR-MOD-04) without real native execution. `actionPlans` resolves
+/// quick-action / workflow ids; the legacy mode plans remain for tests that
+/// exercise `PlanTarget.mode` directly.
 public struct StubModePlanner: ActionPlanner {
     private let plans: [String: ModePlan]
+    private let actionPlans: [String: ModePlan]
 
-    public init(plans: [String: ModePlan]? = nil) {
+    public init(plans: [String: ModePlan]? = nil, actionPlans: [String: ModePlan] = [:]) {
         self.plans = plans ?? Self.defaultPlans
+        self.actionPlans = actionPlans
     }
 
     public func plan(_ target: PlanTarget) throws -> ModePlan {
@@ -20,7 +23,8 @@ public struct StubModePlanner: ActionPlanner {
             guard let plan = plans[modeID] else { throw ActionPlannerError.unknownMode(modeID) }
             return plan
         case let .action(actionID):
-            throw ActionPlannerError.unknownAction(actionID)
+            guard let plan = actionPlans[actionID] else { throw ActionPlannerError.unknownAction(actionID) }
+            return plan
         }
     }
 

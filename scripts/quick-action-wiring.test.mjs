@@ -73,7 +73,7 @@ test("a wired action must declare exactly one of workflow or handler", () => {
 
   const both = [];
   validateQuickActionWiring(
-    { relativePath: "m.json", handlerNames, wiredActions: { "x": { workflow: "enter-executive", handler: "captureNote" } } },
+    { relativePath: "m.json", handlerNames, wiredActions: { "x": { workflow: "open-executive-layout", handler: "captureNote" } } },
     workflowIds,
     both
   );
@@ -86,7 +86,7 @@ test("a workflow-backed wired action resolves against config/workflows ids", () 
   const wiring = {
     relativePath: "m.json",
     handlerNames: new Set(),
-    wiredActions: { "enter-exec": { workflow: "enter-executive" } }
+    wiredActions: { "open-exec": { workflow: "open-executive-layout" } }
   };
   const errors = [];
 

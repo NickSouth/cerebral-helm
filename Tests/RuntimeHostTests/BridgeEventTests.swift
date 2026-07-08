@@ -32,6 +32,112 @@ func lifecycleEventConverts() throws {
     #expect(decoded.timestamp == event.timestamp)
 }
 
+@Test("a workflow action progress becomes a workflow.action.progress bridge event")
+func workflowProgressEventConverts() throws {
+    let progress = WorkflowActionProgress(
+        commandID: "cmd_000000000000000000000001",
+        workflowID: "open-developer-layout",
+        actionID: "open-editor",
+        kind: "app.open",
+        status: .running,
+        index: 2,
+        total: 5
+    )
+    let bridgeEvent = BridgeEventFactory.workflowActionProgressEvent(
+        progress, id: "brevt_test00000002", timestamp: Date(timeIntervalSince1970: 1_750_000_000)
+    )
+    #expect(bridgeEvent.type == .workflowActionProgress)
+    #expect(bridgeEvent.payload["workflowId"] != nil)
+    #expect(bridgeEvent.payload["status"] != nil)
+
+    // Round-trips through the contract Codable.
+    let decoded = try CerebralHelmBridgeEvent(data: try bridgeEvent.jsonData())
+    #expect(decoded.type == .workflowActionProgress)
+}
+
+@Test("a display topology snapshot becomes a display.topology.changed bridge event")
+func displayTopologyEventConverts() throws {
+    let topology = BridgeEventFactory.DisplayTopologyPayload(displays: [
+        BridgeEventFactory.DisplayDescriptor(
+            id: "37D8832A-2D66-02CA-B9F7-8F30A301B230",
+            name: "Built-in Display",
+            frame: WindowRect(x: 0, y: 0, width: 1512, height: 982),
+            primary: true,
+            stableIdentity: true
+        ),
+        BridgeEventFactory.DisplayDescriptor(
+            id: "cgid-724554883",
+            name: "External Display",
+            frame: WindowRect(x: 1512, y: -200, width: 2560, height: 1440),
+            primary: false,
+            stableIdentity: false
+        )
+    ])
+    #expect(topology.primaryDisplayId == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+
+    let bridgeEvent = BridgeEventFactory.displayTopologyChangedEvent(
+        topology, id: "brevt_test00000003", timestamp: Date(timeIntervalSince1970: 1_750_000_000)
+    )
+    #expect(bridgeEvent.type == .displayTopologyChanged)
+    #expect(bridgeEvent.payload["displays"] != nil)
+    #expect(bridgeEvent.payload["primaryDisplayId"] != nil)
+
+    // Round-trips through the contract Codable.
+    let decoded = try CerebralHelmBridgeEvent(data: try bridgeEvent.jsonData())
+    #expect(decoded.type == .displayTopologyChanged)
+}
+
+@Test("a single-display topology with no primary flag reports no primary id")
+func displayTopologyWithoutPrimary() {
+    let topology = BridgeEventFactory.DisplayTopologyPayload(displays: [
+        BridgeEventFactory.DisplayDescriptor(
+            id: "cgid-1", name: "Display", frame: WindowRect(x: 0, y: 0, width: 100, height: 100),
+            primary: false, stableIdentity: false
+        )
+    ])
+    #expect(topology.primaryDisplayId == nil)
+}
+
+@Test("a confirmation disclosure survives the event payload round-trip (native panel decode)")
+func confirmationDisclosureRoundTrips() throws {
+    // The shell's confirmation panel decodes the disclosure back out of the
+    // emitted event JSON: payload["confirmation"] (JSONAny) → re-encode →
+    // contract decode. Dates are the risky part — expiresAt is encoded with
+    // fractional seconds by BridgeMessageCoding.
+    let url = repositoryRoot()
+        .appendingPathComponent("packages/contracts/fixtures/valid/tools/confirmations/shell-confirmation-disclosure.json")
+    let disclosure = try CerebralHelmConfirmationDisclosure(fromURL: url)
+
+    let event = BridgeEventFactory.confirmationEvent(
+        disclosure: disclosure, id: "brevt_test00000004", timestamp: Date(timeIntervalSince1970: 1_750_000_000)
+    )
+    let json = try String(data: BridgeMessageCoding.encoder().encode(event), encoding: .utf8)
+
+    // The panel-side decode, exactly as WindowCoordinator performs it.
+    let received = try CerebralHelmBridgeEvent(data: Data(try #require(json).utf8))
+    #expect(received.type == .confirmationChanged)
+    let payload = try #require(received.payload["confirmation"])
+    let data = try JSONEncoder().encode(payload)
+    let decoded = try CerebralHelmConfirmationDisclosure(data: data)
+
+    #expect(decoded.id == disclosure.id)
+    #expect(decoded.actionSummary == disclosure.actionSummary)
+    #expect(decoded.risk == disclosure.risk)
+    #expect(decoded.expiresAt == disclosure.expiresAt)
+    #expect(decoded.arguments.count == disclosure.arguments.count)
+
+    // A cleared confirmation (`confirmation: null`) must NOT decode as a disclosure.
+    let cleared = BridgeEventFactory.confirmationEvent(
+        disclosure: nil, id: "brevt_test00000005", timestamp: Date(timeIntervalSince1970: 1_750_000_000)
+    )
+    let clearedJSON = try String(data: BridgeMessageCoding.encoder().encode(cleared), encoding: .utf8)
+    let clearedEvent = try CerebralHelmBridgeEvent(data: Data(try #require(clearedJSON).utf8))
+    if let clearedPayload = clearedEvent.payload["confirmation"],
+       let clearedData = try? JSONEncoder().encode(clearedPayload) {
+        #expect((try? CerebralHelmConfirmationDisclosure(data: clearedData)) == nil)
+    }
+}
+
 @Test("newEventID matches the contract id pattern")
 func newEventIDPattern() {
     let id = BridgeEventFactory.newEventID()

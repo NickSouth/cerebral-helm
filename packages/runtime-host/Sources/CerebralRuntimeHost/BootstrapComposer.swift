@@ -18,6 +18,11 @@ public enum BootstrapComposer {
 
     /// Composes the bootstrap state. `activeModeID`, when supplied, sets the active
     /// mode (used by a mode switch to re-theme); otherwise the configured default.
+    ///
+    /// Shipped-defaults only — no user-overrides layer. Surfaces with a workspace
+    /// (the shell) compose through ``compose(workspace:activeModeID:)`` instead so
+    /// pinned quick apps appear; this entry remains for tests and workspace-less
+    /// hosts.
     public static func compose(
         configDirectory: URL, activeModeID: String? = nil
     ) -> CerebralHelmBridgeBootstrapState {
@@ -25,11 +30,50 @@ public enum BootstrapComposer {
         var agentConfigs: [CerebralHelmAgentSurfaceConfig] = []
         var defaultModeID: String?
         if case let .valid(config) = ConfigValidator.validate(configDirectory: configDirectory) {
-            modeConfigs = orderedModes(config.modes)
+            modeConfigs = config.modes
             agentConfigs = config.agents
             defaultModeID = config.defaults.defaultModeID
         }
+        return compose(
+            modes: modeConfigs, agents: agentConfigs,
+            defaultModeID: defaultModeID, activeModeID: activeModeID
+        )
+    }
 
+    /// Composes the bootstrap state through the layered ``ConfigLoader`` — the
+    /// user-overrides read side (NIC-119c): pinned quick apps live in per-mode
+    /// override files under the state root, so a workspace-aware surface must
+    /// compose from the activated (merged) configuration, never the shipped
+    /// defaults alone. A rejected candidate falls back to the last-known-good
+    /// snapshot, then to the shipped defaults (FR-CFG-02).
+    public static func compose(
+        workspace: WorkspacePaths, activeModeID: String? = nil
+    ) -> CerebralHelmBridgeBootstrapState {
+        let active: ActiveConfig?
+        switch ConfigLoader(workspace: workspace).load() {
+        case let .activated(config):
+            active = config
+        case let .rejected(_, lastKnownGood):
+            active = lastKnownGood
+        }
+        guard let active else {
+            return compose(configDirectory: workspace.configDirectory, activeModeID: activeModeID)
+        }
+        return compose(
+            modes: active.modes, agents: active.agents,
+            defaultModeID: active.defaults.defaultModeID, activeModeID: activeModeID
+        )
+    }
+
+    /// The single composition core: validated (possibly override-merged) configs in,
+    /// bootstrap state out.
+    private static func compose(
+        modes modeConfigs: [CerebralHelmModeConfig],
+        agents agentConfigs: [CerebralHelmAgentSurfaceConfig],
+        defaultModeID: String?,
+        activeModeID: String?
+    ) -> CerebralHelmBridgeBootstrapState {
+        let modeConfigs = orderedModes(modeConfigs)
         let modes = modeConfigs.compactMap { try? modeView($0) }
         let agents = agentConfigs.map { config in
             DashboardAgentSummary(
@@ -112,7 +156,7 @@ public enum BootstrapComposer {
             news: DashboardNewsRegion(emptyMessage: "News is unavailable.", headlines: [], state: .empty),
             schedule: DashboardScheduleRegion(emptyMessage: "No schedule yet.", items: [], state: .empty),
             systemHealth: DashboardSystemHealthRegion(
-                battery: DashboardBatteryChannel(label: "Battery", percent: nil, state: .unavailable),
+                battery: DashboardBatteryChannel(charging: nil, label: "Battery", percent: nil, pluggedIn: nil, state: .unavailable),
                 cpuPercent: nil,
                 memoryPercent: nil,
                 network: nil,

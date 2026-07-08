@@ -9,7 +9,23 @@ function batteryTone(percent: number): string {
   return "danger";
 }
 
-export function BatteryGlyph({ percent }: { percent: number }) {
+/** A small lightning bolt marking an actively charging battery. */
+export function ChargingBoltGlyph() {
+  return (
+    <svg
+      className="charging-bolt"
+      viewBox="0 0 8 12"
+      width="7"
+      height="11"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M4.8 0 L0.8 6.8 H3.4 L2.8 12 L7.2 4.8 H4.4 Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function BatteryGlyph({ percent, charging = false }: { percent: number; charging?: boolean }) {
   const clamped = Math.max(0, Math.min(100, percent));
   const tone = batteryTone(clamped);
   // Interior track runs x 3.5 → 17.5 (width 14); the fill scales with charge.
@@ -36,6 +52,13 @@ export function BatteryGlyph({ percent }: { percent: number }) {
         height="5"
         rx="1"
       />
+      {charging ? (
+        <path
+          className="battery-glyph__bolt"
+          d="M11 8.6 L8.2 12.6 H10 L9.6 15.4 L12.6 11.4 H10.7 Z"
+          fill="currentColor"
+        />
+      ) : null}
     </svg>
   );
 }

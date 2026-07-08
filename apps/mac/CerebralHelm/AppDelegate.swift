@@ -1,5 +1,6 @@
 import AppKit
 import CerebralCore
+import CerebralMacAdapters
 
 /// The macOS application lifecycle owner (NIC-72 / FR-SHL-01, FR-SHL-05; NIC-73 / FR-SHL-03).
 ///
@@ -18,6 +19,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var bridgeRuntime: AppBridgeRuntime?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Single-instance guard (NIC-89): a duplicate launch — e.g. the login
+        // item firing while the app is already open — focuses the existing
+        // instance and exits BEFORE the startup pre-flight, so two processes
+        // never race the same operational database.
+        if let existing = SingleInstanceGuard.existingInstance(bundleID: Bundle.main.bundleIdentifier) {
+            existing.activate()
+            NSApp.terminate(nil)
+            return
+        }
         switch Bootstrap.run() {
         case let .ready(paths):
             enterReady(paths)
@@ -82,11 +92,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.coordinator.deliverBridgeEvent(json)
         }
 
+        // Live system metrics stream (NIC-81b): start once the sink is bound, and
+        // pause sampling whenever the dashboard window is fully occluded.
+        coordinator.onDashboardVisibilityChange = { [weak bridgeRuntime] visible in
+            bridgeRuntime?.setStatusPublishingActive(visible)
+        }
+        bridgeRuntime.startStatusPublishing()
+
+        // Display detection (NIC-87/120b): the initial topology snapshot publishes
+        // now (the sink is bound), and every hot-plug transition reconciles the
+        // per-display backdrops before the dashboard is told the topology changed.
+        // The persisted "Main display" choice is read through the runtime until a
+        // settings-read bridge operation exists.
+        coordinator.mainDisplayIDProvider = { [weak bridgeRuntime] in
+            bridgeRuntime?.storedMainDisplayID()
+        }
+        bridgeRuntime.startDisplayObservation { [weak self] topology in
+            self?.coordinator.handleDisplayTopologyChange(topology)
+        }
+
         // The menu-bar item + global summon hotkey (NIC-75 / FR-SHL-02). Both the menu
         // item and the hotkey drive the coordinator.
         menuBar = MenuBarController(
             summon: { [weak self] in self?.coordinator.summonPalette() },
             openSettings: { [weak self] in self?.coordinator.openSettings() }
         )
+    }
+
+    /// Permission recheck (NIC-83): the app becoming active is the moment a user
+    /// returns from System Settings after changing a permission — re-derive the
+    /// capability flags and announce any availability transition.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        bridgeRuntime?.recheckPermissions()
     }
 }

@@ -74,11 +74,8 @@ func runThroughRuntime(_ rawInput: String, options: GlobalOptions) async throws 
 }
 
 // MARK: - Mode session state (NIC-39 / FR-MOD-05, FR-MOD-06)
-
-/// The active mode/context store, backed by the operational database (ADR-006).
-private func makeModeStateStore(_ paths: WorkspacePaths) throws -> SQLiteModeStateStore {
-    SQLiteModeStateStore(database: try operationalDatabase(paths))
-}
+// The active mode/context store comes from the shared runtime-host composition
+// (`makeModeStateStore`), backed by the operational database (ADR-006).
 
 /// Records a mode session and updates the active mode after a mode application
 /// that actually executed. A confirmation that was not approved, a rejection, or

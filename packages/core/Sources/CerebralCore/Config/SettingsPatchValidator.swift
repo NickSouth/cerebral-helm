@@ -10,7 +10,7 @@ import Foundation
 /// settings store.
 public enum SettingsPatchValidator {
     private static let allowedChangeKeys: Set<String> =
-        ["defaultModeId", "appearance", "hotkeys", "knowledge", "extensions"]
+        ["defaultModeId", "appearance", "hotkeys", "knowledge", "workspace", "extensions"]
     private static let allowedAppearanceKeys: Set<String> = ["density", "reducedMotion"]
     private static let densityValues: Set<String> = ["comfortable", "compact"]
     private static let modeIDPattern = "^[a-z][a-z0-9-]*$"
@@ -52,6 +52,23 @@ public enum SettingsPatchValidator {
                 }
             } else {
                 errors.append("knowledge must be an object.")
+            }
+        }
+
+        if let workspace = changes["workspace"] {
+            if let dict = workspace as? [String: Any] {
+                let allowedWorkspaceKeys: Set<String> = ["windowsStoredByMode", "mainDisplayId"]
+                for key in dict.keys where !allowedWorkspaceKeys.contains(key) {
+                    errors.append("Unknown workspace setting \"\(key)\".")
+                }
+                if let stored = dict["windowsStoredByMode"], !(stored is Bool) {
+                    errors.append("workspace.windowsStoredByMode must be a boolean.")
+                }
+                if let display = dict["mainDisplayId"], !(display is String) || (display as? String)?.isEmpty == true {
+                    errors.append("workspace.mainDisplayId must be a non-empty string.")
+                }
+            } else {
+                errors.append("workspace must be an object.")
             }
         }
 

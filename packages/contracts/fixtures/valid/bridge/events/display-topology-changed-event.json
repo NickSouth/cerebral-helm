@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "brevt_000000000000000000000003",
+  "type": "display.topology.changed",
+  "timestamp": "2026-07-06T16:00:00.030Z",
+  "payload": {
+    "displays": [
+      {
+        "id": "37D8832A-2D66-02CA-B9F7-8F30A301B230",
+        "name": "Built-in Display",
+        "frame": { "x": 0, "y": 0, "width": 1512, "height": 982 },
+        "primary": true,
+        "stableIdentity": true
+      },
+      {
+        "id": "cgid-724554883",
+        "name": "External Display",
+        "frame": { "x": 1512, "y": -200, "width": 2560, "height": 1440 },
+        "primary": false,
+        "stableIdentity": false
+      }
+    ],
+    "primaryDisplayId": "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+  }
+}

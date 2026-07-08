@@ -14,7 +14,9 @@ export type BridgeEventType =
   | "confirmation.changed"
   | "system.status.changed"
   | "config.changed"
-  | "bridge.capability.changed";
+  | "bridge.capability.changed"
+  | "workflow.action.progress"
+  | "display.topology.changed";
 
 export interface BridgeEvent {
   readonly eventId: string;
@@ -88,6 +90,32 @@ export interface RecentActivityQuery {
   readonly limit?: number;
 }
 
+/** One installed application from read-only discovery (NIC-119). `iconPng` is a
+ *  size-capped base64 PNG; absent means no icon could be rendered — the UI shows
+ *  its honest placeholder glyph. */
+export interface DiscoveredApp {
+  readonly bundleId: string;
+  readonly name: string;
+  readonly iconPng?: string;
+  /** The configured app reference this bundle id backs. Only reference-backed
+   *  apps are pinnable (NIC-119c) — never arbitrary paths. */
+  readonly referenceId?: string | null;
+}
+export interface ListAppsResult {
+  readonly apps: readonly DiscoveredApp[];
+  readonly truncated: boolean;
+}
+
+export interface UpdateQuickAppsInput {
+  readonly modeId: string;
+  readonly quickApps: readonly string[];
+}
+export interface UpdateQuickAppsResult {
+  readonly accepted: boolean;
+  readonly quickApps: readonly string[];
+  readonly errors: readonly string[];
+}
+
 // --- FR-OBS-04 read surface (shape from get-recent-activity-response fixture) ---
 
 export interface ActivityCommand {
@@ -143,6 +171,10 @@ export interface CerebralBridge {
   searchNotes(input: SearchNotesInput): Promise<SearchNotesResult>;
   decideConfirmation(input: DecideConfirmationInput): Promise<DecideConfirmationResult>;
   updateSettings(input: UpdateSettingsInput): Promise<UpdateSettingsResult>;
+  /** Read-only application discovery for the More Apps picker (NIC-119). */
+  listApps(): Promise<ListAppsResult>;
+  /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */
+  updateQuickApps(input: UpdateQuickAppsInput): Promise<UpdateQuickAppsResult>;
   /** Subscribe to the bridge event stream; returns an unsubscribe handle. */
   subscribe(listener: BridgeEventListener): Unsubscribe;
 }

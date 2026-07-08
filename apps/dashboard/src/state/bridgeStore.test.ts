@@ -39,6 +39,85 @@ describe("reduceDashboardState", () => {
     expect(reduceDashboardState(base, lifecycleEvent("idle"))).toBe(base);
   });
 
+  it("folds a display topology snapshot into state (NIC-87)", () => {
+    const base = loadBootstrapState();
+    const event: BridgeEvent = {
+      eventId: "brevt_displays0001",
+      type: "display.topology.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-06T16:00:00.000Z",
+      payload: {
+        displays: [
+          {
+            id: "37D8832A-2D66-02CA-B9F7-8F30A301B230",
+            name: "Built-in Display",
+            frame: { x: 0, y: 0, width: 1512, height: 982 },
+            primary: true,
+            stableIdentity: true
+          },
+          {
+            id: "cgid-724554883",
+            name: "External Display",
+            frame: { x: 1512, y: -200, width: 2560, height: 1440 },
+            primary: false,
+            stableIdentity: false
+          }
+        ],
+        primaryDisplayId: "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+      }
+    };
+
+    const next = reduceDashboardState(base, event);
+    expect(next.displayTopology?.displays).toHaveLength(2);
+    expect(next.displayTopology?.primaryDisplayId).toBe("37D8832A-2D66-02CA-B9F7-8F30A301B230");
+    expect(next.displayTopology?.displays[1]?.stableIdentity).toBe(false);
+
+    // A later snapshot replaces the whole topology — never merges deltas.
+    const disconnect = reduceDashboardState(next, {
+      ...event,
+      eventId: "brevt_displays0002",
+      payload: { displays: [(event.payload.displays as unknown[])[0]] }
+    });
+    expect(disconnect.displayTopology?.displays).toHaveLength(1);
+    expect(disconnect.displayTopology?.primaryDisplayId ?? null).toBeNull();
+
+    // A malformed payload never fabricates a topology.
+    expect(reduceDashboardState(base, { ...event, payload: {} })).toBe(base);
+  });
+
+  it("folds workflow action progress in and clears it on the terminal lifecycle status (NIC-85)", () => {
+    const base = loadBootstrapState();
+    const progress: BridgeEvent = {
+      eventId: "brevt_wfprogress01",
+      type: "workflow.action.progress",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        commandId: "cmd_000000000000000000000001",
+        workflowId: "open-developer-layout",
+        actionId: "open-editor",
+        kind: "app.open",
+        status: "running",
+        index: 2,
+        total: 5
+      }
+    };
+
+    const running = reduceDashboardState(base, progress);
+    expect(running.activeWorkflowRun?.workflowId).toBe("open-developer-layout");
+    expect(running.activeWorkflowRun?.status).toBe("running");
+    expect(running.activeWorkflowRun?.index).toBe(2);
+    expect(running.activeWorkflowRun?.total).toBe(5);
+
+    // The command's terminal lifecycle status ends the live run.
+    const done = reduceDashboardState(running, lifecycleEvent("succeeded"));
+    expect(done.activeWorkflowRun ?? null).toBeNull();
+
+    // A malformed payload never fabricates a run.
+    const malformed = reduceDashboardState(base, { ...progress, payload: { status: "running" } });
+    expect(malformed).toBe(base);
+  });
+
   it("degrades system health when metrics become unavailable", () => {
     const base = loadBootstrapState();
     const event: BridgeEvent = {
@@ -49,6 +128,33 @@ describe("reduceDashboardState", () => {
       payload: { capability: { id: "system.metrics", available: false } }
     };
     expect(reduceDashboardState(base, event).regions.systemHealth.state).toBe("stale");
+  });
+
+  it("folds every capability change into the availability map (FR-SHL-06)", () => {
+    const base = loadBootstrapState();
+    const capabilityEvent = (id: string, available: boolean): BridgeEvent => ({
+      eventId: `brevt_cap_${id}`,
+      type: "bridge.capability.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: { capability: { id, available, degradedReason: available ? null : "Denied." } }
+    });
+
+    const granted = reduceDashboardState(base, capabilityEvent("native.app.open", true));
+    expect(granted.capabilities?.["native.app.open"]?.available).toBe(true);
+
+    // A later revocation flips the same entry and keeps others.
+    const revoked = reduceDashboardState(granted, capabilityEvent("native.app.open", false));
+    expect(revoked.capabilities?.["native.app.open"]?.available).toBe(false);
+    expect(revoked.capabilities?.["native.app.open"]?.degradedReason).toBe("Denied.");
+
+    // A malformed payload never fabricates an entry.
+    expect(
+      reduceDashboardState(base, {
+        ...capabilityEvent("x", true),
+        payload: { capability: { id: "x" } }
+      })
+    ).toBe(base);
   });
 
   it("folds a confirmation disclosure in on confirmation.changed and back out on null", () => {
@@ -70,6 +176,90 @@ describe("reduceDashboardState", () => {
     expect(
       reduceDashboardState(cleared, { ...confirmationBridgeEvent, payload: { confirmation: null } })
     ).toBe(cleared);
+  });
+
+  it("folds a live system_metrics snapshot into the system-health region (NIC-81b)", () => {
+    const base = loadBootstrapState();
+    const event: BridgeEvent = {
+      eventId: "brevt_metrics01",
+      type: "system.status.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        category: "system_metrics",
+        cpu: { availability: "available", value: 23.5, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
+        memory: { availability: "available", value: 61.2, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
+        network: {
+          availability: "available",
+          uploadMbps: 2.1,
+          downloadMbps: 8.4,
+          unit: "mbps",
+          sampledAt: "2026-06-23T16:00:00.000Z"
+        },
+        battery: {
+          availability: "available",
+          value: 76,
+          charging: true,
+          pluggedIn: true,
+          unit: "percent",
+          sampledAt: "2026-06-23T16:00:00.000Z"
+        },
+        display: { availability: "available", value: 2, unit: null, sampledAt: "2026-06-23T16:00:00.000Z" }
+      }
+    };
+
+    const health = reduceDashboardState(base, event).regions.systemHealth;
+    expect(health.state).toBe("ready");
+    expect(health.cpuPercent).toBe(23.5);
+    expect(health.memoryPercent).toBe(61.2);
+    expect(health.network?.uploadMbps).toBe(2.1);
+    expect(health.network?.downloadMbps).toBe(8.4);
+    expect(health.battery.percent).toBe(76);
+    expect(health.battery.state).toBe("ready");
+    expect(health.battery.charging).toBe(true);
+    expect(health.battery.pluggedIn).toBe(true);
+  });
+
+  it("maps per-channel degradation honestly: no battery is unavailable, warming rates are empty", () => {
+    const base = loadBootstrapState();
+    const event: BridgeEvent = {
+      eventId: "brevt_metrics02",
+      type: "system.status.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        category: "system_metrics",
+        // First tick on a desktop Mac: rate metrics still warming, no battery.
+        cpu: { availability: "loading", value: null, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
+        memory: { availability: "available", value: 40, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
+        network: { availability: "loading", uploadMbps: null, downloadMbps: null, unit: "mbps", sampledAt: null },
+        battery: { availability: "unavailable", value: null, unit: "percent", sampledAt: null },
+        display: { availability: "available", value: 1, unit: null, sampledAt: "2026-06-23T16:00:00.000Z" }
+      }
+    };
+
+    const health = reduceDashboardState(base, event).regions.systemHealth;
+    expect(health.state).toBe("ready");
+    expect(health.cpuPercent).toBeUndefined();
+    expect(health.memoryPercent).toBe(40);
+    expect(health.network?.state).toBe("empty");
+    expect(health.battery.state).toBe("unavailable");
+    expect(health.battery.percent).toBeUndefined();
+  });
+
+  it("still folds bridge_failure status changes into read-only recovery (NIC-64)", () => {
+    const base = loadBootstrapState();
+    const event: BridgeEvent = {
+      eventId: "brevt_failure01",
+      type: "system.status.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        category: "bridge_failure",
+        state: { status: "read_only", message: "Bridge is in read-only recovery." }
+      }
+    };
+    expect(reduceDashboardState(base, event).recovery?.startupMode).toBe("recovery");
   });
 
   it("applies a mode-switch snapshot on config.changed, preserving the eager bundle", () => {

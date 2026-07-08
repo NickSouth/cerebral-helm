@@ -25,11 +25,12 @@ private func executor(
     for id: String,
     handler: any ToolHandler,
     overlay: ConfiguredTool? = nil,
-    policy: PolicyEngine = PolicyEngine()
+    policy: PolicyEngine = PolicyEngine(),
+    phase: ExecutionPhase = .preMac
 ) throws -> ToolExecutor {
     var builder = ToolRegistryBuilder()
     try builder.register(descriptor: try descriptor(id), handler: handler, overlay: overlay)
-    return ToolExecutor(registry: builder.build(), policy: policy)
+    return ToolExecutor(registry: builder.build(), policy: policy, phase: phase)
 }
 
 private func invocation(_ id: String) -> ToolInvocation {
@@ -185,5 +186,37 @@ func phaseUnavailableToolIsRefused() async throws {
     #expect(result.error?.category == .unavailableCapability)
     #expect(result.error?.code == "tool.unavailable_in_phase")
     // The handler is never invoked: a phase-unavailable tool cannot execute.
+    #expect(await spy.invoked == false)
+}
+
+@Test("a Mac-only tool executes when the runtime is composed for the macOS phase")
+func macOnlyToolRunsInMacPhase() async throws {
+    // hook.run declares availability.preMac == false but availability.macOS ==
+    // true. The same registration that is refused pre-Mac must pass the gate in
+    // a `.macOS`-phase executor and reach its handler.
+    let spy = SpyHandler(toolID: "hook.run")
+    let executor = try executor(for: "hook.run", handler: spy, phase: .macOS)
+
+    let result = await executor.execute(invocation("hook.run"))
+
+    #expect(result.status == .success)
+    #expect(await spy.invoked == true)
+}
+
+@Test("a tool the descriptor marks unavailable on macOS is refused in the macOS phase")
+func macUnavailableToolIsRefusedInMacPhase() async throws {
+    // No shipped tool is preMac-only, so construct one: note.search with its
+    // macOS availability turned off. The gate must read the phase-matching flag,
+    // not the pre-Mac one.
+    let preMacOnly = try descriptor("note.search").with(availability: AvailabilityClass(macOS: false, preMAC: true))
+    let spy = SpyHandler(toolID: "note.search")
+    var builder = ToolRegistryBuilder()
+    try builder.register(descriptor: preMacOnly, handler: spy)
+    let executor = ToolExecutor(registry: builder.build(), policy: PolicyEngine(), phase: .macOS)
+
+    let result = await executor.execute(invocation("note.search"))
+
+    #expect(result.status == .unavailable)
+    #expect(result.error?.code == "tool.unavailable_in_phase")
     #expect(await spy.invoked == false)
 }
