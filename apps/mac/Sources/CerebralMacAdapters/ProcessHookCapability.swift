@@ -1,6 +1,7 @@
 // Allowlisted hook process adapter (NIC-80, MAC-ADAPTER-2).
 #if canImport(AppKit)
 import Darwin
+import Dispatch
 import Foundation
 import CerebralCore
 import CerebralTools
@@ -24,6 +25,13 @@ import CerebralTools
 /// - **Output:** stdout/stderr are captured up to `outputLimitBytes` each, with
 ///   an explicit truncation marker; the pipes are drained to EOF regardless so
 ///   a chatty hook can never deadlock on a full pipe.
+/// - **Threads:** no cooperative-pool thread ever blocks while the child runs.
+///   All waiting is event-driven — a kqueue-backed exit source instead of a
+///   blocking `waitpid`, `DispatchIO` instead of blocking pipe reads, and a GCD
+///   timer for the SIGKILL escalation. A slow hook therefore cannot starve the
+///   executor's timeout timer or any other async work (two concurrent hooks
+///   previously pinned six pool threads, which deadlocked timeouts on the
+///   3-core CI runner).
 ///
 /// Deadlines are owned by the executor (`ToolExecutor` races the handler against
 /// the descriptor timeout and cancels it): this adapter's job on cancellation is
@@ -31,6 +39,12 @@ import CerebralTools
 public struct ProcessHookCapability: ProcessCapability {
     private let outputLimitBytes: Int
     private let terminationGraceMs: Int
+
+    /// Serial queue for exit sources, zombie reaping, and SIGKILL escalation
+    /// timers. Every block scheduled here completes in microseconds (`waitpid`
+    /// on an already-exited child, a `kill` call), so one shared queue serves
+    /// all concurrent runs.
+    private static let eventQueue = DispatchQueue(label: "com.cerebralhelm.hook-process-events")
 
     public init(outputLimitBytes: Int = 64 * 1024, terminationGraceMs: Int = 500) {
         self.outputLimitBytes = outputLimitBytes
@@ -62,7 +76,7 @@ public struct ProcessHookCapability: ProcessCapability {
             throw error
         }
         // The child owns the write ends now; the parent must close its copies or
-        // the drain loops never see EOF.
+        // the drain streams never see EOF.
         close(stdoutPipe[1])
         close(stderrPipe[1])
 
@@ -71,20 +85,14 @@ public struct ProcessHookCapability: ProcessCapability {
 
         let reaped = ReapFlag()
         let graceMs = terminationGraceMs
-        let exitTask = Task.detached { () -> Int32 in
-            var status: Int32 = 0
-            while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
-            return status
-        }
         let status = await withTaskCancellationHandler {
-            await exitTask.value
+            await Self.awaitExit(of: pid)
         } onCancel: {
             // Signal the whole group; escalate to SIGKILL if it lingers past the
             // grace period. The flag stops a late SIGKILL from reaching a
             // (theoretically) reused pgid after the child is already reaped.
             kill(-pid, SIGTERM)
-            Task.detached {
-                try? await Task.sleep(nanoseconds: UInt64(graceMs) * 1_000_000)
+            Self.eventQueue.asyncAfter(deadline: .now() + .milliseconds(graceMs)) {
                 if !reaped.isDone { kill(-pid, SIGKILL) }
             }
         }
@@ -145,8 +153,16 @@ public struct ProcessHookCapability: ProcessCapability {
         posix_spawnattr_init(&attributes)
         defer { posix_spawnattr_destroy(&attributes) }
         // New process group (leader pid == child pid) so signals reach the whole
-        // tree; close every fd the file actions did not explicitly map.
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT))
+        // tree; close every fd the file actions did not explicitly map. The child
+        // starts SUSPENDED — frozen before its first instruction — so the exit
+        // source in `awaitExit` is always registered before the child can exit;
+        // `awaitExit` sends the SIGCONT. Without this handshake a fast-exiting
+        // child could die before the kqueue watch exists and the exit event
+        // would be lost forever.
+        posix_spawnattr_setflags(
+            &attributes,
+            Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_START_SUSPENDED)
+        )
         posix_spawnattr_setpgroup(&attributes, 0)
 
         let argv = [executablePath] + invocation.arguments
@@ -177,28 +193,54 @@ public struct ProcessHookCapability: ProcessCapability {
         return pid
     }
 
+    // MARK: - Exit waiting
+
+    /// Suspends until the (suspended-at-birth) child exits, without occupying a
+    /// thread: registers a kqueue-backed exit source, *then* releases the child
+    /// with SIGCONT. When the source fires the child is already a zombie, so the
+    /// `waitpid` reap returns immediately instead of blocking.
+    ///
+    /// This await is deliberately non-cancellable: cancellation is handled by the
+    /// caller's `onCancel` (group SIGTERM/SIGKILL), which guarantees the exit
+    /// event — and therefore this continuation — always arrives.
+    private static func awaitExit(of pid: pid_t) async -> Int32 {
+        await withCheckedContinuation { continuation in
+            let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: eventQueue)
+            source.setEventHandler {
+                source.cancel()
+                var status: Int32 = 0
+                while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
+                continuation.resume(returning: status)
+            }
+            source.resume()
+            kill(pid, SIGCONT)
+        }
+    }
+
     // MARK: - Output and exit
 
-    /// Reads `fd` to EOF, keeping at most `limit` bytes and marking truncation.
-    /// Always drains fully so the child can never block on a full pipe.
+    /// Streams `fd` to EOF via DispatchIO (no thread blocks in `read`), keeping
+    /// at most `limit` bytes and marking truncation. Always drains fully so the
+    /// child can never block on a full pipe.
     private static func drain(fd: Int32, limit: Int) async -> String {
-        await Task.detached { () -> String in
-            var collected = Data()
-            var truncated = false
-            var buffer = [UInt8](repeating: 0, count: 16 * 1024)
-            while true {
-                let count = read(fd, &buffer, buffer.count)
-                if count <= 0 { break }
-                let room = limit - collected.count
-                if room > 0 {
-                    collected.append(contentsOf: buffer[0..<min(count, room)])
-                }
-                if count > room { truncated = true }
+        await withCheckedContinuation { continuation in
+            let queue = DispatchQueue(label: "com.cerebralhelm.hook-drain")
+            let collector = OutputCollector(limit: limit)
+            let io = DispatchIO(type: .stream, fileDescriptor: fd, queue: queue) { _ in
+                close(fd)
             }
-            close(fd)
-            let text = String(decoding: collected, as: UTF8.self)
-            return truncated ? text + "\n…[output truncated]" : text
-        }.value
+            // Deliver chunks as they arrive instead of buffering toward a high-water mark.
+            io.setLimit(lowWater: 1)
+            io.read(offset: 0, length: .max, queue: queue) { done, data, _ in
+                if let data { collector.append(data) }
+                // `done` fires exactly once — at EOF or on a read error — so the
+                // continuation resumes exactly once, with whatever was captured.
+                if done {
+                    io.close()
+                    continuation.resume(returning: collector.text())
+                }
+            }
+        }
     }
 
     /// Normal exit reports the exit status; death by signal reports the shell
@@ -207,6 +249,37 @@ public struct ProcessHookCapability: ProcessCapability {
         let signal = status & 0x7f
         if signal == 0 { return Int((status >> 8) & 0xff) }
         return Int(128 + signal)
+    }
+}
+
+/// Accumulates capped output across DispatchIO chunk callbacks. The lock makes
+/// the handler-side mutation and the final read safely publishable across the
+/// GCD queue → continuation-resumer boundary.
+private final class OutputCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private let limit: Int
+    private var collected = Data()
+    private var truncated = false
+
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func append(_ chunk: DispatchData) {
+        lock.lock()
+        defer { lock.unlock() }
+        let room = limit - collected.count
+        if room > 0 {
+            collected.append(contentsOf: chunk.prefix(room))
+        }
+        if chunk.count > room { truncated = true }
+    }
+
+    func text() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        let text = String(decoding: collected, as: UTF8.self)
+        return truncated ? text + "\n…[output truncated]" : text
     }
 }
 
