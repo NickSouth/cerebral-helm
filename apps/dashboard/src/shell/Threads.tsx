@@ -290,9 +290,16 @@ export default function Threads({
       return;
     }
 
+    let isVisible = true;
+
     const MAX_RENDER_DIM = 1920;
     function resize() {
       const { clientWidth, clientHeight } = container;
+      // Ignore degenerate/transient sizes — a 0-dimension reflow or the mode-wave view transition
+      // (NIC-154). Feeding renderer.setSize(0, …) makes iResolution NaN and the shader's
+      // pixel()=1/max(res)*count divide by zero, which visibly breaks the stream until the next
+      // good resize. Keep the last valid size instead of drawing a broken frame.
+      if (clientWidth <= 0 || clientHeight <= 0) return;
       const baseDpr = Math.min(window.devicePixelRatio || 1, 2);
       const longestSide = Math.max(clientWidth, clientHeight) * baseDpr;
       const dpr = longestSide > MAX_RENDER_DIM ? (baseDpr * MAX_RENDER_DIM) / longestSide : baseDpr;
@@ -301,6 +308,9 @@ export default function Threads({
       program.uniforms.iResolution.value.r = gl.canvas.width;
       program.uniforms.iResolution.value.g = gl.canvas.height;
       program.uniforms.iResolution.value.b = gl.canvas.width / gl.canvas.height;
+      // Draw the newly-sized buffer this tick so a resize shows a correct frame immediately rather
+      // than a stretched/stale one until the next RAF (NIC-154).
+      if (isVisible && !document.hidden) renderer.render({ scene: mesh });
     }
 
     const resizeObserver = new ResizeObserver(resize);
@@ -308,7 +318,6 @@ export default function Threads({
     window.addEventListener("resize", resize);
     resize();
 
-    let isVisible = true;
     const intersectionObserver = new IntersectionObserver(
       (entries) => {
         isVisible = entries[0].isIntersecting;
@@ -317,8 +326,16 @@ export default function Threads({
     );
     intersectionObserver.observe(container);
 
+    // Accumulate the animation clock incrementally (NIC-125): the old `iTime = t * speed` tied the
+    // phase to absolute time, so any speed change discontinuously teleported the noise field. Adding
+    // `dt * speed` per frame means a speed change only alters the rate going forward — never a jump.
+    // dt is clamped so a paused tab (document.hidden freezes RAF) never lurches on resume.
+    let uTime = 0;
+    let lastT: number | null = null;
     function update(t: number) {
       animationFrameId.current = requestAnimationFrame(update);
+      const dt = lastT === null ? 0 : Math.min(t - lastT, 100);
+      lastT = t;
       if (!isVisible || document.hidden) return;
 
       const p = propsRef.current;
@@ -326,7 +343,8 @@ export default function Threads({
       program.uniforms.uColor2.value.set(...(p.color2 ?? p.color));
       program.uniforms.uAmplitude.value = p.amplitude;
       program.uniforms.uDistance.value = p.distance;
-      program.uniforms.iTime.value = t * 0.001 * p.speed;
+      uTime += dt * 0.001 * p.speed;
+      program.uniforms.iTime.value = uTime;
 
       renderer.render({ scene: mesh });
     }

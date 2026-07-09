@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useDashboardState } from "../state/DashboardStateProvider";
-import type { HeimlichState } from "../bridge/types";
 import Threads from "./Threads";
 
 interface HeimlichConsciousnessProps {
@@ -8,66 +7,69 @@ interface HeimlichConsciousnessProps {
   readonly interactive?: boolean;
 }
 
-type RibbonState = "idle" | "listening" | "thinking" | "speaking" | "focus";
 type Rgb = [number, number, number];
 
-/** Collapse the dashboard's 8 runtime states onto the 5 presentation states of the stream. */
-function toRibbonState(state: HeimlichState): RibbonState {
-  switch (state) {
-    case "listening":
-      return "listening";
-    case "thinking":
-      return "thinking";
-    case "success":
-      return "speaking";
-    case "acting":
-    case "awaiting_confirmation":
-    case "error":
-      return "focus";
-    default:
-      return "idle";
-  }
-}
+/**
+ * A single constant flow character for the whole stream (NIC-125). Heimlich has no live runtime
+ * yet, so a state-reactive stream (speeding up / growing taller on "thinking") only reads as
+ * random, jarring motion to the user — and every state change caused a visible speed shift during
+ * quick actions. These are the former calm `idle` values; the stream now looks identical before,
+ * during, and after any command. State reactivity can return once Heimlich is live: `Threads`
+ * accumulates its clock (NIC-154), so re-introducing per-state speed/amplitude will ease smoothly
+ * instead of teleporting the field.
+ */
+const RIBBON = { amplitude: 1.0, distance: 0, speed: 0.25 } as const;
 
-/** Per-state flow character (Threads props). Provisional — tune once the base look is approved. */
-const PARAMS: Record<RibbonState, { amplitude: number; distance: number; speed: number }> = {
-  idle: { amplitude: 1.0, distance: 0, speed: 0.25 }, // ~70% slower than before, calm idle drift
-  listening: { amplitude: 1.2, distance: 0.1, speed: 1.3 },
-  thinking: { amplitude: 1.6, distance: 0.2, speed: 1.8 },
-  speaking: { amplitude: 1.4, distance: 0.15, speed: 1.5 },
-  focus: { amplitude: 0.9, distance: 0.05, speed: 0.8 }
-};
+/** Stream tint cross-fade duration — matches `--ch-motion-slow` so the WebGL colour eases with the UI. */
+const COLOR_FADE_MS = 320;
 
 const DEFAULT_GOLD: Rgb = [0.89, 0.647, 0.192]; // #e3a531 (owner-tuned Heimlich gold)
 const DEFAULT_CYAN: Rgb = [0.18, 0.576, 0.788]; // #2e93c9 (owner-tuned Heimlich blue)
 
 /**
  * The Heimlich consciousness stream (NIC-60): flowing gold→cyan threads that always own the center,
- * beneath the greeting/actions and the conversation overlay (course-correction A.1). Rendered by the
- * vendored React Bits "Threads" WebGL component behind this seam — swappable for another engine with
- * no other changes. Colour comes from the resolved mode accent (`--ch-accent-*`), so it re-themes via
- * `data-mode`; motion carries the Heimlich state. Falls back to the static gradient when WebGL is
- * unavailable (jsdom/GL-off) — never crashes the dashboard.
+ * beneath the greeting/actions (course-correction A.1). Rendered by the vendored React Bits
+ * "Threads" WebGL component behind this seam — swappable for another engine with no other changes.
+ * Colour comes from the resolved mode accent (`--ch-accent-*`), so it re-themes via `data-mode`;
+ * motion runs at a single constant character (NIC-125 — see `RIBBON`). Falls back to the static
+ * gradient when WebGL is unavailable (jsdom/GL-off) — never crashes the dashboard.
  */
 export function HeimlichConsciousness({ interactive = false }: HeimlichConsciousnessProps) {
-  const { heimlich, mode } = useDashboardState();
-  const params = PARAMS[toRibbonState(heimlich.state)];
+  const { mode } = useDashboardState();
   const hostRef = useRef<HTMLDivElement>(null);
   const [colors, setColors] = useState<{ a: Rgb; b: Rgb }>({ a: DEFAULT_GOLD, b: DEFAULT_CYAN });
+  const colorsRef = useRef(colors);
+  colorsRef.current = colors;
   const reducedMotion = usePrefersReducedMotion();
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
   const animate = hasWebGL() && !reducedMotion;
 
-  // Re-read the accent after mount and on mode switch (wait a frame for the data-mode cross-fade).
+  // Re-tint the stream on mount and on mode switch. The mode wave is a live commit (no view
+  // transition freezes the stream — NIC-125), and CSS custom properties jump instantly, so the
+  // WebGL colour eases ITSELF from the current tint to the new accent over the token cross-fade
+  // duration. The stream re-colours in step with the rest of the UI and never stops flowing.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const id = requestAnimationFrame(() =>
-      setColors({
+    let raf = requestAnimationFrame(() => {
+      const from = colorsRef.current;
+      const target = {
         a: readVarAsRgb(host, "--ch-heimlich-primary", DEFAULT_GOLD),
         b: readVarAsRgb(host, "--ch-heimlich-secondary", DEFAULT_CYAN)
-      })
-    );
-    return () => cancelAnimationFrame(id);
+      };
+      const duration = reducedMotionRef.current ? 0 : COLOR_FADE_MS;
+      let start = -1;
+      const step = (now: number) => {
+        if (start < 0) start = now;
+        const k = duration > 0 ? Math.min((now - start) / duration, 1) : 1;
+        const e = k * k * (3 - 2 * k); // smoothstep
+        setColors({ a: lerpRgb(from.a, target.a, e), b: lerpRgb(from.b, target.b, e) });
+        if (k < 1) raf = requestAnimationFrame(step);
+      };
+      raf = requestAnimationFrame(step);
+    });
+    return () => cancelAnimationFrame(raf);
   }, [mode]);
 
   return (
@@ -81,9 +83,9 @@ export function HeimlichConsciousness({ interactive = false }: HeimlichConscious
         <Threads
           color={colors.a}
           color2={colors.b}
-          amplitude={params.amplitude}
-          distance={params.distance}
-          speed={params.speed}
+          amplitude={RIBBON.amplitude}
+          distance={RIBBON.distance}
+          speed={RIBBON.speed}
         />
       ) : (
         <div className="heimlich__ribbon-fallback" />
@@ -125,6 +127,15 @@ function hasWebGL(): boolean {
     webglSupport = false;
   }
   return webglSupport;
+}
+
+/** Linear-interpolate two RGB triplets (each channel 0–1) by k∈[0,1]. */
+function lerpRgb(from: Rgb, to: Rgb, k: number): Rgb {
+  return [
+    from[0] + (to[0] - from[0]) * k,
+    from[1] + (to[1] - from[1]) * k,
+    from[2] + (to[2] - from[2]) * k
+  ];
 }
 
 /** Resolve `--ch-accent-*` to RGB 0–1 by probing computed `color` (resolves var chains). */
