@@ -97,6 +97,17 @@ describe("DashboardShell structure", () => {
     }
   });
 
+  it("shows every agent as grey / Not implemented for the MVP (NIC-124)", () => {
+    renderShell();
+    const agents = Array.from(document.querySelectorAll<HTMLElement>(".agent-list__item"));
+    expect(agents).toHaveLength(4);
+    for (const agent of agents) {
+      expect(within(agent).getByText("Not implemented")).toBeInTheDocument();
+      // The status dot is the neutral/grey activity (idle → neutral token).
+      expect(agent.querySelector('.agent-status-dot[data-activity="idle"]')).not.toBeNull();
+    }
+  });
+
   it("renders eight quick-action slots — wired ones enabled, placeholders disabled", () => {
     renderShell();
     const slots = within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole(
@@ -234,7 +245,9 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     const { container } = renderShell(); // Executive ready
     const bar = statusBar();
     expect(bar.getByText("Heimlich")).toBeInTheDocument();
-    expect(bar.getByText("Idle")).toBeInTheDocument();
+    // At rest Heimlich reads grey / "Not implemented" for the MVP (NIC-124).
+    expect(bar.getByText("Not implemented")).toBeInTheDocument();
+    expect(container.querySelector('.bottom-bar__status-dot[data-state="neutral"]')).not.toBeNull();
     expect(bar.getByText("Executive")).toBeInTheDocument();
     // Executive mocks 72°F Partly Cloudy weather (shown as icon + temperature) and an 82% battery.
     expect(bar.getByText("72°F")).toBeInTheDocument();

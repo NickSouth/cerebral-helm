@@ -15,8 +15,8 @@ import os
 /// and still runs against its in-webview mock bridge until NIC-74 wires the native
 /// transport. Navigation failures are logged so a broken bundle is visible.
 /// The backdrop window (NIC-120a): borderless windows refuse key status by
-/// default, but the hosted web input (command bar, conversation, settings)
-/// must accept typing whenever the dashboard is focused.
+/// default, but the hosted web input (command bar, settings) must accept
+/// typing whenever the dashboard is focused.
 private final class DashboardBackdropWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }

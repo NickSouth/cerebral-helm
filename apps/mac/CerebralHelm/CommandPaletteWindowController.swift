@@ -47,8 +47,9 @@ final class CommandPaletteWindowController: NSObject, WKNavigationDelegate, WKSc
     private let bridge = WKWebViewCerebralBridge()
     private let log = Logger(subsystem: "local.cerebralhelm.CerebralHelm", category: "palette")
 
-    /// Increment 2: invoked when the palette submits a conversational query ("Ask
-    /// Heimlich"). The coordinator brings the dashboard forward and opens the conversation.
+    /// Invoked when the palette submits a command. The coordinator brings the dashboard forward
+    /// and dispatches the command through the shared bridge (the Heimlich chat was removed —
+    /// NIC-124). The callback keeps its `onAskHeimlich` name to avoid churn across call sites.
     var onAskHeimlich: ((String) -> Void)?
 
     /// The screen the palette should appear on (NIC-120b: palette focus targets

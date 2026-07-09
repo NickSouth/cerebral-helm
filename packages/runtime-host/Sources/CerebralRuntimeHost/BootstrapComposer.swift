@@ -139,14 +139,9 @@ public enum BootstrapComposer {
     }
 
     private static func idleHeimlich() -> DashboardHeimlich {
-        DashboardHeimlich(
-            conversation: DashboardHeimlichConversation(
-                dashboardHeimlichConversationOpen: false,
-                input: DashboardConversationInput(draft: nil, placeholder: "Message Heimlich…"),
-                transcript: []
-            ),
-            state: .idle
-        )
+        // The chat/conversation surface was removed for the MVP (NIC-124); only the runtime
+        // state remains on the center surface.
+        DashboardHeimlich(state: .idle)
     }
 
     /// The honest pre-adapter regions: nothing is fabricated. Schedule and news are

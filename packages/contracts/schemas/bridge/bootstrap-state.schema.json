@@ -56,53 +56,15 @@
     },
     "heimlich": {
       "title": "DashboardHeimlich",
-      "description": "The center surface — Heimlich's consciousness — present in every mode; the center is never replaced (design spec §5.7). `conversation` is the translucent chat overlay over the still-running field, including its docked bottom input.",
+      "description": "The center surface — Heimlich's consciousness — present in every mode; the center is never replaced (design spec §5.7). The chat/conversation overlay was removed for the MVP (NIC-124): conversing with Heimlich is post-MVP, so only the runtime `state` remains.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["state", "conversation"],
+      "required": ["state"],
       "properties": {
         "state": {
           "title": "DashboardHeimlichState",
           "type": "string",
           "enum": ["idle", "listening", "thinking", "acting", "awaiting_confirmation", "success", "error", "offline"]
-        },
-        "conversation": {
-          "title": "DashboardHeimlichConversation",
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["open", "transcript", "input"],
-          "properties": {
-            "open": { "type": "boolean" },
-            "transcript": {
-              "type": "array",
-              "items": {
-                "title": "DashboardConversationMessage",
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["id", "role", "text"],
-                "properties": {
-                  "id": { "type": "string" },
-                  "role": {
-                    "title": "DashboardConversationRole",
-                    "type": "string",
-                    "enum": ["user", "heimlich"]
-                  },
-                  "text": { "type": "string" }
-                }
-              }
-            },
-            "input": {
-              "title": "DashboardConversationInput",
-              "description": "The in-conversation docked bottom input (distinct from the persistent top-center Ask Heimlich launcher); shown when the conversation is open, lifts on minimize/close.",
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["placeholder"],
-              "properties": {
-                "draft": { "type": "string" },
-                "placeholder": { "type": "string" }
-              }
-            }
-          }
         }
       }
     },

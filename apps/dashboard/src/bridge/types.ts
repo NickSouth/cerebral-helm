@@ -28,28 +28,12 @@ export type HeimlichState =
   | "error"
   | "offline";
 
-export interface ConversationMessage {
-  readonly id: string;
-  readonly role: "user" | "heimlich";
-  readonly text: string;
-}
-
-/** The in-conversation docked bottom input — distinct from the persistent top Ask Heimlich launcher. */
-export interface ConversationInput {
-  readonly draft?: string;
-  readonly placeholder: string;
-}
-
-export interface HeimlichConversation {
-  readonly open: boolean;
-  readonly transcript: readonly ConversationMessage[];
-  readonly input: ConversationInput;
-}
-
-/** The center surface; always present — chat is a translucent overlay, never a replacement (§5.7). */
+/**
+ * The center surface; always present. The chat/conversation overlay was removed for the MVP
+ * (NIC-124) — conversing with Heimlich is post-MVP — so only the runtime `state` remains.
+ */
 export interface HeimlichSurface {
   readonly state: HeimlichState;
-  readonly conversation: HeimlichConversation;
 }
 
 /**

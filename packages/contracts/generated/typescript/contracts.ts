@@ -17,8 +17,8 @@ export interface CerebralHelmBridgeBootstrapState {
     expandedAgent: null | string;
     /**
      * The center surface — Heimlich's consciousness — present in every mode; the center is
-     * never replaced (design spec §5.7). `conversation` is the translucent chat overlay over
-     * the still-running field, including its docked bottom input.
+     * never replaced (design spec §5.7). The chat/conversation overlay was removed for the MVP
+     * (NIC-124): conversing with Heimlich is post-MVP, so only the runtime `state` remains.
      */
     heimlich: DashboardHeimlich;
     mode:     Mode;
@@ -83,42 +83,11 @@ export enum DashboardAgentAvailability {
 
 /**
  * The center surface — Heimlich's consciousness — present in every mode; the center is
- * never replaced (design spec §5.7). `conversation` is the translucent chat overlay over
- * the still-running field, including its docked bottom input.
+ * never replaced (design spec §5.7). The chat/conversation overlay was removed for the MVP
+ * (NIC-124): conversing with Heimlich is post-MVP, so only the runtime `state` remains.
  */
 export interface DashboardHeimlich {
-    conversation: DashboardHeimlichConversation;
-    state:        DashboardHeimlichState;
-}
-
-export interface DashboardHeimlichConversation {
-    /**
-     * The in-conversation docked bottom input (distinct from the persistent top-center Ask
-     * Heimlich launcher); shown when the conversation is open, lifts on minimize/close.
-     */
-    input:      DashboardConversationInput;
-    open:       boolean;
-    transcript: DashboardConversationMessage[];
-}
-
-/**
- * The in-conversation docked bottom input (distinct from the persistent top-center Ask
- * Heimlich launcher); shown when the conversation is open, lifts on minimize/close.
- */
-export interface DashboardConversationInput {
-    draft?:      string;
-    placeholder: string;
-}
-
-export interface DashboardConversationMessage {
-    id:   string;
-    role: DashboardConversationRole;
-    text: string;
-}
-
-export enum DashboardConversationRole {
-    Heimlich = "heimlich",
-    User = "user",
+    state: DashboardHeimlichState;
 }
 
 export enum DashboardHeimlichState {

@@ -60,9 +60,10 @@ function WaveformMark() {
   );
 }
 
-/** Heimlich status dot color mirrors the runtime state (idle reads as ready/online, green). */
+/** Heimlich status dot color mirrors the runtime state. At rest (idle) it reads grey/neutral —
+ *  the "Not implemented" MVP state (NIC-124) — and only lights up while a command runs. */
 const HEIMLICH_STATE_DOT: Readonly<Record<string, string>> = {
-  idle: "ready",
+  idle: "neutral",
   listening: "info",
   thinking: "info",
   acting: "warning",

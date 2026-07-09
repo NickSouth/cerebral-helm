@@ -19,9 +19,8 @@ describe("expanded bootstrap state", () => {
   it("boots with Heimlich owning the center and no agent expanded (A.1 / B)", () => {
     const state = loadBootstrapState();
 
-    // Heimlich is always present; the chat overlay is closed by default (never replaces the center).
+    // Heimlich is always present; only its runtime state remains (the chat surface was removed — NIC-124).
     expect(state.heimlich.state).toBe("idle");
-    expect(state.heimlich.conversation.open).toBe(false);
     // expandedAgent defaults to null in every mode — nothing covers the right column by default.
     expect(state.expandedAgent).toBeNull();
   });
