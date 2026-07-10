@@ -1,34 +1,43 @@
 // Browser tab surfacing seam (NIC-145). The live AppleScript path is smoke-only
 // on hardware; here we cover the pure, deterministic parts — family resolution,
-// the focus-script builder (including URL escaping), and the dispatch/outcome
-// mapping in `DefaultBrowserTabSurface` — through a fake runner so no Apple Event
-// is ever sent. Gated so the Linux CI package build compiles this target empty.
+// domain matching, the enumerate/focus script builders, the tab-list parser, and
+// the dispatch/outcome mapping in `DefaultBrowserTabSurface` — through a fake
+// runner so no Apple Event is ever sent. Gated so the Linux CI package build
+// compiles this target empty.
 #if canImport(AppKit)
 import Foundation
 import Testing
 
 @testable import CerebralMacAdapters
 
-/// A scripted fake: returns a fixed default browser and focus result.
+/// A scripted fake: returns a fixed default browser, tab list, and focus result,
+/// recording what it was asked to focus.
 private struct FakeBrowserScriptRunner: BrowserScriptRunner {
     var bundleID: String?
-    var result: BrowserFocusResult = .noMatch
-    var recordedURLs: RecordingBox = RecordingBox()
+    var query: BrowserTabQuery = .tabs([])
+    var focusSucceeds: Bool = true
+    var focusCalls: FocusBox = FocusBox()
 
     func defaultBrowserBundleID() -> String? { bundleID }
 
-    func focusMatchingTab(url: URL, bundleID: String, family: BrowserFamily) -> BrowserFocusResult {
-        recordedURLs.append(url)
-        return result
+    func openTabs(bundleID: String, family: BrowserFamily) -> BrowserTabQuery { query }
+
+    func focusTab(bundleID: String, family: BrowserFamily, windowIndex: Int, tabIndex: Int) -> Bool {
+        focusCalls.record(windowIndex: windowIndex, tabIndex: tabIndex)
+        return focusSucceeds
     }
 }
 
 /// Thread-safe recorder so the fake stays `Sendable`.
-private final class RecordingBox: @unchecked Sendable {
+private final class FocusBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var urls: [URL] = []
-    func append(_ url: URL) { lock.lock(); urls.append(url); lock.unlock() }
-    var all: [URL] { lock.lock(); defer { lock.unlock() }; return urls }
+    private var calls: [(Int, Int)] = []
+    func record(windowIndex: Int, tabIndex: Int) { lock.lock(); calls.append((windowIndex, tabIndex)); lock.unlock() }
+    var all: [(Int, Int)] { lock.lock(); defer { lock.unlock() }; return calls }
+}
+
+private func surface(_ runner: FakeBrowserScriptRunner) -> DefaultBrowserTabSurface {
+    DefaultBrowserTabSurface(runner: runner)
 }
 
 // MARK: - Family resolution
@@ -44,95 +53,154 @@ func familyResolution() {
     #expect(BrowserFamily.forBundleID("company.thebrowser.Browser") == nil)
 }
 
-// MARK: - Focus script builder
+// MARK: - Domain matching
 
-@Test("the chromium script uses the active-tab-index dialect and embeds the escaped url")
-func chromiumScript() {
-    let url = URL(string: "https://github.com")!
-    let source = BrowserFocusScript.source(url: url, bundleID: "com.google.Chrome", family: .chromium)
+@Test("hosts match when equal or a subdomain either way, but not unrelated look-alikes")
+func domainMatching() {
+    #expect(BrowserDomain.hostsMatch("github.com", "github.com"))
+    // Redirect added a subdomain.
+    #expect(BrowserDomain.hostsMatch("www.github.com", "github.com"))
+    #expect(BrowserDomain.hostsMatch("app.github.com", "github.com"))
+    // Pinned with a subdomain, redirect dropped it.
+    #expect(BrowserDomain.hostsMatch("github.com", "www.github.com"))
+    // Case-insensitive.
+    #expect(BrowserDomain.hostsMatch("GitHub.com", "github.com"))
+    // Look-alikes that merely share a trailing string must not match.
+    #expect(!BrowserDomain.hostsMatch("notgithub.com", "github.com"))
+    #expect(!BrowserDomain.hostsMatch("github.com.evil.com", "github.com"))
+    // Sibling subdomains of a shared suffix do not match each other.
+    #expect(!BrowserDomain.hostsMatch("foo.co.uk", "bar.co.uk"))
+}
+
+// MARK: - Script builders + parser
+
+@Test("the enumerate script walks windows and tabs and emits delimited url lines")
+func enumerateScript() {
+    let source = BrowserTabScript.enumerate(family: .chromium, bundleID: "com.google.Chrome")
     #expect(source.contains("tell application id \"com.google.Chrome\""))
-    #expect(source.contains("active tab index"))
-    #expect(source.contains("set _target to \"https://github.com\""))
-    // Trailing-slash tolerant so a browser-normalised URL still matches.
-    #expect(source.contains("(_target & \"/\")"))
+    #expect(source.contains("repeat with _theTab in tabs of _theWindow"))
+    #expect(source.contains("URL of _theTab"))
 }
 
-@Test("the safari script uses the current-tab dialect")
-func safariScript() {
-    let url = URL(string: "https://apple.com")!
-    let source = BrowserFocusScript.source(url: url, bundleID: "com.apple.Safari", family: .safari)
-    #expect(source.contains("tell application id \"com.apple.Safari\""))
-    #expect(source.contains("set current tab of _w"))
+@Test("the enumerate script binds tab/linefeed OUTSIDE the tell block, so they are real characters")
+func enumerateDelimitersAreHoisted() {
+    let source = BrowserTabScript.enumerate(family: .chromium, bundleID: "com.google.Chrome")
+    // Regression guard (NIC-145): inside a browser `tell` block, `tab`/`linefeed`
+    // resolve to the app's `tab` class (the text "tab"), corrupting every line.
+    // They must be bound before the tell, and the loop must use the bound vars.
+    guard let bindIndex = source.range(of: "set _fs to tab"),
+          let tellIndex = source.range(of: "tell application id") else {
+        Issue.record("Expected the delimiter binding and the tell block."); return
+    }
+    #expect(bindIndex.lowerBound < tellIndex.lowerBound)
+    #expect(source.contains("set _rs to linefeed"))
+    #expect(source.contains("_w & _fs & _t & _fs & (URL of _theTab) & _rs"))
+    // The corrupting form must never appear.
+    #expect(!source.contains("& tab &"))
+    #expect(!source.contains("& linefeed"))
 }
 
-@Test("a url containing quotes is escaped so it cannot break out of the applescript literal")
-func urlEscaping() {
-    // A crafted string with an embedded quote and backslash.
-    let raw = "https://evil.example/\"\\onmouseover"
-    let url = URL(string: "https://evil.example")!
-    // Build a literal directly to assert escaping is total.
-    let literal = BrowserFocusScript.literal(raw)
-    #expect(literal == "\"https://evil.example/\\\"\\\\onmouseover\"")
-    // And the builder path never emits a bare unescaped quote past the opening one.
-    let source = BrowserFocusScript.source(url: url, bundleID: "com.google.Chrome", family: .chromium)
-    #expect(source.contains("set _target to \"https://evil.example\""))
+@Test("the focus script uses the family dialect and the given indices")
+func focusScript() {
+    let chromium = BrowserTabScript.focus(family: .chromium, bundleID: "com.google.Chrome", windowIndex: 2, tabIndex: 5)
+    #expect(chromium.contains("set active tab index of window 2 to 5"))
+    #expect(chromium.contains("set index of window 2 to 1"))
+
+    let safari = BrowserTabScript.focus(family: .safari, bundleID: "com.apple.Safari", windowIndex: 1, tabIndex: 3)
+    #expect(safari.contains("set current tab of window 1 to tab 3 of window 1"))
+}
+
+@Test("a bundle id containing quotes is escaped so it cannot break out of the literal")
+func bundleIDEscaping() {
+    let literal = BrowserTabScript.literal("a\"b\\c")
+    #expect(literal == "\"a\\\"b\\\\c\"")
+}
+
+@Test("the tab parser reads well-formed lines and skips malformed ones")
+func tabParsing() {
+    let raw = "1\t1\thttps://github.com/\n1\t2\thttps://apple.com/\nbad-line\n2\t1\thttps://example.com/"
+    let tabs = SystemBrowserScriptRunner.parseTabs(raw)
+    #expect(tabs == [
+        BrowserTabRef(windowIndex: 1, tabIndex: 1, url: "https://github.com/"),
+        BrowserTabRef(windowIndex: 1, tabIndex: 2, url: "https://apple.com/"),
+        BrowserTabRef(windowIndex: 2, tabIndex: 1, url: "https://example.com/"),
+    ])
 }
 
 // MARK: - Dispatch + outcome mapping
 
-@Test("no default browser is an unsupported outcome, and never scripts anything")
+@Test("no default browser is an unsupported outcome, and never enumerates")
 func noDefaultBrowser() async {
-    let runner = FakeBrowserScriptRunner(bundleID: nil, result: .focused)
-    let surface = DefaultBrowserTabSurface(runner: runner)
-    let outcome = await surface.surface(url: URL(string: "https://github.com")!)
+    let runner = FakeBrowserScriptRunner(bundleID: nil)
+    let outcome = await surface(runner).surface(url: URL(string: "https://github.com")!)
     guard case .unsupported = outcome else {
         Issue.record("Expected unsupported when there is no default browser, got \(outcome).")
         return
     }
-    #expect(runner.recordedURLs.all.isEmpty)
+    #expect(runner.focusCalls.all.isEmpty)
 }
 
-@Test("an unsupported default browser degrades to unsupported without scripting")
+@Test("an unsupported default browser degrades to unsupported")
 func unsupportedBrowser() async {
-    let runner = FakeBrowserScriptRunner(bundleID: "org.mozilla.firefox", result: .focused)
-    let surface = DefaultBrowserTabSurface(runner: runner)
-    let outcome = await surface.surface(url: URL(string: "https://github.com")!)
+    let runner = FakeBrowserScriptRunner(bundleID: "org.mozilla.firefox")
+    let outcome = await surface(runner).surface(url: URL(string: "https://github.com")!)
     guard case .unsupported = outcome else {
         Issue.record("Expected unsupported for Firefox, got \(outcome).")
         return
     }
-    #expect(runner.recordedURLs.all.isEmpty)
 }
 
-@Test("a focused tab surfaces, and the resolved url reaches the runner")
-func focusedSurfaces() async {
-    let runner = FakeBrowserScriptRunner(bundleID: "com.google.Chrome", result: .focused)
-    let surface = DefaultBrowserTabSurface(runner: runner)
-    let outcome = await surface.surface(url: URL(string: "https://github.com")!)
+@Test("a tab on the same domain (redirected path/subdomain) is surfaced and focused by index")
+func domainTabSurfaces() async {
+    // Pinned github.com; the open tab redirected to a deep path on a subdomain.
+    let runner = FakeBrowserScriptRunner(
+        bundleID: "com.google.Chrome",
+        query: .tabs([
+            BrowserTabRef(windowIndex: 1, tabIndex: 1, url: "https://apple.com/"),
+            BrowserTabRef(windowIndex: 1, tabIndex: 2, url: "https://www.github.com/dashboard/feed"),
+        ])
+    )
+    let outcome = await surface(runner).surface(url: URL(string: "https://github.com")!)
     #expect(outcome == .surfaced)
-    #expect(runner.recordedURLs.all == [URL(string: "https://github.com")!])
+    #expect(runner.focusCalls.all.map { [$0.0, $0.1] } == [[1, 2]])
 }
 
-@Test("no matching tab reports notFound so the caller opens fresh")
-func noMatchIsNotFound() async {
-    let runner = FakeBrowserScriptRunner(bundleID: "com.google.Chrome", result: .noMatch)
-    let outcome = await DefaultBrowserTabSurface(runner: runner).surface(url: URL(string: "https://github.com")!)
+@Test("no tab on the domain reports notFound so the caller opens fresh")
+func noDomainMatchIsNotFound() async {
+    let runner = FakeBrowserScriptRunner(
+        bundleID: "com.google.Chrome",
+        query: .tabs([BrowserTabRef(windowIndex: 1, tabIndex: 1, url: "https://apple.com/")])
+    )
+    let outcome = await surface(runner).surface(url: URL(string: "https://github.com")!)
     #expect(outcome == .notFound)
+    #expect(runner.focusCalls.all.isEmpty)
+}
+
+@Test("a matched tab that fails to focus (window vanished) degrades to notFound")
+func focusFailureIsNotFound() async {
+    let runner = FakeBrowserScriptRunner(
+        bundleID: "com.google.Chrome",
+        query: .tabs([BrowserTabRef(windowIndex: 1, tabIndex: 1, url: "https://github.com/")]),
+        focusSucceeds: false
+    )
+    let outcome = await surface(runner).surface(url: URL(string: "https://github.com")!)
+    #expect(outcome == .notFound)
+    #expect(runner.focusCalls.all.map { [$0.0, $0.1] } == [[1, 1]])
 }
 
 @Test("denied automation maps to denied")
 func deniedMapsThrough() async {
-    let runner = FakeBrowserScriptRunner(bundleID: "com.google.Chrome", result: .denied)
-    let outcome = await DefaultBrowserTabSurface(runner: runner).surface(url: URL(string: "https://github.com")!)
+    let runner = FakeBrowserScriptRunner(bundleID: "com.google.Chrome", query: .denied)
+    let outcome = await surface(runner).surface(url: URL(string: "https://github.com")!)
     #expect(outcome == .denied)
 }
 
-@Test("a script failure degrades to unsupported")
+@Test("an enumeration failure degrades to unsupported")
 func failureDegrades() async {
-    let runner = FakeBrowserScriptRunner(bundleID: "com.google.Chrome", result: .failed("boom"))
-    let outcome = await DefaultBrowserTabSurface(runner: runner).surface(url: URL(string: "https://github.com")!)
+    let runner = FakeBrowserScriptRunner(bundleID: "com.google.Chrome", query: .failed("boom"))
+    let outcome = await surface(runner).surface(url: URL(string: "https://github.com")!)
     guard case .unsupported = outcome else {
-        Issue.record("Expected unsupported for a script failure, got \(outcome).")
+        Issue.record("Expected unsupported for an enumeration failure, got \(outcome).")
         return
     }
 }
