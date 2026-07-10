@@ -59,7 +59,7 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
   });
 
-  it("lists all seven categories and pins an honest-disabled shutdown", () => {
+  it("lists all six categories and pins an honest-disabled shutdown", () => {
     renderApp();
     const dialog = openSettings();
     for (const label of [
@@ -68,8 +68,7 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
       "Modes",
       "Actions",
       "Customization",
-      "Setup",
-      "Knowledge"
+      "Setup"
     ]) {
       expect(within(dialog).getByRole("tab", { name: label })).toBeInTheDocument();
     }
@@ -79,11 +78,11 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
   it("swaps the right pane when a category is selected", async () => {
     renderApp();
     const dialog = openSettings();
-    // General is the default — its Default mode control seeds from the persisted read.
-    expect(await within(dialog).findByLabelText("Default mode")).toBeInTheDocument();
+    // General is the default — its Reduce motion control seeds once the persisted read settles.
+    expect(await within(dialog).findByLabelText("Reduce motion")).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("tab", { name: "Permissions" }));
-    expect(within(dialog).queryByLabelText("Default mode")).toBeNull();
+    expect(within(dialog).queryByLabelText("Reduce motion")).toBeNull();
     // Permissions is read-only inspection: real tool ids + the deterministic-policy statement.
     expect(within(dialog).getByText("hook.run")).toBeInTheDocument();
     expect(within(dialog).getByText(/cannot be changed here/)).toBeInTheDocument();
@@ -129,9 +128,10 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(labels).toEqual(["System primary", "Built-in Display (primary)"]);
   });
 
-  it("seeds General controls from the persisted settings snapshot (NIC-141)", async () => {
+  it("seeds the Modes controls from the persisted settings snapshot (NIC-141)", async () => {
     renderApp();
     const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Modes" }));
     // The mock returns a representative persisted state: developer + windows-stored-by-mode on.
     const modeSelect = await within(dialog).findByRole("combobox", { name: "Default mode" });
     expect(modeSelect).toHaveValue("developer");
@@ -141,7 +141,7 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
   it("seeds the Knowledge root from the persisted settings snapshot (NIC-141)", async () => {
     renderApp();
     const dialog = openSettings();
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Knowledge" }));
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
     const input = await within(dialog).findByLabelText("Knowledge root reference");
     expect(input).toHaveValue("knowledge-root");
   });
@@ -189,8 +189,8 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     };
 
     const dialog = openSettings();
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Customization" }));
-    fireEvent.click(within(dialog).getByLabelText("Reduce motion"));
+    // Reduce motion now lives in General (the default tab); it seeds once the read settles.
+    fireEvent.click(await within(dialog).findByLabelText("Reduce motion"));
 
     // The override is applied at the themed root (synchronous, user-visible)...
     expect(document.querySelector(".app-root")?.getAttribute("data-reduced-motion")).toBe("true");
@@ -264,8 +264,10 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
     render(<SettingsApp />);
     const surface = screen.getByRole("main", { name: "Settings" });
 
-    fireEvent.click(within(surface).getByRole("tab", { name: "Hotkeys" }));
-    const select = within(surface).getByRole("combobox", { name: "Command palette shortcut" });
+    // The palette shortcut now lives in General (the default tab); it seeds once the read settles.
+    const select = await within(surface).findByRole("combobox", {
+      name: "Command palette shortcut"
+    });
     fireEvent.change(select, { target: { value: "command-shift-space" } });
     expect(postMessage).toHaveBeenCalledWith({
       action: "setPaletteShortcut",

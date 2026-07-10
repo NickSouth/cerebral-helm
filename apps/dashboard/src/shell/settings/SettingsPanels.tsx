@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useDashboardState } from "../../state/DashboardStateProvider";
 import { useAppearance } from "../../state/AppearanceProvider";
 import { toModeId } from "../../tokens/tokens";
@@ -52,7 +52,7 @@ function SettingsLoading() {
   );
 }
 
-// --- General --------------------------------------------------------------
+// --- Shared control seeds --------------------------------------------------
 
 /**
  * The persisted sentinel for "no explicit main display" — never a real display
@@ -109,43 +109,52 @@ function LaunchAtLoginField() {
   );
 }
 
+/** The curated palette shortcuts, mirroring the native `PaletteShortcutPreset` ids. */
+const PALETTE_SHORTCUT_PRESETS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: "option-space", label: "⌥Space" },
+  { id: "command-shift-space", label: "⌘⇧Space" },
+  { id: "control-space", label: "⌃Space" },
+  { id: "option-command-k", label: "⌥⌘K" }
+];
+
+interface HotkeyWindow extends Window {
+  webkit?: { messageHandlers?: { shellControl?: { postMessage(message: unknown): void } } };
+  __cerebralHotkey?: { preset?: string; label?: string };
+}
+
+/** Ask the native shell to rebind the palette hotkey (a Mac-only concern, off the bridge). */
+function setPaletteShortcut(preset: string): void {
+  (window as HotkeyWindow).webkit?.messageHandlers?.shellControl?.postMessage({
+    action: "setPaletteShortcut",
+    preset
+  });
+}
+
+// --- General --------------------------------------------------------------
+
 function GeneralPanel() {
-  // Gate on the persisted read so the controls seed from settled state (NIC-141).
+  // Gate on the persisted read so the Main display control seeds from settled state (NIC-141).
   const { status } = useSettingsSnapshot();
   return status === "loading" ? <SettingsLoading /> : <GeneralPanelBody />;
 }
 
 function GeneralPanelBody() {
-  const { modes, mode, capabilities, displayTopology } = useDashboardState();
+  const { displayTopology } = useDashboardState();
   // Ready → persisted values; error → null → fall back to the safe defaults.
   const { snapshot } = useSettingsSnapshot();
+  const { reducedMotion, setReducedMotion } = useAppearance();
   const updateSettings = useUpdateSettings();
-  const selectId = useId();
-  const [defaultModeId, setDefaultModeId] = useState(
-    () => snapshot?.defaultModeId ?? toModeId(mode)
-  );
-  const [windowsStoredByMode, setWindowsStoredByMode] = useState(
-    () => snapshot?.workspace.windowsStoredByMode ?? false
-  );
   const [mainDisplayId, setMainDisplayId] = useState(
     () => snapshot?.workspace.mainDisplayId ?? SYSTEM_PRIMARY
   );
-  const windowsCapability = capabilities?.["native.workspace.windows"];
+  const [preset, setPreset] = useState(
+    () => (window as HotkeyWindow).__cerebralHotkey?.preset ?? "option-space"
+  );
   // Only stable identities may be persisted (NIC-87 safe-degradation rule): a
   // session-scoped fallback id would silently stop matching after reconnect.
   const selectableDisplays = (displayTopology?.displays ?? []).filter(
     (display) => display.stableIdentity
   );
-
-  function onChange(nextId: string) {
-    setDefaultModeId(nextId as typeof defaultModeId);
-    void updateSettings({ defaultModeId: nextId });
-  }
-
-  function onWindowsToggle(next: boolean) {
-    setWindowsStoredByMode(next);
-    void updateSettings({ workspace: { windowsStoredByMode: next } });
-  }
 
   function onMainDisplayChange(nextId: string) {
     setMainDisplayId(nextId);
@@ -155,46 +164,22 @@ function GeneralPanelBody() {
     postShellControl("setMainDisplay", { id: nextId });
   }
 
+  function onReducedMotionToggle(next: boolean) {
+    setReducedMotion(next);
+    void updateSettings({ appearance: { reducedMotion: next } });
+  }
+
+  function onShortcutChange(next: string) {
+    setPreset(next);
+    setPaletteShortcut(next);
+  }
+
   return (
     <>
       <Section title="Startup">
-        <Field label="Default mode" hint="The mode CerebralHelm opens in — applied on next launch.">
-          <select
-            id={selectId}
-            className="settings-select"
-            value={defaultModeId}
-            aria-label="Default mode"
-            onChange={(event) => onChange(event.target.value)}
-          >
-            {modes.map((modeView) => (
-              <option key={modeView.id} value={modeView.id}>
-                {modeView.label}
-              </option>
-            ))}
-          </select>
-        </Field>
         <LaunchAtLoginField />
       </Section>
-      <Section title="Workspace">
-        <Field
-          label="Windows Stored by Mode"
-          hint={
-            windowsCapability?.available
-              ? "Switching modes hides the outgoing mode's windows and returns the stored ones. Quit apps are never relaunched."
-              : (windowsCapability?.degradedReason ??
-                "Applies on the macOS host: switching modes hides the outgoing mode's windows and returns the stored ones.")
-          }
-        >
-          <label className="settings-switch">
-            <input
-              type="checkbox"
-              checked={windowsStoredByMode}
-              aria-label="Windows Stored by Mode"
-              onChange={(event) => onWindowsToggle(event.target.checked)}
-            />
-            <span className="settings-switch__track" aria-hidden="true" />
-          </label>
-        </Field>
+      <Section title="Display">
         <Field
           label="Main display"
           hint="Where the dashboard's conversation and the command palette appear. Displays without a stable identity fall back to the system primary."
@@ -214,6 +199,41 @@ function GeneralPanelBody() {
             ))}
           </select>
         </Field>
+      </Section>
+      <Section title="Motion">
+        <Field
+          label="Reduce motion"
+          hint="Stills ambient and transition animations across the dashboard."
+        >
+          <label className="settings-switch">
+            <input
+              type="checkbox"
+              checked={reducedMotion}
+              aria-label="Reduce motion"
+              onChange={(event) => onReducedMotionToggle(event.target.checked)}
+            />
+            <span className="settings-switch__track" aria-hidden="true" />
+          </label>
+        </Field>
+      </Section>
+      <Section title="Command palette">
+        <Field label="Summon shortcut" hint="Press this from anywhere to open the command palette.">
+          <select
+            className="settings-select"
+            value={preset}
+            aria-label="Command palette shortcut"
+            onChange={(event) => onShortcutChange(event.target.value)}
+          >
+            {PALETTE_SHORTCUT_PRESETS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <p className="settings-note">
+          If the shortcut doesn’t respond, another app may already use it — pick a different one.
+        </p>
       </Section>
       <Section title="About">
         <Field label="Build">
@@ -261,33 +281,98 @@ function PermissionsPanel() {
 // --- Modes ----------------------------------------------------------------
 
 function ModesPanel() {
-  const { modes } = useDashboardState();
+  // The default-mode and window-behavior controls seed from the persisted read (NIC-141).
+  const { status } = useSettingsSnapshot();
+  return status === "loading" ? <SettingsLoading /> : <ModesPanelBody />;
+}
+
+function ModesPanelBody() {
+  const { modes, mode, capabilities } = useDashboardState();
+  const { snapshot } = useSettingsSnapshot();
+  const updateSettings = useUpdateSettings();
+  const [defaultModeId, setDefaultModeId] = useState(
+    () => snapshot?.defaultModeId ?? toModeId(mode)
+  );
+  const [windowsStoredByMode, setWindowsStoredByMode] = useState(
+    () => snapshot?.workspace.windowsStoredByMode ?? false
+  );
+  const windowsCapability = capabilities?.["native.workspace.windows"];
+
+  function onDefaultModeChange(nextId: string) {
+    setDefaultModeId(nextId as typeof defaultModeId);
+    void updateSettings({ defaultModeId: nextId });
+  }
+
+  function onWindowsToggle(next: boolean) {
+    setWindowsStoredByMode(next);
+    void updateSettings({ workspace: { windowsStoredByMode: next } });
+  }
+
   return (
-    <Section title="Configured modes">
-      <p className="settings-note">
-        Switch modes from the dashboard. Configuration is defined in files; this is a read-only
-        view.
-      </p>
-      <ul className="settings-list">
-        {modes.map((modeView) => (
-          <li key={modeView.id} className="settings-list__item">
-            <span
-              className="settings-swatch"
-              aria-hidden="true"
-              style={{
-                background: `linear-gradient(135deg, ${modeView.theme.accentPrimary}, ${modeView.theme.accentSecondary})`
-              }}
+    <>
+      <Section title="Default mode">
+        <Field label="Default mode" hint="The mode CerebralHelm opens in — applied on next launch.">
+          <select
+            className="settings-select"
+            value={defaultModeId}
+            aria-label="Default mode"
+            onChange={(event) => onDefaultModeChange(event.target.value)}
+          >
+            {modes.map((modeView) => (
+              <option key={modeView.id} value={modeView.id}>
+                {modeView.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </Section>
+      <Section title="Window behavior">
+        <Field
+          label="Windows Stored by Mode"
+          hint={
+            windowsCapability?.available
+              ? "Switching modes hides the outgoing mode's windows and returns the stored ones. Quit apps are never relaunched."
+              : (windowsCapability?.degradedReason ??
+                "Applies on the macOS host: switching modes hides the outgoing mode's windows and returns the stored ones.")
+          }
+        >
+          <label className="settings-switch">
+            <input
+              type="checkbox"
+              checked={windowsStoredByMode}
+              aria-label="Windows Stored by Mode"
+              onChange={(event) => onWindowsToggle(event.target.checked)}
             />
-            <div className="settings-list__text">
-              <span className="settings-list__title">{modeView.label}</span>
-              <span className="settings-list__sub">
-                {modeView.quickApps.length} quick apps · {modeView.greeting?.persona ?? "—"}
-              </span>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </Section>
+            <span className="settings-switch__track" aria-hidden="true" />
+          </label>
+        </Field>
+      </Section>
+      <Section title="Configured modes">
+        <p className="settings-note">
+          Switch modes from the dashboard. Colors and the assistant name are customizable under
+          Customization; this is a read-only summary.
+        </p>
+        <ul className="settings-list">
+          {modes.map((modeView) => (
+            <li key={modeView.id} className="settings-list__item">
+              <span
+                className="settings-swatch"
+                aria-hidden="true"
+                style={{
+                  background: `linear-gradient(135deg, ${modeView.theme.accentPrimary}, ${modeView.theme.accentSecondary})`
+                }}
+              />
+              <div className="settings-list__text">
+                <span className="settings-list__title">{modeView.label}</span>
+                <span className="settings-list__sub">
+                  {modeView.quickApps.length} quick apps · {modeView.greeting?.persona ?? "—"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </Section>
+    </>
   );
 }
 
@@ -306,7 +391,7 @@ function ActionsPanel() {
     <Section title={`Quick actions — ${active?.label ?? ""}`}>
       <p className="settings-note">
         The eight quick-action slots for the active mode, and whether each is wired to a workflow
-        yet.
+        yet. Building and rebinding actions arrives in a later pass.
       </p>
       <ul className="settings-list">
         {actions.map((action, index) => (
@@ -330,94 +415,14 @@ function ActionsPanel() {
   );
 }
 
-// --- Hotkeys --------------------------------------------------------------
-
-/** The curated palette shortcuts, mirroring the native `PaletteShortcutPreset` ids. */
-const PALETTE_SHORTCUT_PRESETS: ReadonlyArray<{ id: string; label: string }> = [
-  { id: "option-space", label: "⌥Space" },
-  { id: "command-shift-space", label: "⌘⇧Space" },
-  { id: "control-space", label: "⌃Space" },
-  { id: "option-command-k", label: "⌥⌘K" }
-];
-
-interface HotkeyWindow extends Window {
-  webkit?: { messageHandlers?: { shellControl?: { postMessage(message: unknown): void } } };
-  __cerebralHotkey?: { preset?: string; label?: string };
-}
-
-/** Ask the native shell to rebind the palette hotkey (a Mac-only concern, off the bridge). */
-function setPaletteShortcut(preset: string): void {
-  (window as HotkeyWindow).webkit?.messageHandlers?.shellControl?.postMessage({
-    action: "setPaletteShortcut",
-    preset
-  });
-}
-
-function HotkeysPanel() {
-  const selectId = useId();
-  const [preset, setPreset] = useState(
-    () => (window as HotkeyWindow).__cerebralHotkey?.preset ?? "option-space"
-  );
-
-  function onChange(next: string) {
-    setPreset(next);
-    setPaletteShortcut(next);
-  }
-
-  return (
-    <Section title="Command palette">
-      <Field
-        label="Summon shortcut"
-        hint="Press this from anywhere to open the command palette."
-      >
-        <select
-          id={selectId}
-          className="settings-select"
-          value={preset}
-          aria-label="Command palette shortcut"
-          onChange={(event) => onChange(event.target.value)}
-        >
-          {PALETTE_SHORTCUT_PRESETS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <p className="settings-note">
-        If the shortcut doesn’t respond, another app may already use it — pick a different one.
-      </p>
-    </Section>
-  );
-}
-
 // --- Customization --------------------------------------------------------
 
 function CustomizationPanel() {
-  const { reducedMotion, setReducedMotion } = useAppearance();
-  const updateSettings = useUpdateSettings();
-
-  function onToggle(next: boolean) {
-    setReducedMotion(next);
-    void updateSettings({ appearance: { reducedMotion: next } });
-  }
-
   return (
-    <Section title="Motion">
-      <Field
-        label="Reduce motion"
-        hint="Stills ambient and transition animations across the dashboard."
-      >
-        <label className="settings-switch">
-          <input
-            type="checkbox"
-            checked={reducedMotion}
-            aria-label="Reduce motion"
-            onChange={(event) => onToggle(event.target.checked)}
-          />
-          <span className="settings-switch__track" aria-hidden="true" />
-        </label>
-      </Field>
+    <Section title="Appearance">
+      <p className="settings-note">
+        Per-mode accent colors and the assistant name will be customizable here.
+      </p>
     </Section>
   );
 }
@@ -425,30 +430,12 @@ function CustomizationPanel() {
 // --- Setup ----------------------------------------------------------------
 
 function SetupPanel() {
-  return (
-    <Section title="Setup">
-      <p className="settings-note">These arrive with the macOS host.</p>
-      <Field label="Integrations & providers">
-        <Unavailable label="Requires the macOS host" />
-      </Field>
-      <Field label="Onboarding">
-        <Unavailable label="Requires the macOS host" />
-      </Field>
-      <Field label="Data location">
-        <Unavailable label="Requires the macOS host" />
-      </Field>
-    </Section>
-  );
-}
-
-// --- Knowledge ------------------------------------------------------------
-
-function KnowledgePanel() {
+  // The knowledge-root control seeds from the persisted read (NIC-141).
   const { status } = useSettingsSnapshot();
-  return status === "loading" ? <SettingsLoading /> : <KnowledgePanelBody />;
+  return status === "loading" ? <SettingsLoading /> : <SetupPanelBody />;
 }
 
-function KnowledgePanelBody() {
+function SetupPanelBody() {
   const { snapshot } = useSettingsSnapshot();
   const updateSettings = useUpdateSettings();
   const [rootReference, setRootReference] = useState(() => snapshot?.knowledge.rootReference ?? "");
@@ -465,7 +452,7 @@ function KnowledgePanelBody() {
       <Section title="Knowledge root">
         <Field
           label="Root reference"
-          hint="Where durable Markdown knowledge lives. Editable now; browsing arrives with the knowledge system."
+          hint="Where durable Markdown knowledge lives. Editable now; a native folder picker arrives with the knowledge system."
         >
           <input
             type="text"
@@ -491,6 +478,14 @@ function KnowledgePanelBody() {
           <Unavailable label="Requires the knowledge system" />
         </Field>
       </Section>
+      <Section title="Integrations & onboarding">
+        <Field label="Integrations & providers">
+          <Unavailable label="Requires the macOS host" />
+        </Field>
+        <Field label="Onboarding">
+          <Unavailable label="Requires the macOS host" />
+        </Field>
+      </Section>
     </>
   );
 }
@@ -501,8 +496,6 @@ export const SETTINGS_PANELS: Readonly<Record<SettingsCategoryId, () => ReactNod
   permissions: PermissionsPanel,
   modes: ModesPanel,
   actions: ActionsPanel,
-  hotkeys: HotkeysPanel,
   customization: CustomizationPanel,
-  setup: SetupPanel,
-  knowledge: KnowledgePanel
+  setup: SetupPanel
 };

@@ -79,14 +79,27 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
 
         // Sized to the web surface's design dimensions (design spec §10); resizable
         // so long panels are usable, min-bounded so the two-pane layout never crushes.
+        // Slightly shorter than the old 620 (NIC-140) now that the macOS title bar is gone.
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 880, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 880, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "CerebralHelm Settings"
-        window.minSize = NSSize(width: 640, height: 480)
+        window.minSize = NSSize(width: 640, height: 440)
+        // Frameless chrome (NIC-140): the web surface draws its own × (shellControl
+        // `closeSettings`) and section titles, so the macOS title bar and traffic
+        // lights are redundant. Hide them and let the content fill edge-to-edge —
+        // the same frameless treatment as the command palette. The window stays
+        // draggable from any non-interactive background via movableByWindowBackground;
+        // the web layer reserves a top drag strip so nothing interactive sits under it.
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
         // Closing hides the reusable window; the controller keeps owning it.
         window.isReleasedWhenClosed = false
         window.center()

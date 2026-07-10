@@ -9,10 +9,8 @@ export type SettingsCategoryId =
   | "permissions"
   | "modes"
   | "actions"
-  | "hotkeys"
   | "customization"
-  | "setup"
-  | "knowledge";
+  | "setup";
 
 export interface SettingsCategory {
   readonly id: SettingsCategoryId;
@@ -22,26 +20,32 @@ export interface SettingsCategory {
 }
 
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
-  { id: "general", label: "General", description: "Default mode and application information." },
+  {
+    id: "general",
+    label: "General",
+    description: "Launch, display, motion, and the command-palette shortcut."
+  },
   {
     id: "permissions",
     label: "Permissions",
     description: "Enabled tools and their deterministic risk & confirmation policy."
   },
-  { id: "modes", label: "Modes", description: "The four modes and their configured surfaces." },
-  { id: "actions", label: "Actions", description: "Quick actions and the workflows behind them." },
   {
-    id: "hotkeys",
-    label: "Hotkeys",
-    description: "The global shortcut that summons the command palette."
+    id: "modes",
+    label: "Modes",
+    description: "The modes, the default, and window behavior."
   },
+  { id: "actions", label: "Actions", description: "Quick actions and the workflows behind them." },
   {
     id: "customization",
     label: "Customization",
-    description: "Appearance and motion preferences."
+    description: "Mode colors and the assistant name."
   },
-  { id: "setup", label: "Setup", description: "Integrations, onboarding, and data location." },
-  { id: "knowledge", label: "Knowledge", description: "Where durable knowledge lives." }
+  {
+    id: "setup",
+    label: "Setup",
+    description: "Knowledge location, integrations, and onboarding."
+  }
 ];
 
 export const DEFAULT_SETTINGS_CATEGORY: SettingsCategoryId = SETTINGS_CATEGORIES[0].id;

@@ -84,6 +84,9 @@
   background: var(--ch-surface-raised);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
   overflow: hidden;
+  /* Slightly larger, more legible settings type (NIC-140): the surface reads at the
+     base size and the secondary text below steps up from sm to base to match. */
+  font-size: var(--ch-font-size-base);
   /* Open motion: the window emerges from the bottom-right corner — where the bottom bar's
      settings control lives — sliding up the diagonal while it expands and sharpens from a
      blur. Closing reverses back into the corner, faster (motion-base); SettingsOverlay
@@ -109,6 +112,24 @@
   border-radius: 0;
   box-shadow: none;
   animation: none;
+  /* Frameless native window (NIC-140): the macOS title bar is hidden, so the top
+     strip is the only window-drag region (isMovableByWindowBackground) and it
+     overlaps where the title bar used to be. Push the top-row controls (first
+     category tab, close ×, panel header) down by a title-bar's height so nothing
+     interactive sits under the drag strip — the × is the only close affordance. */
+  --ch-standalone-titlebar: 1.75rem;
+}
+
+.settings-window[data-standalone="true"] .settings-sidebar {
+  padding-top: calc(var(--ch-space-4) + var(--ch-standalone-titlebar));
+}
+
+.settings-window[data-standalone="true"] .settings-content__header {
+  padding-top: calc(var(--ch-space-5) + var(--ch-standalone-titlebar));
+}
+
+.settings-window[data-standalone="true"] .settings-content__close {
+  top: calc(var(--ch-space-4) + var(--ch-standalone-titlebar));
 }
 
 /* Left rail: category list on top, shutdown pinned to the bottom. */
@@ -204,7 +225,7 @@
 .settings-content__description {
   margin: var(--ch-space-1) 0 0;
   color: var(--ch-text-muted);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
 }
 
 .settings-content__close {
@@ -275,7 +296,7 @@
 
 .settings-field__hint {
   color: var(--ch-text-faint);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
 }
 
 .settings-field__control {
@@ -284,13 +305,13 @@
 
 .settings-readonly {
   color: var(--ch-text-muted);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
 }
 
 .settings-note {
   margin: 0;
   color: var(--ch-text-muted);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
   line-height: 1.5;
 }
 
@@ -328,7 +349,7 @@
 
 .settings-list__sub {
   color: var(--ch-text-muted);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
 }
 
 .settings-list__meta {
@@ -340,7 +361,7 @@
 
 .settings-list__policy {
   color: var(--ch-text-muted);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
 }
 
 .settings-badge {
@@ -370,7 +391,7 @@
 .settings-select,
 .settings-input {
   font: inherit;
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
   padding: var(--ch-space-2) var(--ch-space-3);
   border-radius: var(--ch-radius-md);
   border: 1px solid var(--ch-panel-border);
