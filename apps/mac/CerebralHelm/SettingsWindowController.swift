@@ -103,7 +103,30 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         // Closing hides the reusable window; the controller keeps owning it.
         window.isReleasedWhenClosed = false
         window.center()
-        window.contentView = webView
+
+        // A frameless window only drags from the ~28px transparent title bar, and the
+        // WKWebView (which returns false for mouseDownCanMoveWindow) sits under it — so the
+        // draggable area is tiny/absent (NIC-140 follow-up). Overlay a taller transparent
+        // band across the whole top that moves the window on drag; it sits above the webview
+        // so drags never reach web content, and the web layer keeps its top controls (× and
+        // first category) below it via `--ch-standalone-titlebar`, so nothing is covered.
+        let container = NSView()
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(webView)
+        let dragBand = WindowDragBand()
+        dragBand.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(dragBand)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: container.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            dragBand.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            dragBand.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            dragBand.topAnchor.constraint(equalTo: container.topAnchor),
+            dragBand.heightAnchor.constraint(equalToConstant: 40)
+        ])
+        window.contentView = container
 
         super.init()
         window.delegate = self
@@ -173,4 +196,11 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         log.error("Settings web content process terminated; reloading.")
         webView.load(URLRequest(url: Self.settingsURL))
     }
+}
+
+/// A transparent top band that makes the frameless settings window draggable from its
+/// whole top edge (NIC-140 follow-up). `mouseDownCanMoveWindow` moves the window on drag,
+/// and the band sits above the webview so those drags never reach web content.
+private final class WindowDragBand: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
 }

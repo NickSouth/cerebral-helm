@@ -52,6 +52,57 @@ function SettingsLoading() {
   );
 }
 
+/** Per-section Save/Cancel/Restore footer for the edit-style panels (owner decision,
+ *  2026-07-10): edits stage as a draft and only apply on Save; Cancel reverts to the last
+ *  saved values; Restore populates the draft with the shipped defaults (then you Save). */
+function SectionActions({
+  dirty,
+  onSave,
+  onCancel,
+  onRestore
+}: {
+  dirty: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+  onRestore?: () => void;
+}) {
+  return (
+    <div className="settings-actions">
+      {onRestore ? (
+        <button type="button" className="settings-button settings-button--ghost" onClick={onRestore}>
+          Restore defaults
+        </button>
+      ) : null}
+      <div className="settings-actions__spacer" />
+      <button
+        type="button"
+        className="settings-button settings-button--ghost"
+        onClick={onCancel}
+        disabled={!dirty}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        className="settings-button settings-button--primary"
+        onClick={onSave}
+        disabled={!dirty}
+      >
+        Save
+      </button>
+    </div>
+  );
+}
+
+/** Shallow equality for a per-mode color-override map (key order independent). */
+function colorMapsEqual(a: Record<string, string>, b: Record<string, string>): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) {
+    return false;
+  }
+  return keys.every((key) => a[key] === b[key]);
+}
+
 // --- Shared control seeds --------------------------------------------------
 
 /**
@@ -458,26 +509,39 @@ function ActionsPanel() {
 const MODE_COLOR_CHANNELS = ["primary", "secondary"] as const;
 
 function CustomizationPanel() {
-  // Seeds from — and live-updates — the global assistant name and per-mode accent colors
-  // (AppearanceProvider, fed by getSettings). Editing recolors/renames the dashboard in
-  // place where they share a tree (the browser overlay); the edit persists on commit.
-  const { assistantName, setAssistantName, modeColors, setModeColor } = useAppearance();
+  // Draft controls seed from the persisted read (NIC-141); edits stage until Save.
+  const { status } = useSettingsSnapshot();
+  return status === "loading" ? <SettingsLoading /> : <CustomizationPanelBody />;
+}
+
+function CustomizationPanelBody() {
+  const { snapshot } = useSettingsSnapshot();
   const updateSettings = useUpdateSettings();
 
-  function commitName() {
-    const trimmed = assistantName.trim();
-    // Never persist an empty name — restore the default identity instead.
-    const next = trimmed.length === 0 ? DEFAULT_ASSISTANT_NAME : trimmed;
-    if (next !== assistantName) {
-      setAssistantName(next);
-    }
-    void updateSettings({ appearance: { assistantName: next } });
-  }
+  // "baseline" = last saved values; "draft" = what the controls show. They diverge while
+  // editing (dirty) and re-converge on Save/Cancel. Applying the saved values live to every
+  // surface is the bridge's job (the settings.changed event) — this panel only stages + persists.
+  const [baselineName, setBaselineName] = useState(snapshot?.appearance.assistantName ?? DEFAULT_ASSISTANT_NAME);
+  const [baselineColors, setBaselineColors] = useState<Record<string, string>>(snapshot?.modeColors ?? {});
+  const [draftName, setDraftName] = useState(baselineName);
+  const [draftColors, setDraftColors] = useState<Record<string, string>>(baselineColors);
 
-  // The override map is replaced wholesale on write, so persist the full current set of
-  // overrides (defaults are never stored — an un-edited channel stays absent).
-  function commitColors() {
-    void updateSettings({ modeColors });
+  const nextName = draftName.trim() || DEFAULT_ASSISTANT_NAME;
+  const dirty = nextName !== baselineName || !colorMapsEqual(draftColors, baselineColors);
+
+  function save() {
+    void updateSettings({ appearance: { assistantName: nextName }, modeColors: draftColors });
+    setDraftName(nextName);
+    setBaselineName(nextName);
+    setBaselineColors(draftColors);
+  }
+  function cancel() {
+    setDraftName(baselineName);
+    setDraftColors(baselineColors);
+  }
+  function restore() {
+    setDraftName(DEFAULT_ASSISTANT_NAME);
+    setDraftColors({});
   }
 
   return (
@@ -490,31 +554,25 @@ function CustomizationPanel() {
           <input
             type="text"
             className="settings-input"
-            value={assistantName}
+            value={draftName}
             maxLength={40}
             placeholder={DEFAULT_ASSISTANT_NAME}
             aria-label="Assistant name"
-            onChange={(event) => setAssistantName(event.target.value)}
-            onBlur={commitName}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                commitName();
-              }
-            }}
+            onChange={(event) => setDraftName(event.target.value)}
           />
         </Field>
       </Section>
       <Section title="Mode colors">
         <p className="settings-note">
-          Each mode&apos;s primary and secondary accent. Changes recolor the dashboard live; leave a
-          swatch untouched to keep its shipped color.
+          Each mode&apos;s primary and secondary accent. Changes apply to the dashboard when you
+          save; leave a swatch untouched to keep its shipped color.
         </p>
         {MODE_IDS.map((modeId) => (
           <Field key={modeId} label={humanizeId(modeId)}>
             <div className="settings-color-pair">
               {MODE_COLOR_CHANNELS.map((channel) => {
                 const tokenName = `${modeId}.${channel}` as ModeTokenName;
-                const value = modeColors[tokenName] ?? MODE_DEFAULT_COLORS[tokenName];
+                const value = draftColors[tokenName] ?? MODE_DEFAULT_COLORS[tokenName];
                 return (
                   <input
                     key={channel}
@@ -522,8 +580,9 @@ function CustomizationPanel() {
                     className="settings-color"
                     value={value}
                     aria-label={`${humanizeId(modeId)} ${channel} color`}
-                    onChange={(event) => setModeColor(tokenName, event.target.value)}
-                    onBlur={commitColors}
+                    onChange={(event) =>
+                      setDraftColors((prev) => ({ ...prev, [tokenName]: event.target.value }))
+                    }
                   />
                 );
               })}
@@ -531,6 +590,7 @@ function CustomizationPanel() {
           </Field>
         ))}
       </Section>
+      <SectionActions dirty={dirty} onSave={save} onCancel={cancel} onRestore={restore} />
     </>
   );
 }
@@ -546,53 +606,52 @@ function SetupPanel() {
 function SetupPanelBody() {
   const { snapshot } = useSettingsSnapshot();
   const updateSettings = useUpdateSettings();
-  const [rootReference, setRootReference] = useState(() => snapshot?.knowledge.rootReference ?? "");
   // The native NSOpenPanel picker is a macOS-host concern (off the versioned bridge);
   // in a plain browser there is no channel, so the Browse button is honest-disabled.
   const canBrowse = isShellControlAvailable();
 
-  function persist(next: string) {
-    const trimmed = next.trim();
-    if (trimmed) {
-      void updateSettings({ knowledge: { rootReference: trimmed } });
-    }
-  }
+  const [baselineRoot, setBaselineRoot] = useState(snapshot?.knowledge.rootReference ?? "");
+  const [draftRoot, setDraftRoot] = useState(baselineRoot);
+  const dirty = draftRoot.trim() !== baselineRoot && draftRoot.trim().length > 0;
 
-  // The native shell posts back the folder chosen in the Finder picker (NIC-138): reflect
-  // it and persist through the validated settings path. Registered once for the panel's life.
+  // The native shell posts back the folder chosen in the Finder picker (NIC-138): it stages
+  // into the draft, and Save persists it through the validated settings path.
   useEffect(() => {
     const target = window as KnowledgeRootWindow;
-    target.__cerebralKnowledgeRootUpdate = (path: string) => {
-      setRootReference(path);
-      persist(path);
-    };
+    target.__cerebralKnowledgeRootUpdate = (path: string) => setDraftRoot(path);
     return () => {
       delete target.__cerebralKnowledgeRootUpdate;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function save() {
+    const trimmed = draftRoot.trim();
+    if (!trimmed) {
+      return;
+    }
+    void updateSettings({ knowledge: { rootReference: trimmed } });
+    setDraftRoot(trimmed);
+    setBaselineRoot(trimmed);
+  }
+  function cancel() {
+    setDraftRoot(baselineRoot);
+  }
 
   return (
     <>
       <Section title="Knowledge root">
         <Field
           label="Root folder"
-          hint="Where durable Markdown knowledge lives. Choose a folder, or type a path. Changing it re-points to the new location — it never moves or deletes what is already there. Applies on next launch."
+          hint="Where durable Markdown knowledge lives. Choose a folder, or type a path, then Save. Changing it re-points to the new location — it never moves or deletes what is already there. Applies on next launch."
         >
           <div className="settings-root-picker">
             <input
               type="text"
               className="settings-input"
-              value={rootReference}
+              value={draftRoot}
               placeholder="e.g. ~/CerebralHelm/knowledge"
               aria-label="Knowledge root reference"
-              onChange={(event) => setRootReference(event.target.value)}
-              onBlur={() => persist(rootReference)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  persist(rootReference);
-                }
-              }}
+              onChange={(event) => setDraftRoot(event.target.value)}
             />
             <button
               type="button"
@@ -605,6 +664,7 @@ function SetupPanelBody() {
             </button>
           </div>
         </Field>
+        <SectionActions dirty={dirty} onSave={save} onCancel={cancel} />
       </Section>
       <Section title="Library">
         <Field label="Browse notes">

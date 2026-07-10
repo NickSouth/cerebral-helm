@@ -207,7 +207,7 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     await waitFor(() => expect(accepted).toEqual([true]));
   });
 
-  it("renames the assistant globally and persists an accepted patch (NIC-137)", async () => {
+  it("stages the assistant name as a draft and renames the dashboard on Save (NIC-137)", async () => {
     const { bridge } = renderApp();
     const accepted: boolean[] = [];
     const original = bridge.updateSettings.bind(bridge);
@@ -222,15 +222,18 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     const input = await within(dialog).findByLabelText("Assistant name");
     expect(input).toHaveValue("Heimlich"); // the mock's persisted (default) name
 
-    // Typing renames the assistant live everywhere the tree is shared (the center-stage
-    // region's accessible name follows it), then the edit persists on commit.
+    // Typing only stages a draft — the dashboard name does NOT change yet.
     fireEvent.change(input, { target: { value: "Nova" } });
-    expect(screen.getByRole("region", { name: "Nova" })).toBeInTheDocument();
-    fireEvent.blur(input);
+    expect(screen.queryByRole("region", { name: "Nova" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Heimlich" })).toBeInTheDocument();
+
+    // Save persists + the bridge broadcasts settings.changed → the dashboard re-syncs live.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(accepted).toEqual([true]));
+    expect(await screen.findByRole("region", { name: "Nova" })).toBeInTheDocument();
   });
 
-  it("recolors a mode's accent live and persists an accepted patch (NIC-137)", async () => {
+  it("stages a mode color as a draft and applies it to the dashboard on Save (NIC-137)", async () => {
     const { bridge } = renderApp();
     const accepted: boolean[] = [];
     const original = bridge.updateSettings.bind(bridge);
@@ -245,14 +248,38 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     const primary = await within(dialog).findByLabelText("Executive primary color");
     expect(primary).toHaveValue("#e8b765"); // the shipped default (no override stored)
 
-    // Picking a color overrides the mode token on the document root, re-theming live,
-    // then persists on commit.
+    // Picking only stages a draft — the mode token is NOT overridden yet.
     fireEvent.change(primary, { target: { value: "#ff0000" } });
     expect(
       document.documentElement.style.getPropertyValue("--ch-mode-executive-primary")
-    ).toBe("#ff0000");
-    fireEvent.blur(primary);
+    ).not.toBe("#ff0000");
+
+    // Save persists + broadcasts → the override lands on the document root live.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(accepted).toEqual([true]));
+    await waitFor(() =>
+      expect(
+        document.documentElement.style.getPropertyValue("--ch-mode-executive-primary")
+      ).toBe("#ff0000")
+    );
+  });
+
+  it("Cancel reverts a staged edit; Restore defaults stages the shipped values (NIC-137)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Customization" }));
+    const input = await within(dialog).findByLabelText("Assistant name");
+
+    // Cancel discards the draft.
+    fireEvent.change(input, { target: { value: "Nova" } });
+    expect(input).toHaveValue("Nova");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(input).toHaveValue("Heimlich");
+
+    // Restore defaults stages the default name (Heimlich) without needing a change.
+    fireEvent.change(input, { target: { value: "Nova" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore defaults" }));
+    expect(input).toHaveValue("Heimlich");
   });
 
   it("tightens confirmation via 'Ask before all actions' and persists an accepted patch (NIC-137)", async () => {

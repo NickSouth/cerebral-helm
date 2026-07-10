@@ -4,6 +4,7 @@ import type {
   BridgeEventListener,
   CerebralBridge,
   RecentActivity,
+  SettingsSnapshot,
   Unsubscribe
 } from "./cerebralBridge";
 import {
@@ -59,11 +60,62 @@ export interface MockCerebralBridge extends CerebralBridge {
   replayConfirmation(): void;
 }
 
+/** Fold an accepted settings-patch `changes` delta into a snapshot — the mock's stand-in for
+ *  the store's merge, so getSettings + settings.changed reflect writes (NIC-137). */
+function mergeSettingsChanges(
+  prev: SettingsSnapshot,
+  changes: Record<string, unknown>
+): SettingsSnapshot {
+  const appearance = changes.appearance as { reducedMotion?: unknown; assistantName?: unknown } | undefined;
+  const knowledge = changes.knowledge as { rootReference?: unknown } | undefined;
+  const workspace = changes.workspace as { windowsStoredByMode?: unknown; mainDisplayId?: unknown } | undefined;
+  return {
+    schemaVersion: prev.schemaVersion,
+    defaultModeId: typeof changes.defaultModeId === "string" ? changes.defaultModeId : prev.defaultModeId,
+    confirmAllActions:
+      typeof changes.confirmAllActions === "boolean" ? changes.confirmAllActions : prev.confirmAllActions,
+    appearance: {
+      reducedMotion:
+        typeof appearance?.reducedMotion === "boolean" ? appearance.reducedMotion : prev.appearance.reducedMotion,
+      assistantName:
+        typeof appearance?.assistantName === "string" ? appearance.assistantName : prev.appearance.assistantName
+    },
+    knowledge: {
+      rootReference:
+        typeof knowledge?.rootReference === "string" ? knowledge.rootReference : prev.knowledge.rootReference
+    },
+    workspace: {
+      windowsStoredByMode:
+        typeof workspace?.windowsStoredByMode === "boolean"
+          ? workspace.windowsStoredByMode
+          : prev.workspace.windowsStoredByMode,
+      mainDisplayId:
+        typeof workspace?.mainDisplayId === "string" ? workspace.mainDisplayId : prev.workspace.mainDisplayId
+    },
+    modeColors:
+      changes.modeColors && typeof changes.modeColors === "object"
+        ? (changes.modeColors as Record<string, string>)
+        : prev.modeColors
+  };
+}
+
 export function createMockCerebralBridge(
   options: { bootstrapKey?: string } = {}
 ): MockCerebralBridge {
   const bootstrapKey = options.bootstrapKey ?? DEFAULT_BOOTSTRAP_KEY;
   const listeners = new Set<BridgeEventListener>();
+  // Representative persisted settings, held mutably so updateSettings visibly persists +
+  // broadcasts a settings.changed event (mirrors the real bridge; NIC-141/137).
+  let settingsSnapshot: SettingsSnapshot = {
+    schemaVersion: "1.0.0",
+    defaultModeId: "developer",
+    confirmAllActions: false,
+    appearance: { reducedMotion: false, assistantName: "Heimlich" },
+    knowledge: { rootReference: "knowledge-root" },
+    workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" },
+    modeColors: {}
+  };
+  let settingsEventSeq = 0;
 
   function emit(event: BridgeEvent): void {
     // Snapshot so a listener that unsubscribes mid-dispatch can't mutate the live set.
@@ -178,26 +230,25 @@ export function createMockCerebralBridge(
       // here exactly as the schema would reject it — the UI never gets a bespoke, weaker path.
       const changes = (input.patch as { changes?: unknown }).changes;
       const { valid } = validateSettingsChanges(changes);
+      if (valid) {
+        // Persist into the mutable snapshot and broadcast, mirroring the real bridge so a
+        // Save visibly re-syncs every surface (assistant name, mode colors) live (NIC-137).
+        settingsSnapshot = mergeSettingsChanges(settingsSnapshot, (changes as Record<string, unknown>) ?? {});
+        settingsEventSeq += 1;
+        emit({
+          eventId: `brevt_settings${String(settingsEventSeq).padStart(8, "0")}`,
+          type: "settings.changed",
+          schemaVersion: "1.0.0",
+          timestamp: "2026-07-10T16:00:00.000Z",
+          payload: { settings: settingsSnapshot }
+        });
+      }
       return Promise.resolve({ accepted: valid });
     },
     getSettings() {
-      // Representative persisted settings so browser previews prove the settings UI
-      // reads stored state, not hardcoded defaults (NIC-141): a non-default mode, an
-      // enabled workspace toggle, and a chosen knowledge root. reducedMotion stays false
-      // so the preview keeps its motion, and assistantName stays the default so the
-      // preview dashboard reads normally (NIC-137); the real bridge returns the user's
-      // stored values.
-      return Promise.resolve({
-        schemaVersion: "1.0.0",
-        defaultModeId: "developer",
-        confirmAllActions: false,
-        appearance: { reducedMotion: false, assistantName: "Heimlich" },
-        knowledge: { rootReference: "knowledge-root" },
-        workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" },
-        // No color overrides in the preview so modes read at their shipped palette; the
-        // picker still demonstrates live recolor on interaction.
-        modeColors: {}
-      });
+      // The mutable snapshot (seeded with representative non-defaults) so browser previews prove
+      // the settings UI reads stored state and reflects saves (NIC-141/137).
+      return Promise.resolve(settingsSnapshot);
     },
     listApps() {
       // A representative installed-app set for browser previews of the More Apps

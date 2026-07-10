@@ -112,12 +112,12 @@
   border-radius: 0;
   box-shadow: none;
   animation: none;
-  /* Frameless native window (NIC-140): the macOS title bar is hidden, so the top
-     strip is the only window-drag region (isMovableByWindowBackground) and it
-     overlaps where the title bar used to be. Push the top-row controls (first
-     category tab, close ×, panel header) down by a title-bar's height so nothing
-     interactive sits under the drag strip — the × is the only close affordance. */
-  --ch-standalone-titlebar: 1.75rem;
+  /* Frameless native window (NIC-140): the macOS title bar is hidden and a native
+     40px transparent drag band overlays the top edge so the window drags from its whole
+     top (the WKWebView otherwise swallows movableByWindowBackground). Push the top-row
+     controls (first category tab, close ×, panel header) below that band so nothing
+     interactive is covered — the × is the only close affordance. */
+  --ch-standalone-titlebar: 2.5rem;
 }
 
 .settings-window[data-standalone="true"] .settings-sidebar {
@@ -436,6 +436,39 @@
 .settings-button:focus-visible {
   outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
   outline-offset: var(--ch-focus-ring-offset);
+}
+
+/* Per-section Save/Cancel/Restore footer. */
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  margin-top: var(--ch-space-4);
+  padding-top: var(--ch-space-4);
+  border-top: 1px solid color-mix(in srgb, var(--ch-panel-border) 60%, transparent);
+}
+
+.settings-actions__spacer {
+  flex: 1 1 auto;
+}
+
+.settings-button--ghost {
+  background: transparent;
+}
+
+.settings-button--ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
+}
+
+.settings-button--primary {
+  background: color-mix(in srgb, var(--ch-accent-primary) 85%, transparent);
+  border-color: var(--ch-accent-primary);
+  color: var(--ch-text-primary);
+  font-weight: var(--ch-font-weight-medium);
+}
+
+.settings-button--primary:hover:not(:disabled) {
+  background: var(--ch-accent-primary);
 }
 
 .settings-select:focus-visible,

@@ -182,10 +182,20 @@ describe("wkWebViewCerebralBridge", () => {
       timestamp: "2026-07-06T00:00:01.000Z",
       payload: { displays: [], primaryDisplayId: null }
     });
+    // Regression: settings.changed must pass the gate so the dashboard re-syncs the
+    // assistant name / mode colors live after a save in the separate settings window.
+    reply({
+      type: "settings.changed",
+      eventId: "brevt_00000005",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-10T00:00:00.000Z",
+      payload: { settings: {} }
+    });
 
     expect(events.map((e) => e.type)).toEqual([
       "workflow.action.progress",
-      "display.topology.changed"
+      "display.topology.changed",
+      "settings.changed"
     ]);
   });
 

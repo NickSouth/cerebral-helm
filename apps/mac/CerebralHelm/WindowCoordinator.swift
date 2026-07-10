@@ -422,20 +422,27 @@ final class WindowCoordinator: @unchecked Sendable {
     /// moves or deletes anything at the old or new location (that is the knowledge
     /// system's durable-state contract, honored when it consumes the setting).
     private func presentKnowledgeRootPicker() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        panel.message = "Choose the folder where CerebralHelm keeps your durable knowledge."
-        let deliver: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            self?.settings?.pushKnowledgeRoot(url.path)
-        }
-        if let window = settings?.window {
-            panel.beginSheetModal(for: window, completionHandler: deliver)
-        } else {
-            deliver(panel.runModal())
+        // handleShellControl is delivered on the main thread (WKScriptMessageHandler),
+        // and NSOpenPanel + its sheet/modal completion are main-actor bound, so the whole
+        // picker is safely assume-isolated to the main actor.
+        MainActor.assumeIsolated {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.allowsMultipleSelection = false
+            panel.prompt = "Choose"
+            panel.message = "Choose the folder where CerebralHelm keeps your durable knowledge."
+            let deliver: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+                MainActor.assumeIsolated {
+                    guard response == .OK, let url = panel.url else { return }
+                    self?.settings?.pushKnowledgeRoot(url.path)
+                }
+            }
+            if let window = settings?.window {
+                panel.beginSheetModal(for: window, completionHandler: deliver)
+            } else {
+                deliver(panel.runModal())
+            }
         }
     }
 }
