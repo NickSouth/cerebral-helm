@@ -516,6 +516,11 @@ export interface CerebralHelmSettingsSnapshot {
 
 export interface SettingsSnapshotAppearance {
     /**
+     * The display name of the assistant across the dashboard (bottom bar, center stage).
+     * Resolves to the stored value, else the default `Heimlich`.
+     */
+    assistantName: string;
+    /**
      * Whether motion is reduced across the dashboard. Defaults to false when unset.
      */
     reducedMotion: boolean;
@@ -772,6 +777,7 @@ export interface Changes {
 }
 
 export interface Appearance {
+    assistantName?: string;
     density?:       Density;
     reducedMotion?: boolean;
 }

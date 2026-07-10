@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useDashboardState } from "../../state/DashboardStateProvider";
-import { useAppearance } from "../../state/AppearanceProvider";
+import { useAppearance, DEFAULT_ASSISTANT_NAME } from "../../state/AppearanceProvider";
 import { toModeId } from "../../tokens/tokens";
 import { Unavailable } from "../../components/Unavailable";
 import { humanizeId } from "../labels";
@@ -418,11 +418,45 @@ function ActionsPanel() {
 // --- Customization --------------------------------------------------------
 
 function CustomizationPanel() {
+  // Seeds from — and live-updates — the global assistant name (AppearanceProvider,
+  // fed by getSettings). Typing updates the dashboard name in place where they share
+  // a tree (the browser overlay); the edit persists on commit for every surface.
+  const { assistantName, setAssistantName } = useAppearance();
+  const updateSettings = useUpdateSettings();
+
+  function commit() {
+    const trimmed = assistantName.trim();
+    // Never persist an empty name — restore the default identity instead.
+    const next = trimmed.length === 0 ? DEFAULT_ASSISTANT_NAME : trimmed;
+    if (next !== assistantName) {
+      setAssistantName(next);
+    }
+    void updateSettings({ appearance: { assistantName: next } });
+  }
+
   return (
-    <Section title="Appearance">
-      <p className="settings-note">
-        Per-mode accent colors and the assistant name will be customizable here.
-      </p>
+    <Section title="Assistant">
+      <Field
+        label="Assistant name"
+        hint="The name shown for your assistant across the dashboard. Defaults to Heimlich."
+      >
+        <input
+          type="text"
+          className="settings-input"
+          value={assistantName}
+          maxLength={40}
+          placeholder={DEFAULT_ASSISTANT_NAME}
+          aria-label="Assistant name"
+          onChange={(event) => setAssistantName(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              commit();
+            }
+          }}
+        />
+      </Field>
+      <p className="settings-note">Per-mode accent colors are customizable here soon.</p>
     </Section>
   );
 }

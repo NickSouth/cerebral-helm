@@ -119,7 +119,7 @@ describe("wkWebViewCerebralBridge", () => {
     const snapshot = {
       schemaVersion: "1.0.0",
       defaultModeId: "developer",
-      appearance: { reducedMotion: true },
+      appearance: { reducedMotion: true, assistantName: "Aria" },
       knowledge: { rootReference: null },
       workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" }
     };

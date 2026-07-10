@@ -197,6 +197,29 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     // ...and the edit was accepted by the validation path (async).
     await waitFor(() => expect(accepted).toEqual([true]));
   });
+
+  it("renames the assistant globally and persists an accepted patch (NIC-137)", async () => {
+    const { bridge } = renderApp();
+    const accepted: boolean[] = [];
+    const original = bridge.updateSettings.bind(bridge);
+    bridge.updateSettings = async (input) => {
+      const result = await original(input);
+      accepted.push(result.accepted);
+      return result;
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Customization" }));
+    const input = await within(dialog).findByLabelText("Assistant name");
+    expect(input).toHaveValue("Heimlich"); // the mock's persisted (default) name
+
+    // Typing renames the assistant live everywhere the tree is shared (the center-stage
+    // region's accessible name follows it), then the edit persists on commit.
+    fireEvent.change(input, { target: { value: "Nova" } });
+    expect(screen.getByRole("region", { name: "Nova" })).toBeInTheDocument();
+    fireEvent.blur(input);
+    await waitFor(() => expect(accepted).toEqual([true]));
+  });
 });
 
 describe("Settings surfaces under the native shell (backdrop-policy decision, 2026-07-06)", () => {

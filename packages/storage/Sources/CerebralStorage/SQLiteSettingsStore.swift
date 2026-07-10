@@ -26,6 +26,7 @@ public struct SQLiteSettingsStore: SettingsStore {
             defaultModeID: row.text("default_mode_id"),
             appearanceDensity: row.text("appearance_density"),
             appearanceReducedMotion: row.integer("appearance_reduced_motion").map { $0 != 0 },
+            appearanceAssistantName: row.text("appearance_assistant_name"),
             commandPaletteHotkey: row.text("hotkey_command_palette"),
             knowledgeRootReference: row.text("knowledge_root_reference"),
             windowsStoredByMode: row.integer("windows_stored_by_mode").map { $0 != 0 },
@@ -39,13 +40,14 @@ public struct SQLiteSettingsStore: SettingsStore {
             """
             INSERT INTO settings (
                 id, default_mode_id, appearance_density, appearance_reduced_motion,
-                hotkey_command_palette, knowledge_root_reference, windows_stored_by_mode,
-                main_display_id, extensions, updated_at
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                appearance_assistant_name, hotkey_command_palette, knowledge_root_reference,
+                windows_stored_by_mode, main_display_id, extensions, updated_at
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 default_mode_id           = COALESCE(excluded.default_mode_id, default_mode_id),
                 appearance_density        = COALESCE(excluded.appearance_density, appearance_density),
                 appearance_reduced_motion = COALESCE(excluded.appearance_reduced_motion, appearance_reduced_motion),
+                appearance_assistant_name = COALESCE(excluded.appearance_assistant_name, appearance_assistant_name),
                 hotkey_command_palette    = COALESCE(excluded.hotkey_command_palette, hotkey_command_palette),
                 knowledge_root_reference  = COALESCE(excluded.knowledge_root_reference, knowledge_root_reference),
                 windows_stored_by_mode    = COALESCE(excluded.windows_stored_by_mode, windows_stored_by_mode),
@@ -57,6 +59,7 @@ public struct SQLiteSettingsStore: SettingsStore {
                 .textOrNull(changes.defaultModeID),
                 .textOrNull(changes.appearanceDensity),
                 changes.appearanceReducedMotion.map { SQLiteValue.integer($0 ? 1 : 0) } ?? .null,
+                .textOrNull(changes.appearanceAssistantName),
                 .textOrNull(changes.commandPaletteHotkey),
                 .textOrNull(changes.knowledgeRootReference),
                 changes.windowsStoredByMode.map { SQLiteValue.integer($0 ? 1 : 0) } ?? .null,

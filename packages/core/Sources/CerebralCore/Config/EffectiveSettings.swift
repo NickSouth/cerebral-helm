@@ -27,6 +27,10 @@ public enum EffectiveSettings {
     /// stored id that is stale or disconnected also degrades to this at the shell.
     public static let systemPrimaryDisplayID = "system-primary"
 
+    /// The assistant's display name across the dashboard when the user has never
+    /// set one — the product's default identity.
+    public static let defaultAssistantName = "Heimlich"
+
     /// The message/document schema version stamped on the snapshot.
     private static let schemaVersion = "1.0.0"
 
@@ -40,6 +44,7 @@ public enum EffectiveSettings {
     ) -> CerebralHelmSettingsSnapshot {
         CerebralHelmSettingsSnapshot(
             appearance: SettingsSnapshotAppearance(
+                assistantName: stored.appearanceAssistantName ?? defaultAssistantName,
                 reducedMotion: stored.appearanceReducedMotion ?? false
             ),
             defaultModeID: stored.defaultModeID ?? configDefaultModeID ?? fallbackModeID,

@@ -32,6 +32,11 @@
             },
             "reducedMotion": {
               "type": "boolean"
+            },
+            "assistantName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
             }
           }
         },

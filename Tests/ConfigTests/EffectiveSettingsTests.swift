@@ -15,6 +15,7 @@ func storedValuesWin() {
         defaultModeID: "developer",
         appearanceDensity: "compact",           // dropped from the snapshot — must not leak
         appearanceReducedMotion: true,
+        appearanceAssistantName: "Aria",
         commandPaletteHotkey: "option-space",   // excluded from the snapshot — must not leak
         knowledgeRootReference: "primary-vault",
         windowsStoredByMode: true,
@@ -25,6 +26,7 @@ func storedValuesWin() {
 
     #expect(snapshot.defaultModeID == "developer")
     #expect(snapshot.appearance.reducedMotion == true)
+    #expect(snapshot.appearance.assistantName == "Aria")
     #expect(snapshot.knowledge.rootReference == "primary-vault")
     #expect(snapshot.workspace.windowsStoredByMode == true)
     #expect(snapshot.workspace.mainDisplayID == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
@@ -37,6 +39,8 @@ func unsetResolvesToDefaults() {
 
     #expect(snapshot.defaultModeID == "executive")            // configured default
     #expect(snapshot.appearance.reducedMotion == false)
+    #expect(snapshot.appearance.assistantName == "Heimlich")  // the default identity
+
     #expect(snapshot.knowledge.rootReference == nil)          // meaningful "no root chosen"
     #expect(snapshot.workspace.windowsStoredByMode == false)
     #expect(snapshot.workspace.mainDisplayID == "system-primary")

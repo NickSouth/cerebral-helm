@@ -28,6 +28,7 @@ func appliedFieldsRoundTrip() throws {
         defaultModeID: "developer",
         appearanceDensity: "compact",
         appearanceReducedMotion: true,
+        appearanceAssistantName: "Aria",
         commandPaletteHotkey: "cmd+shift+space",
         knowledgeRootReference: "workspace",
         windowsStoredByMode: true,
@@ -38,6 +39,7 @@ func appliedFieldsRoundTrip() throws {
     #expect(loaded.defaultModeID == "developer")
     #expect(loaded.appearanceDensity == "compact")
     #expect(loaded.appearanceReducedMotion == true)
+    #expect(loaded.appearanceAssistantName == "Aria")
     #expect(loaded.commandPaletteHotkey == "cmd+shift+space")
     #expect(loaded.knowledgeRootReference == "workspace")
     #expect(loaded.windowsStoredByMode == true)
@@ -73,6 +75,21 @@ func mainDisplayIDRoundTrips() throws {
     #expect(loaded.defaultModeID == "school")
 }
 
+@Test("the assistant name round-trips and merges like every field (NIC-137)")
+func assistantNameRoundTrips() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(appearanceAssistantName: "Aria"))
+    #expect(try store.load().appearanceAssistantName == "Aria")
+
+    // An unrelated patch preserves it; a later patch replaces it.
+    try store.apply(SettingsChanges(defaultModeID: "school"))
+    #expect(try store.load().appearanceAssistantName == "Aria")
+    try store.apply(SettingsChanges(appearanceAssistantName: "Nova"))
+    let loaded = try store.load()
+    #expect(loaded.appearanceAssistantName == "Nova")
+    #expect(loaded.defaultModeID == "school")
+}
+
 @Test("a partial patch preserves every unrelated stored field")
 func partialPatchPreservesOtherFields() throws {
     let store = try makeStore()
@@ -100,7 +117,7 @@ func presentFieldOverwrites() throws {
 func settingsChangesLiftsValidatedFields() {
     let changes = SettingsChanges(validatedChanges: [
         "defaultModeId": "entertainment",
-        "appearance": ["density": "compact", "reducedMotion": true],
+        "appearance": ["density": "compact", "reducedMotion": true, "assistantName": "Aria"],
         "hotkeys": ["commandPalette": "cmd+space"],
         "knowledge": ["rootReference": "vault"],
         "extensions": ["x-lab": ["on": true]],
@@ -108,6 +125,7 @@ func settingsChangesLiftsValidatedFields() {
     #expect(changes.defaultModeID == "entertainment")
     #expect(changes.appearanceDensity == "compact")
     #expect(changes.appearanceReducedMotion == true)
+    #expect(changes.appearanceAssistantName == "Aria")
     #expect(changes.commandPaletteHotkey == "cmd+space")
     #expect(changes.knowledgeRootReference == "vault")
     #expect(changes.extensionsJSON?.contains("x-lab") == true)

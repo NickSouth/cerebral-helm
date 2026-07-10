@@ -8,6 +8,9 @@ public struct StoredSettings: Equatable, Sendable {
     public var defaultModeID: String?
     public var appearanceDensity: String?
     public var appearanceReducedMotion: Bool?
+    /// The assistant's display name across the dashboard. `nil` = never set, so the
+    /// default identity (`Heimlich`) applies.
+    public var appearanceAssistantName: String?
     public var commandPaletteHotkey: String?
     public var knowledgeRootReference: String?
     /// "Windows Stored by Mode": a mode switch hides the outgoing mode's
@@ -27,6 +30,7 @@ public struct StoredSettings: Equatable, Sendable {
         defaultModeID: String? = nil,
         appearanceDensity: String? = nil,
         appearanceReducedMotion: Bool? = nil,
+        appearanceAssistantName: String? = nil,
         commandPaletteHotkey: String? = nil,
         knowledgeRootReference: String? = nil,
         windowsStoredByMode: Bool? = nil,
@@ -36,6 +40,7 @@ public struct StoredSettings: Equatable, Sendable {
         self.defaultModeID = defaultModeID
         self.appearanceDensity = appearanceDensity
         self.appearanceReducedMotion = appearanceReducedMotion
+        self.appearanceAssistantName = appearanceAssistantName
         self.commandPaletteHotkey = commandPaletteHotkey
         self.knowledgeRootReference = knowledgeRootReference
         self.windowsStoredByMode = windowsStoredByMode
@@ -52,6 +57,7 @@ public struct SettingsChanges: Equatable, Sendable {
     public var defaultModeID: String?
     public var appearanceDensity: String?
     public var appearanceReducedMotion: Bool?
+    public var appearanceAssistantName: String?
     public var commandPaletteHotkey: String?
     public var knowledgeRootReference: String?
     public var windowsStoredByMode: Bool?
@@ -63,6 +69,7 @@ public struct SettingsChanges: Equatable, Sendable {
         defaultModeID: String? = nil,
         appearanceDensity: String? = nil,
         appearanceReducedMotion: Bool? = nil,
+        appearanceAssistantName: String? = nil,
         commandPaletteHotkey: String? = nil,
         knowledgeRootReference: String? = nil,
         windowsStoredByMode: Bool? = nil,
@@ -72,6 +79,7 @@ public struct SettingsChanges: Equatable, Sendable {
         self.defaultModeID = defaultModeID
         self.appearanceDensity = appearanceDensity
         self.appearanceReducedMotion = appearanceReducedMotion
+        self.appearanceAssistantName = appearanceAssistantName
         self.commandPaletteHotkey = commandPaletteHotkey
         self.knowledgeRootReference = knowledgeRootReference
         self.windowsStoredByMode = windowsStoredByMode
@@ -87,6 +95,7 @@ public struct SettingsChanges: Equatable, Sendable {
         if let appearance = changes["appearance"] as? [String: Any] {
             appearanceDensity = appearance["density"] as? String
             appearanceReducedMotion = appearance["reducedMotion"] as? Bool
+            appearanceAssistantName = appearance["assistantName"] as? String
         }
         if let hotkeys = changes["hotkeys"] as? [String: Any] {
             commandPaletteHotkey = hotkeys["commandPalette"] as? String
@@ -107,8 +116,9 @@ public struct SettingsChanges: Equatable, Sendable {
     /// Whether the patch carries any persistable field.
     public var isEmpty: Bool {
         defaultModeID == nil && appearanceDensity == nil && appearanceReducedMotion == nil
-            && commandPaletteHotkey == nil && knowledgeRootReference == nil
-            && windowsStoredByMode == nil && mainDisplayID == nil && extensionsJSON == nil
+            && appearanceAssistantName == nil && commandPaletteHotkey == nil
+            && knowledgeRootReference == nil && windowsStoredByMode == nil
+            && mainDisplayID == nil && extensionsJSON == nil
     }
 }
 

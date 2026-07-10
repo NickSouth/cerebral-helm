@@ -602,6 +602,25 @@ func mainDisplayPatchPersists() async throws {
     #expect(!(try decode(rejected, as: Accepted.self).accepted))
 }
 
+@Test("the assistant name persists through the same patch path and rejects an over-long value (NIC-137)")
+func assistantNamePatchPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_name0001","changes":{"appearance":{"assistantName":"Aria"}}}}"#
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+    #expect(try makeSettingsStore(paths).load().appearanceAssistantName == "Aria")
+
+    // Over the 40-character contract bound is rejected wholesale.
+    let rejected = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"appearance":{"assistantName":"THIS-ASSISTANT-NAME-IS-DEFINITELY-WAY-TOO-LONG"}}}}"#
+    ))
+    #expect(!(try decode(rejected, as: Accepted.self).accepted))
+}
+
 @Test("a rejected patch persists nothing")
 func rejectedPatchPersistsNothing() async throws {
     let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
@@ -662,7 +681,7 @@ func updateSettingsRequiresPatch() async throws {
 
 /// A settings snapshot decoded from the getSettings response payload.
 private struct SettingsSnapshot: Decodable {
-    struct Appearance: Decodable { let reducedMotion: Bool }
+    struct Appearance: Decodable { let reducedMotion: Bool; let assistantName: String }
     struct Knowledge: Decodable { let rootReference: String? }
     struct Workspace: Decodable { let windowsStoredByMode: Bool; let mainDisplayId: String }
     let schemaVersion: String
@@ -678,7 +697,7 @@ func getSettingsReflectsPersistedValues() async throws {
     let session = try makeSessionWithSettings(paths)
     let saved = await session.execute(operationRequest(
         .updateSettings,
-        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_read0001","changes":{"defaultModeId":"developer","appearance":{"reducedMotion":true},"knowledge":{"rootReference":"primary-vault"},"workspace":{"windowsStoredByMode":true,"mainDisplayId":"37D8832A-2D66-02CA-B9F7-8F30A301B230"}}}}"#
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_read0001","changes":{"defaultModeId":"developer","appearance":{"reducedMotion":true,"assistantName":"Aria"},"knowledge":{"rootReference":"primary-vault"},"workspace":{"windowsStoredByMode":true,"mainDisplayId":"37D8832A-2D66-02CA-B9F7-8F30A301B230"}}}}"#
     ))
     #expect(try decode(saved, as: Accepted.self).accepted)
 
@@ -690,6 +709,7 @@ func getSettingsReflectsPersistedValues() async throws {
     let snapshot = try decode(response, as: SettingsSnapshot.self)
     #expect(snapshot.defaultModeId == "developer")
     #expect(snapshot.appearance.reducedMotion == true)
+    #expect(snapshot.appearance.assistantName == "Aria")
     #expect(snapshot.knowledge.rootReference == "primary-vault")
     #expect(snapshot.workspace.windowsStoredByMode == true)
     #expect(snapshot.workspace.mainDisplayId == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
@@ -704,6 +724,7 @@ func getSettingsResolvesDefaults() async throws {
     let snapshot = try decode(response, as: SettingsSnapshot.self)
     #expect(snapshot.defaultModeId == "executive")           // the configured default
     #expect(snapshot.appearance.reducedMotion == false)
+    #expect(snapshot.appearance.assistantName == "Heimlich")  // the default identity
     #expect(snapshot.knowledge.rootReference == nil)
     #expect(snapshot.workspace.windowsStoredByMode == false)
     #expect(snapshot.workspace.mainDisplayId == "system-primary")

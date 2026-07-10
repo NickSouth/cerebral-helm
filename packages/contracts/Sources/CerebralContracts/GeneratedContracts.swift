@@ -2411,10 +2411,14 @@ public extension CerebralHelmSettingsSnapshot {
 
 // MARK: - SettingsSnapshotAppearance
 public struct SettingsSnapshotAppearance: Codable {
+    /// The display name of the assistant across the dashboard (bottom bar, center stage).
+    /// Resolves to the stored value, else the default `Heimlich`.
+    public let assistantName: String
     /// Whether motion is reduced across the dashboard. Defaults to false when unset.
     public let reducedMotion: Bool
 
-    public init(reducedMotion: Bool) {
+    public init(assistantName: String, reducedMotion: Bool) {
+        self.assistantName = assistantName
         self.reducedMotion = reducedMotion
     }
 }
@@ -2438,9 +2442,11 @@ public extension SettingsSnapshotAppearance {
     }
 
     func with(
+        assistantName: String? = nil,
         reducedMotion: Bool? = nil
     ) -> SettingsSnapshotAppearance {
         return SettingsSnapshotAppearance(
+            assistantName: assistantName ?? self.assistantName,
             reducedMotion: reducedMotion ?? self.reducedMotion
         )
     }
@@ -3810,10 +3816,12 @@ public extension Changes {
 
 // MARK: - Appearance
 public struct Appearance: Codable {
+    public let assistantName: String?
     public let density: Density?
     public let reducedMotion: Bool?
 
-    public init(density: Density?, reducedMotion: Bool?) {
+    public init(assistantName: String?, density: Density?, reducedMotion: Bool?) {
+        self.assistantName = assistantName
         self.density = density
         self.reducedMotion = reducedMotion
     }
@@ -3838,10 +3846,12 @@ public extension Appearance {
     }
 
     func with(
+        assistantName: String?? = nil,
         density: Density?? = nil,
         reducedMotion: Bool?? = nil
     ) -> Appearance {
         return Appearance(
+            assistantName: assistantName ?? self.assistantName,
             density: density ?? self.density,
             reducedMotion: reducedMotion ?? self.reducedMotion
         )

@@ -183,13 +183,14 @@ export function createMockCerebralBridge(
     getSettings() {
       // Representative persisted settings so browser previews prove the settings UI
       // reads stored state, not hardcoded defaults (NIC-141): a non-default mode, an
-      // enabled workspace toggle, and a chosen knowledge root. reducedMotion stays
-      // false so the preview keeps its motion; the real bridge returns the user's
-      // stored value.
+      // enabled workspace toggle, and a chosen knowledge root. reducedMotion stays false
+      // so the preview keeps its motion, and assistantName stays the default so the
+      // preview dashboard reads normally (NIC-137); the real bridge returns the user's
+      // stored values.
       return Promise.resolve({
         schemaVersion: "1.0.0",
         defaultModeId: "developer",
-        appearance: { reducedMotion: false },
+        appearance: { reducedMotion: false, assistantName: "Heimlich" },
         knowledge: { rootReference: "knowledge-root" },
         workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" }
       });

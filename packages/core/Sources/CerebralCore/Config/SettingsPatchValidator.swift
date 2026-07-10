@@ -11,7 +11,8 @@ import Foundation
 public enum SettingsPatchValidator {
     private static let allowedChangeKeys: Set<String> =
         ["defaultModeId", "appearance", "hotkeys", "knowledge", "workspace", "extensions"]
-    private static let allowedAppearanceKeys: Set<String> = ["density", "reducedMotion"]
+    private static let allowedAppearanceKeys: Set<String> = ["density", "reducedMotion", "assistantName"]
+    private static let assistantNameMaxLength = 40
     private static let densityValues: Set<String> = ["comfortable", "compact"]
     private static let modeIDPattern = "^[a-z][a-z0-9-]*$"
 
@@ -39,6 +40,17 @@ public enum SettingsPatchValidator {
                 }
                 if let reduced = dict["reducedMotion"], !(reduced is Bool) {
                     errors.append("appearance.reducedMotion must be a boolean.")
+                }
+                if let name = dict["assistantName"] {
+                    if let string = name as? String {
+                        if string.isEmpty || string.count > assistantNameMaxLength {
+                            errors.append(
+                                "appearance.assistantName must be 1–\(assistantNameMaxLength) characters."
+                            )
+                        }
+                    } else {
+                        errors.append("appearance.assistantName must be a string.")
+                    }
                 }
             } else {
                 errors.append("appearance must be an object.")

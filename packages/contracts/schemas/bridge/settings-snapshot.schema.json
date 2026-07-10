@@ -20,11 +20,16 @@
       "title": "SettingsSnapshotAppearance",
       "type": "object",
       "additionalProperties": false,
-      "required": ["reducedMotion"],
+      "required": ["reducedMotion", "assistantName"],
       "properties": {
         "reducedMotion": {
           "description": "Whether motion is reduced across the dashboard. Defaults to false when unset.",
           "type": "boolean"
+        },
+        "assistantName": {
+          "description": "The display name of the assistant across the dashboard (bottom bar, center stage). Resolves to the stored value, else the default `Heimlich`.",
+          "type": "string",
+          "minLength": 1
         }
       }
     },

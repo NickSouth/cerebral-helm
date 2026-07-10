@@ -134,6 +134,7 @@ describe("MockCerebralBridge", () => {
     expect(settings.knowledge.rootReference).toBe("knowledge-root");
     // Every field is resolved (present), not optional.
     expect(settings.appearance.reducedMotion).toBe(false);
+    expect(settings.appearance.assistantName).toBe("Heimlich");
     expect(settings.workspace.mainDisplayId).toBe("system-primary");
     expect(settings.schemaVersion).toBe("1.0.0");
   });

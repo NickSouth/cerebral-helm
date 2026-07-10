@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useSettings } from "../state/SettingsProvider";
+import { useAppearance } from "../state/AppearanceProvider";
 import { useBridge } from "../state/BridgeProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { armModeWave } from "./modeWave";
@@ -179,6 +180,7 @@ function BottomBarModeMenu() {
 export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
   const state = useDashboardState();
   const { openSettings } = useSettings();
+  const { assistantName } = useAppearance();
   const { heimlich, weather } = state;
   const battery = state.regions.systemHealth.battery;
 
@@ -195,7 +197,7 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
             <HeimlichAvatar />
           </span>
           <span className="bottom-bar__identity-text">
-            <span className="bottom-bar__name">Heimlich</span>
+            <span className="bottom-bar__name">{assistantName}</span>
             <span className="bottom-bar__status">
               <span
                 className="bottom-bar__status-dot"

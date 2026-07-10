@@ -15,6 +15,7 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0004_settings", sql: settingsSQL),
         SchemaMigration(id: "0005_mode_workspace", sql: modeWorkspaceSQL),
         SchemaMigration(id: "0006_main_display", sql: mainDisplaySQL),
+        SchemaMigration(id: "0007_assistant_name", sql: assistantNameSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -198,5 +199,12 @@ public enum SchemaMigrations {
     /// primary display.
     public static let mainDisplaySQL = """
     ALTER TABLE settings ADD COLUMN main_display_id TEXT;
+    """
+
+    /// Migration 0007: the "Assistant Name" setting (NIC-137). The settings
+    /// singleton gains the assistant's display name shown across the dashboard;
+    /// NULL means the default identity (`Heimlich`) applies.
+    public static let assistantNameSQL = """
+    ALTER TABLE settings ADD COLUMN appearance_assistant_name TEXT;
     """
 }

@@ -99,7 +99,11 @@ export interface SettingsSnapshot {
   /** The default-mode setting (stored, else configured, else `executive`) — NOT the
    *  currently active mode. */
   readonly defaultModeId: string;
-  readonly appearance: { readonly reducedMotion: boolean };
+  readonly appearance: {
+    readonly reducedMotion: boolean;
+    /** The assistant's display name across the dashboard; defaults to `Heimlich`. */
+    readonly assistantName: string;
+  };
   /** `rootReference` is null when no knowledge root has been chosen. */
   readonly knowledge: { readonly rootReference: string | null };
   readonly workspace: {

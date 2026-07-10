@@ -12,6 +12,7 @@ export interface SettingsPatchChanges {
   readonly appearance?: {
     readonly density?: "comfortable" | "compact";
     readonly reducedMotion?: boolean;
+    readonly assistantName?: string;
   };
   readonly hotkeys?: { readonly commandPalette?: string };
   readonly knowledge?: { readonly rootReference?: string };
@@ -41,7 +42,8 @@ const ALLOWED_CHANGE_KEYS = new Set([
   "workspace",
   "extensions"
 ]);
-const ALLOWED_APPEARANCE_KEYS = new Set(["density", "reducedMotion"]);
+const ALLOWED_APPEARANCE_KEYS = new Set(["density", "reducedMotion", "assistantName"]);
+const ASSISTANT_NAME_MAX_LENGTH = 40;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -85,6 +87,12 @@ export function validateSettingsChanges(changes: unknown): PatchValidation {
       }
       if ("reducedMotion" in appearance && typeof appearance.reducedMotion !== "boolean") {
         errors.push("appearance.reducedMotion must be a boolean");
+      }
+      if ("assistantName" in appearance) {
+        const name = appearance.assistantName;
+        if (typeof name !== "string" || name.length < 1 || name.length > ASSISTANT_NAME_MAX_LENGTH) {
+          errors.push(`appearance.assistantName must be 1–${ASSISTANT_NAME_MAX_LENGTH} characters`);
+        }
       }
     }
   }
