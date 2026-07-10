@@ -108,6 +108,29 @@ public enum BootstrapComposer {
         )
     }
 
+    /// The configured default mode id from the shipped defaults, or nil when the
+    /// config is invalid. This is the "default mode" *setting* fallback (NIC-141) —
+    /// distinct from the currently active mode, which restart-restore resolves
+    /// separately.
+    public static func defaultModeID(configDirectory: URL) -> String? {
+        guard case let .valid(config) = ConfigValidator.validate(configDirectory: configDirectory) else {
+            return nil
+        }
+        return config.defaults.defaultModeID
+    }
+
+    /// The configured default mode id through the layered ``ConfigLoader`` (user
+    /// overrides, then last-known-good) — the workspace-aware counterpart, matching
+    /// how ``compose(workspace:activeModeID:systemMetricsExpected:)`` sources it.
+    public static func defaultModeID(workspace: WorkspacePaths) -> String? {
+        switch ConfigLoader(workspace: workspace).load() {
+        case let .activated(config):
+            return config.defaults.defaultModeID
+        case let .rejected(_, lastKnownGood):
+            return lastKnownGood?.defaults.defaultModeID
+        }
+    }
+
     /// Whether a mode id is configured (used to accept/reject a mode switch).
     public static func modeExists(_ id: String, configDirectory: URL) -> Bool {
         guard case let .valid(config) = ConfigValidator.validate(configDirectory: configDirectory) else {

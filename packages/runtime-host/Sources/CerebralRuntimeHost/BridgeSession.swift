@@ -131,6 +131,8 @@ public final class BridgeSession: @unchecked Sendable {
             return updateQuickApps(request)
         case .runSpeedTest:
             return await runSpeedTest(request)
+        case .getSettings:
+            return getSettings(request)
         default:
             // captureNote (confirmation-gated local_write returning a synchronous
             // noteId) and subscribe follow later.
@@ -448,6 +450,31 @@ public final class BridgeSession: @unchecked Sendable {
             }
         }
         return ok(request, payload: UpdateSettingsResult(accepted: true))
+    }
+
+    /// Reads the durable settings on demand so the settings UI initializes its
+    /// controls from persisted state rather than hardcoded defaults (NIC-141). This
+    /// is the read side of `updateSettings`; effective defaults are resolved in one
+    /// deterministic place (``EffectiveSettings``).
+    ///
+    /// It never errors: a store load failure or a workspace-less host with no store
+    /// bound (some tests) yields the effective defaults, mirroring how bootstrap
+    /// degrades a missing stored default to the configured default mode. The
+    /// configured default mode id is read through the same layered/shipped config
+    /// path bootstrap uses — the "default mode" setting, distinct from the currently
+    /// active mode.
+    private func getSettings(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) -> CerebralHelmBridgeOperationResponse {
+        let stored = (try? settingsStore?.load()).flatMap { $0 } ?? StoredSettings()
+        let configDefaultModeID: String?
+        if let workspace {
+            configDefaultModeID = BootstrapComposer.defaultModeID(workspace: workspace)
+        } else {
+            configDefaultModeID = BootstrapComposer.defaultModeID(configDirectory: configDirectory)
+        }
+        let snapshot = EffectiveSettings.resolve(stored: stored, configDefaultModeID: configDefaultModeID)
+        return ok(request, payload: snapshot)
     }
 
     /// The bootstrap state with mode restore applied (FR-MOD-05). This is the

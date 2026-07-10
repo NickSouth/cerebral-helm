@@ -12,6 +12,7 @@ import type {
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
+  SettingsSnapshot,
   SpeedTestResult,
   Unsubscribe,
   UpdateQuickAppsResult,
@@ -243,6 +244,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     updateSettings(input) {
       return operation<UpdateSettingsResult>("updateSettings", { ...input });
+    },
+    getSettings() {
+      return operation<SettingsSnapshot>("getSettings", {});
     },
     listApps() {
       return operation<ListAppsResult>("listApps", {});

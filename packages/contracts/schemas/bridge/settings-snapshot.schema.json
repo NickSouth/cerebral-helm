@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/bridge/settings-snapshot.schema.json",
+  "title": "CerebralHelm Settings Snapshot",
+  "description": "The effective durable settings, read on demand over the bridge (`getSettings`) so the settings UI initializes its controls from persisted state instead of hardcoded defaults (NIC-141). Every field is fully resolved: a stored value when set, otherwise the deterministic default. This is the read side of the write-only settings-patch contract; it deliberately omits data that already has a delivery channel — quick apps (bootstrap `modes[].quickApps` + `mode.quickapps.changed`), the login item (`window.__cerebralLoginItem`), and the live command-palette hotkey (`window.__cerebralHotkey`) — so no datum has two sources of truth. Appearance density is not a live setting for now and is intentionally absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "defaultModeId", "appearance", "knowledge", "workspace"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "defaultModeId": {
+      "description": "The mode the app opens in on a fresh launch (the durable setting, resolved as stored value, else the configured default, else `executive`). This is the default-mode setting, NOT the currently active mode.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "appearance": {
+      "title": "SettingsSnapshotAppearance",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reducedMotion"],
+      "properties": {
+        "reducedMotion": {
+          "description": "Whether motion is reduced across the dashboard. Defaults to false when unset.",
+          "type": "boolean"
+        }
+      }
+    },
+    "knowledge": {
+      "title": "SettingsSnapshotKnowledge",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rootReference"],
+      "properties": {
+        "rootReference": {
+          "description": "The configured knowledge-root reference id, or null when no root has been chosen (a meaningful unset state, unlike the other fields).",
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "workspace": {
+      "title": "SettingsSnapshotWorkspace",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["windowsStoredByMode", "mainDisplayId"],
+      "properties": {
+        "windowsStoredByMode": {
+          "description": "Whether a mode switch hides the outgoing mode's apps and returns the incoming mode's stored ones (NIC-85). Defaults to false when unset.",
+          "type": "boolean"
+        },
+        "mainDisplayId": {
+          "description": "The stable display id the main dashboard backdrop is hosted on. Resolves to the `system-primary` sentinel when unset; a stale or disconnected id also degrades to system primary at the shell.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

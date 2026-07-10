@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0.0",
+  "defaultModeId": "developer",
+  "appearance": { "reducedMotion": true },
+  "knowledge": { "rootReference": "knowledge-root" },
+  "workspace": { "windowsStoredByMode": true, "mainDisplayId": "system-primary" }
+}

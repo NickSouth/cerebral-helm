@@ -32,7 +32,8 @@
         "getRecentActivity",
         "listApps",
         "updateQuickApps",
-        "runSpeedTest"
+        "runSpeedTest",
+        "getSettings"
       ]
     },
     "payload": {

@@ -107,6 +107,32 @@ describe("wkWebViewCerebralBridge", () => {
     });
   });
 
+  it("getSettings posts an empty request and resolves the snapshot payload directly", async () => {
+    const { sent } = installChannel();
+    const bridge = createWKWebViewCerebralBridge();
+
+    const promise = bridge.getSettings();
+    const op = sent.find((m) => m.operation === "getSettings");
+    expect(op?.type).toBe("bridge.operation.request");
+    expect(op?.payload).toEqual({});
+
+    const snapshot = {
+      schemaVersion: "1.0.0",
+      defaultModeId: "developer",
+      appearance: { reducedMotion: true },
+      knowledge: { rootReference: null },
+      workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" }
+    };
+    reply({
+      type: "bridge.operation.response",
+      messageId: op?.messageId,
+      operation: "getSettings",
+      status: "ok",
+      payload: snapshot
+    });
+    await expect(promise).resolves.toEqual(snapshot);
+  });
+
   it("dispatches events to subscribers and stops after unsubscribe", () => {
     installChannel();
     const bridge = createWKWebViewCerebralBridge();

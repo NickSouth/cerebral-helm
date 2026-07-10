@@ -180,6 +180,20 @@ export function createMockCerebralBridge(
       const { valid } = validateSettingsChanges(changes);
       return Promise.resolve({ accepted: valid });
     },
+    getSettings() {
+      // Representative persisted settings so browser previews prove the settings UI
+      // reads stored state, not hardcoded defaults (NIC-141): a non-default mode, an
+      // enabled workspace toggle, and a chosen knowledge root. reducedMotion stays
+      // false so the preview keeps its motion; the real bridge returns the user's
+      // stored value.
+      return Promise.resolve({
+        schemaVersion: "1.0.0",
+        defaultModeId: "developer",
+        appearance: { reducedMotion: false },
+        knowledge: { rootReference: "knowledge-root" },
+        workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" }
+      });
+    },
     listApps() {
       // A representative installed-app set for browser previews of the More Apps
       // picker (NIC-119). No icons — the honest non-Mac fallback glyph renders.
