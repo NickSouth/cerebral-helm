@@ -1,4 +1,5 @@
 import type { CerebralBridge } from "../bridge/cerebralBridge";
+import type { ActionStatusSeverity } from "../state/ActionStatusProvider";
 import wiringManifest from "./quickActions.manifest.json";
 
 /**
@@ -11,27 +12,28 @@ import wiringManifest from "./quickActions.manifest.json";
  * never a silent no-op.
  *
  * Results stay honest: a handler dispatches the real bridge op and surfaces only what the
- * bridge actually returned via `acknowledge`. Nothing is fabricated as successful.
+ * bridge actually returned via `announce` (the top-left status line — NIC-124). Nothing is
+ * fabricated as successful.
  */
 export interface QuickActionDeps {
   readonly bridge: CerebralBridge;
-  /** Append a Heimlich-authored acknowledgement to the conversation (no fake user turn). */
-  acknowledge(text: string): void;
+  /** Surface a transient, honest result in the top-left status line (NIC-124). */
+  announce(text: string, severity?: ActionStatusSeverity): void;
 }
 
 type HandlerName = keyof typeof HANDLERS;
 
 const HANDLERS = {
-  async captureNote({ bridge, acknowledge }: QuickActionDeps): Promise<void> {
+  async captureNote({ bridge, announce }: QuickActionDeps): Promise<void> {
     // No content-entry affordance exists pre-Mac, so this captures a labelled quick note and
-    // reports the real returned id. The acknowledgement is explicit that capture is a mock
+    // reports the real returned id. The status text is explicit that capture is a mock
     // until the knowledge system lands — honest-unavailable, never fake-rich.
     const result = await bridge.captureNote({
       title: "Quick note",
       body: "",
       kind: "quick-capture"
     });
-    acknowledge(
+    announce(
       `Captured a quick note (${result.noteId}). Quick capture is a mock pre-Mac — note content entry arrives with the knowledge system.`
     );
   }
@@ -47,16 +49,16 @@ const WIRED_ACTIONS = wiringManifest.wiredActions as Readonly<
  * risk, and executes step by step; live progress arrives as `workflow.action.progress`
  * events, so this only surfaces a rejected dispatch — never a fabricated result.
  */
-function runWorkflow(workflowId: string, { bridge, acknowledge }: QuickActionDeps): void {
+function runWorkflow(workflowId: string, { bridge, announce }: QuickActionDeps): void {
   void bridge
     .submitCommand({ rawInput: `run ${workflowId}`, source: "dashboard" })
     .then((receipt) => {
       if (!receipt.accepted) {
-        acknowledge(`I couldn't run ${workflowId} — it isn't a configured workflow.`);
+        announce(`I couldn't run ${workflowId} — it isn't a configured workflow.`, "error");
       }
     })
     .catch(() => {
-      acknowledge(`Running ${workflowId} failed — the bridge did not accept the command.`);
+      announce(`Running ${workflowId} failed — the bridge did not accept the command.`, "error");
     });
 }
 

@@ -39,6 +39,47 @@ describe("reduceDashboardState", () => {
     expect(reduceDashboardState(base, lifecycleEvent("idle"))).toBe(base);
   });
 
+  it("folds a quick-apps rewrite into the matching mode (NIC-149)", () => {
+    const base = loadBootstrapState();
+    const target = base.modes.find((mode) => mode.quickApps.length > 0) ?? base.modes[0];
+    const event: BridgeEvent = {
+      eventId: "brevt_quickapps0001",
+      type: "mode.quickapps.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-08T16:00:00.000Z",
+      payload: { modeId: target.id, quickApps: ["vscode", "terminal"] }
+    };
+
+    const next = reduceDashboardState(base, event);
+    expect(next.modes.find((mode) => mode.id === target.id)?.quickApps).toEqual([
+      "vscode",
+      "terminal"
+    ]);
+    // Only the named mode changes; every other mode keeps its reference.
+    for (const mode of next.modes) {
+      if (mode.id !== target.id) {
+        expect(mode).toBe(base.modes.find((other) => other.id === mode.id));
+      }
+    }
+
+    // Redundant and malformed rewrites return the same reference (no re-render).
+    expect(reduceDashboardState(next, { ...event, eventId: "brevt_quickapps0002" })).toBe(next);
+    expect(
+      reduceDashboardState(next, {
+        ...event,
+        eventId: "brevt_quickapps0003",
+        payload: { modeId: "no-such-mode", quickApps: ["vscode"] }
+      })
+    ).toBe(next);
+    expect(
+      reduceDashboardState(next, {
+        ...event,
+        eventId: "brevt_quickapps0004",
+        payload: { quickApps: ["vscode"] }
+      })
+    ).toBe(next);
+  });
+
   it("folds a display topology snapshot into state (NIC-87)", () => {
     const base = loadBootstrapState();
     const event: BridgeEvent = {
@@ -191,8 +232,7 @@ describe("reduceDashboardState", () => {
         memory: { availability: "available", value: 61.2, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
         network: {
           availability: "available",
-          uploadMbps: 2.1,
-          downloadMbps: 8.4,
+          linkMbps: 866,
           unit: "mbps",
           sampledAt: "2026-06-23T16:00:00.000Z"
         },
@@ -212,8 +252,7 @@ describe("reduceDashboardState", () => {
     expect(health.state).toBe("ready");
     expect(health.cpuPercent).toBe(23.5);
     expect(health.memoryPercent).toBe(61.2);
-    expect(health.network?.uploadMbps).toBe(2.1);
-    expect(health.network?.downloadMbps).toBe(8.4);
+    expect(health.network?.linkMbps).toBe(866);
     expect(health.battery.percent).toBe(76);
     expect(health.battery.state).toBe("ready");
     expect(health.battery.charging).toBe(true);
@@ -232,7 +271,7 @@ describe("reduceDashboardState", () => {
         // First tick on a desktop Mac: rate metrics still warming, no battery.
         cpu: { availability: "loading", value: null, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
         memory: { availability: "available", value: 40, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
-        network: { availability: "loading", uploadMbps: null, downloadMbps: null, unit: "mbps", sampledAt: null },
+        network: { availability: "loading", linkMbps: null, unit: "mbps", sampledAt: null },
         battery: { availability: "unavailable", value: null, unit: "percent", sampledAt: null },
         display: { availability: "available", value: 1, unit: null, sampledAt: "2026-06-23T16:00:00.000Z" }
       }
@@ -279,6 +318,44 @@ describe("reduceDashboardState", () => {
     // The preloaded modes/agents bundle is preserved by reference; only the per-state slice swaps.
     expect(next.modes).toBe(base.modes);
     expect(next.agents).toBe(base.agents);
+  });
+
+  it("preserves the runtime-owned System Health region across a mode switch (NIC-136)", () => {
+    const base = loadBootstrapState(); // Executive, live metrics from the fixture stream
+    const liveHealth = base.regions.systemHealth;
+    expect(liveHealth.state).toBe("ready");
+
+    // The native mode-switch snapshot ships regions in their honest pre-adapter state
+    // (System Health unavailable); only the live stream repopulates them. Folding that in
+    // wholesale is exactly what caused the unavailable flash.
+    const schoolSnapshot = getDashboardFixture("mode.school.ready");
+    const event: BridgeEvent = {
+      eventId: "brevt_config_health",
+      type: "config.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        snapshot: {
+          ...schoolSnapshot,
+          regions: {
+            ...schoolSnapshot.regions,
+            systemHealth: {
+              state: "unavailable",
+              battery: { state: "unavailable", label: "Battery" }
+            }
+          }
+        }
+      }
+    };
+
+    const next = reduceDashboardState(base, event);
+
+    expect(next.mode).toBe("School"); // the mode-scoped slice still swaps
+    // …but the live System Health region is carried over unchanged — no flash.
+    expect(next.regions.systemHealth).toBe(liveHealth);
+    expect(next.regions.systemHealth.state).toBe("ready");
+    // A mode-scoped region (news) does take the snapshot's value.
+    expect(next.regions.news).toBe(schoolSnapshot.regions.news);
   });
 });
 

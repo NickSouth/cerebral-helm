@@ -95,7 +95,12 @@ let package = Package(
         .target(
             name: "CerebralMacAdapters",
             dependencies: ["CerebralTools", "CerebralCore", "CerebralContracts", "CerebralRuntimeHost"],
-            path: "apps/mac/Sources/CerebralMacAdapters"
+            path: "apps/mac/Sources/CerebralMacAdapters",
+            linkerSettings: [
+                // CoreWLAN backs the Wi-Fi link-rate metric (NIC-135); macOS-only,
+                // the target compiles to nothing on Linux CI.
+                .linkedFramework("CoreWLAN", .when(platforms: [.macOS]))
+            ]
         ),
         .target(
             name: "CerebralStorage",

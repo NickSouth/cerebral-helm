@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/network-speed-test-output.schema.json",
+  "title": "CerebralHelm Network Speed Test Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "testedAt"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "ok = both directions measured; partial = one direction only; unavailable = the test could not run.",
+      "enum": ["ok", "partial", "unavailable"]
+    },
+    "downloadMbps": {
+      "type": "number",
+      "description": "Measured download capacity in Mbps, when known.",
+      "minimum": 0
+    },
+    "uploadMbps": {
+      "type": "number",
+      "description": "Measured upload capacity in Mbps, when known.",
+      "minimum": 0
+    },
+    "testedAt": {
+      "type": "string",
+      "description": "ISO-8601 timestamp when the measurement completed."
+    }
+  }
+}

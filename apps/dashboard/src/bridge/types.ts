@@ -28,28 +28,12 @@ export type HeimlichState =
   | "error"
   | "offline";
 
-export interface ConversationMessage {
-  readonly id: string;
-  readonly role: "user" | "heimlich";
-  readonly text: string;
-}
-
-/** The in-conversation docked bottom input — distinct from the persistent top Ask Heimlich launcher. */
-export interface ConversationInput {
-  readonly draft?: string;
-  readonly placeholder: string;
-}
-
-export interface HeimlichConversation {
-  readonly open: boolean;
-  readonly transcript: readonly ConversationMessage[];
-  readonly input: ConversationInput;
-}
-
-/** The center surface; always present — chat is a translucent overlay, never a replacement (§5.7). */
+/**
+ * The center surface; always present. The chat/conversation overlay was removed for the MVP
+ * (NIC-124) — conversing with Heimlich is post-MVP — so only the runtime `state` remains.
+ */
 export interface HeimlichSurface {
   readonly state: HeimlichState;
-  readonly conversation: HeimlichConversation;
 }
 
 /**
@@ -103,10 +87,9 @@ export interface MetricChannel {
   readonly label: string;
 }
 
-/** Network channel with optional up/down throughput split (mirrors DashboardNetworkChannel). */
+/** Network channel carrying the Wi-Fi link (transmit) rate — the connection's speed (mirrors DashboardNetworkChannel). */
 export interface NetworkChannel extends MetricChannel {
-  readonly uploadMbps?: number;
-  readonly downloadMbps?: number;
+  readonly linkMbps?: number;
 }
 
 /** Battery channel with an optional charge percentage (Mac-only capability; mocked pre-Mac). */

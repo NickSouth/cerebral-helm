@@ -88,8 +88,8 @@ final class WindowCoordinator: @unchecked Sendable {
         observeOcclusion(of: dashboard.window)
 
         let palette = CommandPaletteWindowController(dashboardRoot: dashboardRoot, paths: paths, session: session)
-        // Increment 2: a conversational palette submission routes to the dashboard's
-        // center-panel conversation rather than executing inline.
+        // A palette submission routes to the dashboard's command bus (NIC-124) rather than
+        // opening a conversation (which no longer exists).
         palette.onAskHeimlich = { [weak self] text in self?.routeAskHeimlich(text) }
         // Palette focus targets the main display (NIC-120b), not whichever screen
         // has keyboard focus.
@@ -181,7 +181,7 @@ final class WindowCoordinator: @unchecked Sendable {
             guard let session, let dashboardRoot, let paths else { continue }
             // Secondaries host the reduced companion surface (owner decision,
             // 2026-07-06): the Heimlich stream + bottom bar only — no command
-            // bar, quick actions, or conversation off the main display.
+            // bar or quick actions off the main display.
             let secondary = DashboardWindowController(
                 dashboardRoot: dashboardRoot, paths: paths, session: session, screen: target, surface: .companion
             )
@@ -208,7 +208,7 @@ final class WindowCoordinator: @unchecked Sendable {
         publishBackdropVisibility()
     }
 
-    /// The display the main backdrop (and palette/conversation focus) belongs on:
+    /// The display the main backdrop (and palette focus) belongs on:
     /// the live settings override, else the persisted setting — either only when
     /// it names a still-connected, stable-identity display — else the system
     /// primary. Stale or unknown ids degrade silently, never error (NIC-87 AC).
@@ -309,15 +309,16 @@ final class WindowCoordinator: @unchecked Sendable {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Increment 2: dismiss the palette (already done by its control channel), bring the
-    /// dashboard forward, and open the conversation in the center panel with the text.
+    /// Dismiss the palette (already done by its control channel), bring the dashboard forward,
+    /// and dispatch the submitted text through the dashboard's command bus. The Heimlich chat
+    /// was removed (NIC-124): a command's result surfaces in the dashboard status line, and an
+    /// unrecognized command reports the honest not-implemented state — no conversation opens.
     private func routeAskHeimlich(_ text: String) {
         guard let dashboard else { return }
-        // The conversation opens in the backdrop's center panel and may be
-        // covered by other apps — its surfacing UX is deliberately deferred
-        // (backdrop-policy decision, 2026-07-06); do not lift the dashboard.
+        // The dashboard is the backdrop and may be covered by other apps; its surfacing UX is
+        // deliberately deferred (backdrop-policy decision, 2026-07-06); do not lift it.
         NSApp.activate(ignoringOtherApps: true)
-        dashboard.openConversation(text)
+        dashboard.submitCommand(text)
     }
 
     /// Present or clear the dedicated confirmation panel from one

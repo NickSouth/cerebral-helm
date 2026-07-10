@@ -1,8 +1,8 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QuickApps } from "./QuickApps";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
-import { ConversationProvider } from "../state/ConversationProvider";
+import { ActionStatusProvider } from "../state/ActionStatusProvider";
 import { createBridgeStore } from "../state/bridgeStore";
 import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
 import type { DashboardState } from "../state/dashboardState";
@@ -32,9 +32,9 @@ function renderQuickApps(
   render(
     <BridgeProvider bridge={spyBridge}>
       <DashboardStateProvider store={store}>
-        <ConversationProvider>
+        <ActionStatusProvider>
           <QuickApps />
-        </ConversationProvider>
+        </ActionStatusProvider>
       </DashboardStateProvider>
     </BridgeProvider>
   );
@@ -81,7 +81,9 @@ describe("QuickApps", () => {
   it("ships a clean slate: no placeholder tiles, five Pin app slots (release MVP)", () => {
     renderQuickApps();
     expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(5);
-    expect(document.querySelectorAll("button.quick-app:not(.quick-app--pin):not(.quick-app--more)")).toHaveLength(0);
+    expect(
+      document.querySelectorAll("button.quick-app:not(.quick-app--pin):not(.quick-app--more)")
+    ).toHaveLength(0);
   });
 
   it("dispatches `open <id>` through the bridge when the capability is available", () => {
@@ -129,21 +131,89 @@ describe("QuickApps", () => {
     // The mock discovery catalog renders by app name — real icons come from the Mac adapter.
     expect(await screen.findByText("Safari")).toBeInTheDocument();
     expect(screen.getByText("Visual Studio Code")).toBeInTheDocument();
-    // The picker never launches: entries are not launch buttons, just listed apps.
-    expect(screen.queryByRole("button", { name: "Safari" })).toBeNull();
 
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "All applications" })).toBeNull();
   });
 
-  it("pins a reference-backed app through updateQuickApps; unbacked apps say so (NIC-119c)", async () => {
-    const updates: Array<{ modeId: string; quickApps: readonly string[] }> = [];
+  it("picker tiles launch via `open <referenceId>` and close the picker (NIC-149)", async () => {
+    const { submissions } = renderQuickApps((base) => ({
+      ...base,
+      capabilities: {
+        "native.apps.list": { available: true },
+        "native.app.open": { available: true }
+      }
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
+    await screen.findByRole("dialog", { name: "All applications" });
+    await screen.findByText("Terminal");
+
+    // Terminal is reference-backed: its tile is a live launch button.
+    const tile = screen.getByRole("button", { name: "Terminal" });
+    expect(tile).toBeEnabled();
+    fireEvent.click(tile);
+    expect(submissions).toEqual(["open terminal"]);
+
+    // An accepted launch closes the picker (launcher semantics).
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "All applications" })).toBeNull()
+    );
+  });
+
+  it("picker launch controls stay honest-disabled without native.app.open (NIC-149)", async () => {
     renderQuickApps((base) => ({
       ...base,
       capabilities: { "native.apps.list": { available: true } }
-    }), {
-      onUpdateQuickApps: (input) => updates.push(input)
-    });
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
+    await screen.findByRole("dialog", { name: "All applications" });
+    await screen.findByText("Terminal");
+
+    // Reference-backed but no launch capability: disabled with the honest reason.
+    const tile = screen.getByRole("button", { name: "Terminal" });
+    expect(tile).toBeDisabled();
+    expect(tile.title).toMatch(/macOS host/);
+    // No configured reference: disabled regardless, and says why.
+    const safari = screen.getByRole("button", { name: "Safari" });
+    expect(safari).toBeDisabled();
+    expect(safari.title).toBe("Not a configured app reference");
+  });
+
+  it("an accepted pin re-renders the tiles from mode.quickapps.changed (NIC-149)", async () => {
+    renderQuickApps((base) => ({
+      ...base,
+      capabilities: { "native.apps.list": { available: true } }
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
+    await screen.findByRole("dialog", { name: "All applications" });
+    await screen.findByText("Terminal");
+
+    // Clean slate: five empty Pin app slots before the write.
+    expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(5);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Pin" })[0]);
+
+    // The mock bridge emits mode.quickapps.changed on the accepted write — a
+    // pinned tile appears and its picker control flips to Unpin, no restart.
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(4));
+    expect(await screen.findByRole("button", { name: "Unpin" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unpin Terminal" })).toBeInTheDocument();
+  });
+
+  it("pins a reference-backed app through updateQuickApps; unbacked apps say so (NIC-119c)", async () => {
+    const updates: Array<{ modeId: string; quickApps: readonly string[] }> = [];
+    renderQuickApps(
+      (base) => ({
+        ...base,
+        capabilities: { "native.apps.list": { available: true } }
+      }),
+      {
+        onUpdateQuickApps: (input) => updates.push(input)
+      }
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
     await screen.findByRole("dialog", { name: "All applications" });

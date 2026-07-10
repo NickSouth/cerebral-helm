@@ -1,11 +1,20 @@
 :root {
   color-scheme: dark;
+  /* Notch/safe-area inset at the top of the hosting display (NIC-155). The native backdrop is a
+     borderless window sized to the FULL screen frame, so on a built-in MacBook display its top
+     edge sits under the notch. The Mac shell injects the screen's `NSScreen.safeAreaInsets.top`
+     here (DashboardWebView.swift) and keeps it current across display changes; it stays 0 on
+     external/non-notched displays, so this whole treatment is inert there. */
+  --ch-safe-area-top: 0px;
   /* The root font-size scales with viewport HEIGHT, and the whole design is expressed in rem
      (spacing, radii, box heights, icon sizes, fonts). So the dashboard scales as one unit with
      the screen height — up on taller screens, down on shorter — always keeping proportions and
      (because it fits at the reference size) always fitting without a page scroll. Width is a
-     separate concern: the columns cap-and-center, the bottom bar spans the full width. */
-  font-size: clamp(11px, 1.32vh, 17.5px);
+     separate concern: the columns cap-and-center, the bottom bar spans the full width.
+     The usable height excludes the notch inset (NIC-155): scaling off (100vh − notch) makes every
+     component proportionally shorter so the whole shell, once pushed below the notch, still fits
+     without a scroll. 1.32vh ≡ 1.32% of viewport height, so the multiplier here is 1.32/100. */
+  font-size: clamp(11px, calc((100vh - var(--ch-safe-area-top)) * 0.0132), 17.5px);
   font-family: var(--ch-font-family);
   /* Grayscale antialiasing (NIC-77): on a large / non-Retina external display subpixel smoothing
      reads as soft, slightly-fuzzy text. Grayscale AA keeps the type crisp and even-weighted. */
@@ -40,29 +49,9 @@ body {
   transition: background-color var(--ch-motion-slow) var(--ch-ease-standard);
 }
 
-/* Mode wave (shell/modeWave.ts): a clicked mode switch runs as a view transition — the old
-   render is held while the new one is revealed by a circle expanding from the clicked control
-   (a scripted clip-path on the new snapshot). The browser's default snapshot cross-fade is
-   disabled: the reveal IS the transition. Reduced motion never gets here (modeWave falls back
-   to a plain commit, which keeps the token cross-fade). */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
-}
-
-/* While the wave runs, revealed pixels must already wear the final palette — suspend the
-   per-property mode cross-fades (shell.css) so the wavefront itself carries the change. */
-html.mode-wave .app-root,
-html.mode-wave .app-root *,
-html.mode-wave .app-root *::before,
-html.mode-wave .app-root *::after {
-  transition-duration: 0ms !important;
-}
-
-/* The wave's glowing leading edge, positioned/animated by modeWave.ts. It lives under
-   `.app-root` (inside the revealed snapshot), so it inherits the TARGET mode's accent and its
-   own radius tracks the reveal edge. Decorative only. */
+/* The wave's glowing leading edge, positioned/animated by modeWave.ts (NIC-125: a live commit,
+   not a view transition). Appended under `.app-root`, so it inherits the TARGET mode's accent as
+   the tokens cross-fade; its radius sweeps out from the clicked control. Decorative only. */
 .mode-wave-ring {
   position: fixed;
   width: 0;
@@ -76,18 +65,6 @@ html.mode-wave .app-root *::after {
     inset 0 0 42px color-mix(in srgb, var(--ch-accent-primary) 30%, transparent);
   pointer-events: none;
   z-index: 1400;
-}
-
-/* While the wave runs, the view transition swallows input, so the mode controls are briefly
-   inert: grey the unselected ones out for the wave's exact lifetime (the `mode-wave` root class)
-   so the lock reads as intentional rather than broken (NIC-77 owner UX call). The newly selected
-   control keeps full strength, confirming the choice. Reduced-motion never adds the class (no
-   wave → no lock → nothing to grey). */
-html.mode-wave .mode-switcher__option:not([data-active="true"]),
-html.mode-wave .bottom-bar__mode-trigger,
-html.mode-wave .bottom-bar__mode-option:not([data-active="true"]) {
-  pointer-events: none;
-  opacity: 0.45;
 }
 
 .tokens-page {

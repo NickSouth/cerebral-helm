@@ -17,8 +17,8 @@ export interface CerebralHelmBridgeBootstrapState {
     expandedAgent: null | string;
     /**
      * The center surface — Heimlich's consciousness — present in every mode; the center is
-     * never replaced (design spec §5.7). `conversation` is the translucent chat overlay over
-     * the still-running field, including its docked bottom input.
+     * never replaced (design spec §5.7). The chat/conversation overlay was removed for the MVP
+     * (NIC-124): conversing with Heimlich is post-MVP, so only the runtime `state` remains.
      */
     heimlich: DashboardHeimlich;
     mode:     Mode;
@@ -83,42 +83,11 @@ export enum DashboardAgentAvailability {
 
 /**
  * The center surface — Heimlich's consciousness — present in every mode; the center is
- * never replaced (design spec §5.7). `conversation` is the translucent chat overlay over
- * the still-running field, including its docked bottom input.
+ * never replaced (design spec §5.7). The chat/conversation overlay was removed for the MVP
+ * (NIC-124): conversing with Heimlich is post-MVP, so only the runtime `state` remains.
  */
 export interface DashboardHeimlich {
-    conversation: DashboardHeimlichConversation;
-    state:        DashboardHeimlichState;
-}
-
-export interface DashboardHeimlichConversation {
-    /**
-     * The in-conversation docked bottom input (distinct from the persistent top-center Ask
-     * Heimlich launcher); shown when the conversation is open, lifts on minimize/close.
-     */
-    input:      DashboardConversationInput;
-    open:       boolean;
-    transcript: DashboardConversationMessage[];
-}
-
-/**
- * The in-conversation docked bottom input (distinct from the persistent top-center Ask
- * Heimlich launcher); shown when the conversation is open, lifts on minimize/close.
- */
-export interface DashboardConversationInput {
-    draft?:      string;
-    placeholder: string;
-}
-
-export interface DashboardConversationMessage {
-    id:   string;
-    role: DashboardConversationRole;
-    text: string;
-}
-
-export enum DashboardConversationRole {
-    Heimlich = "heimlich",
-    User = "user",
+    state: DashboardHeimlichState;
 }
 
 export enum DashboardHeimlichState {
@@ -246,16 +215,12 @@ export interface DashboardBatteryChannel {
 }
 
 export interface DashboardNetworkChannel {
+    label: string;
     /**
-     * Downlink throughput in Mbps, when known.
+     * Wi-Fi link (transmit) rate in Mbps — the connection's speed, when known.
      */
-    downloadMbps?: number;
-    label:         string;
-    state:         DashboardRegionState;
-    /**
-     * Uplink throughput in Mbps, when known.
-     */
-    uploadMbps?: number;
+    linkMbps?: number;
+    state:     DashboardRegionState;
 }
 
 export interface DashboardRegionWidgets {
@@ -376,6 +341,7 @@ export enum CerebralHelmBridgeEventType {
     ConfigChanged = "config.changed",
     ConfirmationChanged = "confirmation.changed",
     DisplayTopologyChanged = "display.topology.changed",
+    ModeQuickappsChanged = "mode.quickapps.changed",
     SystemStatusChanged = "system.status.changed",
     WorkflowActionProgress = "workflow.action.progress",
 }
@@ -470,6 +436,7 @@ export enum Operation {
     GetBootstrapState = "getBootstrapState",
     GetRecentActivity = "getRecentActivity",
     ListApps = "listApps",
+    RunSpeedTest = "runSpeedTest",
     SearchNotes = "searchNotes",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",
@@ -995,6 +962,39 @@ export enum ActionStatus {
 export enum CerebralHelmModeApplyOutputStatus {
     PartialSuccess = "partial_success",
     Success = "success",
+}
+
+export interface CerebralHelmNetworkSpeedTestInput {
+}
+
+export interface CerebralHelmNetworkSpeedTestOutput {
+    /**
+     * Measured download capacity in Mbps, when known.
+     */
+    downloadMbps?: number;
+    /**
+     * ok = both directions measured; partial = one direction only; unavailable = the test could
+     * not run.
+     */
+    status: CerebralHelmNetworkSpeedTestOutputStatus;
+    /**
+     * ISO-8601 timestamp when the measurement completed.
+     */
+    testedAt: string;
+    /**
+     * Measured upload capacity in Mbps, when known.
+     */
+    uploadMbps?: number;
+}
+
+/**
+ * ok = both directions measured; partial = one direction only; unavailable = the test could
+ * not run.
+ */
+export enum CerebralHelmNetworkSpeedTestOutputStatus {
+    Ok = "ok",
+    Partial = "partial",
+    Unavailable = "unavailable",
 }
 
 export interface CerebralHelmNoteCaptureInput {

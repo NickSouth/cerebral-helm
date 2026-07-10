@@ -15,6 +15,7 @@ public struct ToolCapabilities: Sendable {
     public let url: any URLCapability
     public let process: any ProcessCapability
     public let systemStatus: any SystemStatusCapability
+    public let networkSpeedTest: any NetworkSpeedTestCapability
     public let workspaceWindows: any WorkspaceWindowsCapability
     public let window: any WindowCapability
     public let appDiscovery: any AppDiscoveryCapability
@@ -27,6 +28,7 @@ public struct ToolCapabilities: Sendable {
         url: any URLCapability,
         process: any ProcessCapability,
         systemStatus: any SystemStatusCapability,
+        networkSpeedTest: any NetworkSpeedTestCapability = MockNetworkSpeedTestCapability(matrix: .none),
         workspaceWindows: any WorkspaceWindowsCapability = MockWorkspaceWindowsCapability(matrix: .none),
         window: any WindowCapability = MockWindowCapability(matrix: .none),
         appDiscovery: any AppDiscoveryCapability = MockAppDiscoveryCapability(matrix: .none),
@@ -36,6 +38,7 @@ public struct ToolCapabilities: Sendable {
         self.url = url
         self.process = process
         self.systemStatus = systemStatus
+        self.networkSpeedTest = networkSpeedTest
         self.workspaceWindows = workspaceWindows
         self.window = window
         self.appDiscovery = appDiscovery
@@ -50,6 +53,7 @@ public struct ToolCapabilities: Sendable {
             url: MockURLCapability(matrix: matrix),
             process: MockProcessCapability(matrix: matrix),
             systemStatus: MockSystemStatusCapability(matrix: matrix),
+            networkSpeedTest: MockNetworkSpeedTestCapability(matrix: matrix),
             workspaceWindows: MockWorkspaceWindowsCapability(matrix: matrix),
             window: MockWindowCapability(matrix: matrix),
             appDiscovery: MockAppDiscoveryCapability(matrix: matrix)

@@ -527,6 +527,20 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [ConfirmationArgument(name: "mode", value: modeID, sensitive: false)],
                 actionSummary: "Switch to mode \(modeID)."
             )
+        case .runSpeedTest:
+            // A single read-only measurement (NIC-135). It talks to Apple's test
+            // servers, so it is honest about metadata leaving the device — but as a
+            // fixed, non-mutating diagnostic it runs without confirmation
+            // (descriptor risk `read_only`), unlike an arbitrary `hook.run`.
+            return make(
+                toolID: "network.speed.test",
+                input: Data("{}".utf8),
+                destination: nil,
+                dataLeavingDevice: .metadataOnly,
+                reversibility: .reversible,
+                arguments: [],
+                actionSummary: "Measure internet speed."
+            )
         case .runAction:
             // Workflows resolve through startWorkflow, never through the
             // single-tool path.

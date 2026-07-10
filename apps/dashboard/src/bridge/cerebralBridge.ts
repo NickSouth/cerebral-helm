@@ -14,6 +14,7 @@ export type BridgeEventType =
   | "confirmation.changed"
   | "system.status.changed"
   | "config.changed"
+  | "mode.quickapps.changed"
   | "bridge.capability.changed"
   | "workflow.action.progress"
   | "display.topology.changed";
@@ -106,6 +107,16 @@ export interface ListAppsResult {
   readonly truncated: boolean;
 }
 
+/** On-demand internet speed test result (NIC-135). `status` is "ok" (both
+ *  directions), "partial" (one), or "unavailable" (the test could not run);
+ *  figures are Mbps and present per `status`. */
+export interface SpeedTestResult {
+  readonly status: "ok" | "partial" | "unavailable";
+  readonly downloadMbps?: number;
+  readonly uploadMbps?: number;
+  readonly testedAt?: string;
+}
+
 export interface UpdateQuickAppsInput {
   readonly modeId: string;
   readonly quickApps: readonly string[];
@@ -175,6 +186,9 @@ export interface CerebralBridge {
   listApps(): Promise<ListAppsResult>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */
   updateQuickApps(input: UpdateQuickAppsInput): Promise<UpdateQuickAppsResult>;
+  /** Run an on-demand internet speed test (NIC-135). Resolves when the ~30s
+   *  measurement completes; read-only, so it never gates on confirmation. */
+  runSpeedTest(): Promise<SpeedTestResult>;
   /** Subscribe to the bridge event stream; returns an unsubscribe handle. */
   subscribe(listener: BridgeEventListener): Unsubscribe;
 }

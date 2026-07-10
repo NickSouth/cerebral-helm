@@ -208,7 +208,27 @@ export function createMockCerebralBridge(
           errors: unknown.map((id) => `"${id}" is not a configured app reference.`)
         });
       }
+      // An accepted write emits mode.quickapps.changed, mirroring the native
+      // bridge (NIC-149) — tiles refresh from the event, never optimistically.
+      emit({
+        eventId: "brevt_mock_quickapps_changed",
+        type: "mode.quickapps.changed",
+        schemaVersion: "1.0.0",
+        timestamp: new Date().toISOString(),
+        payload: { modeId: input.modeId, quickApps: [...input.quickApps] }
+      });
       return Promise.resolve({ accepted: true, quickApps: input.quickApps, errors: [] });
+    },
+    runSpeedTest() {
+      // A representative measurement for browser previews (NIC-135). The short
+      // delay lets the widget's progress ring animate the way the ~30s native
+      // run would; the real bridge resolves when networkQuality completes.
+      return new Promise((resolve) => {
+        setTimeout(
+          () => resolve({ status: "ok", downloadMbps: 243.7, uploadMbps: 17.9, testedAt: new Date().toISOString() }),
+          2600
+        );
+      });
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);

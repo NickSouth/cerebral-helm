@@ -16,11 +16,11 @@ import {
  * `NSPanel`.
  *
  * It reuses the existing `CommandSurface` (token/visual parity, owner decision). A
- * submission routes to the dashboard's **center-panel conversation** ("Ask Heimlich"):
- * the palette posts `askHeimlich` on the private `paletteControl` channel, and the native
- * coordinator dismisses the palette, brings the dashboard forward, and opens the
- * conversation (which dispatches the command through the shared bridge). Escape / click
- * dismiss. The palette re-themes to the active mode via `config.changed` (Increment 3).
+ * submission routes to the dashboard's command bus: the palette posts `askHeimlich` on the
+ * private `paletteControl` channel, and the native coordinator dismisses the palette, brings
+ * the dashboard forward, and dispatches the command through the shared bridge (surfacing the
+ * result in the dashboard's status line — the Heimlich chat was removed, NIC-124). Escape /
+ * click dismiss. The palette re-themes to the active mode via `config.changed` (Increment 3).
  */
 
 // The shell registers the native bridge transport; in a plain browser preview there is
@@ -83,10 +83,10 @@ export function CommandPaletteApp() {
   }, []);
 
   const onSubmit = useCallback((text: string) => {
-    // Route to the dashboard's Ask-Heimlich conversation; the coordinator dismisses the
-    // palette, brings the dashboard forward, and opens the conversation (which dispatches
-    // the command through the shared bridge). Inline command execution without surfacing
-    // the dashboard is a later refinement (tied to reachable app-launch commands).
+    // Route to the dashboard's command bus; the coordinator dismisses the palette, brings the
+    // dashboard forward, and dispatches the command through the shared bridge (result surfaces
+    // in the dashboard status line). Inline command execution without surfacing the dashboard
+    // is a later refinement (tied to reachable app-launch commands).
     paletteControl("askHeimlich", { text });
   }, []);
 
@@ -94,7 +94,7 @@ export function CommandPaletteApp() {
     <div className="command-palette" data-mode={mode}>
       <CommandSurface
         variant="launcher"
-        placeholder="Ask Heimlich or type a command…"
+        placeholder="Type a command…"
         ariaLabel="Command palette"
         onSubmit={onSubmit}
         focusOnMount

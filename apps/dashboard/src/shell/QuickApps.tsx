@@ -7,7 +7,7 @@ import type { DiscoveredApp } from "../bridge/cerebralBridge";
 import { useActiveMode } from "./useActiveMode";
 import { appDefinition } from "../appCatalog/appCatalog";
 import { useBridge } from "../state/BridgeProvider";
-import { useConversation } from "../state/ConversationProvider";
+import { useActionStatus } from "../state/ActionStatusProvider";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useUiPosture } from "../state/useUiPosture";
 
@@ -71,7 +71,7 @@ function AppsGridGlyph() {
 export function QuickApps() {
   const { quickApps } = useActiveMode();
   const bridge = useBridge();
-  const { acknowledge } = useConversation();
+  const { announce } = useActionStatus();
   const { readOnly } = useUiPosture();
   const state = useDashboardState();
   const apps = quickApps.slice(0, APP_SLOTS);
@@ -125,7 +125,7 @@ export function QuickApps() {
 
   // Left-click unpin path (owner decision): every pinned tile carries its own
   // unpin control — no trip through the picker. The write rides the same
-  // validated override path; the config.changed snapshot removes the tile.
+  // validated override path; the mode.quickapps.changed event removes the tile.
   const unpin = (id: string) => {
     void bridge
       .updateQuickApps({
@@ -133,7 +133,7 @@ export function QuickApps() {
         quickApps: quickApps.filter((pinned) => pinned !== id)
       })
       .catch(() => {
-        acknowledge("Unpinning failed — the change could not be written.");
+        announce("Unpinning failed — the change could not be written.", "error");
       });
   };
 
@@ -142,11 +142,11 @@ export function QuickApps() {
       .submitCommand({ rawInput: `open ${id}`, source: "dashboard" })
       .then((receipt) => {
         if (!receipt.accepted) {
-          acknowledge(`I couldn't open ${label} — it isn't a configured app reference.`);
+          announce(`I couldn't open ${label} — it isn't a configured app reference.`, "error");
         }
       })
       .catch(() => {
-        acknowledge(`Opening ${label} failed — the bridge did not accept the command.`);
+        announce(`Opening ${label} failed — the bridge did not accept the command.`, "error");
       });
   };
 

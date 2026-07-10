@@ -2,7 +2,7 @@ import { useActiveMode } from "./useActiveMode";
 import { humanizeId } from "./labels";
 import { resolveQuickAction } from "./quickActionHandlers";
 import { useBridge } from "../state/BridgeProvider";
-import { useConversation } from "../state/ConversationProvider";
+import { useActionStatus } from "../state/ActionStatusProvider";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useUiPosture } from "../state/useUiPosture";
 
@@ -40,10 +40,10 @@ function QuickActionSlot({
 export function QuickActions() {
   const { quickActions } = useActiveMode();
   const bridge = useBridge();
-  const { acknowledge } = useConversation();
+  const { announce } = useActionStatus();
   const { readOnly } = useUiPosture();
   const { activeWorkflowRun } = useDashboardState();
-  const deps = { bridge, acknowledge };
+  const deps = { bridge, announce };
 
   // Read-only recovery exposes no mutating controls: every action stays disabled (NIC-64 AC).
   // While a workflow is executing, its actions are also disabled — one run at a time.
@@ -75,13 +75,6 @@ export function QuickActions() {
           />
         ))}
       </div>
-      {activeWorkflowRun ? (
-        <p className="quick-actions__progress" role="status" aria-live="polite">
-          {humanizeId(activeWorkflowRun.workflowId)}: step {activeWorkflowRun.index} of{" "}
-          {activeWorkflowRun.total} — {humanizeId(activeWorkflowRun.actionId)} (
-          {activeWorkflowRun.status})
-        </p>
-      ) : null}
     </div>
   );
 }

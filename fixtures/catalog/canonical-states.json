@@ -17,7 +17,7 @@
         "pendingConfirmations": 0,
         "uiState": "ready",
         "expandedAgent": null,
-        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "heimlich": { "state": "idle" },
         "regions": {
           "schedule": {
             "state": "ready",
@@ -30,7 +30,7 @@
             "state": "ready",
             "cpuPercent": 18,
             "memoryPercent": 50,
-            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "uploadMbps": 20, "downloadMbps": 120 },
+            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "linkMbps": 120 },
             "battery": { "state": "ready", "label": "82%", "percent": 82 }
           },
           "news": {
@@ -78,7 +78,7 @@
         "pendingConfirmations": 0,
         "uiState": "ready",
         "expandedAgent": null,
-        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "heimlich": { "state": "idle" },
         "regions": {
           "schedule": {
             "state": "ready",
@@ -91,7 +91,7 @@
             "state": "ready",
             "cpuPercent": 22,
             "memoryPercent": 58,
-            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "uploadMbps": 22, "downloadMbps": 118 },
+            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "linkMbps": 120 },
             "battery": { "state": "ready", "label": "47%", "percent": 47 }
           },
           "news": {
@@ -142,7 +142,7 @@
         "pendingConfirmations": 0,
         "uiState": "ready",
         "expandedAgent": null,
-        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "heimlich": { "state": "idle" },
         "regions": {
           "schedule": {
             "state": "ready",
@@ -155,7 +155,7 @@
             "state": "ready",
             "cpuPercent": 16,
             "memoryPercent": 44,
-            "network": { "state": "ready", "label": "Wi-Fi · 90 Mbps", "uploadMbps": 15, "downloadMbps": 90 },
+            "network": { "state": "ready", "label": "Wi-Fi · 90 Mbps", "linkMbps": 90 },
             "battery": { "state": "ready", "label": "88%", "percent": 88 }
           },
           "news": {
@@ -203,7 +203,7 @@
         "pendingConfirmations": 0,
         "uiState": "ready",
         "expandedAgent": null,
-        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "heimlich": { "state": "idle" },
         "regions": {
           "schedule": {
             "state": "ready",
@@ -215,7 +215,7 @@
             "state": "ready",
             "cpuPercent": 12,
             "memoryPercent": 40,
-            "network": { "state": "ready", "label": "Wi-Fi · 200 Mbps", "uploadMbps": 30, "downloadMbps": 200 },
+            "network": { "state": "ready", "label": "Wi-Fi · 200 Mbps", "linkMbps": 200 },
             "battery": { "state": "ready", "label": "15%", "percent": 15 }
           },
           "news": {
@@ -416,7 +416,7 @@
         "pendingConfirmations": 0,
         "uiState": "offline",
         "expandedAgent": null,
-        "heimlich": { "state": "offline", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "heimlich": { "state": "offline" },
         "regions": {
           "schedule": {
             "state": "stale",
@@ -610,7 +610,7 @@
         "pendingConfirmations": 0,
         "uiState": "ready",
         "expandedAgent": "research-analyst",
-        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "heimlich": { "state": "idle" },
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-lecture", "title": "CS260 lecture", "start": "2026-06-23T17:00:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 16, "memoryPercent": 44, "network": { "state": "ready", "label": "Wi-Fi · 90 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
@@ -637,7 +637,7 @@
         "pendingConfirmations": 0,
         "uiState": "ready",
         "expandedAgent": "financial-advisor",
-        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "heimlich": { "state": "idle" },
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-board", "title": "Board prep review", "start": "2026-06-23T17:00:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 18, "memoryPercent": 50, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
@@ -664,7 +664,7 @@
         "pendingConfirmations": 0,
         "uiState": "ready",
         "expandedAgent": "project-manager",
-        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "heimlich": { "state": "idle" },
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-standup", "title": "Team standup", "start": "2026-06-23T16:30:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 22, "memoryPercent": 58, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
@@ -691,7 +691,7 @@
         "pendingConfirmations": 0,
         "uiState": "ready",
         "expandedAgent": "system-janitor",
-        "heimlich": { "state": "idle", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "heimlich": { "state": "idle" },
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-review", "title": "PR review block", "start": "2026-06-23T19:00:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 22, "memoryPercent": 58, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
@@ -718,7 +718,7 @@
         "pendingConfirmations": 0,
         "uiState": "loading",
         "expandedAgent": null,
-        "heimlich": { "state": "thinking", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "heimlich": { "state": "thinking" },
         "regions": {
           "schedule": { "state": "unavailable", "items": [], "emptyMessage": "Loading today’s schedule…" },
           "systemHealth": {
@@ -749,7 +749,7 @@
         "pendingConfirmations": 0,
         "uiState": "error",
         "expandedAgent": null,
-        "heimlich": { "state": "error", "conversation": { "open": false, "transcript": [], "input": { "draft": "", "placeholder": "Message Heimlich…" } } },
+        "heimlich": { "state": "error" },
         "regions": {
           "schedule": {
             "state": "stale",

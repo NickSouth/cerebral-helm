@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useBridge } from "../state/BridgeProvider";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useActiveMode } from "./useActiveMode";
+import { useUiPosture } from "../state/useUiPosture";
 import { toModeId } from "../tokens/tokens";
 import type { DiscoveredApp } from "../bridge/cerebralBridge";
 import { AppGlyph } from "./AppGlyph";
@@ -14,27 +15,39 @@ type PickerState =
   | { readonly status: "ready"; readonly apps: readonly DiscoveredApp[]; readonly truncated: boolean };
 
 /**
- * The More Apps picker (NIC-119): installed applications from the read-only
- * `apps.list` discovery capability, with real OS icons where the adapter could
- * render one (the category glyph is the honest fallback). It never launches
- * anything.
+ * The More Apps picker (NIC-119, NIC-149): installed applications from the
+ * read-only `apps.list` discovery capability, with real OS icons where the
+ * adapter could render one (the category glyph is the honest fallback).
+ *
+ * Launching (NIC-149): the picker is an alternate launcher — the app tile and
+ * its Open control dispatch the same deterministic `open <referenceId>` command
+ * as a pinned quick-app tile, gated on `native.app.open` like every launch
+ * surface. An accepted launch closes the picker.
  *
  * Pinning (NIC-119c): a discovered app backed by a configured app reference can
  * be pinned into (or unpinned from) the active mode's five quick-app slots. The
  * write rides the validated config-override path — the bridge rejects unknown
- * references, and an accepted write re-emits the mode snapshot so tiles refresh
- * everywhere. Apps without a configured reference say so honestly; arbitrary
- * paths can never enter the slots from here.
+ * references, and an accepted write emits `mode.quickapps.changed` so tiles
+ * refresh everywhere. Apps without a configured reference say so honestly;
+ * arbitrary paths can never enter the slots from here.
  */
 export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
   const bridge = useBridge();
   const state = useDashboardState();
   const { quickApps } = useActiveMode();
+  const { readOnly } = useUiPosture();
   const modeId = toModeId(state.mode);
   const dialogRef = useRef<HTMLDivElement>(null);
   const [picker, setPicker] = useState<PickerState>({ status: "loading" });
   const [busy, setBusy] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
+  const [launchError, setLaunchError] = useState<string | null>(null);
+
+  const appOpen = state.capabilities?.["native.app.open"];
+  const openAvailable = appOpen?.available === true && !readOnly;
+  const openUnavailableReason = readOnly
+    ? "Unavailable while the app is in read-only recovery"
+    : (appOpen?.degradedReason ?? "Launching apps is available on the macOS host");
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -66,6 +79,39 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
     }
   }
 
+  function launch(app: DiscoveredApp) {
+    if (!app.referenceId) {
+      return;
+    }
+    const { name, referenceId } = app;
+    setLaunchError(null);
+    bridge
+      .submitCommand({ rawInput: `open ${referenceId}`, source: "dashboard" })
+      .then((receipt) => {
+        if (!receipt.accepted) {
+          setLaunchError(`I couldn't open ${name} — it isn't a configured app reference.`);
+          return;
+        }
+        // An accepted launch closes the picker — launcher semantics: the opened
+        // app takes the foreground, the backdrop returns clean.
+        onClose();
+      })
+      .catch(() => {
+        setLaunchError(`Opening ${name} failed — the bridge did not accept the command.`);
+      });
+  }
+
+  function canLaunch(app: DiscoveredApp): boolean {
+    return openAvailable && Boolean(app.referenceId);
+  }
+
+  function launchTitle(app: DiscoveredApp): string {
+    if (!app.referenceId) {
+      return "Not a configured app reference";
+    }
+    return openAvailable ? `Open ${app.name}` : openUnavailableReason;
+  }
+
   function submitQuickApps(next: readonly string[]) {
     setBusy(true);
     setWriteError(null);
@@ -75,8 +121,9 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
         if (!result.accepted) {
           setWriteError(result.errors[0] ?? "The change was rejected by config validation.");
         }
-        // An accepted write refreshes the tiles via the bridge's config.changed
-        // snapshot — no optimistic state here, the config is the truth.
+        // An accepted write refreshes the tiles via the bridge's
+        // mode.quickapps.changed event — no optimistic state here, the config
+        // is the truth.
       })
       .catch(() => {
         setWriteError("The change could not be written.");
@@ -96,7 +143,7 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
 
   function pinControl(app: DiscoveredApp) {
     if (!app.referenceId) {
-      return <span className="apps-picker__unpinnable">Not a configured app reference</span>;
+      return null;
     }
     const referenceId = app.referenceId;
     if (quickApps.includes(referenceId)) {
@@ -160,18 +207,42 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
             <ul className="apps-picker__grid">
               {picker.apps.map((app) => (
                 <li key={app.bundleId} className="apps-picker__item" title={app.bundleId}>
-                  <span className="apps-picker__icon" aria-hidden="true">
-                    {app.iconPng ? (
-                      <img src={`data:image/png;base64,${app.iconPng}`} alt="" />
-                    ) : (
-                      <AppGlyph category="files" />
-                    )}
+                  <button
+                    type="button"
+                    className="apps-picker__launch"
+                    disabled={!canLaunch(app)}
+                    aria-disabled={!canLaunch(app)}
+                    title={launchTitle(app)}
+                    onClick={() => launch(app)}
+                  >
+                    <span className="apps-picker__icon" aria-hidden="true">
+                      {app.iconPng ? (
+                        <img src={`data:image/png;base64,${app.iconPng}`} alt="" />
+                      ) : (
+                        <AppGlyph category="files" />
+                      )}
+                    </span>
+                    <span className="apps-picker__name">{app.name}</span>
+                  </button>
+                  <span className="apps-picker__actions">
+                    <button
+                      type="button"
+                      className="apps-picker__open"
+                      disabled={!canLaunch(app)}
+                      title={launchTitle(app)}
+                      onClick={() => launch(app)}
+                    >
+                      Open
+                    </button>
+                    {pinControl(app)}
                   </span>
-                  <span className="apps-picker__name">{app.name}</span>
-                  {pinControl(app)}
+                  {!app.referenceId ? (
+                    <span className="apps-picker__unpinnable">Not a configured app reference</span>
+                  ) : null}
                 </li>
               ))}
             </ul>
+            {launchError ? <p className="apps-picker__note">{launchError}</p> : null}
             {writeError ? <p className="apps-picker__note">{writeError}</p> : null}
             {picker.truncated ? (
               <p className="apps-picker__note">Showing the first entries — the full list was capped.</p>

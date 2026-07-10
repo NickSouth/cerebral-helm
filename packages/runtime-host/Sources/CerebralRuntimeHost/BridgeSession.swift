@@ -74,10 +74,19 @@ public final class BridgeSession: @unchecked Sendable {
     /// layered loader (user overrides included) when a workspace is bound, else
     /// the shipped defaults.
     private func composeState(activeModeID: String?) -> CerebralHelmBridgeBootstrapState {
+        // When the live-metrics provider is available a sample is inbound, so the composed
+        // System Health region loads (`.empty`) rather than reporting unavailable — the shell
+        // shows a same-shape skeleton instead of an "unavailable" flash on first paint or a
+        // mode switch (NIC-136). Absent the provider it stays honestly unavailable.
+        let metricsExpected = capabilities.first { $0.id == "system.metrics" }?.available == true
         if let workspace {
-            return BootstrapComposer.compose(workspace: workspace, activeModeID: activeModeID)
+            return BootstrapComposer.compose(
+                workspace: workspace, activeModeID: activeModeID, systemMetricsExpected: metricsExpected
+            )
         }
-        return BootstrapComposer.compose(configDirectory: configDirectory, activeModeID: activeModeID)
+        return BootstrapComposer.compose(
+            configDirectory: configDirectory, activeModeID: activeModeID, systemMetricsExpected: metricsExpected
+        )
     }
 
     /// Replaces the reported capability set (a permission recheck, NIC-83) and
@@ -120,6 +129,8 @@ public final class BridgeSession: @unchecked Sendable {
             return await listApps(request)
         case .updateQuickApps:
             return updateQuickApps(request)
+        case .runSpeedTest:
+            return await runSpeedTest(request)
         default:
             // captureNote (confirmation-gated local_write returning a synchronous
             // noteId) and subscribe follow later.
@@ -213,6 +224,32 @@ public final class BridgeSession: @unchecked Sendable {
         }
     }
 
+    private func runSpeedTest(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        // network.speed.test is a read_only tool — it never gates on confirmation,
+        // so this resolves synchronously with the measurement (NIC-135). The bounded
+        // ~30s networkQuality run happens inside runtime.submit; the caller awaits it
+        // while the widget animates its ring.
+        let outcome = await runtime.submit("speedtest", source: .dashboard)
+        guard case let .completed(_, _, result) = outcome,
+              let data = result?.output,
+              let output = try? CerebralHelmNetworkSpeedTestOutput(data: data)
+        else {
+            // The tool could not run, or produced no parseable output: an honest
+            // unavailable, never a fabricated figure.
+            return ok(request, payload: SpeedTestResult(
+                status: "unavailable", downloadMbps: nil, uploadMbps: nil, testedAt: nil
+            ))
+        }
+        return ok(request, payload: SpeedTestResult(
+            status: output.status.rawValue,
+            downloadMbps: output.downloadMbps,
+            uploadMbps: output.uploadMbps,
+            testedAt: output.testedAt
+        ))
+    }
+
     private func searchNotes(
         _ request: CerebralHelmBridgeOperationRequest
     ) async -> CerebralHelmBridgeOperationResponse {
@@ -289,8 +326,8 @@ public final class BridgeSession: @unchecked Sendable {
     /// (NIC-119c): every id must name a configured app reference (existence
     /// check), then `ConfigOverrideWriter` writes the per-mode override and
     /// re-activates the layered config — a rejected candidate is rolled back on
-    /// disk and reported, never half-applied. An applied write re-emits the
-    /// active mode's snapshot so every surface's tiles refresh immediately.
+    /// disk and reported, never half-applied. An applied write emits
+    /// `mode.quickapps.changed` so every surface's tiles refresh immediately.
     private func updateQuickApps(
         _ request: CerebralHelmBridgeOperationRequest
     ) -> CerebralHelmBridgeOperationResponse {
@@ -319,10 +356,12 @@ public final class BridgeSession: @unchecked Sendable {
         )
         switch ConfigOverrideWriter(workspace: workspace).write(override) {
         case .applied:
-            // Refresh every surface: tiles re-render from the merged snapshot.
-            let snapshot = composeState(activeModeID: bootstrapModeID())
-            emit(BridgeEventFactory.configChangedEvent(
-                snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
+            // Refresh every surface: a dedicated per-widget event carries the new
+            // slots (NIC-149). `config.changed` cannot — its snapshot omits `modes`
+            // and the dashboard ignores it when the active mode is unchanged.
+            emit(BridgeEventFactory.quickAppsChangedEvent(
+                modeId: input.modeId, quickApps: input.quickApps,
+                id: BridgeEventFactory.newEventID(), timestamp: Date()
             ))
             return ok(request, payload: UpdateQuickAppsResult(
                 accepted: true, quickApps: input.quickApps, errors: []
@@ -521,6 +560,13 @@ public final class BridgeSession: @unchecked Sendable {
     private struct ListAppsResult: Encodable {
         let apps: [DiscoveredApp]
         let truncated: Bool
+    }
+    private struct SpeedTestResult: Encodable {
+        /// "ok" | "partial" | "unavailable" (mirrors the tool output).
+        let status: String
+        let downloadMbps: Double?
+        let uploadMbps: Double?
+        let testedAt: String?
     }
     private struct UpdateQuickAppsInput: Decodable {
         let modeId: String

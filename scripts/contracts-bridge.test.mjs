@@ -31,7 +31,8 @@ const bridgeOperations = new Set([
   "subscribe",
   "getRecentActivity",
   "listApps",
-  "updateQuickApps"
+  "updateQuickApps",
+  "runSpeedTest"
 ]);
 
 function readJson(filePath) {

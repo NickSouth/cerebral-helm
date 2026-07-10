@@ -2,11 +2,11 @@ import { resolveQuickAction, type QuickActionDeps } from "./quickActionHandlers"
 import type { CerebralBridge, CommandReceipt } from "../bridge/cerebralBridge";
 
 /** NIC-85: workflow-backed quick actions dispatch `run <workflowId>` through the
- *  command bus; a rejected dispatch is acknowledged honestly, never fabricated. */
+ *  command bus; a rejected dispatch is announced honestly, never fabricated. */
 
 function makeDeps(receipt: CommandReceipt) {
   const submissions: string[] = [];
-  const acknowledged: string[] = [];
+  const announced: string[] = [];
   const bridge = {
     submitCommand(input: { rawInput: string; source: string }) {
       submissions.push(input.rawInput);
@@ -15,11 +15,11 @@ function makeDeps(receipt: CommandReceipt) {
   } as unknown as CerebralBridge;
   const deps: QuickActionDeps = {
     bridge,
-    acknowledge: (text) => {
-      acknowledged.push(text);
+    announce: (text) => {
+      announced.push(text);
     }
   };
-  return { deps, submissions, acknowledged };
+  return { deps, submissions, announced };
 }
 
 async function flushMicrotasks() {
@@ -29,7 +29,7 @@ async function flushMicrotasks() {
 
 describe("resolveQuickAction (workflow targets)", () => {
   it("dispatches `run <workflowId>` for a workflow-backed wired action", async () => {
-    const { deps, submissions, acknowledged } = makeDeps({
+    const { deps, submissions, announced } = makeDeps({
       commandId: "cmd_000000000000000000000001",
       accepted: true
     });
@@ -40,16 +40,16 @@ describe("resolveQuickAction (workflow targets)", () => {
     await flushMicrotasks();
     expect(submissions).toEqual(["run open-developer-layout"]);
     // An accepted dispatch is silent — progress arrives via events, not fabricated text.
-    expect(acknowledged).toEqual([]);
+    expect(announced).toEqual([]);
   });
 
-  it("acknowledges a rejected dispatch honestly", async () => {
-    const { deps, submissions, acknowledged } = makeDeps({ commandId: "", accepted: false });
+  it("announces a rejected dispatch honestly", async () => {
+    const { deps, submissions, announced } = makeDeps({ commandId: "", accepted: false });
     resolveQuickAction("open-school-layout", deps)?.();
     await flushMicrotasks();
     expect(submissions).toEqual(["run open-school-layout"]);
-    expect(acknowledged).toHaveLength(1);
-    expect(acknowledged[0]).toMatch(/couldn't run open-school-layout/);
+    expect(announced).toHaveLength(1);
+    expect(announced[0]).toMatch(/couldn't run open-school-layout/);
   });
 
   it("leaves unwired ids as placeholders and keeps handler-backed actions wired", () => {

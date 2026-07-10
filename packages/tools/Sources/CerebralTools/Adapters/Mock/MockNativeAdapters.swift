@@ -117,6 +117,27 @@ public struct MockSystemStatusCapability: SystemStatusCapability {
     }
 }
 
+public struct MockNetworkSpeedTestCapability: NetworkSpeedTestCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+    public var reading: NetworkSpeedTestReading
+
+    public init(
+        matrix: CapabilityMatrix = .allAvailable,
+        fault: MockFault = .none,
+        reading: NetworkSpeedTestReading = NetworkSpeedTestReading(status: .ok, downloadMbps: 240, uploadMbps: 18)
+    ) {
+        self.matrix = matrix
+        self.fault = fault
+        self.reading = reading
+    }
+
+    public func measure() async throws -> NetworkSpeedTestReading {
+        try CapabilityGate.check(CapabilityMatrix.Capability.networkSpeedTest, matrix: matrix, fault: fault)
+        return reading
+    }
+}
+
 public struct MockSecretCapability: SecretCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault

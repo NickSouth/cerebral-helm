@@ -36,18 +36,13 @@ private final class SuiteWorkspace: WorkspaceOpening, @unchecked Sendable {
 private final class SuiteMetricSource: SystemMetricSampling, @unchecked Sendable {
     private let lock = NSLock()
     private var ticks: Double = 0
-    private var bytes: UInt64 = 0
     func cpuTicks() -> CPUTicksSample? {
         lock.lock(); defer { lock.unlock() }
         ticks += 400
         return CPUTicksSample(busyTicks: ticks / 4, totalTicks: ticks)
     }
     func memory() -> MemorySample? { MemorySample(usedBytes: 8, totalBytes: 16) }
-    func networkBytes() -> NetworkBytesSample? {
-        lock.lock(); defer { lock.unlock() }
-        bytes += 500_000
-        return NetworkBytesSample(inBytes: bytes, outBytes: bytes / 2)
-    }
+    func wifiLinkMbps() -> Double? { 866 }
     func battery() -> BatterySample? { BatterySample(percent: 88, isCharging: false, isPluggedIn: true) }
     func displayCount() -> Int? { 2 }
 }

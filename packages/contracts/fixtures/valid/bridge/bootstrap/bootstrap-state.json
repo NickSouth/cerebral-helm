@@ -7,12 +7,7 @@
   "pendingConfirmations": 0,
   "uiState": "ready",
   "heimlich": {
-    "state": "idle",
-    "conversation": {
-      "open": false,
-      "transcript": [],
-      "input": { "draft": "", "placeholder": "Message Heimlich…" }
-    }
+    "state": "idle"
   },
   "expandedAgent": null,
   "modes": [
@@ -79,7 +74,7 @@
       "state": "ready",
       "cpuPercent": 18,
       "memoryPercent": 50,
-      "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" },
+      "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "linkMbps": 120 },
       "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
     },
     "news": {

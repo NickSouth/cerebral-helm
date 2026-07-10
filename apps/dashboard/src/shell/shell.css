@@ -9,18 +9,18 @@
   gap: var(--ch-space-3);
   height: 100vh;
   padding: var(--ch-space-4);
+  /* Push the whole shell below the display's notch (NIC-155). Paired with the (100vh − notch)
+     root font-size in app.css: the shift down is exactly offset by the proportional shrink, so
+     the bottom bar stays pinned and nothing scrolls. Inert (0) on non-notched displays. */
+  padding-top: calc(var(--ch-space-4) + var(--ch-safe-area-top));
   box-sizing: border-box;
   overflow: hidden;
 }
 
-/* Edge sweep: ONE thin diagonal band of light travels across the whole dashboard, top-left →
-   bottom-right. It is a single viewport-fixed gradient (background-attachment: fixed) shared by
-   every component and masked to each panel's border ring — so wherever the band overlaps an
-   outline, that part of the border glows, and every component lights up from the SAME band in one
-   coordinated sweep (no independent spins). A repeating gradient shifted by exactly one period
-   makes it a seamless continuous loop (a new band enters top-left as the last exits bottom-right).
-   NOTE: no `filter`/`transform` on this element — either would re-anchor the fixed background to the
-   element and break the shared coordinate system. Freezes under prefers-reduced-motion. */
+/* Ambient beam reflections: every outlined surface hosts a BeamOverlay (below) whose light
+   tiles are translated by useAmbientBeam so all outlines reflect slices of the SAME
+   viewport-space beam — one coordinated sweep, no independent spins. Freezes under
+   prefers-reduced-motion (the driver hook is disabled; the tiles stay parked off-screen). */
 .shell-panel,
 .heimlich,
 .bottom-bar,
@@ -33,44 +33,22 @@
   border-radius: var(--ch-radius-md);
 }
 
-/* TWO radial "flashlights" (bright core → soft falloff) are shared viewport-fixed gradients masked
-   to each outline, so only the borders REFLECT the light — each fades in as its beam nears and out
-   as it passes (by proximity, not by crawling around corners). Both centers are driven by JS
-   (useAmbientBeam) through --beam-x/--beam-y and --beam2-x/--beam2-y: each pass enters from a random
-   direction, sweeps across, then waits a random 0.5–2s off-screen before the next — unsynced, so 0,
-   1, or 2 beams may be visible and they can come from anywhere. `mix-blend-mode: screen` makes the
-   accent add light. No filter (it would re-anchor the fixed background and break the shared beams). */
-.shell-panel::after,
-.heimlich::after,
-.bottom-bar::after,
-.command-surface--launcher::after {
-  content: "";
+/* TWO radial "flashlights" (bright core → soft falloff) masked to each outline, so only the
+   borders REFLECT the light — each fades in as its beam nears and out as it passes (by
+   proximity, not by crawling around corners). Each pass enters from a random direction, sweeps
+   across, then waits a random 0.5–2s off-screen before the next — unsynced, so 0, 1, or 2 beams
+   may be visible and they can come from anywhere. `mix-blend-mode: screen` makes the accent add
+   light. The tiles move by `transform` ONLY (written per frame by useAmbientBeam) — that stays
+   on the compositor with zero repaint. Do NOT swap this back to a fixed-attachment
+   background-position animation: per-frame re-raster of these masked overlays grew the web
+   process by tens of MB/s to multiple GB (NIC-122). */
+.beam-overlay {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   padding: 1.5px;
-  background-image:
-    radial-gradient(
-      circle 480px at center,
-      color-mix(in srgb, var(--ch-accent-primary) 72%, transparent) 0%,
-      color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 42%,
-      transparent 100%
-    ),
-    radial-gradient(
-      circle 480px at center,
-      color-mix(in srgb, var(--ch-accent-primary) 72%, transparent) 0%,
-      color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 42%,
-      transparent 100%
-    );
-  background-repeat: no-repeat;
-  background-size: 1050px 1050px;
-  background-attachment: fixed;
-  /* Two independent beams: each gradient layer follows its own center vars (set by useAmbientBeam),
-     offset by half the 1050px tile so the var IS the center. Both default off-screen until their
-     first pass runs (and under prefers-reduced-motion, where the hook is disabled). */
-  background-position:
-    calc(var(--beam-x, -3000px) - 525px) calc(var(--beam-y, -3000px) - 525px),
-    calc(var(--beam2-x, -3000px) - 525px) calc(var(--beam2-y, -3000px) - 525px);
+  /* Clips the moving light tiles (and their compositor layers) to the surface. */
+  overflow: hidden;
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -81,6 +59,25 @@
   mask-composite: exclude;
   pointer-events: none;
   mix-blend-mode: screen;
+}
+
+/* One light tile per beam (data-beam="a"/"b"), sized so the tile IS the old 1050px background
+   tile with the beam at its center. Parked off-screen until the beam's first pass (and
+   permanently under prefers-reduced-motion, where the driver hook never runs). */
+.beam-overlay__light {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1050px;
+  height: 1050px;
+  background: radial-gradient(
+    circle 480px at center,
+    color-mix(in srgb, var(--ch-accent-primary) 72%, transparent) 0%,
+    color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 42%,
+    transparent 100%
+  );
+  transform: translate3d(-3000px, -3000px, 0);
+  will-change: transform;
 }
 
 /* The column area (search + three columns). Caps at a max width and centers on very wide screens
@@ -103,14 +100,44 @@
      product brand takes the header row's right cell (top-right corner). */
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
-    ".    search brand"
-    "left center right";
+    "status search brand"
+    "left   center right";
   gap: var(--ch-space-3);
 }
 
 .shell-search {
   grid-area: search;
   min-width: 0;
+}
+
+/* Top-left header cell: the single execution-feedback surface (NIC-124) — live quick-action
+   progress and transient action results. A persistent (aria-live) region that collapses to
+   nothing when idle. Errors tint red and carry an X icon. */
+.action-status {
+  grid-area: status;
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.action-status__text {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  margin: 0;
+  min-width: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.action-status[data-severity="error"] .action-status__text {
+  color: var(--ch-status-error);
+}
+
+.action-status__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
 /* Top-right product brand: the CerebralHelm wordmark with the helm mark in the corner itself.
@@ -442,15 +469,6 @@
   font-size: var(--ch-font-size-label);
 }
 
-/* Live per-action progress of an executing quick action (NIC-85): a quiet status
-   line under the grid; content is announced via aria-live. */
-.quick-actions__progress {
-  margin: 0;
-  font-size: var(--ch-font-size-label);
-  color: var(--ch-text-muted);
-  text-align: center;
-}
-
 /* A wired (live) quick action reads as actionable — solid border, primary text, pointer. */
 .quick-action--wired {
   color: var(--ch-text-primary);
@@ -530,13 +548,12 @@
    the mode accent tokens, so it re-tints per mode automatically. */
 .mode-switcher__option[data-active="true"] {
   border-color: var(--ch-accent-primary);
-  background:
-    linear-gradient(
-      150deg,
-      color-mix(in srgb, var(--ch-accent-primary) 44%, transparent) 0%,
-      color-mix(in srgb, var(--ch-accent-primary) 18%, transparent) 52%,
-      color-mix(in srgb, var(--ch-accent-secondary) 14%, transparent) 100%
-    );
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--ch-accent-primary) 44%, transparent) 0%,
+    color-mix(in srgb, var(--ch-accent-primary) 18%, transparent) 52%,
+    color-mix(in srgb, var(--ch-accent-secondary) 14%, transparent) 100%
+  );
   color: var(--ch-accent-primary);
 }
 
@@ -765,13 +782,12 @@
 /* Selected mode in the menu: the same golden/mode-color light gradient as the rail switcher. */
 .bottom-bar__mode-option[data-active="true"] {
   border-color: var(--ch-accent-primary);
-  background:
-    linear-gradient(
-      150deg,
-      color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 0%,
-      color-mix(in srgb, var(--ch-accent-primary) 16%, transparent) 60%,
-      color-mix(in srgb, var(--ch-accent-secondary) 12%, transparent) 100%
-    );
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--ch-accent-primary) 40%, transparent) 0%,
+    color-mix(in srgb, var(--ch-accent-primary) 16%, transparent) 60%,
+    color-mix(in srgb, var(--ch-accent-secondary) 12%, transparent) 100%
+  );
   color: var(--ch-accent-primary);
 }
 
@@ -1256,30 +1272,165 @@
   background: var(--ch-status-error);
 }
 
-/* Network throughput: upload arrow (mode secondary) + up Mbps, download arrow (mode primary) +
-   down Mbps. Kept on a single line (NIC-77 owner rule) — the wider rem-based rails give it room. */
-.metric__network {
+/* Network row: link speed right-aligned + a sideways wedge that opens the
+   on-demand speed test as a floating callout over the centre panel (NIC-135). */
+.metric__value--network {
+  margin-left: auto;
+}
+
+.netspeed__toggle {
   display: inline-flex;
   align-items: center;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-  gap: var(--ch-space-1);
-  /* Start the network figures a little further left (was pushed to the far right). */
-  margin-left: var(--ch-space-2);
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--ch-text-faint);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.netspeed__toggle:hover {
+  color: var(--ch-text-muted);
+}
+
+.netspeed__wedge {
+  transition: transform 0.2s ease;
+}
+
+/* Sideways wedge points right (expand); flips to point back on open. */
+.netspeed__toggle[data-open="true"] .netspeed__wedge {
+  transform: rotate(180deg);
+}
+
+/* The floating callout: a small card anchored to the right of the row, portalled
+   to <body> at a fixed measured position so it overlaps the centre panel and never
+   grows the System Health panel (panels use overflow:hidden + backdrop-filter). */
+.netspeed {
+  position: fixed;
+  z-index: 60;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ch-space-2);
+  width: 150px;
+  padding: var(--ch-space-3);
+  background: var(--ch-surface-raised);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* Callout wedge pointing left, back toward System Health. */
+.netspeed::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-right: 8px solid var(--ch-surface-raised);
+}
+
+.netspeed__ring-wrap {
+  flex: 0 0 auto;
+  line-height: 0;
+}
+
+.netspeed__ring {
+  transform: rotate(-90deg);
+}
+
+.netspeed__ring-track {
+  stroke: var(--ch-panel-border);
+}
+
+.netspeed__ring-fill {
+  stroke: var(--ch-accent-primary);
+  stroke-linecap: round;
+  stroke-dasharray: 94.25;
+  stroke-dashoffset: 94.25;
+  transition: stroke-dashoffset 0.35s ease;
+}
+
+/* No incremental progress from networkQuality: fill over the bounded run and
+   snap to full when the real result lands. */
+.netspeed__ring[data-phase="measuring"] .netspeed__ring-fill {
+  animation: netspeed-fill 30s linear forwards;
+}
+
+.netspeed__ring[data-phase="done"] .netspeed__ring-fill {
+  stroke-dashoffset: 0;
+}
+
+@keyframes netspeed-fill {
+  from {
+    stroke-dashoffset: 94.25;
+  }
+  to {
+    stroke-dashoffset: 6;
+  }
+}
+
+.netspeed__readout {
+  text-align: center;
+  min-height: 1.4em;
+  font-size: var(--ch-font-size-sm);
+}
+
+.netspeed__note {
+  color: var(--ch-text-muted);
+}
+
+.netspeed__figures {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+
+.netspeed__figure {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--ch-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.netspeed__arrow {
+  color: var(--ch-accent-secondary);
+  font-weight: var(--ch-font-weight-semibold);
+}
+
+.netspeed__unit {
+  color: var(--ch-text-faint);
   font-size: var(--ch-font-size-label);
 }
 
-.net-arrow {
-  font-weight: var(--ch-font-weight-semibold);
-  line-height: 1;
+.netspeed__run {
+  align-self: stretch;
+  padding: 5px 12px;
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-panel);
+  color: var(--ch-text-primary);
+  border-radius: 6px;
+  font-size: var(--ch-font-size-label);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
 
-.net-arrow--up {
-  color: var(--ch-accent-secondary);
+.netspeed__run:hover:not(:disabled) {
+  border-color: var(--ch-accent-primary);
 }
 
-.net-arrow--down {
-  color: var(--ch-accent-primary);
+.netspeed__run:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .news__item {
@@ -1412,10 +1563,6 @@
   cursor: not-allowed;
 }
 
-.command-suggestion--ask {
-  color: var(--ch-accent-secondary);
-}
-
 .command-suggestion__badge {
   font-size: var(--ch-font-size-label);
   color: var(--ch-status-neutral);
@@ -1436,77 +1583,10 @@
   font-size: var(--ch-font-size-sm);
 }
 
-/* Conversation overlay — composited over the still-running ambient field (NIC-60 renders the
-   field and tunes the scrim); never replaces the center (course-correction A.3). */
+/* The Heimlich center is a positioning context for the ambient beam overlay (the conversation
+   overlay that also lived here was removed — NIC-124). */
 .heimlich {
   position: relative;
-}
-
-.conversation {
-  position: absolute;
-  inset: 0;
-  z-index: var(--ch-z-raised);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ch-space-3);
-  padding: var(--ch-space-5);
-  border-radius: var(--ch-radius-lg);
-  background: var(--ch-surface-raised);
-}
-
-.conversation__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.conversation__close {
-  font: inherit;
-  font-size: var(--ch-font-size-sm);
-  padding: var(--ch-space-1) var(--ch-space-3);
-  border: 1px solid var(--ch-panel-border);
-  border-radius: var(--ch-radius-pill);
-  background: var(--ch-surface-panel);
-  color: var(--ch-text-muted);
-  cursor: pointer;
-}
-
-.conversation__transcript {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  flex: 1 1 auto;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ch-space-3);
-}
-
-.conversation__message {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ch-space-1);
-  max-width: 80%;
-  padding: var(--ch-space-2) var(--ch-space-3);
-  border-radius: var(--ch-radius-md);
-  background: var(--ch-surface-panel);
-}
-
-.conversation__message--user {
-  align-self: flex-end;
-  border: 1px solid var(--ch-accent-primary);
-}
-
-.conversation__role {
-  font-size: var(--ch-font-size-label);
-  letter-spacing: var(--ch-font-label-tracking);
-  text-transform: uppercase;
-  color: var(--ch-text-faint);
-}
-
-.conversation__text {
-  font-size: var(--ch-font-size-sm);
-  color: var(--ch-text-primary);
 }
 
 /* Animated mode transition (course-correction D.1): the palette cross-fades — not an instant
@@ -1555,8 +1635,9 @@
 @media (max-width: 1439px) {
   .dashboard-canvas {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(4, auto);
+    grid-template-rows: repeat(5, auto);
     grid-template-areas:
+      "status"
       "search"
       "center"
       "left"
@@ -1890,6 +1971,19 @@
   width: 60%;
 }
 
+/* System Health loading bones (NIC-136): a bar-track fill and a right-aligned value chip
+   so a metric row keeps its exact shape while the first sample lands. */
+.skeleton-bone--bar {
+  width: 100%;
+  height: 100%;
+}
+
+.skeleton-bone--value {
+  flex: 0 0 auto;
+  width: 2.5rem;
+  height: 0.7rem;
+}
+
 @keyframes skeleton-shimmer {
   from {
     background-position: 200% 0;
@@ -2035,7 +2129,37 @@
   border-radius: 5px;
 }
 
-.apps-picker__pin {
+/* The app tile is the primary launch control (NIC-149): icon + name in one
+   button, mirroring a quick-app tile. Disabled = honest (no capability or no
+   configured reference), never hidden. */
+.apps-picker__launch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ch-space-1);
+  border: none;
+  background: none;
+  padding: 0;
+  max-width: 100%;
+  cursor: pointer;
+}
+
+.apps-picker__launch:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.apps-picker__launch:hover:not(:disabled) .apps-picker__icon {
+  color: var(--ch-text-primary);
+}
+
+.apps-picker__actions {
+  display: flex;
+  gap: var(--ch-space-1);
+}
+
+.apps-picker__pin,
+.apps-picker__open {
   border: 1px solid var(--ch-panel-border);
   border-radius: var(--ch-radius-sm);
   background: none;
@@ -2045,11 +2169,13 @@
   cursor: pointer;
 }
 
-.apps-picker__pin:hover:not(:disabled) {
+.apps-picker__pin:hover:not(:disabled),
+.apps-picker__open:hover:not(:disabled) {
   background: var(--ch-surface-base);
 }
 
-.apps-picker__pin:disabled {
+.apps-picker__pin:disabled,
+.apps-picker__open:disabled {
   opacity: 0.5;
   cursor: default;
 }

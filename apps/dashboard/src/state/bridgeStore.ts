@@ -1,6 +1,7 @@
 import type { BridgeEvent, CerebralBridge } from "../bridge/cerebralBridge";
 import type {
   ConfirmationDisclosure,
+  DashboardRegions,
   DashboardStateSnapshot,
   HeimlichState,
   RegionState,
@@ -22,8 +23,7 @@ interface MetricsChannelPayload {
 
 interface MetricsNetworkPayload {
   readonly availability?: string;
-  readonly uploadMbps?: number | null;
-  readonly downloadMbps?: number | null;
+  readonly linkMbps?: number | null;
   readonly sampledAt?: string | null;
 }
 
@@ -72,8 +72,7 @@ function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthReg
     network: {
       state: networkState,
       label: "Network",
-      uploadMbps: payload.network?.uploadMbps ?? undefined,
-      downloadMbps: payload.network?.downloadMbps ?? undefined
+      linkMbps: payload.network?.linkMbps ?? undefined
     },
     battery: {
       state: batteryState,
@@ -83,6 +82,35 @@ function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthReg
       pluggedIn: batteryState === "ready" ? (payload.battery?.pluggedIn ?? undefined) : undefined
     }
   };
+}
+
+/** Same slots in the same order — the no-op guard for quick-app updates. */
+function sameQuickApps(current: readonly string[], next: readonly string[]): boolean {
+  return current.length === next.length && current.every((id, index) => id === next[index]);
+}
+
+/**
+ * Regions a mode-switch snapshot must NOT author: they are runtime-owned — fed by a
+ * live stream (System Health ← `system.status.changed`) that is machine-global, not
+ * mode-scoped. `config.changed` swaps the mode's region data wholesale, so folding its
+ * honest pre-adapter placeholder over these would blank the live values until the next
+ * stream tick — the "unavailable" flash (NIC-136). Add a live-stream region's key here
+ * and it stops flashing on mode switch by construction.
+ */
+const RUNTIME_OWNED_REGIONS = ["systemHealth"] as const;
+
+/** Carry the runtime-owned regions from the current state over a mode-switch snapshot. */
+function preserveRuntimeRegions(
+  snapshotRegions: DashboardRegions,
+  current: DashboardRegions
+): DashboardRegions {
+  const merged: { -readonly [K in keyof DashboardRegions]: DashboardRegions[K] } = {
+    ...snapshotRegions
+  };
+  for (const key of RUNTIME_OWNED_REGIONS) {
+    merged[key] = current[key];
+  }
+  return merged;
 }
 
 /** How a command-lifecycle status maps onto Heimlich's consciousness state (design spec §5.8). */
@@ -121,7 +149,33 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
       if (!snapshot || snapshot.mode === state.mode) {
         return state;
       }
-      return { ...state, ...snapshot };
+      // Swap the mode-scoped slice, but keep the runtime-owned regions (live-stream fed,
+      // mode-independent) so System Health and future live widgets don't revert to their
+      // unavailable state until the next stream tick (NIC-136).
+      return {
+        ...state,
+        ...snapshot,
+        regions: preserveRuntimeRegions(snapshot.regions, state.regions)
+      };
+    }
+    case "mode.quickapps.changed": {
+      // One mode's quick-app slots were rewritten through the validated override
+      // path (NIC-149). A dedicated per-widget event: `config.changed` is a mode
+      // *switch* whose snapshot omits `modes`, so it can never carry this.
+      const payload = event.payload as { modeId?: string; quickApps?: readonly string[] };
+      if (!payload.modeId || !Array.isArray(payload.quickApps)) {
+        return state;
+      }
+      const target = state.modes.find((mode) => mode.id === payload.modeId);
+      if (!target || sameQuickApps(target.quickApps, payload.quickApps)) {
+        return state;
+      }
+      return {
+        ...state,
+        modes: state.modes.map((mode) =>
+          mode.id === payload.modeId ? { ...mode, quickApps: payload.quickApps ?? [] } : mode
+        )
+      };
     }
     case "command.lifecycle.transition": {
       const status = String((event.payload as { currentStatus?: unknown }).currentStatus ?? "");

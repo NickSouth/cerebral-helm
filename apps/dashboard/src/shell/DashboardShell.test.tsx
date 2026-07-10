@@ -1,8 +1,8 @@
-import { render, screen, within, fireEvent, act } from "@testing-library/react";
+import { render, screen, within, fireEvent, act, waitFor } from "@testing-library/react";
 import { DashboardShell } from "./DashboardShell";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
-import { ConversationProvider } from "../state/ConversationProvider";
+import { ActionStatusProvider } from "../state/ActionStatusProvider";
 import { SettingsProvider } from "../state/SettingsProvider";
 import { AppearanceProvider } from "../state/AppearanceProvider";
 import { ThemeProvider } from "../app/ThemeProvider";
@@ -20,11 +20,11 @@ function renderProviders(
       <DashboardStateProvider store={store}>
         <AppearanceProvider>
           <ThemeProvider>
-            <ConversationProvider>
+            <ActionStatusProvider>
               <SettingsProvider>
                 <DashboardShell />
               </SettingsProvider>
-            </ConversationProvider>
+            </ActionStatusProvider>
           </ThemeProvider>
         </AppearanceProvider>
       </DashboardStateProvider>
@@ -97,6 +97,17 @@ describe("DashboardShell structure", () => {
     }
   });
 
+  it("shows every agent as grey / Not implemented for the MVP (NIC-124)", () => {
+    renderShell();
+    const agents = Array.from(document.querySelectorAll<HTMLElement>(".agent-list__item"));
+    expect(agents).toHaveLength(4);
+    for (const agent of agents) {
+      expect(within(agent).getByText("Not implemented")).toBeInTheDocument();
+      // The status dot is the neutral/grey activity (idle → neutral token).
+      expect(agent.querySelector('.agent-status-dot[data-activity="idle"]')).not.toBeNull();
+    }
+  });
+
   it("renders eight quick-action slots — wired ones enabled, placeholders disabled", () => {
     renderShell();
     const slots = within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole(
@@ -110,9 +121,9 @@ describe("DashboardShell structure", () => {
     expect(disabled).toHaveLength(7);
   });
 
-  it("exposes the persistent global Ask-Heimlich launcher (enabled)", () => {
+  it("exposes the persistent global command launcher (enabled)", () => {
     renderShell();
-    expect(screen.getByLabelText("Ask Heimlich or type a command")).toBeEnabled();
+    expect(screen.getByLabelText("Type a command")).toBeEnabled();
   });
 
   it("shows the CerebralHelm brand (wordmark + helm mark) in the header row", () => {
@@ -175,31 +186,51 @@ describe("DashboardShell mode switching (D2)", () => {
   });
 });
 
-describe("DashboardShell command surfaces (D3 / NIC-58)", () => {
-  it("opens a Heimlich conversation from the launcher and continues from the docked input", () => {
-    renderShell();
-    const launcher = screen.getByLabelText("Ask Heimlich or type a command");
+describe("DashboardShell command surfaces (D3 / NIC-58, NIC-124)", () => {
+  /** Render the shell over a bridge whose submitCommand is spied/overridable. */
+  function renderWithSubmit(receipt?: { commandId: string; accepted: boolean }) {
+    const bridge = createMockCerebralBridge();
+    const submissions: string[] = [];
+    const spyBridge = {
+      ...bridge,
+      submitCommand(input: { rawInput: string; source: string }) {
+        submissions.push(input.rawInput);
+        return receipt ? Promise.resolve(receipt) : bridge.submitCommand(input);
+      }
+    };
+    const store = createBridgeStore(spyBridge, loadBootstrapState());
+    renderProviders(spyBridge, store);
+    return { submissions };
+  }
 
-    fireEvent.change(launcher, { target: { value: "what's on today?" } });
+  it("dispatches a command from the launcher and never opens a chat surface", () => {
+    const { submissions } = renderWithSubmit();
+    const launcher = screen.getByLabelText("Type a command");
+
+    fireEvent.change(launcher, { target: { value: "open notes" } });
     fireEvent.keyDown(launcher, { key: "Enter" });
 
-    const dialog = screen.getByRole("dialog", { name: "Heimlich conversation" });
-    expect(within(dialog).getByText("what's on today?")).toBeInTheDocument();
-
-    const docked = within(dialog).getByLabelText("Continue the conversation");
-    fireEvent.change(docked, { target: { value: "and tomorrow?" } });
-    fireEvent.keyDown(docked, { key: "Enter" });
-    expect(within(dialog).getByText("and tomorrow?")).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Minimize" }));
+    expect(submissions).toEqual(["open notes"]);
+    // The Heimlich chat/conversation surface was removed (NIC-124) — nothing opens.
     expect(screen.queryByRole("dialog", { name: "Heimlich conversation" })).toBeNull();
+  });
+
+  it("reports the honest not-implemented state when a submission is rejected (NIC-124)", async () => {
+    renderWithSubmit({ commandId: "", accepted: false });
+    const launcher = screen.getByLabelText("Type a command");
+
+    fireEvent.change(launcher, { target: { value: "tell me a joke" } });
+    fireEvent.keyDown(launcher, { key: "Enter" });
+
+    expect(await screen.findByText("Heimlich not implemented")).toBeInTheDocument();
   });
 
   it("offers capability-aware suggestions — unavailable actions are visibly disabled", () => {
     renderShell();
-    fireEvent.focus(screen.getByLabelText("Ask Heimlich or type a command"));
+    fireEvent.focus(screen.getByLabelText("Type a command"));
 
-    expect(screen.getByRole("button", { name: /Ask Heimlich/ })).toBeInTheDocument();
+    // The always-first "Ask Heimlich" row is gone (NIC-124) — only command matches remain.
+    expect(screen.queryByRole("button", { name: /Ask Heimlich/ })).toBeNull();
     expect(screen.getByRole("button", { name: /Capture a note/ })).toBeEnabled();
     expect(screen.getByRole("button", { name: /Open an app/ })).toBeDisabled();
   });
@@ -214,7 +245,9 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     const { container } = renderShell(); // Executive ready
     const bar = statusBar();
     expect(bar.getByText("Heimlich")).toBeInTheDocument();
-    expect(bar.getByText("Idle")).toBeInTheDocument();
+    // At rest Heimlich reads grey / "Not implemented" for the MVP (NIC-124).
+    expect(bar.getByText("Not implemented")).toBeInTheDocument();
+    expect(container.querySelector('.bottom-bar__status-dot[data-state="neutral"]')).not.toBeNull();
     expect(bar.getByText("Executive")).toBeInTheDocument();
     // Executive mocks 72°F Partly Cloudy weather (shown as icon + temperature) and an 82% battery.
     expect(bar.getByText("72°F")).toBeInTheDocument();
@@ -323,7 +356,7 @@ describe("DashboardShell degraded states (E4 / NIC-64)", () => {
     )) {
       expect(slot).toBeDisabled();
     }
-    expect(screen.getByLabelText("Ask Heimlich or type a command")).toBeDisabled();
+    expect(screen.getByLabelText("Type a command")).toBeDisabled();
   });
 
   it("error shows a specific top-level banner while keeping last-known data visible", () => {
@@ -362,6 +395,37 @@ describe("DashboardShell degraded states (E4 / NIC-64)", () => {
     ).toBeDisabled();
   });
 
+  it("renders live quick-action progress in the top-left status surface, not under the grid (NIC-124)", () => {
+    const { bridge } = renderShell();
+
+    act(() =>
+      bridge.emit({
+        eventId: "brevt_test_progress",
+        type: "workflow.action.progress",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-08T16:29:00.000Z",
+        payload: {
+          commandId: "cmd_1",
+          workflowId: "open-developer-layout",
+          actionId: "app-open",
+          kind: "native.app.open",
+          status: "running",
+          index: 2,
+          total: 5
+        }
+      })
+    );
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    expect(status).not.toBeNull();
+    expect(status).toHaveTextContent("Open developer layout: step 2 of 5 — App open (running)");
+    // The old under-grid progress line is gone — the quick-actions group carries no status text.
+    expect(document.querySelector(".quick-actions__progress")).toBeNull();
+    expect(screen.getByRole("group", { name: "Quick actions" })).not.toHaveTextContent(
+      "step 2 of 5"
+    );
+  });
+
   it("renders a resolved-but-empty region as a calm empty state, distinct from unavailable", () => {
     renderShellWithState((base) => ({
       ...base,
@@ -391,31 +455,44 @@ describe("DashboardShell degraded states (E4 / NIC-64)", () => {
 });
 
 describe("DashboardShell quick actions (D4 / NIC-117 b)", () => {
-  it("dispatches the wired capture-note action and surfaces an honest acknowledgement", async () => {
+  it("dispatches the wired capture-note action and surfaces the result in the status line", async () => {
     renderShell();
 
     fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
 
-    // The real bridge op runs; the returned note id is reported (never a fabricated outcome).
-    const dialog = await screen.findByRole("dialog", { name: "Heimlich conversation" });
-    expect(within(dialog).getByText(/Captured a quick note \(note_/)).toBeInTheDocument();
+    // The real bridge op runs; the returned note id is reported in the top-left status surface
+    // (never a fabricated outcome, and never a chat surface — NIC-124).
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent(/Captured a quick note \(note_/));
+    expect(screen.queryByRole("dialog", { name: "Heimlich conversation" })).toBeNull();
   });
 });
 
-describe("DashboardShell native shell-intent hook (NIC-76)", () => {
+describe("DashboardShell native shell-intent hook (NIC-76 / NIC-124)", () => {
   interface ShellIntentWindow {
-    __cerebralShell?: { openConversation?: (text: string) => void };
+    __cerebralShell?: { submitCommand?: (text: string) => void };
   }
 
-  it("exposes __cerebralShell.openConversation, opening the center-panel conversation", () => {
-    renderShell();
+  it("exposes __cerebralShell.submitCommand, dispatching through the command bus", () => {
+    const bridge = createMockCerebralBridge();
+    const submissions: string[] = [];
+    const spyBridge = {
+      ...bridge,
+      submitCommand(input: { rawInput: string; source: string }) {
+        submissions.push(input.rawInput);
+        return bridge.submitCommand(input);
+      }
+    };
+    const store = createBridgeStore(spyBridge, loadBootstrapState());
+    renderProviders(spyBridge, store);
+
     const shell = (window as unknown as ShellIntentWindow).__cerebralShell;
-    expect(typeof shell?.openConversation).toBe("function");
+    expect(typeof shell?.submitCommand).toBe("function");
     act(() => {
-      shell?.openConversation?.("ping from palette");
+      shell?.submitCommand?.("open notes");
     });
-    // Routes to conversation.submit, which appends the user turn and opens the overlay.
-    expect(screen.getByText("ping from palette")).toBeInTheDocument();
+    // Dispatches straight through the shared bridge — no conversation surface (NIC-124).
+    expect(submissions).toEqual(["open notes"]);
   });
 });
 

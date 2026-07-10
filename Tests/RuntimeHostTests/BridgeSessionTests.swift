@@ -201,6 +201,27 @@ func bootstrapComposesFromConfig() async throws {
     #expect(state.weather == nil)
 }
 
+@Test("System Health composes as loading, not unavailable, when live metrics are expected (NIC-136)")
+func bootstrapSystemHealthLoadsWhenMetricsAvailable() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // A composition where the live-metrics provider is bound and permitted.
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        capabilities: [
+            CerebralContracts.Capability(available: true, degradedReason: nil, id: "system.metrics", source: .native)
+        ]
+    )
+    let response = await session.execute(operationRequest(.getBootstrapState, "{}"))
+
+    #expect(response.status == .ok)
+    let state = try decode(response, as: CerebralHelmBridgeBootstrapState.self)
+    // Provider available ⇒ a first sample is inbound ⇒ the region loads (shell renders a
+    // same-shape skeleton) rather than flashing unavailable before the sample lands.
+    #expect(state.regions.systemHealth.state == .empty)
+    #expect(state.regions.systemHealth.battery.state == .empty)
+}
+
 // MARK: - Knowledge operations
 
 private struct SearchResult: Decodable { struct Hit: Decodable { let noteId: String; let title: String; let excerpt: String }; let results: [Hit] }
@@ -427,6 +448,43 @@ func pinnedQuickAppsSurviveTheReadSide() async throws {
     #expect(restored?.quickApps == ["xcode", "terminal"])
 }
 
+@Test("an accepted pin emits mode.quickapps.changed carrying the new slots (NIC-149)")
+func acceptedPinEmitsQuickAppsChanged() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["xcode","terminal"]}"#
+    ))
+    #expect(try decode(response, as: QuickAppsResult.self).accepted)
+
+    let quickAppsEvents = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.quickapps.changed" }
+    #expect(quickAppsEvents.count == 1)
+    let payload = quickAppsEvents.first?["payload"] as? [String: Any]
+    #expect(payload?["modeId"] as? String == "developer")
+    #expect(payload?["quickApps"] as? [String] == ["xcode", "terminal"])
+
+    // A rejected write emits nothing — the config is unchanged.
+    let rejected = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["/usr/bin/evil"]}"#
+    ))
+    #expect(try decode(rejected, as: QuickAppsResult.self).accepted == false)
+    let after = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.quickapps.changed" }
+    #expect(after.count == 1)
+}
+
 @Test("a pin naming an unconfigured reference is rejected wholesale (no arbitrary paths)")
 func unknownReferenceIsRejected() async throws {
     let (session, paths) = try makeWorkspaceSession()
@@ -598,6 +656,51 @@ func updateSettingsRequiresPatch() async throws {
     let response = await session.execute(operationRequest(.updateSettings, "{}"))
     #expect(response.status == .error)
     #expect(response.error?.category == .invalidInput)
+}
+
+// MARK: - runSpeedTest (NIC-135)
+
+/// Builds a session at a chosen execution phase; the network.speed.test tool is
+/// `macos_native`, so only a macOS-phase runtime executes it.
+private func makeSession(phase: ExecutionPhase) throws -> BridgeSession {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    return BridgeSession(runtime: try makeCommandRuntime(paths: paths, phase: phase), configDirectory: paths.configDirectory)
+}
+
+private struct SpeedTestResult: Decodable {
+    let status: String
+    let downloadMbps: Double?
+    let uploadMbps: Double?
+    let testedAt: String?
+}
+
+@Test("runSpeedTest returns the measured capacity from the tool (macOS phase)")
+func runSpeedTestReturnsMeasurement() async throws {
+    // The .mocks() bundle backs network.speed.test with a deterministic reading.
+    let session = try makeSession(phase: .macOS)
+    let response = await session.execute(operationRequest(.runSpeedTest, "{}"))
+
+    #expect(response.status == .ok)
+    #expect(response.error == nil)
+    let result = try decode(response, as: SpeedTestResult.self)
+    #expect(result.status == "ok")
+    #expect(result.downloadMbps == 240)
+    #expect(result.uploadMbps == 18)
+    #expect(!(result.testedAt ?? "").isEmpty)
+}
+
+@Test("runSpeedTest degrades to unavailable when the native tool is absent (pre-Mac)")
+func runSpeedTestUnavailablePreMac() async throws {
+    // network.speed.test is macOS-only; a pre-Mac runtime cannot run it, so the
+    // operation reports an honest unavailable rather than hanging or crashing.
+    let session = try makeSession(phase: .preMac)
+    let response = await session.execute(operationRequest(.runSpeedTest, "{}"))
+
+    #expect(response.status == .ok)
+    let result = try decode(response, as: SpeedTestResult.self)
+    #expect(result.status == "unavailable")
+    #expect(result.downloadMbps == nil)
+    #expect(result.uploadMbps == nil)
 }
 
 // MARK: - Unwired operations

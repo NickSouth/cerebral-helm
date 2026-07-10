@@ -12,7 +12,6 @@ import CerebralTools
 private final class SteadySource: SystemMetricSampling, @unchecked Sendable {
     private let lock = NSLock()
     private var ticks: Double = 0
-    private var bytes: UInt64 = 0
 
     func cpuTicks() -> CPUTicksSample? {
         lock.lock(); defer { lock.unlock() }
@@ -22,11 +21,7 @@ private final class SteadySource: SystemMetricSampling, @unchecked Sendable {
 
     func memory() -> MemorySample? { MemorySample(usedBytes: 8, totalBytes: 16) }
 
-    func networkBytes() -> NetworkBytesSample? {
-        lock.lock(); defer { lock.unlock() }
-        bytes += 250_000
-        return NetworkBytesSample(inBytes: bytes, outBytes: bytes / 2)
-    }
+    func wifiLinkMbps() -> Double? { 866 }
 
     func battery() -> BatterySample? { BatterySample(percent: 76, isCharging: false, isPluggedIn: true) }
     func displayCount() -> Int? { 2 }
@@ -107,24 +102,22 @@ func pauseStopsEmissionAndResumeIsImmediate() async throws {
     await publisher.stop()
 }
 
-@Test("the payload carries the up/down network split with timestamps")
-func payloadCarriesNetworkSplit() async throws {
+@Test("the payload carries the Wi-Fi link rate with a timestamp")
+func payloadCarriesLinkRate() async throws {
     let status = MacSystemStatusCapability(source: SteadySource())
-    _ = await status.snapshot() // prime the rate deltas
-    try? await Task.sleep(nanoseconds: 20_000_000)
+    _ = await status.snapshot() // prime the CPU delta
     let snapshot = await status.snapshot()
 
     #expect(snapshot.network.availability == .available)
-    let up = try #require(snapshot.network.uploadMbps)
-    let down = try #require(snapshot.network.downloadMbps)
-    #expect(down > up, "the steady source downloads twice what it uploads")
+    let link = try #require(snapshot.network.linkMbps)
+    #expect(link == 866)
     #expect(snapshot.network.sampledAt != nil)
     #expect(snapshot.cpu.value == 25.0)
 
     // And the same snapshot maps into the event payload shape verbatim.
     let payload = SystemStatusPublisher.payload(snapshot)
-    #expect(payload.network.uploadMbps == up)
-    #expect(payload.network.downloadMbps == down)
+    #expect(payload.network.linkMbps == link)
+    #expect(payload.network.unit == "mbps")
     #expect(payload.cpu.availability == "available")
 }
 #endif

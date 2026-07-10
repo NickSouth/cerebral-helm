@@ -67,6 +67,27 @@ public enum BridgeEventFactory {
         )
     }
 
+    /// A `mode.quickapps.changed` event (NIC-149): one mode's quick-app slots were
+    /// rewritten through the validated override path. Carries just the changed
+    /// widget's state — `config.changed` stays a mode-*switch* event whose snapshot
+    /// omits `modes`, so per-widget updates get their own event type (the pattern
+    /// for further live-updating mode widgets).
+    public static func quickAppsChangedEvent(
+        modeId: String, quickApps: [String], id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Payload: Encodable {
+            let modeId: String
+            let quickApps: [String]
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Payload(modeId: modeId, quickApps: quickApps)),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .modeQuickappsChanged
+        )
+    }
+
     /// One channel of the `system.status.changed` metrics payload (NIC-81b).
     /// `sampledAt` timestamps the sample that produced the value, so stale data
     /// stays timestamped downstream (MAC-ADAPTER-3 AC).
@@ -103,18 +124,17 @@ public enum BridgeEventFactory {
         }
     }
 
-    /// Network keeps its direction split for the dashboard's up/down display.
+    /// Network carries the Wi-Fi link (transmit) rate — the connection's speed,
+    /// not measured throughput (NIC-135).
     public struct SystemMetricsNetworkChannel: Encodable, Sendable {
         public let availability: String
-        public let uploadMbps: Double?
-        public let downloadMbps: Double?
+        public let linkMbps: Double?
         public let unit: String?
         public let sampledAt: Date?
 
-        public init(availability: String, uploadMbps: Double?, downloadMbps: Double?, unit: String?, sampledAt: Date?) {
+        public init(availability: String, linkMbps: Double?, unit: String?, sampledAt: Date?) {
             self.availability = availability
-            self.uploadMbps = uploadMbps
-            self.downloadMbps = downloadMbps
+            self.linkMbps = linkMbps
             self.unit = unit
             self.sampledAt = sampledAt
         }

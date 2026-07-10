@@ -4,6 +4,7 @@ import Darwin
 import Foundation
 import IOKit.ps
 import CoreGraphics
+import CoreWLAN
 import CerebralTools
 
 /// One raw sample of the machine's counters, produced by ``SystemMetricSampling``.
@@ -29,17 +30,6 @@ public struct MemorySample: Equatable, Sendable {
     }
 }
 
-/// Cumulative received/sent bytes across non-loopback interfaces since boot.
-public struct NetworkBytesSample: Equatable, Sendable {
-    public let inBytes: UInt64
-    public let outBytes: UInt64
-
-    public init(inBytes: UInt64, outBytes: UInt64) {
-        self.inBytes = inBytes
-        self.outBytes = outBytes
-    }
-}
-
 /// The battery's charge level and power state (IOKit power sources).
 /// `isCharging` means actively taking charge; `isPluggedIn` means on external
 /// power (a full battery on AC is plugged in but not charging).
@@ -62,7 +52,11 @@ public struct BatterySample: Equatable, Sendable {
 public protocol SystemMetricSampling: Sendable {
     func cpuTicks() -> CPUTicksSample?
     func memory() -> MemorySample?
-    func networkBytes() -> NetworkBytesSample?
+    /// The Wi-Fi interface's current transmit (link) rate in Mbps — the negotiated
+    /// PHY rate to the access point, not measured throughput (NIC-135). `nil` when
+    /// there is no associated Wi-Fi interface (Ethernet, Wi-Fi off, sampling failed),
+    /// which maps to an honest `.unavailable` reading.
+    func wifiLinkMbps() -> Double?
     /// Battery charge and charging state, or `nil` when no internal battery
     /// exists (or sampling failed) — a desktop Mac honestly reports unavailable.
     func battery() -> BatterySample?
@@ -78,12 +72,11 @@ public struct SystemStatusChannel: Equatable, Sendable {
     public let sampledAt: Date?
 }
 
-/// Network keeps its direction split for the dashboard's up/down display; the
-/// portable tool reading remains the combined throughput.
+/// Network reports the Wi-Fi link (transmit) rate — the connection's speed, not
+/// current throughput (NIC-135). The portable tool reading exposes the same value.
 public struct SystemStatusNetworkChannel: Equatable, Sendable {
     public let availability: MetricAvailability
-    public let uploadMbps: Double?
-    public let downloadMbps: Double?
+    public let linkMbps: Double?
     public let sampledAt: Date?
 }
 
@@ -109,33 +102,27 @@ public struct SystemStatusSnapshot: Equatable, Sendable {
 }
 
 /// The live system metrics adapter: CPU and memory from Mach host statistics,
-/// network throughput from interface byte-counter deltas, battery from IOKit
-/// power sources, displays from CoreGraphics (PRD §5.2, TECH-STACK "Native
-/// Platform Adapters").
+/// network link rate from CoreWLAN, battery from IOKit power sources, displays
+/// from CoreGraphics (PRD §5.2, TECH-STACK "Native Platform Adapters").
 ///
-/// An actor because CPU and network are rate metrics that need the previous
-/// sample: the first read of a rate metric honestly reports `.loading` (there is
-/// no delta yet) rather than fabricating a since-boot average. The composition
-/// binds ONE instance, so the one-shot `system.status.read` tool and the
-/// streaming status publisher (NIC-81b) share the same delta state.
+/// An actor because CPU is a rate metric that needs the previous sample: the
+/// first CPU read honestly reports `.loading` (there is no delta yet) rather than
+/// fabricating a since-boot average. Network is now the Wi-Fi link rate — an
+/// instantaneous reading with no delta (NIC-135). The composition binds ONE
+/// instance, so the one-shot `system.status.read` tool and the streaming status
+/// publisher (NIC-81b) share the same CPU delta state.
 public actor MacSystemStatusCapability: SystemStatusCapability {
     private let source: any SystemMetricSampling
-    private let nowNanos: @Sendable () -> UInt64
     private let wallClock: @Sendable () -> Date
 
     private var previousCPU: CPUTicksSample?
     private var lastCPUPercent: Double?
-    private var previousNetwork: NetworkBytesSample?
-    private var previousNetworkAtNanos: UInt64?
-    private var lastNetworkMbps: (up: Double, down: Double)?
 
     public init(
         source: any SystemMetricSampling = LiveSystemMetricSource(),
-        nowNanos: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
         wallClock: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.source = source
-        self.nowNanos = nowNanos
         self.wallClock = wallClock
     }
 
@@ -151,9 +138,7 @@ public actor MacSystemStatusCapability: SystemStatusCapability {
                 return reading(.memory, memoryChannel(), unit: "percent")
             case .network:
                 let channel = networkChannel()
-                let combined = (channel.uploadMbps ?? 0) + (channel.downloadMbps ?? 0)
-                let value: Double? = (channel.uploadMbps == nil && channel.downloadMbps == nil) ? nil : combined
-                return SystemMetricReading(id: .network, availability: channel.availability, value: value, unit: "mbps")
+                return SystemMetricReading(id: .network, availability: channel.availability, value: channel.linkMbps, unit: "mbps")
             case .battery:
                 let channel = batteryChannel()
                 return SystemMetricReading(id: .battery, availability: channel.availability, value: channel.percent, unit: "percent")
@@ -214,32 +199,14 @@ public actor MacSystemStatusCapability: SystemStatusCapability {
     }
 
     private func networkChannel() -> SystemStatusNetworkChannel {
-        guard let sample = source.networkBytes() else {
-            return SystemStatusNetworkChannel(availability: .unavailable, uploadMbps: nil, downloadMbps: nil, sampledAt: nil)
+        // The Wi-Fi link rate is an instantaneous CoreWLAN reading — no delta, so
+        // it is `.available` on the first sample. A non-positive or missing rate
+        // means no associated Wi-Fi interface (Ethernet, Wi-Fi off), reported as
+        // an honest `.unavailable` (NIC-135).
+        guard let linkMbps = source.wifiLinkMbps(), linkMbps > 0 else {
+            return SystemStatusNetworkChannel(availability: .unavailable, linkMbps: nil, sampledAt: nil)
         }
-        let now = nowNanos()
-        let sampledAt = wallClock()
-        defer {
-            previousNetwork = sample
-            previousNetworkAtNanos = now
-        }
-        guard let previous = previousNetwork, let previousAt = previousNetworkAtNanos else {
-            return SystemStatusNetworkChannel(availability: .loading, uploadMbps: nil, downloadMbps: nil, sampledAt: sampledAt)
-        }
-        let elapsedSeconds = Double(now &- previousAt) / 1_000_000_000
-        // A shrunken counter means an underlying 32-bit interface counter
-        // wrapped (or an interface vanished): the delta is meaningless once, so
-        // reuse the last known rate instead of reporting garbage.
-        guard elapsedSeconds > 0, sample.inBytes >= previous.inBytes, sample.outBytes >= previous.outBytes else {
-            guard let last = lastNetworkMbps else {
-                return SystemStatusNetworkChannel(availability: .loading, uploadMbps: nil, downloadMbps: nil, sampledAt: sampledAt)
-            }
-            return SystemStatusNetworkChannel(availability: .available, uploadMbps: last.up, downloadMbps: last.down, sampledAt: sampledAt)
-        }
-        let downMbps = Double(sample.inBytes - previous.inBytes) * 8 / elapsedSeconds / 1_000_000
-        let upMbps = Double(sample.outBytes - previous.outBytes) * 8 / elapsedSeconds / 1_000_000
-        lastNetworkMbps = (up: upMbps, down: downMbps)
-        return SystemStatusNetworkChannel(availability: .available, uploadMbps: upMbps, downloadMbps: downMbps, sampledAt: sampledAt)
+        return SystemStatusNetworkChannel(availability: .available, linkMbps: linkMbps, sampledAt: wallClock())
     }
 
     private func batteryChannel() -> SystemStatusBatteryChannel {
@@ -265,9 +232,9 @@ public actor MacSystemStatusCapability: SystemStatusCapability {
 
 // MARK: - Live source
 
-/// The real counters: Mach host statistics (CPU/memory), getifaddrs interface
-/// byte counters (network), IOKit power sources (battery), and CoreGraphics
-/// active displays (thread-safe, unlike NSScreen).
+/// The real counters: Mach host statistics (CPU/memory), CoreWLAN transmit rate
+/// (network link speed), IOKit power sources (battery), and CoreGraphics active
+/// displays (thread-safe, unlike NSScreen).
 public struct LiveSystemMetricSource: SystemMetricSampling {
     public init() {}
 
@@ -309,24 +276,13 @@ public struct LiveSystemMetricSource: SystemMetricSampling {
         return MemorySample(usedBytes: max(0, used), totalBytes: Double(totalBytes))
     }
 
-    public func networkBytes() -> NetworkBytesSample? {
-        var addresses: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&addresses) == 0 else { return nil }
-        defer { freeifaddrs(addresses) }
-        var inTotal: UInt64 = 0
-        var outTotal: UInt64 = 0
-        var cursor = addresses
-        while let entry = cursor?.pointee {
-            defer { cursor = entry.ifa_next }
-            guard let address = entry.ifa_addr, address.pointee.sa_family == UInt8(AF_LINK),
-                  let dataPointer = entry.ifa_data else { continue }
-            let name = String(cString: entry.ifa_name)
-            guard !name.hasPrefix("lo") else { continue }
-            let data = dataPointer.assumingMemoryBound(to: if_data.self).pointee
-            inTotal &+= UInt64(data.ifi_ibytes)
-            outTotal &+= UInt64(data.ifi_obytes)
-        }
-        return NetworkBytesSample(inBytes: inTotal, outBytes: outTotal)
+    public func wifiLinkMbps() -> Double? {
+        // CoreWLAN's default interface transmit rate is the negotiated PHY link
+        // rate in Mbps. It reads without Location authorization (unlike ssid/bssid).
+        // No Wi-Fi interface, or a non-positive rate, means "not on Wi-Fi".
+        guard let interface = CWWiFiClient.shared().interface() else { return nil }
+        let rate = interface.transmitRate()
+        return rate > 0 ? rate : nil
     }
 
     public func battery() -> BatterySample? {
