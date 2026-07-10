@@ -17,7 +17,7 @@ test("repository config validates", () => {
 
   assert.equal(summary.modeCount, 4);
   assert.equal(summary.agentCount, 4);
-  assert.equal(summary.toolCount, 5);
+  assert.equal(summary.toolCount, 6);
 });
 
 test("development roots stay inside the repository", () => {
