@@ -1,84 +1,52 @@
-// NIC-135: on-demand internet speed test adapter.
+// NIC-135: on-demand internet speed test adapter (Cloudflare / URLSession engine).
 //
-// The networkQuality JSON parsing and exit/timeout handling run against a stubbed
-// process capability, so no real network test runs in CI. Gated so the Linux CI
-// package build compiles this target empty.
+// The live measurement talks to speed.cloudflare.com, so it is exercised manually
+// in the app, not in CI. Here we unit-test the pure throughput math and the
+// direction → reading classification. Gated so the Linux CI package build compiles
+// this target empty.
 #if canImport(AppKit)
 import Foundation
 import Testing
 
-import CerebralCore
 import CerebralTools
-import CerebralMacAdapters
+@testable import CerebralMacAdapters
 
-/// A scripted process: returns a canned result, or throws a scripted error.
-private struct StubProcess: ProcessCapability {
-    var result: ProcessRunResult
-    var thrown: (any Error)?
-
-    func run(_ invocation: HookInvocation) async throws -> ProcessRunResult {
-        if let thrown { throw thrown }
-        return result
-    }
+@Test("throughput converts bytes over seconds to Mbps (bytes×8 ÷ seconds ÷ 1e6)")
+func throughputConvertsToMbps() {
+    // 100 MB in 8 s = 800 Mbit / 8 s = 100 Mbps.
+    #expect(MacNetworkSpeedTestCapability.throughputMbps(bytes: 100_000_000, seconds: 8) == 100)
+    // 18.125 MB in 1 s ≈ 145 Mbps.
+    let mbps = MacNetworkSpeedTestCapability.throughputMbps(bytes: 18_125_000, seconds: 1)
+    #expect(mbps != nil && abs(mbps! - 145) < 0.001)
 }
 
-private func processResult(exitCode: Int = 0, stdout: String = "", timedOut: Bool = false) -> ProcessRunResult {
-    ProcessRunResult(
-        exitCode: exitCode, stdout: stdout, stderr: "", environment: [:], timedOut: timedOut, durationMs: 120
-    )
+@Test("degenerate transfers report no figure rather than dividing by zero")
+func degenerateTransfersAreNil() {
+    #expect(MacNetworkSpeedTestCapability.throughputMbps(bytes: 0, seconds: 5) == nil)
+    #expect(MacNetworkSpeedTestCapability.throughputMbps(bytes: 1000, seconds: 0) == nil)
 }
 
-private func capability(_ result: ProcessRunResult, thrown: (any Error)? = nil) -> MacNetworkSpeedTestCapability {
-    MacNetworkSpeedTestCapability(process: StubProcess(result: result, thrown: thrown))
-}
-
-@Test("both throughput figures parse to Mbps (bits/s ÷ 1e6) and report ok")
-func bothDirectionsParseToMbps() async throws {
-    // networkQuality -c fields are bits per second.
-    let json = #"{ "dl_throughput": 100000000, "ul_throughput": 20000000, "interface_name": "en0" }"#
-    let reading = try await capability(processResult(stdout: json)).measure()
-
+@Test("both directions measured → ok")
+func bothDirectionsOk() {
+    let reading = MacNetworkSpeedTestCapability.classify(downloadMbps: 145.2, uploadMbps: 17.8)
     #expect(reading.status == .ok)
-    #expect(reading.downloadMbps == 100)
-    #expect(reading.uploadMbps == 20)
+    #expect(reading.downloadMbps == 145.2)
+    #expect(reading.uploadMbps == 17.8)
 }
 
-@Test("one measured direction reports partial with the other nil")
-func oneDirectionIsPartial() async throws {
-    let json = #"{ "dl_throughput": 55000000 }"#
-    let reading = try await capability(processResult(stdout: json)).measure()
-
+@Test("one direction measured → partial with the other nil")
+func oneDirectionPartial() {
+    let reading = MacNetworkSpeedTestCapability.classify(downloadMbps: 145.2, uploadMbps: nil)
     #expect(reading.status == .partial)
-    #expect(reading.downloadMbps == 55)
+    #expect(reading.downloadMbps == 145.2)
     #expect(reading.uploadMbps == nil)
 }
 
-@Test("no measured figures report unavailable, never a fabricated value")
-func noFiguresIsUnavailable() async throws {
-    let json = #"{ "interface_name": "en0", "base_rtt": 17.3 }"#
-    let reading = try await capability(processResult(stdout: json)).measure()
-
+@Test("no direction measured → unavailable, never a fabricated value")
+func noDirectionUnavailable() {
+    let reading = MacNetworkSpeedTestCapability.classify(downloadMbps: nil, uploadMbps: nil)
     #expect(reading.status == .unavailable)
     #expect(reading.downloadMbps == nil)
     #expect(reading.uploadMbps == nil)
-}
-
-@Test("a non-zero exit (no route to the test servers) is an honest unavailable")
-func nonZeroExitIsUnavailable() async throws {
-    let reading = try await capability(processResult(exitCode: 1, stdout: "")).measure()
-    #expect(reading.status == .unavailable)
-}
-
-@Test("unparseable output degrades to unavailable rather than crashing")
-func garbageOutputIsUnavailable() async throws {
-    let reading = try await capability(processResult(stdout: "networkQuality: not JSON")).measure()
-    #expect(reading.status == .unavailable)
-}
-
-@Test("a timed-out run surfaces as a timeout error, not a fake reading")
-func timeoutThrows() async {
-    await #expect(throws: NativeCapabilityError.timedOut) {
-        _ = try await capability(processResult(timedOut: true)).measure()
-    }
 }
 #endif
