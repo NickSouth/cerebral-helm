@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000024",
+  "type": "bridge.operation.response",
+  "operation": "getSettings",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "settingsSnapshotFixture": "packages/contracts/fixtures/valid/bridge/settings/settings-snapshot.json"
+  }
+}

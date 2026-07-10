@@ -17,7 +17,8 @@ const expectedSchemaNames = new Set([
   "handshake-request.schema.json",
   "handshake-response.schema.json",
   "operation-request.schema.json",
-  "operation-response.schema.json"
+  "operation-response.schema.json",
+  "settings-snapshot.schema.json"
 ]);
 
 const bridgeOperations = new Set([
@@ -32,7 +33,8 @@ const bridgeOperations = new Set([
   "getRecentActivity",
   "listApps",
   "updateQuickApps",
-  "runSpeedTest"
+  "runSpeedTest",
+  "getSettings"
 ]);
 
 function readJson(filePath) {

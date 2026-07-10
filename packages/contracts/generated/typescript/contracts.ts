@@ -342,6 +342,7 @@ export enum CerebralHelmBridgeEventType {
     ConfirmationChanged = "confirmation.changed",
     DisplayTopologyChanged = "display.topology.changed",
     ModeQuickappsChanged = "mode.quickapps.changed",
+    SettingsChanged = "settings.changed",
     SystemStatusChanged = "system.status.changed",
     WorkflowActionProgress = "workflow.action.progress",
 }
@@ -435,6 +436,7 @@ export enum Operation {
     DecideConfirmation = "decideConfirmation",
     GetBootstrapState = "getBootstrapState",
     GetRecentActivity = "getRecentActivity",
+    GetSettings = "getSettings",
     ListApps = "listApps",
     RunSpeedTest = "runSpeedTest",
     SearchNotes = "searchNotes",
@@ -487,6 +489,79 @@ export enum CerebralHelmBridgeOperationResponseStatus {
 
 export enum CerebralHelmBridgeOperationResponseType {
     BridgeOperationResponse = "bridge.operation.response",
+}
+
+/**
+ * The effective durable settings, read on demand over the bridge (`getSettings`) so the
+ * settings UI initializes its controls from persisted state instead of hardcoded defaults
+ * (NIC-141). Every field is fully resolved: a stored value when set, otherwise the
+ * deterministic default. This is the read side of the write-only settings-patch contract;
+ * it deliberately omits data that already has a delivery channel — quick apps (bootstrap
+ * `modes[].quickApps` + `mode.quickapps.changed`), the login item
+ * (`window.__cerebralLoginItem`), and the live command-palette hotkey
+ * (`window.__cerebralHotkey`) — so no datum has two sources of truth. Appearance density is
+ * not a live setting for now and is intentionally absent.
+ */
+export interface CerebralHelmSettingsSnapshot {
+    appearance: SettingsSnapshotAppearance;
+    /**
+     * When true, policy raises every non-read-only action to require confirmation (the 'Ask
+     * before all actions' tightening; stricter-only, never weakens descriptor policy). Defaults
+     * to false. Enforced when the command runtime is composed.
+     */
+    confirmAllActions: boolean;
+    /**
+     * The mode the app opens in on a fresh launch (the durable setting, resolved as stored
+     * value, else the configured default, else `executive`). This is the default-mode setting,
+     * NOT the currently active mode.
+     */
+    defaultModeId: string;
+    knowledge:     SettingsSnapshotKnowledge;
+    /**
+     * Per-mode accent-color overrides, keyed by design-token name (e.g. `executive.primary`)
+     * with a `#rrggbb` hex value. Sparse: a key is present only when the user has customized
+     * that channel — otherwise the shipped mode palette default applies (resolved on the
+     * client, whose token CSS holds the default hex values). Unlike the other snapshot fields
+     * this is not fully resolved, mirroring the meaningful-unset shape of
+     * `knowledge.rootReference`.
+     */
+    modeColors:    { [key: string]: string };
+    schemaVersion: string;
+    workspace:     SettingsSnapshotWorkspace;
+}
+
+export interface SettingsSnapshotAppearance {
+    /**
+     * The display name of the assistant across the dashboard (bottom bar, center stage).
+     * Resolves to the stored value, else the default `Heimlich`.
+     */
+    assistantName: string;
+    /**
+     * Whether motion is reduced across the dashboard. Defaults to false when unset.
+     */
+    reducedMotion: boolean;
+}
+
+export interface SettingsSnapshotKnowledge {
+    /**
+     * The configured knowledge-root reference id, or null when no root has been chosen (a
+     * meaningful unset state, unlike the other fields).
+     */
+    rootReference: null | string;
+}
+
+export interface SettingsSnapshotWorkspace {
+    /**
+     * The stable display id the main dashboard backdrop is hosted on. Resolves to the
+     * `system-primary` sentinel when unset; a stale or disconnected id also degrades to system
+     * primary at the shell.
+     */
+    mainDisplayId: string;
+    /**
+     * Whether a mode switch hides the outgoing mode's apps and returns the incoming mode's
+     * stored ones (NIC-85). Defaults to false when unset.
+     */
+    windowsStoredByMode: boolean;
 }
 
 export interface CerebralHelmCommandEnvelope {
@@ -709,15 +784,18 @@ export interface CerebralHelmSettingsPatch {
 }
 
 export interface Changes {
-    appearance?:    Appearance;
-    defaultModeId?: string;
-    extensions?:    { [key: string]: any };
-    hotkeys?:       Hotkeys;
-    knowledge?:     Knowledge;
-    workspace?:     Workspace;
+    appearance?:        Appearance;
+    confirmAllActions?: boolean;
+    defaultModeId?:     string;
+    extensions?:        { [key: string]: any };
+    hotkeys?:           Hotkeys;
+    knowledge?:         Knowledge;
+    modeColors?:        { [key: string]: string };
+    workspace?:         Workspace;
 }
 
 export interface Appearance {
+    assistantName?: string;
     density?:       Density;
     reducedMotion?: boolean;
 }

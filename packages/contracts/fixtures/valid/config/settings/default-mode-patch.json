@@ -3,9 +3,16 @@
   "patchId": "set_000000000000000000000001",
   "changes": {
     "defaultModeId": "executive",
+    "confirmAllActions": true,
     "appearance": {
       "density": "comfortable",
-      "reducedMotion": false
+      "reducedMotion": false,
+      "assistantName": "Aria"
+    },
+    "modeColors": {
+      "executive.primary": "#ffd166",
+      "executive.secondary": "#5fd2e8",
+      "developer.primary": "#7fc4dc"
     }
   }
 }

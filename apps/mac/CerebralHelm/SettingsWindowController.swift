@@ -79,18 +79,54 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
 
         // Sized to the web surface's design dimensions (design spec §10); resizable
         // so long panels are usable, min-bounded so the two-pane layout never crushes.
+        // Slightly shorter than the old 620 (NIC-140) now that the macOS title bar is gone.
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 880, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 880, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "CerebralHelm Settings"
-        window.minSize = NSSize(width: 640, height: 480)
+        window.minSize = NSSize(width: 640, height: 440)
+        // Frameless chrome (NIC-140): the web surface draws its own × (shellControl
+        // `closeSettings`) and section titles, so the macOS title bar and traffic
+        // lights are redundant. Hide them and let the content fill edge-to-edge —
+        // the same frameless treatment as the command palette. The window stays
+        // draggable from any non-interactive background via movableByWindowBackground;
+        // the web layer reserves a top drag strip so nothing interactive sits under it.
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
         // Closing hides the reusable window; the controller keeps owning it.
         window.isReleasedWhenClosed = false
         window.center()
-        window.contentView = webView
+
+        // A frameless window only drags from the ~28px transparent title bar, and the
+        // WKWebView (which returns false for mouseDownCanMoveWindow) sits under it — so the
+        // draggable area is tiny/absent (NIC-140 follow-up). Overlay a taller transparent
+        // band across the whole top that moves the window on drag; it sits above the webview
+        // so drags never reach web content, and the web layer keeps its top controls (× and
+        // first category) below it via `--ch-standalone-titlebar`, so nothing is covered.
+        let container = NSView()
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(webView)
+        let dragBand = WindowDragBand()
+        dragBand.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(dragBand)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: container.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            dragBand.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            dragBand.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            dragBand.topAnchor.constraint(equalTo: container.topAnchor),
+            dragBand.heightAnchor.constraint(equalToConstant: 40)
+        ])
+        window.contentView = container
 
         super.init()
         window.delegate = self
@@ -126,6 +162,18 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         )
     }
 
+    /// Push the folder chosen in the native NSOpenPanel picker into the Setup panel
+    /// (NIC-138); the panel persists it through the validated settings patch. The path
+    /// is escaped for the JS string literal so spaces, quotes, and backslashes survive.
+    func pushKnowledgeRoot(_ path: String) {
+        let escaped = path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        webView.evaluateJavaScript(
+            "window.__cerebralKnowledgeRootUpdate && window.__cerebralKnowledgeRootUpdate(\"\(escaped)\");"
+        )
+    }
+
     // MARK: - WKScriptMessageHandler (web → native shell control)
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -148,4 +196,11 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         log.error("Settings web content process terminated; reloading.")
         webView.load(URLRequest(url: Self.settingsURL))
     }
+}
+
+/// A transparent top band that makes the frameless settings window draggable from its
+/// whole top edge (NIC-140 follow-up). `mouseDownCanMoveWindow` moves the window on drag,
+/// and the band sits above the webview so those drags never reach web content.
+private final class WindowDragBand: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
 }

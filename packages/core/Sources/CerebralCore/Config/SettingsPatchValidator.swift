@@ -10,10 +10,14 @@ import Foundation
 /// settings store.
 public enum SettingsPatchValidator {
     private static let allowedChangeKeys: Set<String> =
-        ["defaultModeId", "appearance", "hotkeys", "knowledge", "workspace", "extensions"]
-    private static let allowedAppearanceKeys: Set<String> = ["density", "reducedMotion"]
+        ["defaultModeId", "confirmAllActions", "appearance", "hotkeys", "knowledge", "workspace", "modeColors", "extensions"]
+    private static let allowedAppearanceKeys: Set<String> = ["density", "reducedMotion", "assistantName"]
+    private static let assistantNameMaxLength = 40
     private static let densityValues: Set<String> = ["comfortable", "compact"]
     private static let modeIDPattern = "^[a-z][a-z0-9-]*$"
+    private static let modeColorKeyPattern =
+        "^(executive|developer|school|entertainment)\\.(primary|secondary)$"
+    private static let hexColorPattern = "^#[0-9a-fA-F]{6}$"
 
     /// Returns every violation; an empty array means the patch is accepted.
     public static func validate(changes: [String: Any]) -> [String] {
@@ -29,6 +33,10 @@ public enum SettingsPatchValidator {
             }
         }
 
+        if let confirmAll = changes["confirmAllActions"], !(confirmAll is Bool) {
+            errors.append("confirmAllActions must be a boolean.")
+        }
+
         if let appearance = changes["appearance"] {
             if let dict = appearance as? [String: Any] {
                 for key in dict.keys where !allowedAppearanceKeys.contains(key) {
@@ -39,6 +47,17 @@ public enum SettingsPatchValidator {
                 }
                 if let reduced = dict["reducedMotion"], !(reduced is Bool) {
                     errors.append("appearance.reducedMotion must be a boolean.")
+                }
+                if let name = dict["assistantName"] {
+                    if let string = name as? String {
+                        if string.isEmpty || string.count > assistantNameMaxLength {
+                            errors.append(
+                                "appearance.assistantName must be 1–\(assistantNameMaxLength) characters."
+                            )
+                        }
+                    } else {
+                        errors.append("appearance.assistantName must be a string.")
+                    }
                 }
             } else {
                 errors.append("appearance must be an object.")
@@ -79,6 +98,25 @@ public enum SettingsPatchValidator {
                 }
             } else {
                 errors.append("hotkeys must be an object.")
+            }
+        }
+
+        if let modeColors = changes["modeColors"] {
+            if let dict = modeColors as? [String: Any] {
+                for (key, value) in dict {
+                    if key.range(of: modeColorKeyPattern, options: .regularExpression) == nil {
+                        errors.append("modeColors key \"\(key)\" is not a known mode accent token.")
+                    }
+                    if let hex = value as? String {
+                        if hex.range(of: hexColorPattern, options: .regularExpression) == nil {
+                            errors.append("modeColors.\(key) must be a #rrggbb hex color.")
+                        }
+                    } else {
+                        errors.append("modeColors.\(key) must be a string.")
+                    }
+                }
+            } else {
+                errors.append("modeColors must be an object.")
             }
         }
 

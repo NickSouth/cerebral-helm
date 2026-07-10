@@ -19,11 +19,18 @@ func makeCommandRuntime(_ options: GlobalOptions) throws -> CommandRuntime {
 /// Builds the backup service over the durable user state under the state root
 /// (operational database, user configuration, knowledge manifest).
 func makeBackupService(_ paths: WorkspacePaths) -> BackupService {
-    BackupService(
+    // Back up the same knowledge root the runtime writes to — the user's re-pointed
+    // location when set, else the env default (NIC-138), so backups never miss the
+    // live knowledge folder.
+    let stored = try? SQLiteSettingsStore(database: operationalDatabase(paths)).load()
+    let knowledgeRoot = EffectiveSettings.knowledgeRootURL(
+        reference: stored?.knowledgeRootReference, default: paths.knowledgeRoot
+    )
+    return BackupService(
         databasePath: paths.operationalDatabasePath,
         configFiles: [paths.activeConfigPath, paths.settingsMetadataPath],
         overridesDirectory: paths.overridesDirectory,
-        knowledgeRoot: paths.knowledgeRoot
+        knowledgeRoot: knowledgeRoot
     )
 }
 
@@ -32,8 +39,12 @@ func makeBackupService(_ paths: WorkspacePaths) -> BackupService {
 /// concrete service to reconstruct its search index.
 func makeKnowledgeService(_ paths: WorkspacePaths) throws -> MarkdownKnowledgeService {
     let database = try operationalDatabase(paths)
+    let stored = try? SQLiteSettingsStore(database: database).load()
+    let root = EffectiveSettings.knowledgeRootURL(
+        reference: stored?.knowledgeRootReference, default: paths.knowledgeRoot
+    )
     return MarkdownKnowledgeService(
-        rootURL: paths.knowledgeRoot,
+        rootURL: root,
         metadataStore: SQLiteNoteMetadataStore(database: database),
         searchIndex: SQLiteNoteSearchIndex(database: database)
     )

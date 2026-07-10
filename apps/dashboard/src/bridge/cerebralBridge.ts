@@ -15,6 +15,7 @@ export type BridgeEventType =
   | "system.status.changed"
   | "config.changed"
   | "mode.quickapps.changed"
+  | "settings.changed"
   | "bridge.capability.changed"
   | "workflow.action.progress"
   | "display.topology.changed";
@@ -85,6 +86,39 @@ export interface UpdateSettingsInput {
 }
 export interface UpdateSettingsResult {
   readonly accepted: boolean;
+}
+
+/** The effective durable settings, read on open so the settings UI initializes its
+ *  controls from persisted state instead of hardcoded defaults (NIC-141). Every field
+ *  is fully resolved — a stored value when set, otherwise the deterministic default.
+ *  Mirrors `settings-snapshot.schema.json`. This is the read side of
+ *  {@link UpdateSettingsInput}; it deliberately omits data that already has a delivery
+ *  channel (quick apps, login item, live command-palette hotkey). Appearance density
+ *  is not a live setting for now and is absent. */
+export interface SettingsSnapshot {
+  readonly schemaVersion: string;
+  /** The default-mode setting (stored, else configured, else `executive`) — NOT the
+   *  currently active mode. */
+  readonly defaultModeId: string;
+  /** When true, policy requires confirmation before every non-read-only action (the
+   *  'Ask before all actions' tightening). Defaults to false. */
+  readonly confirmAllActions: boolean;
+  readonly appearance: {
+    readonly reducedMotion: boolean;
+    /** The assistant's display name across the dashboard; defaults to `Heimlich`. */
+    readonly assistantName: string;
+  };
+  /** `rootReference` is null when no knowledge root has been chosen. */
+  readonly knowledge: { readonly rootReference: string | null };
+  readonly workspace: {
+    readonly windowsStoredByMode: boolean;
+    /** `system-primary` sentinel when unset. */
+    readonly mainDisplayId: string;
+  };
+  /** Per-mode accent overrides keyed by design-token name (e.g. `executive.primary`) →
+   *  `#rrggbb`. Sparse: a key is present only when customized; the client fills palette
+   *  defaults for every un-overridden channel. */
+  readonly modeColors: Readonly<Record<string, string>>;
 }
 
 export interface RecentActivityQuery {
@@ -182,6 +216,9 @@ export interface CerebralBridge {
   searchNotes(input: SearchNotesInput): Promise<SearchNotesResult>;
   decideConfirmation(input: DecideConfirmationInput): Promise<DecideConfirmationResult>;
   updateSettings(input: UpdateSettingsInput): Promise<UpdateSettingsResult>;
+  /** Read the effective persisted settings so the settings UI initializes its
+   *  controls from stored state instead of defaults (NIC-141). */
+  getSettings(): Promise<SettingsSnapshot>;
   /** Read-only application discovery for the More Apps picker (NIC-119). */
   listApps(): Promise<ListAppsResult>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */

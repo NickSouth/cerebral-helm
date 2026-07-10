@@ -3,6 +3,7 @@ import { QuickApps } from "./QuickApps";
 import { QuickActions } from "./QuickActions";
 import { HeimlichConsciousness } from "./HeimlichConsciousness";
 import { useActiveMode } from "./useActiveMode";
+import { useAppearance } from "../state/AppearanceProvider";
 
 /**
  * The calm, dominant center (constitution §6): Quick Apps and the Heimlich consciousness
@@ -14,14 +15,15 @@ import { useActiveMode } from "./useActiveMode";
  */
 export function CenterStage() {
   const { greeting } = useActiveMode();
+  const { assistantName } = useAppearance();
 
   return (
     <main id="main" tabIndex={-1} className="shell-center">
       <QuickApps />
 
-      <section className="heimlich" aria-label="Heimlich">
+      <section className="heimlich" aria-label={assistantName}>
         <HeimlichConsciousness />
-        <p className="heimlich__state">Heimlich</p>
+        <p className="heimlich__state">{assistantName}</p>
         <div className="heimlich__foot">
           {greeting ? (
             <div className="heimlich__greeting-block">

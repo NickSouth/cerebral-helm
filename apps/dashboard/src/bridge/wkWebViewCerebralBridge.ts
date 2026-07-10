@@ -12,6 +12,7 @@ import type {
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
+  SettingsSnapshot,
   SpeedTestResult,
   Unsubscribe,
   UpdateQuickAppsResult,
@@ -50,6 +51,7 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "system.status.changed",
   "config.changed",
   "mode.quickapps.changed",
+  "settings.changed",
   "bridge.capability.changed",
   "workflow.action.progress",
   "display.topology.changed"
@@ -243,6 +245,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     updateSettings(input) {
       return operation<UpdateSettingsResult>("updateSettings", { ...input });
+    },
+    getSettings() {
+      return operation<SettingsSnapshot>("getSettings", {});
     },
     listApps() {
       return operation<ListAppsResult>("listApps", {});

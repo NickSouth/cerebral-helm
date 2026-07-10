@@ -131,6 +131,8 @@ public final class BridgeSession: @unchecked Sendable {
             return updateQuickApps(request)
         case .runSpeedTest:
             return await runSpeedTest(request)
+        case .getSettings:
+            return getSettings(request)
         default:
             // captureNote (confirmation-gated local_write returning a synchronous
             // noteId) and subscribe follow later.
@@ -436,9 +438,10 @@ public final class BridgeSession: @unchecked Sendable {
         guard errors.isEmpty else {
             return ok(request, payload: UpdateSettingsResult(accepted: false))
         }
+        let settingsChanges = SettingsChanges(validatedChanges: changes)
         if let settingsStore {
             do {
-                try settingsStore.apply(SettingsChanges(validatedChanges: changes))
+                try settingsStore.apply(settingsChanges)
             } catch {
                 return errorResponse(
                     request, category: .internalFailure,
@@ -446,8 +449,50 @@ public final class BridgeSession: @unchecked Sendable {
                     message: "The settings change could not be saved."
                 )
             }
+            // Live policy re-arm (NIC-137): a change to "Ask before all actions" takes
+            // effect immediately for the next command, not just on next launch.
+            if let confirmAll = settingsChanges.confirmAllActions {
+                runtime.updateConfirmAllActions(confirmAll)
+            }
+            // Live cross-webview sync: every surface (dashboard + the separate native
+            // settings window) reflects the new assistant name, mode colors, and motion
+            // preference immediately, not just on next launch.
+            emit(BridgeEventFactory.settingsChangedEvent(
+                snapshot: resolvedSettingsSnapshot(),
+                id: BridgeEventFactory.newEventID(), timestamp: Date()
+            ))
         }
         return ok(request, payload: UpdateSettingsResult(accepted: true))
+    }
+
+    /// Reads the durable settings on demand so the settings UI initializes its
+    /// controls from persisted state rather than hardcoded defaults (NIC-141). This
+    /// is the read side of `updateSettings`; effective defaults are resolved in one
+    /// deterministic place (``EffectiveSettings``).
+    ///
+    /// It never errors: a store load failure or a workspace-less host with no store
+    /// bound (some tests) yields the effective defaults, mirroring how bootstrap
+    /// degrades a missing stored default to the configured default mode. The
+    /// configured default mode id is read through the same layered/shipped config
+    /// path bootstrap uses — the "default mode" setting, distinct from the currently
+    /// active mode.
+    private func getSettings(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) -> CerebralHelmBridgeOperationResponse {
+        ok(request, payload: resolvedSettingsSnapshot())
+    }
+
+    /// The effective settings snapshot — the single resolution shared by `getSettings`
+    /// (the read) and the `settings.changed` event (live sync after a write).
+    private func resolvedSettingsSnapshot() -> CerebralHelmSettingsSnapshot {
+        let stored = (try? settingsStore?.load()).flatMap { $0 } ?? StoredSettings()
+        let configDefaultModeID: String?
+        if let workspace {
+            configDefaultModeID = BootstrapComposer.defaultModeID(workspace: workspace)
+        } else {
+            configDefaultModeID = BootstrapComposer.defaultModeID(configDirectory: configDirectory)
+        }
+        return EffectiveSettings.resolve(stored: stored, configDefaultModeID: configDefaultModeID)
     }
 
     /// The bootstrap state with mode restore applied (FR-MOD-05). This is the

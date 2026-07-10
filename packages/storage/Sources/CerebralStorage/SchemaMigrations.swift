@@ -15,6 +15,9 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0004_settings", sql: settingsSQL),
         SchemaMigration(id: "0005_mode_workspace", sql: modeWorkspaceSQL),
         SchemaMigration(id: "0006_main_display", sql: mainDisplaySQL),
+        SchemaMigration(id: "0007_assistant_name", sql: assistantNameSQL),
+        SchemaMigration(id: "0008_mode_colors", sql: modeColorsSQL),
+        SchemaMigration(id: "0009_confirm_all_actions", sql: confirmAllActionsSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -198,5 +201,27 @@ public enum SchemaMigrations {
     /// primary display.
     public static let mainDisplaySQL = """
     ALTER TABLE settings ADD COLUMN main_display_id TEXT;
+    """
+
+    /// Migration 0007: the "Assistant Name" setting (NIC-137). The settings
+    /// singleton gains the assistant's display name shown across the dashboard;
+    /// NULL means the default identity (`Heimlich`) applies.
+    public static let assistantNameSQL = """
+    ALTER TABLE settings ADD COLUMN appearance_assistant_name TEXT;
+    """
+
+    /// Migration 0008: per-mode accent color overrides (NIC-137). The settings
+    /// singleton gains a JSON map of design-token name (e.g. `executive.primary`)
+    /// to a `#rrggbb` hex value; NULL means no overrides, so every mode uses its
+    /// shipped palette.
+    public static let modeColorsSQL = """
+    ALTER TABLE settings ADD COLUMN mode_colors TEXT;
+    """
+
+    /// Migration 0009: the "Ask before all actions" tightening (NIC-137). The
+    /// settings singleton gains a flag that, when set, raises every non-read-only
+    /// action to require confirmation; NULL/0 = descriptor policy governs.
+    public static let confirmAllActionsSQL = """
+    ALTER TABLE settings ADD COLUMN confirm_all_actions INTEGER;
     """
 }

@@ -123,4 +123,21 @@ describe("MockCerebralBridge", () => {
     expect(activity.commands.length).toBeGreaterThanOrEqual(1);
     expect(activity.errors.length).toBeGreaterThanOrEqual(1);
   });
+
+  it("getSettings returns a resolved snapshot with representative non-default values (NIC-141)", async () => {
+    const bridge = createMockCerebralBridge();
+    const settings = await bridge.getSettings();
+
+    // Non-default so the settings UI visibly proves it reads persisted state.
+    expect(settings.defaultModeId).toBe("developer");
+    expect(settings.workspace.windowsStoredByMode).toBe(true);
+    expect(settings.knowledge.rootReference).toBe("knowledge-root");
+    // Every field is resolved (present), not optional.
+    expect(settings.appearance.reducedMotion).toBe(false);
+    expect(settings.appearance.assistantName).toBe("Heimlich");
+    expect(settings.confirmAllActions).toBe(false);
+    expect(settings.modeColors).toEqual({});
+    expect(settings.workspace.mainDisplayId).toBe("system-primary");
+    expect(settings.schemaVersion).toBe("1.0.0");
+  });
 });

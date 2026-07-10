@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type AnimationEvent, type KeyboardEvent } 
 import { useSettings } from "../../state/SettingsProvider";
 import { SETTINGS_CATEGORIES } from "./categories";
 import { SETTINGS_PANELS } from "./SettingsPanels";
+import { SettingsSnapshotProvider } from "./SettingsSnapshotProvider";
 
 /** Power glyph for the shutdown control. */
 function PowerGlyph() {
@@ -112,6 +113,17 @@ function SettingsWindow({ closing, onExited }: { closing: boolean; onExited: () 
  * animation, or the native window — belongs to the host, not here.
  */
 export function SettingsSurface() {
+  // The snapshot read is scoped to the settings surface: it opens once here so the
+  // General/Knowledge controls seed from persisted state (NIC-141). Wrapping the
+  // surface (not a host) means both the overlay and the standalone window get it.
+  return (
+    <SettingsSnapshotProvider>
+      <SettingsSurfaceContent />
+    </SettingsSnapshotProvider>
+  );
+}
+
+function SettingsSurfaceContent() {
   const { activeCategory, setCategory, closeSettings } = useSettings();
   const active =
     SETTINGS_CATEGORIES.find((category) => category.id === activeCategory) ??

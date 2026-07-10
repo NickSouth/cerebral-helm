@@ -6,8 +6,15 @@ import Foundation
 /// and updates; they are user-owned state (FR-UPD-01).
 public struct StoredSettings: Equatable, Sendable {
     public var defaultModeID: String?
+    /// "Ask before all actions": when true, policy raises every non-read-only action
+    /// to require confirmation (a stricter-only tightening). `nil`/false = descriptor
+    /// policy governs (NIC-137).
+    public var confirmAllActions: Bool?
     public var appearanceDensity: String?
     public var appearanceReducedMotion: Bool?
+    /// The assistant's display name across the dashboard. `nil` = never set, so the
+    /// default identity (`Heimlich`) applies.
+    public var appearanceAssistantName: String?
     public var commandPaletteHotkey: String?
     public var knowledgeRootReference: String?
     /// "Windows Stored by Mode": a mode switch hides the outgoing mode's
@@ -19,27 +26,37 @@ public struct StoredSettings: Equatable, Sendable {
     /// id, or one no longer connected all degrade to the system primary display;
     /// the shell never errors on a stale value.
     public var mainDisplayID: String?
+    /// The raw JSON of the patch's `modeColors` map (token name → `#rrggbb`),
+    /// preserved verbatim. `nil`/absent = no per-mode color overrides, so every
+    /// mode uses its shipped palette (NIC-137).
+    public var modeColorsJSON: String?
     /// The raw JSON of the patch's `extensions` object, preserved verbatim so
     /// unknown-but-safe user fields survive updates (FR-CFG-05).
     public var extensionsJSON: String?
 
     public init(
         defaultModeID: String? = nil,
+        confirmAllActions: Bool? = nil,
         appearanceDensity: String? = nil,
         appearanceReducedMotion: Bool? = nil,
+        appearanceAssistantName: String? = nil,
         commandPaletteHotkey: String? = nil,
         knowledgeRootReference: String? = nil,
         windowsStoredByMode: Bool? = nil,
         mainDisplayID: String? = nil,
+        modeColorsJSON: String? = nil,
         extensionsJSON: String? = nil
     ) {
         self.defaultModeID = defaultModeID
+        self.confirmAllActions = confirmAllActions
         self.appearanceDensity = appearanceDensity
         self.appearanceReducedMotion = appearanceReducedMotion
+        self.appearanceAssistantName = appearanceAssistantName
         self.commandPaletteHotkey = commandPaletteHotkey
         self.knowledgeRootReference = knowledgeRootReference
         self.windowsStoredByMode = windowsStoredByMode
         self.mainDisplayID = mainDisplayID
+        self.modeColorsJSON = modeColorsJSON
         self.extensionsJSON = extensionsJSON
     }
 }
@@ -50,32 +67,42 @@ public struct StoredSettings: Equatable, Sendable {
 /// patch contract has no clear/reset semantics, so none exist here either.
 public struct SettingsChanges: Equatable, Sendable {
     public var defaultModeID: String?
+    public var confirmAllActions: Bool?
     public var appearanceDensity: String?
     public var appearanceReducedMotion: Bool?
+    public var appearanceAssistantName: String?
     public var commandPaletteHotkey: String?
     public var knowledgeRootReference: String?
     public var windowsStoredByMode: Bool?
     public var mainDisplayID: String?
+    /// When present, replaces the stored `modeColors` map wholesale (token name → hex).
+    public var modeColorsJSON: String?
     /// When present, replaces the stored `extensions` object wholesale.
     public var extensionsJSON: String?
 
     public init(
         defaultModeID: String? = nil,
+        confirmAllActions: Bool? = nil,
         appearanceDensity: String? = nil,
         appearanceReducedMotion: Bool? = nil,
+        appearanceAssistantName: String? = nil,
         commandPaletteHotkey: String? = nil,
         knowledgeRootReference: String? = nil,
         windowsStoredByMode: Bool? = nil,
         mainDisplayID: String? = nil,
+        modeColorsJSON: String? = nil,
         extensionsJSON: String? = nil
     ) {
         self.defaultModeID = defaultModeID
+        self.confirmAllActions = confirmAllActions
         self.appearanceDensity = appearanceDensity
         self.appearanceReducedMotion = appearanceReducedMotion
+        self.appearanceAssistantName = appearanceAssistantName
         self.commandPaletteHotkey = commandPaletteHotkey
         self.knowledgeRootReference = knowledgeRootReference
         self.windowsStoredByMode = windowsStoredByMode
         self.mainDisplayID = mainDisplayID
+        self.modeColorsJSON = modeColorsJSON
         self.extensionsJSON = extensionsJSON
     }
 
@@ -84,9 +111,11 @@ public struct SettingsChanges: Equatable, Sendable {
     /// allowlisted fields into a Sendable value.
     public init(validatedChanges changes: [String: Any]) {
         defaultModeID = changes["defaultModeId"] as? String
+        confirmAllActions = changes["confirmAllActions"] as? Bool
         if let appearance = changes["appearance"] as? [String: Any] {
             appearanceDensity = appearance["density"] as? String
             appearanceReducedMotion = appearance["reducedMotion"] as? Bool
+            appearanceAssistantName = appearance["assistantName"] as? String
         }
         if let hotkeys = changes["hotkeys"] as? [String: Any] {
             commandPaletteHotkey = hotkeys["commandPalette"] as? String
@@ -98,6 +127,10 @@ public struct SettingsChanges: Equatable, Sendable {
             windowsStoredByMode = workspace["windowsStoredByMode"] as? Bool
             mainDisplayID = workspace["mainDisplayId"] as? String
         }
+        if let modeColors = changes["modeColors"] as? [String: Any],
+           let data = try? JSONSerialization.data(withJSONObject: modeColors, options: [.sortedKeys]) {
+            modeColorsJSON = String(decoding: data, as: UTF8.self)
+        }
         if let extensions = changes["extensions"] as? [String: Any],
            let data = try? JSONSerialization.data(withJSONObject: extensions, options: [.sortedKeys]) {
             extensionsJSON = String(decoding: data, as: UTF8.self)
@@ -106,9 +139,11 @@ public struct SettingsChanges: Equatable, Sendable {
 
     /// Whether the patch carries any persistable field.
     public var isEmpty: Bool {
-        defaultModeID == nil && appearanceDensity == nil && appearanceReducedMotion == nil
+        defaultModeID == nil && confirmAllActions == nil && appearanceDensity == nil
+            && appearanceReducedMotion == nil && appearanceAssistantName == nil
             && commandPaletteHotkey == nil && knowledgeRootReference == nil
-            && windowsStoredByMode == nil && mainDisplayID == nil && extensionsJSON == nil
+            && windowsStoredByMode == nil && mainDisplayID == nil && modeColorsJSON == nil
+            && extensionsJSON == nil
     }
 }
 

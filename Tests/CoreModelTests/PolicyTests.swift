@@ -32,6 +32,25 @@ func everyRiskClassIsCovered() {
     }
 }
 
+@Test("the confirm-every-action overlay raises non-read-only classes but leaves reads allowed (NIC-137)")
+func confirmEveryActionOverlay() {
+    let engine = PolicyEngine(overrides: .confirmEveryAction)
+
+    // Read-only is not an action — it stays allowed.
+    #expect(engine.evaluate(PolicyRequest(toolID: "note.search", declaredRisk: .readOnly)).decision == .allow)
+
+    // Every writing/side-effecting class now requires confirmation.
+    for risk in [Risk.localWrite, .externalWrite, .shell, .financial, .purchaseOrBooking, .destructive] {
+        let evaluation = engine.evaluate(PolicyRequest(toolID: "tool.\(risk.rawValue)", declaredRisk: risk))
+        #expect(evaluation.decision == .requireConfirmation, "\(risk.rawValue)")
+    }
+
+    // The overlay is stricter-only: it never weakens a class (local_write went allow → confirm),
+    // and the reported reason is the configured-policy escalation for a baseline-allowed class.
+    let localWrite = engine.evaluate(PolicyRequest(toolID: "app.open", declaredRisk: .localWrite))
+    #expect(localWrite.reasonCode == "override.stricter_user_policy")
+}
+
 @Test("a caller cannot lower a required confirmation but may raise one (AC-30.2)")
 func callersCannotLowerRisk() {
     let engine = PolicyEngine()

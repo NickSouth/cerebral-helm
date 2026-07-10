@@ -162,6 +162,10 @@ function schemaForFixture(filePath) {
     return schemaId("bridge", "bootstrap-state");
   }
 
+  if (relativePath.includes("/bridge/settings/")) {
+    return schemaId("bridge", "settings-snapshot");
+  }
+
   if (relativePath.includes("/bridge/operations/") && relativePath.endsWith("-request.json")) {
     return schemaId("bridge", "operation-request");
   }

@@ -48,11 +48,20 @@ public func makeCommandRuntime(
     let commands = CommandRepository(database: database)
     let toolCalls = ToolCallRepository(database: database)
 
-    // Durable knowledge: notes are Markdown under the env-aware knowledge root,
-    // with rebuildable metadata in SQLite. Composed here so CerebralTools never
-    // depends on the knowledge package (the service is injected).
+    // Durable settings are loaded once here and reused below for the knowledge root
+    // (NIC-138) and the policy tightening (NIC-137).
+    let settingsStore = SQLiteSettingsStore(database: database)
+    let storedSettings = try? settingsStore.load()
+
+    // Durable knowledge: notes are Markdown under the EFFECTIVE knowledge root — the
+    // user's `knowledgeRootReference` when set (a re-point), else the env-aware default.
+    // Re-point only: no consumer moves or deletes anything at either location (NIC-138).
+    // Composed here so CerebralTools never depends on the knowledge package (injected).
+    let knowledgeRoot = EffectiveSettings.knowledgeRootURL(
+        reference: storedSettings?.knowledgeRootReference, default: paths.knowledgeRoot
+    )
     let knowledge = MarkdownKnowledgeService(
-        rootURL: paths.knowledgeRoot,
+        rootURL: knowledgeRoot,
         metadataStore: SQLiteNoteMetadataStore(database: database),
         searchIndex: SQLiteNoteSearchIndex(database: database)
     )
@@ -69,14 +78,28 @@ public func makeCommandRuntime(
         modeStateStore: SQLiteModeStateStore(database: database),
         modeSessionLog: SQLiteModeSessionLog(database: database),
         modeWorkspaceStore: SQLiteModeWorkspaceStore(database: database),
-        settingsStore: SQLiteSettingsStore(database: database),
+        settingsStore: settingsStore,
         // window.arrange resolves apps through the same reference catalog as
         // app.open — configured bundle-id references only, never arbitrary targets.
         appTargets: references.apps.mapValues(\.target)
     )
 
+    // "Ask before all actions" (NIC-137): when the durable flag is set, the policy
+    // engine raises every non-read-only action to require confirmation — a
+    // stricter-only overlay that can never weaken descriptor policy. Read once here,
+    // so toggling it takes effect the next time the runtime is composed.
+    // The tightening lives in a shared box so a later `updateSettings` toggle re-arms
+    // confirmation live (NIC-137), not just on next launch. Seeded from the stored flag.
+    let confirmAllActions = storedSettings?.confirmAllActions == true
+    let policyOverridesBox = PolicyOverridesBox(
+        confirmAllActions ? .confirmEveryAction : PolicyOverrides()
+    )
+    let policy = PolicyEngine(overridesBox: policyOverridesBox)
+
     return CommandRuntime(
         registry: registry,
+        policy: policy,
+        policyOverridesBox: policyOverridesBox,
         phase: phase,
         coordinator: ConfirmationCoordinator(store: SQLiteConfirmationStore(database: database)),
         factory: CommandFactory(clock: SystemClock(), identifiers: UUIDIdentifierGenerator()),
