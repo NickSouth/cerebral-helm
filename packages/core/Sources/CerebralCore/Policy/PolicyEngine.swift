@@ -1,3 +1,4 @@
+import Foundation
 import CerebralContracts
 
 /// A stricter-only configuration overlay (PRD §10.3).
@@ -37,6 +38,27 @@ public extension PolicyOverrides {
         .purchaseOrBooking: .requireConfirmation,
         .destructive: .requireConfirmation,
     ])
+}
+
+/// A thread-safe, mutable holder for the active ``PolicyOverrides`` (NIC-137 live re-arm).
+///
+/// The policy engine stays a value type; when it holds a box, `evaluate` reads the box's
+/// current overrides so a settings toggle (e.g. "Ask before all actions") re-arms
+/// confirmation immediately, without recomposing the runtime. One box is shared by the
+/// engine and its executor (both hold the same engine value), so a single write updates
+/// every evaluation path. Overrides remain stricter-only — the box can only carry a floor.
+public final class PolicyOverridesBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: PolicyOverrides
+
+    public init(_ value: PolicyOverrides = PolicyOverrides()) {
+        self.value = value
+    }
+
+    public var current: PolicyOverrides {
+        get { lock.lock(); defer { lock.unlock() }; return value }
+        set { lock.lock(); defer { lock.unlock() }; value = newValue }
+    }
 }
 
 /// One tool invocation presented to the policy engine.
@@ -87,10 +109,19 @@ public struct PolicyEvaluation: Equatable, Sendable {
 public struct PolicyEngine: Sendable {
     public let overrides: PolicyOverrides
     public let hookAllowlist: HookAllowlist
+    /// When present, its `current` overrides supersede the static `overrides` on every
+    /// evaluation, so a live settings toggle re-arms confirmation without recomposing the
+    /// runtime (NIC-137). `nil` keeps the pure-value behavior everything else relies on.
+    public let overridesBox: PolicyOverridesBox?
 
-    public init(overrides: PolicyOverrides = PolicyOverrides(), hookAllowlist: HookAllowlist = HookAllowlist()) {
+    public init(
+        overrides: PolicyOverrides = PolicyOverrides(),
+        hookAllowlist: HookAllowlist = HookAllowlist(),
+        overridesBox: PolicyOverridesBox? = nil
+    ) {
         self.overrides = overrides
         self.hookAllowlist = hookAllowlist
+        self.overridesBox = overridesBox
     }
 
     public func evaluate(_ request: PolicyRequest) -> PolicyEvaluation {
@@ -100,8 +131,10 @@ public struct PolicyEngine: Sendable {
         var (decision, reasonCode, reason) = baselineDecision(for: governingRisk, request: request)
 
         // Stricter-only escalations, folded in with `max` over every class the
-        // request touches so a deny on any planned-action class still applies.
-        let overrideFloor = considered.compactMap { overrides.minimumDecisions[$0] }.max() ?? .allow
+        // request touches so a deny on any planned-action class still applies. A live
+        // overrides box (when composed) supersedes the static overrides.
+        let activeOverrides = overridesBox?.current ?? overrides
+        let overrideFloor = considered.compactMap { activeOverrides.minimumDecisions[$0] }.max() ?? .allow
         if overrideFloor > decision {
             decision = overrideFloor
             reasonCode = "override.stricter_user_policy"

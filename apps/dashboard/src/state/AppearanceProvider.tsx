@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useBridge } from "./BridgeProvider";
 import { modeTokenCssVar } from "../tokens/tokens";
+import type { SettingsSnapshot } from "../bridge/cerebralBridge";
 
 /** The assistant's default display name, mirroring `EffectiveSettings.defaultAssistantName`
  *  (Swift). Shown until the persisted value is read, and if the read fails. */
@@ -79,6 +80,27 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
+  }, [bridge]);
+
+  // Live cross-webview sync (NIC-137 follow-up): a `settings.changed` event carries the
+  // authoritative persisted state after any write, so a change made in the separate
+  // native settings window reflects on the dashboard (and vice versa) without a relaunch.
+  // The event is post-persist truth, so it applies regardless of the local user-touched
+  // guards (which only protect against the async startup seed).
+  useEffect(() => {
+    const unsubscribe = bridge.subscribe((event) => {
+      if (event.type !== "settings.changed") {
+        return;
+      }
+      const settings = (event.payload as { settings?: SettingsSnapshot }).settings;
+      if (!settings) {
+        return;
+      }
+      setReducedMotion(settings.appearance.reducedMotion);
+      setAssistantName(settings.appearance.assistantName);
+      setModeColors(settings.modeColors);
+    });
+    return unsubscribe;
   }, [bridge]);
 
   // Apply the per-mode overrides by setting the matching `--ch-mode-*` custom properties

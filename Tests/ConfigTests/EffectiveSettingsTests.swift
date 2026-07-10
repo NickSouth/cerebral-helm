@@ -53,6 +53,27 @@ func unsetResolvesToDefaults() {
     #expect(snapshot.workspace.mainDisplayID == "system-primary")
 }
 
+@Test("the effective knowledge root re-points to an override path, else the default (NIC-138)")
+func knowledgeRootResolution() {
+    let defaultRoot = URL(fileURLWithPath: "/var/state/knowledge")
+
+    // Unset / blank → the environment default.
+    #expect(EffectiveSettings.knowledgeRootURL(reference: nil, default: defaultRoot) == defaultRoot)
+    #expect(EffectiveSettings.knowledgeRootURL(reference: "   ", default: defaultRoot) == defaultRoot)
+
+    // Absolute path → used as given (standardized).
+    #expect(
+        EffectiveSettings.knowledgeRootURL(reference: "/Users/me/vault", default: defaultRoot)
+            == URL(fileURLWithPath: "/Users/me/vault").standardizedFileURL
+    )
+
+    // A bare/relative reference resolves beside the default root, inside the workspace.
+    #expect(
+        EffectiveSettings.knowledgeRootURL(reference: "vault", default: defaultRoot)
+            == URL(fileURLWithPath: "/var/state/vault").standardizedFileURL
+    )
+}
+
 @Test("defaultModeId falls back to `executive` when neither stored nor configured")
 func defaultModeIDFinalFallback() {
     let snapshot = EffectiveSettings.resolve(stored: StoredSettings(), configDefaultModeID: nil)

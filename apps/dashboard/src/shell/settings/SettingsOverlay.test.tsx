@@ -274,6 +274,37 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(toggle).toBeChecked();
     await waitFor(() => expect(accepted).toEqual([true]));
   });
+
+  it("re-syncs the assistant name and mode colors live on a settings.changed event (NIC-137)", () => {
+    const { bridge } = renderApp();
+    // A change made in the separate native settings window arrives as an event; the
+    // dashboard (a different webview) reflects it without a relaunch.
+    act(() => {
+      bridge.emit({
+        eventId: "brevt_settings00000001",
+        type: "settings.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-10T16:00:00.000Z",
+        payload: {
+          settings: {
+            schemaVersion: "1.0.0",
+            defaultModeId: "executive",
+            confirmAllActions: false,
+            appearance: { reducedMotion: false, assistantName: "Cerebra" },
+            knowledge: { rootReference: null },
+            workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary" },
+            modeColors: { "executive.primary": "#ff2d55" }
+          }
+        }
+      });
+    });
+    // The center-stage region re-renders to the new name...
+    expect(screen.getByRole("region", { name: "Cerebra" })).toBeInTheDocument();
+    // ...and the mode accent override lands on the document root (live re-theme).
+    expect(
+      document.documentElement.style.getPropertyValue("--ch-mode-executive-primary")
+    ).toBe("#ff2d55");
+  });
 });
 
 describe("Settings surfaces under the native shell (backdrop-policy decision, 2026-07-06)", () => {

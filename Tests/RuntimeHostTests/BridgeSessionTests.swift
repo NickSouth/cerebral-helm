@@ -262,6 +262,34 @@ func captureNoteReturnsRealId() async throws {
     #expect(!noteId.hasPrefix("cmd_"))
 }
 
+@Test("a re-pointed knowledge root stores captured notes at the override location (NIC-138)")
+func knowledgeRootRepointStoresNotes() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // An override folder distinct from the env default, persisted BEFORE composition.
+    let overrideRoot = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ch-knowledge-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: overrideRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: overrideRoot) }
+    try makeSettingsStore(paths).apply(SettingsChanges(knowledgeRootReference: overrideRoot.path))
+
+    // Composed after persisting → the runtime points knowledge at the override.
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory
+    )
+    let response = await session.execute(
+        operationRequest(.captureNote, #"{"title":"Plan","body":"Draft the deck."}"#)
+    )
+    #expect(response.status == .ok)
+
+    // The Markdown note lands under the override root, and never under the env default —
+    // a re-point, not a copy.
+    let overrideMd = (try? FileManager.default.subpathsOfDirectory(atPath: overrideRoot.path)) ?? []
+    #expect(overrideMd.contains { $0.hasSuffix(".md") })
+    let defaultMd = (try? FileManager.default.subpathsOfDirectory(atPath: paths.knowledgeRoot.path)) ?? []
+    #expect(!defaultMd.contains { $0.hasSuffix(".md") })
+}
+
 @Test("an empty search query returns no results (not an error)")
 func emptySearchReturnsEmpty() async throws {
     let session = try makeSession()
@@ -690,6 +718,71 @@ func confirmAllActionsGatesLocalWrite() async throws {
         try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
     }.filter { ($0["type"] as? String) == "confirmation.changed" }
     #expect(!confirmations.isEmpty)
+}
+
+@Test("updateSettings emits settings.changed carrying the new snapshot for live sync (NIC-137)")
+func updateSettingsEmitsSettingsChanged() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        settingsStore: try makeSettingsStore(paths),
+        emitEventJSON: { emitted.emit($0) }
+    )
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_sync0001","changes":{"appearance":{"assistantName":"Cerebra"}}}}"#
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+
+    // The event carries the full resolved snapshot so every surface can re-sync live.
+    let events = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "settings.changed" }
+    #expect(events.count == 1)
+    let settings = (events.first?["payload"] as? [String: Any])?["settings"] as? [String: Any]
+    let appearance = settings?["appearance"] as? [String: Any]
+    #expect(appearance?["assistantName"] as? String == "Cerebra")
+}
+
+@Test("toggling Ask before all actions re-arms confirmation live, without a relaunch (NIC-137)")
+func confirmAllActionsReArmsLive() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        settingsStore: try makeSettingsStore(paths),
+        emitEventJSON: { emitted.emit($0) }
+    )
+    func confirmationCount() -> Int {
+        emitted.all()
+            .compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+            .filter { ($0["type"] as? String) == "confirmation.changed" }
+            .count
+    }
+
+    // Flag off: a local_write note runs without confirmation.
+    let before = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"note first","source":"dashboard"}"#)
+    )
+    #expect(before.status == .ok)
+    #expect(confirmationCount() == 0)
+
+    // Toggle it ON through the SAME live session — no relaunch.
+    let toggle = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_rearm001","changes":{"confirmAllActions":true}}}"#
+    ))
+    #expect(try decode(toggle, as: Accepted.self).accepted)
+
+    // The next identical note now pauses for confirmation — the tightening applied live.
+    let after = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"note second","source":"dashboard"}"#)
+    )
+    #expect(after.status == .ok)
+    #expect(confirmationCount() >= 1)
 }
 
 @Test("a rejected patch persists nothing")

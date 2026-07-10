@@ -88,6 +88,24 @@ public enum BridgeEventFactory {
         )
     }
 
+    /// A `settings.changed` event (live cross-webview sync): the durable settings were
+    /// updated through `updateSettings`, so every surface — the dashboard and the
+    /// separate native settings window — reflects the new assistant name, mode colors,
+    /// and motion preference immediately, not just on next launch. Carries the full
+    /// resolved snapshot (the same shape as `getSettings`).
+    public static func settingsChangedEvent(
+        snapshot: CerebralHelmSettingsSnapshot, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Wrapper: Encodable { let settings: CerebralHelmSettingsSnapshot }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Wrapper(settings: snapshot)),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .settingsChanged
+        )
+    }
+
     /// One channel of the `system.status.changed` metrics payload (NIC-81b).
     /// `sampledAt` timestamps the sample that produced the value, so stale data
     /// stays timestamped downstream (MAC-ADAPTER-3 AC).

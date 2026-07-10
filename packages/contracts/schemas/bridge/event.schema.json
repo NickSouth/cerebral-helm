@@ -20,6 +20,7 @@
         "command.lifecycle.transition",
         "config.changed",
         "mode.quickapps.changed",
+        "settings.changed",
         "confirmation.changed",
         "bridge.capability.changed",
         "system.status.changed",

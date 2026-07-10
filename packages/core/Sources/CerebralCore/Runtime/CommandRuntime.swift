@@ -103,6 +103,10 @@ public final class CommandRuntime: @unchecked Sendable {
     private let registry: ToolRegistry
     private let policy: PolicyEngine
     private let executor: ToolExecutor
+    /// The shared live-overrides holder (NIC-137): both `policy` and `executor` evaluate
+    /// through this box, so writing it re-arms confirmation everywhere at once. `nil` when
+    /// composed with a static policy (tests, non-settings hosts).
+    private let policyOverridesBox: PolicyOverridesBox?
     private let coordinator: ConfirmationCoordinator
     private let factory: CommandFactory
     private let hookCatalog: HookCatalog
@@ -117,6 +121,7 @@ public final class CommandRuntime: @unchecked Sendable {
     public init(
         registry: ToolRegistry,
         policy: PolicyEngine = PolicyEngine(),
+        policyOverridesBox: PolicyOverridesBox? = nil,
         phase: ExecutionPhase = .preMac,
         coordinator: ConfirmationCoordinator,
         factory: CommandFactory,
@@ -132,6 +137,7 @@ public final class CommandRuntime: @unchecked Sendable {
         self.parser = DirectCommandParser(references: references)
         self.registry = registry
         self.policy = policy
+        self.policyOverridesBox = policyOverridesBox
         self.executor = ToolExecutor(registry: registry, policy: policy, phase: phase, clock: clock)
         self.coordinator = coordinator
         self.factory = factory
@@ -142,6 +148,15 @@ public final class CommandRuntime: @unchecked Sendable {
         self.sink = sink
         self.toolCallSink = toolCallSink
         self.actionProgressSink = actionProgressSink
+    }
+
+    /// Live-updates the "Ask before all actions" tightening (NIC-137): the policy engine
+    /// and its executor share one overrides box, so this re-arms (or relaxes back to
+    /// descriptor policy) confirmation immediately — no relaunch. Stricter-only: it can
+    /// only raise `local_write`+ actions to require confirmation, never weaken policy. A
+    /// no-op when composed with a static policy (no box).
+    public func updateConfirmAllActions(_ enabled: Bool) {
+        policyOverridesBox?.current = enabled ? .confirmEveryAction : PolicyOverrides()
     }
 
     /// Parses and runs one line of input. An allowed command executes; a

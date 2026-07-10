@@ -1683,6 +1683,7 @@ public enum CerebralHelmBridgeEventType: String, Codable {
     case confirmationChanged = "confirmation.changed"
     case displayTopologyChanged = "display.topology.changed"
     case modeQuickappsChanged = "mode.quickapps.changed"
+    case settingsChanged = "settings.changed"
     case systemStatusChanged = "system.status.changed"
     case workflowActionProgress = "workflow.action.progress"
 }

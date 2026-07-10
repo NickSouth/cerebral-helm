@@ -64,6 +64,29 @@ public enum EffectiveSettings {
         )
     }
 
+    /// Resolves the effective durable-knowledge root (NIC-138): the user's
+    /// `knowledgeRootReference` interpreted as a directory path when set, else the
+    /// environment default. An absolute (`/…`) or tilde (`~/…`) reference is used as
+    /// given; a bare/relative reference resolves inside the workspace, beside the
+    /// default root. Re-point only — the caller never moves or deletes anything at
+    /// either location; this only computes where knowledge lives.
+    public static func knowledgeRootURL(reference: String?, default defaultRoot: URL) -> URL {
+        guard
+            let reference,
+            !reference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return defaultRoot
+        }
+        let expanded = (reference as NSString).expandingTildeInPath
+        let url: URL
+        if expanded.hasPrefix("/") {
+            url = URL(fileURLWithPath: expanded)
+        } else {
+            url = defaultRoot.deletingLastPathComponent().appendingPathComponent(expanded)
+        }
+        return url.standardizedFileURL
+    }
+
     private static func decodeModeColors(_ json: String?) -> [String: String] {
         guard
             let data = json?.data(using: .utf8),

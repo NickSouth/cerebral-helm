@@ -275,7 +275,7 @@ function PermissionsPanelBody() {
       <Section title="Confirmation">
         <Field
           label="Ask before all actions"
-          hint="Require confirmation before every action across the app. This only tightens — it adds confirmation and can never remove one that policy already requires. Applies on next launch."
+          hint="Require confirmation before every action across the app. This only tightens — it adds confirmation and can never remove one that policy already requires. Takes effect immediately."
         >
           <label className="settings-switch">
             <input
@@ -577,7 +577,7 @@ function SetupPanelBody() {
       <Section title="Knowledge root">
         <Field
           label="Root folder"
-          hint="Where durable Markdown knowledge lives. Choose a folder, or type a path. Changing it re-points to the new location — it never moves or deletes what is already there. Applies with the knowledge system."
+          hint="Where durable Markdown knowledge lives. Choose a folder, or type a path. Changing it re-points to the new location — it never moves or deletes what is already there. Applies on next launch."
         >
           <div className="settings-root-picker">
             <input
