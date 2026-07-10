@@ -1,7 +1,4 @@
-/** A single shimmer placeholder block. Purely decorative — hidden from assistive tech. */
-function Bone({ className }: { className?: string }) {
-  return <span className={`skeleton-bone${className ? ` ${className}` : ""}`} aria-hidden="true" />;
-}
+import { SkeletonBone as Bone } from "../components/Skeleton";
 
 /** One rail column of stacked placeholder panels, mirroring the populated rail rhythm. */
 function RailSkeleton({ panels }: { panels: number }) {

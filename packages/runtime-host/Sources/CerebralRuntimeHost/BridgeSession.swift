@@ -74,10 +74,19 @@ public final class BridgeSession: @unchecked Sendable {
     /// layered loader (user overrides included) when a workspace is bound, else
     /// the shipped defaults.
     private func composeState(activeModeID: String?) -> CerebralHelmBridgeBootstrapState {
+        // When the live-metrics provider is available a sample is inbound, so the composed
+        // System Health region loads (`.empty`) rather than reporting unavailable — the shell
+        // shows a same-shape skeleton instead of an "unavailable" flash on first paint or a
+        // mode switch (NIC-136). Absent the provider it stays honestly unavailable.
+        let metricsExpected = capabilities.first { $0.id == "system.metrics" }?.available == true
         if let workspace {
-            return BootstrapComposer.compose(workspace: workspace, activeModeID: activeModeID)
+            return BootstrapComposer.compose(
+                workspace: workspace, activeModeID: activeModeID, systemMetricsExpected: metricsExpected
+            )
         }
-        return BootstrapComposer.compose(configDirectory: configDirectory, activeModeID: activeModeID)
+        return BootstrapComposer.compose(
+            configDirectory: configDirectory, activeModeID: activeModeID, systemMetricsExpected: metricsExpected
+        )
     }
 
     /// Replaces the reported capability set (a permission recheck, NIC-83) and

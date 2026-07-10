@@ -1,6 +1,7 @@
 import type { BridgeEvent, CerebralBridge } from "../bridge/cerebralBridge";
 import type {
   ConfirmationDisclosure,
+  DashboardRegions,
   DashboardStateSnapshot,
   HeimlichState,
   RegionState,
@@ -90,6 +91,30 @@ function sameQuickApps(current: readonly string[], next: readonly string[]): boo
   return current.length === next.length && current.every((id, index) => id === next[index]);
 }
 
+/**
+ * Regions a mode-switch snapshot must NOT author: they are runtime-owned — fed by a
+ * live stream (System Health ← `system.status.changed`) that is machine-global, not
+ * mode-scoped. `config.changed` swaps the mode's region data wholesale, so folding its
+ * honest pre-adapter placeholder over these would blank the live values until the next
+ * stream tick — the "unavailable" flash (NIC-136). Add a live-stream region's key here
+ * and it stops flashing on mode switch by construction.
+ */
+const RUNTIME_OWNED_REGIONS = ["systemHealth"] as const;
+
+/** Carry the runtime-owned regions from the current state over a mode-switch snapshot. */
+function preserveRuntimeRegions(
+  snapshotRegions: DashboardRegions,
+  current: DashboardRegions
+): DashboardRegions {
+  const merged: { -readonly [K in keyof DashboardRegions]: DashboardRegions[K] } = {
+    ...snapshotRegions
+  };
+  for (const key of RUNTIME_OWNED_REGIONS) {
+    merged[key] = current[key];
+  }
+  return merged;
+}
+
 /** How a command-lifecycle status maps onto Heimlich's consciousness state (design spec §5.8). */
 const LIFECYCLE_TO_HEIMLICH: Readonly<Record<string, HeimlichState>> = {
   received: "thinking",
@@ -126,7 +151,14 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
       if (!snapshot || snapshot.mode === state.mode) {
         return state;
       }
-      return { ...state, ...snapshot };
+      // Swap the mode-scoped slice, but keep the runtime-owned regions (live-stream fed,
+      // mode-independent) so System Health and future live widgets don't revert to their
+      // unavailable state until the next stream tick (NIC-136).
+      return {
+        ...state,
+        ...snapshot,
+        regions: preserveRuntimeRegions(snapshot.regions, state.regions)
+      };
     }
     case "mode.quickapps.changed": {
       // One mode's quick-app slots were rewritten through the validated override

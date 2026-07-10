@@ -24,7 +24,7 @@ public enum BootstrapComposer {
     /// pinned quick apps appear; this entry remains for tests and workspace-less
     /// hosts.
     public static func compose(
-        configDirectory: URL, activeModeID: String? = nil
+        configDirectory: URL, activeModeID: String? = nil, systemMetricsExpected: Bool = false
     ) -> CerebralHelmBridgeBootstrapState {
         var modeConfigs: [CerebralHelmModeConfig] = []
         var agentConfigs: [CerebralHelmAgentSurfaceConfig] = []
@@ -36,7 +36,8 @@ public enum BootstrapComposer {
         }
         return compose(
             modes: modeConfigs, agents: agentConfigs,
-            defaultModeID: defaultModeID, activeModeID: activeModeID
+            defaultModeID: defaultModeID, activeModeID: activeModeID,
+            systemMetricsExpected: systemMetricsExpected
         )
     }
 
@@ -47,7 +48,7 @@ public enum BootstrapComposer {
     /// defaults alone. A rejected candidate falls back to the last-known-good
     /// snapshot, then to the shipped defaults (FR-CFG-02).
     public static func compose(
-        workspace: WorkspacePaths, activeModeID: String? = nil
+        workspace: WorkspacePaths, activeModeID: String? = nil, systemMetricsExpected: Bool = false
     ) -> CerebralHelmBridgeBootstrapState {
         let active: ActiveConfig?
         switch ConfigLoader(workspace: workspace).load() {
@@ -57,11 +58,15 @@ public enum BootstrapComposer {
             active = lastKnownGood
         }
         guard let active else {
-            return compose(configDirectory: workspace.configDirectory, activeModeID: activeModeID)
+            return compose(
+                configDirectory: workspace.configDirectory, activeModeID: activeModeID,
+                systemMetricsExpected: systemMetricsExpected
+            )
         }
         return compose(
             modes: active.modes, agents: active.agents,
-            defaultModeID: active.defaults.defaultModeID, activeModeID: activeModeID
+            defaultModeID: active.defaults.defaultModeID, activeModeID: activeModeID,
+            systemMetricsExpected: systemMetricsExpected
         )
     }
 
@@ -71,7 +76,8 @@ public enum BootstrapComposer {
         modes modeConfigs: [CerebralHelmModeConfig],
         agents agentConfigs: [CerebralHelmAgentSurfaceConfig],
         defaultModeID: String?,
-        activeModeID: String?
+        activeModeID: String?,
+        systemMetricsExpected: Bool = false
     ) -> CerebralHelmBridgeBootstrapState {
         let modeConfigs = orderedModes(modeConfigs)
         let modes = modeConfigs.compactMap { try? modeView($0) }
@@ -94,7 +100,7 @@ public enum BootstrapComposer {
             modes: modes,
             pendingConfirmations: 0,
             project: "CerebralHelm",
-            regions: degradedRegions(),
+            regions: degradedRegions(systemMetricsExpected: systemMetricsExpected),
             schemaVersion: "1.0.0",
             summary: "Ready.",
             uiState: .ready,
@@ -145,17 +151,21 @@ public enum BootstrapComposer {
     }
 
     /// The honest pre-adapter regions: nothing is fabricated. Schedule and news are
-    /// empty, system metrics and the mode widgets are unavailable.
-    private static func degradedRegions() -> DashboardRegions {
-        DashboardRegions(
+    /// empty, the mode widgets unavailable. System metrics render as loading (`.empty`)
+    /// when their provider is available — a live sample is inbound, so the shell shows a
+    /// same-shape skeleton rather than an "unavailable" flash on first paint / mode switch
+    /// (NIC-136) — and as unavailable otherwise, staying honest on providerless builds.
+    private static func degradedRegions(systemMetricsExpected: Bool = false) -> DashboardRegions {
+        let systemHealthState: DashboardRegionState = systemMetricsExpected ? .empty : .unavailable
+        return DashboardRegions(
             news: DashboardNewsRegion(emptyMessage: "News is unavailable.", headlines: [], state: .empty),
             schedule: DashboardScheduleRegion(emptyMessage: "No schedule yet.", items: [], state: .empty),
             systemHealth: DashboardSystemHealthRegion(
-                battery: DashboardBatteryChannel(charging: nil, label: "Battery", percent: nil, pluggedIn: nil, state: .unavailable),
+                battery: DashboardBatteryChannel(charging: nil, label: "Battery", percent: nil, pluggedIn: nil, state: systemHealthState),
                 cpuPercent: nil,
                 memoryPercent: nil,
                 network: nil,
-                state: .unavailable
+                state: systemHealthState
             ),
             widgets: DashboardRegionWidgets(
                 dashboardRegionWidgetsLeft: unavailableWidget(),

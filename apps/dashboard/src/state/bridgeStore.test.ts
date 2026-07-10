@@ -321,6 +321,44 @@ describe("reduceDashboardState", () => {
     expect(next.modes).toBe(base.modes);
     expect(next.agents).toBe(base.agents);
   });
+
+  it("preserves the runtime-owned System Health region across a mode switch (NIC-136)", () => {
+    const base = loadBootstrapState(); // Executive, live metrics from the fixture stream
+    const liveHealth = base.regions.systemHealth;
+    expect(liveHealth.state).toBe("ready");
+
+    // The native mode-switch snapshot ships regions in their honest pre-adapter state
+    // (System Health unavailable); only the live stream repopulates them. Folding that in
+    // wholesale is exactly what caused the unavailable flash.
+    const schoolSnapshot = getDashboardFixture("mode.school.ready");
+    const event: BridgeEvent = {
+      eventId: "brevt_config_health",
+      type: "config.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        snapshot: {
+          ...schoolSnapshot,
+          regions: {
+            ...schoolSnapshot.regions,
+            systemHealth: {
+              state: "unavailable",
+              battery: { state: "unavailable", label: "Battery" }
+            }
+          }
+        }
+      }
+    };
+
+    const next = reduceDashboardState(base, event);
+
+    expect(next.mode).toBe("School"); // the mode-scoped slice still swaps
+    // …but the live System Health region is carried over unchanged — no flash.
+    expect(next.regions.systemHealth).toBe(liveHealth);
+    expect(next.regions.systemHealth.state).toBe("ready");
+    // A mode-scoped region (news) does take the snapshot's value.
+    expect(next.regions.news).toBe(schoolSnapshot.regions.news);
+  });
 });
 
 describe("createBridgeStore", () => {

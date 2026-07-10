@@ -1832,6 +1832,19 @@
   width: 60%;
 }
 
+/* System Health loading bones (NIC-136): a bar-track fill and a right-aligned value chip
+   so a metric row keeps its exact shape while the first sample lands. */
+.skeleton-bone--bar {
+  width: 100%;
+  height: 100%;
+}
+
+.skeleton-bone--value {
+  flex: 0 0 auto;
+  width: 2.5rem;
+  height: 0.7rem;
+}
+
 @keyframes skeleton-shimmer {
   from {
     background-position: 200% 0;

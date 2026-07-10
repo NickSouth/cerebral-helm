@@ -1,8 +1,9 @@
 import { Panel } from "./Panel";
 import { PanelGlyph } from "./PanelGlyph";
-import { HealthGlyph } from "./HealthGlyph";
+import { HealthGlyph, type HealthGlyphName } from "./HealthGlyph";
 import { ChargingBoltGlyph } from "./BatteryGlyph";
 import { StaleMarker } from "../components/StaleMarker";
+import { SkeletonBone } from "../components/Skeleton";
 import { Unavailable } from "../components/Unavailable";
 import { useDashboardState } from "../state/DashboardStateProvider";
 
@@ -62,10 +63,53 @@ function networkMbps(label: string): string | null {
   return match ? match[1] : null;
 }
 
+/** The four System Health rows, in order — the fixed shape the skeleton mirrors. */
+const HEALTH_ROWS: readonly { glyph: HealthGlyphName; label: string }[] = [
+  { glyph: "cpu", label: "CPU" },
+  { glyph: "memory", label: "Memory" },
+  { glyph: "network", label: "Network" },
+  { glyph: "battery", label: "Battery" }
+];
+
+/**
+ * The loading shape: the real row structure — icon + label down the left — with shimmer
+ * bones where the live figures land. Renders instantly on first paint / mode switch so the
+ * panel keeps its exact size and metrics fade into place, rather than flashing an
+ * "unavailable" state before the first sample arrives (NIC-136). The generalizable pattern
+ * for every live widget: give it a same-shape skeleton for its pre-data state.
+ */
+function SystemHealthSkeleton() {
+  return (
+    <ul className="metrics" aria-busy="true">
+      <li className="sr-only">Loading system metrics…</li>
+      {HEALTH_ROWS.map((row) => (
+        <li className="metric" key={row.label} aria-hidden="true">
+          <span className="metric__icon">
+            <HealthGlyph name={row.glyph} />
+          </span>
+          <span className="metric__label">{row.label}</span>
+          <span className="metric-bar">
+            <SkeletonBone className="skeleton-bone--bar" />
+          </span>
+          <SkeletonBone className="skeleton-bone--value" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** L2 System Health (design spec §5.2): CPU/memory usage bars, network throughput, battery. */
 export function SystemHealthPanel() {
-  const { systemHealth } = useDashboardState().regions;
+  const dashboard = useDashboardState();
+  const { systemHealth } = dashboard.regions;
   const live = systemHealth.state === "ready" || systemHealth.state === "stale";
+  // Loading vs genuinely-unavailable: the metrics provider being available means a sample
+  // is on its way (first paint, or the pre-sample window after a permission grant), so show
+  // the same-shape skeleton instead of the honest-unavailable flash (NIC-136). Only genuine
+  // absence — no metrics capability, or an explicit unavailable with none expected — renders
+  // Unavailable.
+  const metricsExpected = dashboard.capabilities?.["system.metrics"]?.available === true;
+  const loading = !live && (systemHealth.state === "empty" || metricsExpected);
   const network = systemHealth.network;
   const battery = systemHealth.battery;
   const batteryLive =
@@ -147,6 +191,8 @@ export function SystemHealthPanel() {
             </li>
           )}
         </ul>
+      ) : loading ? (
+        <SystemHealthSkeleton />
       ) : (
         <Unavailable label="Metrics unavailable" />
       )}

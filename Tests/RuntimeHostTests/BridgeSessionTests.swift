@@ -201,6 +201,27 @@ func bootstrapComposesFromConfig() async throws {
     #expect(state.weather == nil)
 }
 
+@Test("System Health composes as loading, not unavailable, when live metrics are expected (NIC-136)")
+func bootstrapSystemHealthLoadsWhenMetricsAvailable() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // A composition where the live-metrics provider is bound and permitted.
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        capabilities: [
+            CerebralContracts.Capability(available: true, degradedReason: nil, id: "system.metrics", source: .native)
+        ]
+    )
+    let response = await session.execute(operationRequest(.getBootstrapState, "{}"))
+
+    #expect(response.status == .ok)
+    let state = try decode(response, as: CerebralHelmBridgeBootstrapState.self)
+    // Provider available ⇒ a first sample is inbound ⇒ the region loads (shell renders a
+    // same-shape skeleton) rather than flashing unavailable before the sample lands.
+    #expect(state.regions.systemHealth.state == .empty)
+    #expect(state.regions.systemHealth.battery.state == .empty)
+}
+
 // MARK: - Knowledge operations
 
 private struct SearchResult: Decodable { struct Hit: Decodable { let noteId: String; let title: String; let excerpt: String }; let results: [Hit] }
