@@ -161,6 +161,29 @@ export interface UpdateQuickAppsResult {
   readonly errors: readonly string[];
 }
 
+/** A configured URL reference (NIC-146): a web address the user can open by id and
+ *  pin as a quick app, the same way an app reference works. `target` is always an
+ *  http/https URL. */
+export interface UrlReference {
+  readonly id: string;
+  readonly label: string;
+  readonly target: string;
+}
+export interface AddUrlReferenceInput {
+  readonly url: string;
+  /** Optional display label; defaults to the URL's host when omitted. */
+  readonly label?: string;
+}
+export interface AddUrlReferenceResult {
+  readonly accepted: boolean;
+  /** The minted (or already-existing) reference when accepted; null on rejection. */
+  readonly reference: UrlReference | null;
+  readonly errors: readonly string[];
+}
+export interface ListUrlsResult {
+  readonly urls: readonly UrlReference[];
+}
+
 // --- FR-OBS-04 read surface (shape from get-recent-activity-response fixture) ---
 
 export interface ActivityCommand {
@@ -223,6 +246,13 @@ export interface CerebralBridge {
   listApps(): Promise<ListAppsResult>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */
   updateQuickApps(input: UpdateQuickAppsInput): Promise<UpdateQuickAppsResult>;
+  /** Mint a user URL reference (NIC-146) so a typed URL can be pinned as a quick app,
+   *  the same route apps take. Only http/https URLs mint; the returned reference id is
+   *  the pinnable key passed to {@link updateQuickApps}. */
+  addUrlReference(input: AddUrlReferenceInput): Promise<AddUrlReferenceResult>;
+  /** The configured URL references (shipped + user-minted), so pinned URL tiles render
+   *  with their real labels — the URL counterpart of {@link listApps} (NIC-146). */
+  listUrls(): Promise<ListUrlsResult>;
   /** Run an on-demand internet speed test (NIC-135). Resolves when the ~30s
    *  measurement completes; read-only, so it never gates on confirmation. */
   runSpeedTest(): Promise<SpeedTestResult>;

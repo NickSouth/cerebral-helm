@@ -100,6 +100,10 @@ public final class CommandRuntime: @unchecked Sendable {
 
     private let lock = NSLock()
     private let parser: DirectCommandParser
+    /// The shared live reference catalog (NIC-146): the parser reads through it and,
+    /// on the macOS shell, so do the app/url capability target maps. Reloading it
+    /// makes a mid-session mint resolvable everywhere at once — no relaunch.
+    private let referenceStore: CommandReferenceStore
     private let registry: ToolRegistry
     private let policy: PolicyEngine
     private let executor: ToolExecutor
@@ -126,6 +130,7 @@ public final class CommandRuntime: @unchecked Sendable {
         coordinator: ConfirmationCoordinator,
         factory: CommandFactory,
         references: CommandReferences,
+        referenceStore: CommandReferenceStore? = nil,
         hookCatalog: HookCatalog = HookCatalog(),
         modePlanner: (any ActionPlanner)? = nil,
         clock: any TimeSource = SystemClock(),
@@ -134,7 +139,13 @@ public final class CommandRuntime: @unchecked Sendable {
         toolCallSink: @escaping @Sendable (String, Data) -> Void = { _, _ in },
         actionProgressSink: @escaping @Sendable (WorkflowActionProgress) -> Void = { _ in }
     ) {
-        self.parser = DirectCommandParser(references: references)
+        // A shared store injected (macOS shell) is read by the native capability
+        // maps too, so one reload updates parser + capabilities together; absent one
+        // (CLI, tests) the parser gets its own — still correct, just not externally
+        // reloadable.
+        let store = referenceStore ?? CommandReferenceStore(references)
+        self.referenceStore = store
+        self.parser = DirectCommandParser(referenceStore: store)
         self.registry = registry
         self.policy = policy
         self.policyOverridesBox = policyOverridesBox
@@ -157,6 +168,15 @@ public final class CommandRuntime: @unchecked Sendable {
     /// no-op when composed with a static policy (no box).
     public func updateConfirmAllActions(_ enabled: Bool) {
         policyOverridesBox?.current = enabled ? .confirmEveryAction : PolicyOverrides()
+    }
+
+    /// Live-reloads the reference catalog (NIC-146): after a mid-session mint (e.g. the
+    /// user adds a URL) the parser resolves the new `open <id>` immediately, and — when
+    /// composed with a shared store (the macOS shell) — the app/url capability target
+    /// maps see it too. Mirrors ``updateConfirmAllActions``: swap the shared box, no
+    /// relaunch.
+    public func updateReferences(_ references: CommandReferences) {
+        referenceStore.reload(references)
     }
 
     /// Parses and runs one line of input. An allowed command executes; a

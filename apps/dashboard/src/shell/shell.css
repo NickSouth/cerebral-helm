@@ -2073,6 +2073,74 @@
   color: var(--ch-text-primary);
 }
 
+/* Add a URL as a quick app (NIC-146): a compact form under the header, the URL
+   counterpart of pinning a discovered app. */
+.apps-picker__add-url {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-3) var(--ch-space-4);
+  border-bottom: 1px solid var(--ch-panel-border);
+}
+
+.apps-picker__add-url-title {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+.apps-picker__add-url-row {
+  display: flex;
+  gap: var(--ch-space-2);
+}
+
+.apps-picker__add-url-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+  background: var(--ch-surface-base);
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-1) var(--ch-space-2);
+}
+
+.apps-picker__add-url-field--name {
+  flex: 0 1 34%;
+}
+
+.apps-picker__add-url-field:focus {
+  outline: none;
+  border-color: var(--ch-text-muted);
+}
+
+.apps-picker__add-url-field:disabled {
+  opacity: 0.55;
+}
+
+.apps-picker__add-url-submit {
+  flex: 0 0 auto;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+  background: none;
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+  padding: 1px var(--ch-space-3);
+  cursor: pointer;
+}
+
+.apps-picker__add-url-submit:hover:not(:disabled) {
+  background: var(--ch-surface-base);
+}
+
+.apps-picker__add-url-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.apps-picker__add-url .apps-picker__note {
+  padding: 0;
+}
+
 .apps-picker__grid {
   list-style: none;
   margin: 0;

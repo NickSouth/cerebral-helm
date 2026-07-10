@@ -1,5 +1,6 @@
 import type { DashboardBootstrapState } from "./types";
 import type {
+  AddUrlReferenceResult,
   ApplyModeResult,
   BridgeEvent,
   BridgeEventListener,
@@ -9,6 +10,7 @@ import type {
   CommandReceipt,
   DecideConfirmationResult,
   ListAppsResult,
+  ListUrlsResult,
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
@@ -254,6 +256,12 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     updateQuickApps(input) {
       return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });
+    },
+    addUrlReference(input) {
+      return operation<AddUrlReferenceResult>("addUrlReference", { ...input });
+    },
+    listUrls() {
+      return operation<ListUrlsResult>("listUrls", {});
     },
     runSpeedTest() {
       return operation<SpeedTestResult>("runSpeedTest", {});

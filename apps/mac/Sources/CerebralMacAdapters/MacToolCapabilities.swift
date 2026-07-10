@@ -22,16 +22,24 @@ public enum MacToolCapabilities {
         public let secretStore: KeychainSecretCapability
     }
 
+    /// `referenceStore` is the shared, reloadable catalog (NIC-146): the app/url
+    /// capabilities read their target maps through it, so a mid-session mint (reloaded
+    /// via `CommandRuntime.updateReferences`) resolves without a relaunch — the same
+    /// store the runtime's parser reads.
     public static func make(
-        references: CommandReferences,
+        referenceStore: CommandReferenceStore,
         workspace: any WorkspaceOpening = SystemWorkspace()
     ) -> Composition {
         let systemStatus = MacSystemStatusCapability()
         let secretStore = KeychainSecretCapability()
         return Composition(
             capabilities: ToolCapabilities(
-                app: NSWorkspaceAppCapability(apps: references.apps.mapValues(\.target), workspace: workspace),
-                url: NSWorkspaceURLCapability(urls: references.urls.mapValues(\.target), workspace: workspace),
+                app: NSWorkspaceAppCapability(
+                    appsProvider: { referenceStore.current.apps.mapValues(\.target) }, workspace: workspace
+                ),
+                url: NSWorkspaceURLCapability(
+                    urlsProvider: { referenceStore.current.urls.mapValues(\.target) }, workspace: workspace
+                ),
                 process: ProcessHookCapability(),
                 systemStatus: systemStatus,
                 networkSpeedTest: MacNetworkSpeedTestCapability(),

@@ -550,6 +550,94 @@ func pinningWithoutWorkspaceIsUnavailable() async throws {
     #expect(response.error?.category == .unavailableCapability)
 }
 
+// MARK: - URL references (NIC-146)
+
+private struct UrlRefDTO: Decodable { let id: String; let label: String; let target: String }
+private struct AddUrlResult: Decodable { let accepted: Bool; let reference: UrlRefDTO?; let errors: [String] }
+private struct ListUrlsResult: Decodable { let urls: [UrlRefDTO] }
+
+@Test("addUrlReference mints an http URL and lists it back alongside shipped ones (NIC-146)")
+func addUrlReferenceMintsAndLists() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let added = try decode(await session.execute(operationRequest(
+        .addURLReference,
+        #"{"url":"https://news.ycombinator.com","label":"Hacker News"}"#
+    )), as: AddUrlResult.self)
+    #expect(added.accepted)
+    #expect(added.reference?.id == "hacker-news")
+    #expect(added.reference?.target == "https://news.ycombinator.com")
+
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(listed.urls.contains { $0.id == "hacker-news" })
+    #expect(listed.urls.contains { $0.id == "github" }) // shipped catalog is included
+}
+
+@Test("a minted URL reference pins as a quick app through the same validated path (NIC-146)")
+func mintedUrlPinsAsQuickApp() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let minted = try decode(await session.execute(operationRequest(
+        .addURLReference, #"{"url":"https://example.com","label":"Example"}"#
+    )), as: AddUrlResult.self)
+    let refId = try #require(minted.reference?.id)
+
+    // The URL id clears the same updateQuickApps existence check an app id does,
+    // and composes back through the read side mixed with an app reference.
+    let pin = try decode(await session.execute(operationRequest(
+        .updateQuickApps, #"{"modeId":"developer","quickApps":["\#(refId)","vscode"]}"#
+    )), as: QuickAppsResult.self)
+    #expect(pin.accepted)
+    let developer = session.composeBootstrapState().modes.first { $0.id == "developer" }
+    #expect(developer?.quickApps == [refId, "vscode"])
+}
+
+@Test("a minted URL is openable in the same session — the catalog reloads after the mint (NIC-146)")
+func mintedUrlIsImmediatelyOpenable() async throws {
+    let (session, _) = try makeWorkspaceSession()
+
+    // Before the mint the id is unknown to the parser, so `open` is rejected.
+    let before = try decode(await session.execute(operationRequest(
+        .submitCommand, #"{"rawInput":"open example-live"}"#
+    )), as: Receipt.self)
+    #expect(!before.accepted)
+
+    let minted = try decode(await session.execute(operationRequest(
+        .addURLReference, #"{"url":"https://example.live","label":"Example Live"}"#
+    )), as: AddUrlResult.self)
+    #expect(minted.reference?.id == "example-live")
+
+    // After the mint the parser resolves `open <id>` this same session (reference
+    // reload) — the command is accepted onto the bus, no relaunch required.
+    let after = try decode(await session.execute(operationRequest(
+        .submitCommand, #"{"rawInput":"open example-live"}"#
+    )), as: Receipt.self)
+    #expect(after.accepted)
+}
+
+@Test("addUrlReference refuses a non-web scheme without minting (NIC-146)")
+func addUrlReferenceRefusesNonWebScheme() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let result = try decode(await session.execute(operationRequest(
+        .addURLReference, #"{"url":"file:///etc/passwd"}"#
+    )), as: AddUrlResult.self)
+    #expect(!result.accepted)
+    #expect(result.reference == nil)
+    #expect(!result.errors.isEmpty)
+
+    // It never entered the catalog — listUrls only ever returns web targets.
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(listed.urls.allSatisfy { $0.target.hasPrefix("http") })
+}
+
+@Test("addUrlReference without a workspace is unavailable, never a silent mint (NIC-146)")
+func addUrlReferenceWithoutWorkspaceUnavailable() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(
+        .addURLReference, #"{"url":"https://example.com"}"#
+    ))
+    #expect(response.status == .error)
+    #expect(response.error?.category == .unavailableCapability)
+}
+
 // MARK: - updateSettings
 
 private struct Accepted: Decodable { let accepted: Bool }

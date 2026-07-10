@@ -2140,6 +2140,7 @@ public extension CerebralHelmBridgeOperationRequest {
 }
 
 public enum Operation: String, Codable {
+    case addURLReference = "addUrlReference"
     case applyMode = "applyMode"
     case captureNote = "captureNote"
     case decideConfirmation = "decideConfirmation"
@@ -2147,6 +2148,7 @@ public enum Operation: String, Codable {
     case getRecentActivity = "getRecentActivity"
     case getSettings = "getSettings"
     case listApps = "listApps"
+    case listUrls = "listUrls"
     case runSpeedTest = "runSpeedTest"
     case searchNotes = "searchNotes"
     case submitCommand = "submitCommand"

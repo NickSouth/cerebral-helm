@@ -32,7 +32,8 @@ public func makeCommandRuntime(
     phase: ExecutionPhase = .preMac,
     capabilities: ToolCapabilities = .mocks(),
     onEvent: (@Sendable (CommandLifecycleEvent) -> Void)? = nil,
-    onActionProgress: (@Sendable (WorkflowActionProgress) -> Void)? = nil
+    onActionProgress: (@Sendable (WorkflowActionProgress) -> Void)? = nil,
+    referenceStore: CommandReferenceStore? = nil
 ) throws -> CommandRuntime {
     let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory, stateRoot: paths.stateRoot)
     let hookCatalog = makeHookCatalog(references: references, repositoryRoot: paths.repositoryRoot)
@@ -104,6 +105,7 @@ public func makeCommandRuntime(
         coordinator: ConfirmationCoordinator(store: SQLiteConfirmationStore(database: database)),
         factory: CommandFactory(clock: SystemClock(), identifiers: UUIDIdentifierGenerator()),
         references: references,
+        referenceStore: referenceStore,
         hookCatalog: hookCatalog,
         modePlanner: modePlanner,
         commandSink: { persistCommand($0, into: commands) },

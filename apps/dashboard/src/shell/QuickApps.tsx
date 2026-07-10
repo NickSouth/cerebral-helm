@@ -3,7 +3,7 @@ import { Panel } from "./Panel";
 import { AppGlyph } from "./AppGlyph";
 import { MoreAppsPicker } from "./MoreAppsPicker";
 import { toModeId } from "../tokens/tokens";
-import type { DiscoveredApp } from "../bridge/cerebralBridge";
+import type { DiscoveredApp, UrlReference } from "../bridge/cerebralBridge";
 import { useActiveMode } from "./useActiveMode";
 import { appDefinition } from "../appCatalog/appCatalog";
 import { useBridge } from "../state/BridgeProvider";
@@ -123,6 +123,34 @@ export function QuickApps() {
     };
   }, [canDiscover, bridge]);
 
+  // Pinned URL references (NIC-146) resolve their label + a globe glyph from the
+  // URL catalog — the counterpart of the app-discovery join above, since a URL has
+  // no app-catalog entry. Re-fetched when the pinned set changes so a just-added
+  // URL renders with its real label rather than its slug id.
+  const [urls, setUrls] = useState<ReadonlyMap<string, UrlReference>>(new Map());
+  const pinnedKey = quickApps.join(",");
+  useEffect(() => {
+    if (quickApps.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    void bridge
+      .listUrls()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setUrls(new Map(result.urls.map((url) => [url.id, url])));
+      })
+      .catch(() => {
+        // Degrade: a URL tile falls back to its id label, never breaks the row.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridge, pinnedKey]);
+
   // Left-click unpin path (owner decision): every pinned tile carries its own
   // unpin control — no trip through the picker. The write rides the same
   // validated override path; the mode.quickapps.changed event removes the tile.
@@ -154,9 +182,10 @@ export function QuickApps() {
     <Panel label="Quick Apps" labelId="region-quick-apps">
       <ul className="quick-apps">
         {apps.map((id) => {
+          const urlRef = urls.get(id);
           const app = appDefinition(id);
           const discoveredApp = discovered.get(id);
-          const label = app?.label ?? discoveredApp?.name ?? id;
+          const label = urlRef?.label ?? app?.label ?? discoveredApp?.name ?? id;
           return (
             <li key={id} className="quick-app-slot">
               {!readOnly ? (
@@ -179,7 +208,10 @@ export function QuickApps() {
                 onClick={canLaunch ? () => launch(id, label) : undefined}
               >
                 <span className="quick-app__icon">
-                  {discoveredApp?.iconPng ? (
+                  {urlRef ? (
+                    // A pinned URL: a globe glyph, never an app icon (NIC-146).
+                    <AppGlyph category="browser" />
+                  ) : discoveredApp?.iconPng ? (
                     <img
                       className="quick-app__real-icon"
                       src={`data:image/png;base64,${discoveredApp.iconPng}`}

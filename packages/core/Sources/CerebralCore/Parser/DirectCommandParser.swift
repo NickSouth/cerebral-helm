@@ -15,7 +15,12 @@ import Foundation
 /// executing; a token matching more than one catalog returns a reviewable
 /// ambiguity error. The parser never invokes a model or guesses an intent.
 public struct DirectCommandParser: Sendable {
-    public let references: CommandReferences
+    private let referenceStore: CommandReferenceStore
+
+    /// The live reference catalog. Reads the current snapshot on each access, so a
+    /// reference minted mid-session (NIC-146) resolves through `open <id>` without a
+    /// relaunch.
+    public var references: CommandReferences { referenceStore.current }
 
     /// Human-readable patterns offered when input is empty or the verb is unknown.
     public static let supportedPatterns = [
@@ -30,7 +35,13 @@ public struct DirectCommandParser: Sendable {
     ]
 
     public init(references: CommandReferences) {
-        self.references = references
+        self.referenceStore = CommandReferenceStore(references)
+    }
+
+    /// Composes the parser over a shared, reloadable catalog store (NIC-146) so a
+    /// mid-session mint reaches `open <id>` resolution live.
+    public init(referenceStore: CommandReferenceStore) {
+        self.referenceStore = referenceStore
     }
 
     public func parse(_ rawInput: String) -> ParseResult {

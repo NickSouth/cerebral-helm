@@ -34,7 +34,9 @@ const bridgeOperations = new Set([
   "listApps",
   "updateQuickApps",
   "runSpeedTest",
-  "getSettings"
+  "getSettings",
+  "addUrlReference",
+  "listUrls"
 ]);
 
 function readJson(filePath) {

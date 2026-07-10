@@ -129,6 +129,10 @@ public final class BridgeSession: @unchecked Sendable {
             return await listApps(request)
         case .updateQuickApps:
             return updateQuickApps(request)
+        case .addURLReference:
+            return addUrlReference(request)
+        case .listUrls:
+            return listUrls(request)
         case .runSpeedTest:
             return await runSpeedTest(request)
         case .getSettings:
@@ -343,13 +347,17 @@ public final class BridgeSession: @unchecked Sendable {
                 message: "Pinning requires a durable workspace."
             )
         }
-        let known = Set(appReferencesByTarget().values)
+        // A quick-app slot may hold any configured app or URL reference id (NIC-146):
+        // a pinned URL is just another quick-app tile, so both catalogs are valid
+        // pin targets. Arbitrary paths/URLs still can't enter — only ids that name a
+        // reference the catalog already resolves.
+        let known = configuredReferenceIDs()
         let unknown = input.quickApps.filter { !known.contains($0) }
         guard unknown.isEmpty else {
             return ok(request, payload: UpdateQuickAppsResult(
                 accepted: false,
                 quickApps: input.quickApps,
-                errors: unknown.map { "\"\($0)\" is not a configured app reference." }
+                errors: unknown.map { "\"\($0)\" is not a configured app or URL reference." }
             ))
         }
 
@@ -386,6 +394,85 @@ public final class BridgeSession: @unchecked Sendable {
             references.apps.values.map { ($0.target, $0.id) },
             uniquingKeysWith: { first, _ in first }
         )
+    }
+
+    /// Every configured reference id the parser resolves — app and URL, shipped and
+    /// user-minted. This is the pinnable-id set (`updateQuickApps`, NIC-146) and the
+    /// uniqueness domain a newly minted URL id must avoid, so a pinned URL's
+    /// `open <id>` can never resolve ambiguously against an app of the same id.
+    private func configuredReferenceIDs() -> Set<String> {
+        guard let references = try? ReferenceCatalogLoader.load(configDirectory: configDirectory, stateRoot: workspace?.stateRoot) else {
+            return []
+        }
+        return Set(references.apps.keys).union(references.urls.keys)
+    }
+
+    /// Mints a user URL reference through the same auto-minting mechanism as user
+    /// app references (NIC-146): a user-entered URL becomes a configured reference,
+    /// so it can then be pinned as a quick app through the validated write path. Only
+    /// `http`/`https` URLs mint — never an arbitrary scheme. Requires a durable
+    /// workspace (the state root the user catalog lives under).
+    private func addUrlReference(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) -> CerebralHelmBridgeOperationResponse {
+        guard let input: AddUrlReferenceInput = decodePayload(request) else {
+            return invalidInput(request, "addUrlReference requires a url.")
+        }
+        guard let workspace else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "url_references_unavailable",
+                message: "Adding a URL requires a durable workspace."
+            )
+        }
+        switch UserURLReferences.add(
+            url: input.url, label: input.label,
+            existingIDs: configuredReferenceIDs(), stateRoot: workspace.stateRoot
+        ) {
+        case let .success(entry):
+            // Live-reload the shared catalog so the minted id resolves this session:
+            // the runtime's parser (`open <id>`) and — on the macOS shell — the
+            // url.open capability map both read the same store (NIC-146). Without this
+            // the URL would open only after a relaunch.
+            if let fresh = try? ReferenceCatalogLoader.load(
+                configDirectory: configDirectory, stateRoot: workspace.stateRoot
+            ) {
+                runtime.updateReferences(fresh)
+            }
+            return ok(request, payload: AddUrlReferenceResult(
+                accepted: true,
+                reference: UrlReferenceDTO(id: entry.id, label: entry.label, target: entry.target),
+                errors: []
+            ))
+        case let .failure(error):
+            return ok(request, payload: AddUrlReferenceResult(
+                accepted: false, reference: nil, errors: [Self.message(for: error)]
+            ))
+        }
+    }
+
+    private static func message(for error: UserURLReferences.AddError) -> String {
+        switch error {
+        case .emptyURL: return "Enter a URL to add."
+        case .invalidURL: return "That doesn't look like a valid web address."
+        case .unsupportedScheme: return "Only http and https web addresses can be added."
+        }
+    }
+
+    /// The configured URL references (shipped + user-minted), sorted by label — the
+    /// dashboard's read feed for rendering pinned URL tiles with their real labels
+    /// (NIC-146). Apps have `listApps` discovery for this; URLs have no discovery,
+    /// so this is their equivalent. Workspace-less hosts still see the shipped set.
+    private func listUrls(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) -> CerebralHelmBridgeOperationResponse {
+        let urls = (try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace?.stateRoot
+        )).map { Array($0.urls.values) } ?? []
+        let sorted = urls
+            .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+            .map { UrlReferenceDTO(id: $0.id, label: $0.label, target: $0.target) }
+        return ok(request, payload: ListUrlsResult(urls: sorted))
     }
 
     /// The recent-activity read surface. A fresh session has no activity; the durable
@@ -621,6 +708,25 @@ public final class BridgeSession: @unchecked Sendable {
         let accepted: Bool
         let quickApps: [String]
         let errors: [String]
+    }
+    private struct AddUrlReferenceInput: Decodable {
+        let url: String
+        let label: String?
+    }
+    /// A configured URL reference, as delivered to the dashboard (NIC-146).
+    private struct UrlReferenceDTO: Encodable {
+        let id: String
+        let label: String
+        let target: String
+    }
+    private struct AddUrlReferenceResult: Encodable {
+        let accepted: Bool
+        /// The minted (or already-existing) reference when accepted; nil on rejection.
+        let reference: UrlReferenceDTO?
+        let errors: [String]
+    }
+    private struct ListUrlsResult: Encodable {
+        let urls: [UrlReferenceDTO]
     }
     /// Mirrors the bridge `getRecentActivity` payload wrapper `{ recentActivity: … }`.
     private struct RecentActivityEnvelope: Encodable {

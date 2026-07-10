@@ -124,6 +124,40 @@ describe("MockCerebralBridge", () => {
     expect(activity.errors.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("mints a URL reference through addUrlReference and lists + pins it (NIC-146)", async () => {
+    const bridge = createMockCerebralBridge();
+    const added = await bridge.addUrlReference({
+      url: "https://news.ycombinator.com",
+      label: "Hacker News"
+    });
+    expect(added.accepted).toBe(true);
+    expect(added.reference?.id).toBe("hacker-news");
+    expect(added.reference?.target).toBe("https://news.ycombinator.com");
+
+    const listed = await bridge.listUrls();
+    const ids = listed.urls.map((url) => url.id);
+    expect(ids).toContain("hacker-news"); // minted
+    expect(ids).toContain("github"); // shipped catalog is included
+
+    // The minted id pins through the same slot validation an app id clears.
+    const pin = await bridge.updateQuickApps({ modeId: "developer", quickApps: ["hacker-news"] });
+    expect(pin.accepted).toBe(true);
+  });
+
+  it("addUrlReference refuses a non-web scheme without minting (NIC-146)", async () => {
+    const bridge = createMockCerebralBridge();
+    const result = await bridge.addUrlReference({ url: "file:///etc/passwd" });
+    expect(result.accepted).toBe(false);
+    expect(result.reference).toBeNull();
+    expect(result.errors[0]).toMatch(/http and https/);
+
+    // A scheme-less host still mints (defaults to https); the catalog stays web-only.
+    expect((await bridge.addUrlReference({ url: "example.com" })).reference?.target).toBe(
+      "https://example.com"
+    );
+    expect((await bridge.listUrls()).urls.every((url) => url.target.startsWith("http"))).toBe(true);
+  });
+
   it("getSettings returns a resolved snapshot with representative non-default values (NIC-141)", async () => {
     const bridge = createMockCerebralBridge();
     const settings = await bridge.getSettings();

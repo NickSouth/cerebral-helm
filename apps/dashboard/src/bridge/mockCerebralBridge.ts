@@ -5,7 +5,8 @@ import type {
   CerebralBridge,
   RecentActivity,
   SettingsSnapshot,
-  Unsubscribe
+  Unsubscribe,
+  UrlReference
 } from "./cerebralBridge";
 import {
   getDashboardConfigBundle,
@@ -99,6 +100,55 @@ function mergeSettingsChanges(
   };
 }
 
+/** Slug a label to a config id (mirrors the Swift `UserAppReferences.slug` grammar closely
+ *  enough for browser previews/tests): lowercase, non-alphanumerics collapse to dashes, and
+ *  a leading digit/empty gets a letter stem. */
+function slugId(label: string): string {
+  const slug = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return /^[a-z][a-z0-9-]*$/.test(slug) ? slug : `link-${slug}`.replace(/-+$/g, "") || "link";
+}
+
+/** The mock's stand-in for the bridge's `addUrlReference` minting (NIC-146): http/https only,
+ *  scheme-less host defaults to https, idempotent by target, id unique across `taken`. */
+function mintUrlReference(
+  rawUrl: string,
+  label: string | undefined,
+  existing: readonly UrlReference[]
+): { reference: UrlReference | null; error?: string } {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return { reference: null, error: "Enter a URL to add." };
+  }
+  const candidate = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return { reference: null, error: "That doesn't look like a valid web address." };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { reference: null, error: "Only http and https web addresses can be added." };
+  }
+  const existingByTarget = existing.find((url) => url.target === candidate);
+  if (existingByTarget) {
+    return { reference: existingByTarget };
+  }
+  const labelText = label?.trim() || parsed.hostname;
+  const taken = new Set(existing.map((url) => url.id));
+  let id = slugId(labelText);
+  if (taken.has(id)) {
+    let counter = 2;
+    while (taken.has(`${id}-${counter}`)) {
+      counter += 1;
+    }
+    id = `${id}-${counter}`;
+  }
+  return { reference: { id, label: labelText, target: candidate } };
+}
+
 export function createMockCerebralBridge(
   options: { bootstrapKey?: string } = {}
 ): MockCerebralBridge {
@@ -116,6 +166,13 @@ export function createMockCerebralBridge(
     modeColors: {}
   };
   let settingsEventSeq = 0;
+  // The configured URL references (NIC-146), held mutably so addUrlReference visibly
+  // mints and listUrls reflects it — the browser stand-in for the user URL catalog.
+  // Seeded with the shipped config/references/urls.json entries.
+  let urlReferences: UrlReference[] = [
+    { id: "github", label: "GitHub", target: "https://github.com" },
+    { id: "docs", label: "Project Docs", target: "https://docs.cerebralhelm.local" }
+  ];
 
   function emit(event: BridgeEvent): void {
     // Snapshot so a listener that unsubscribes mid-dispatch can't mutate the live set.
@@ -268,14 +325,21 @@ export function createMockCerebralBridge(
     },
     updateQuickApps(input) {
       // Stand in for the validated override path (NIC-119c): the same
-      // reference-existence check the bridge applies, accepted otherwise.
-      const known = new Set(["terminal", "vscode", "claude-desktop", "xcode"]);
+      // reference-existence check the bridge applies, accepted otherwise. A pinned
+      // slot may name an app OR a URL reference (NIC-146) — both catalogs are valid.
+      const known = new Set([
+        "terminal",
+        "vscode",
+        "claude-desktop",
+        "xcode",
+        ...urlReferences.map((url) => url.id)
+      ]);
       const unknown = input.quickApps.filter((id) => !known.has(id));
       if (unknown.length > 0) {
         return Promise.resolve({
           accepted: false,
           quickApps: input.quickApps,
-          errors: unknown.map((id) => `"${id}" is not a configured app reference.`)
+          errors: unknown.map((id) => `"${id}" is not a configured app or URL reference.`)
         });
       }
       // An accepted write emits mode.quickapps.changed, mirroring the native
@@ -288,6 +352,24 @@ export function createMockCerebralBridge(
         payload: { modeId: input.modeId, quickApps: [...input.quickApps] }
       });
       return Promise.resolve({ accepted: true, quickApps: input.quickApps, errors: [] });
+    },
+    addUrlReference(input) {
+      // Mirror the bridge's minting (NIC-146): http/https only, idempotent by target.
+      // An accepted add persists into the mutable catalog so listUrls reflects it and
+      // the freshly minted id can pin through updateQuickApps this same session.
+      const { reference, error } = mintUrlReference(input.url, input.label, urlReferences);
+      if (!reference) {
+        return Promise.resolve({ accepted: false, reference: null, errors: [error ?? "The URL could not be added."] });
+      }
+      if (!urlReferences.some((url) => url.id === reference.id)) {
+        urlReferences = [...urlReferences, reference];
+      }
+      return Promise.resolve({ accepted: true, reference, errors: [] });
+    },
+    listUrls() {
+      // The configured URL references, sorted by label like the bridge (NIC-146).
+      const sorted = [...urlReferences].sort((a, b) => a.label.localeCompare(b.label));
+      return Promise.resolve({ urls: sorted });
     },
     runSpeedTest() {
       // A representative measurement for browser previews (NIC-135). The short

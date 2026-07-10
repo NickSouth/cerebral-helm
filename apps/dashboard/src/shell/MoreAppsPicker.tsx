@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useBridge } from "../state/BridgeProvider";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useActiveMode } from "./useActiveMode";
@@ -42,6 +42,9 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const [urlInput, setUrlInput] = useState("");
+  const [urlLabel, setUrlLabel] = useState("");
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   const appOpen = state.capabilities?.["native.app.open"];
   const openAvailable = appOpen?.available === true && !readOnly;
@@ -141,6 +144,36 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
 
   const slotsFull = quickApps.length >= MAX_QUICK_APPS;
 
+  // Add a URL the same route as pinning an app (NIC-146): mint the URL reference
+  // through the validated auto-minting path, then pin the returned id into the
+  // active mode. A pinned URL is just another quick-app tile (shared slots).
+  function addUrl(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const url = urlInput.trim();
+    if (url.length === 0 || busy || readOnly || slotsFull) {
+      return;
+    }
+    setBusy(true);
+    setUrlError(null);
+    setWriteError(null);
+    bridge
+      .addUrlReference({ url, label: urlLabel.trim() || undefined })
+      .then((result) => {
+        if (!result.accepted || !result.reference) {
+          setUrlError(result.errors[0] ?? "The URL could not be added.");
+          return;
+        }
+        setUrlInput("");
+        setUrlLabel("");
+        // Re-adding an already-pinned URL is a no-op pin (idempotent) — nothing to write.
+        if (!quickApps.includes(result.reference.id)) {
+          submitQuickApps([...quickApps, result.reference.id]);
+        }
+      })
+      .catch(() => setUrlError("The URL could not be added."))
+      .finally(() => setBusy(false));
+  }
+
   function pinControl(app: DiscoveredApp) {
     if (!app.referenceId) {
       return null;
@@ -198,6 +231,49 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
             ×
           </button>
         </header>
+        {/* Add a URL as a quick app (NIC-146): the URL counterpart of pinning an app —
+            it mints a reference and pins it to the active mode in one step. */}
+        <form className="apps-picker__add-url" onSubmit={addUrl}>
+          <label className="apps-picker__add-url-title" htmlFor="apps-picker-url">
+            Add a URL
+          </label>
+          <div className="apps-picker__add-url-row">
+            <input
+              id="apps-picker-url"
+              type="text"
+              inputMode="url"
+              className="apps-picker__add-url-field"
+              placeholder="https://example.com"
+              aria-label="URL"
+              value={urlInput}
+              onChange={(event) => setUrlInput(event.target.value)}
+              disabled={busy || readOnly}
+            />
+            <input
+              type="text"
+              className="apps-picker__add-url-field apps-picker__add-url-field--name"
+              placeholder="Name (optional)"
+              aria-label="URL name (optional)"
+              value={urlLabel}
+              onChange={(event) => setUrlLabel(event.target.value)}
+              disabled={busy || readOnly}
+            />
+            <button
+              type="submit"
+              className="apps-picker__add-url-submit"
+              disabled={busy || readOnly || slotsFull || urlInput.trim().length === 0}
+              title={slotsFull ? "All five quick-app slots are full — unpin one first." : undefined}
+            >
+              Add
+            </button>
+          </div>
+          {urlError ? <p className="apps-picker__note">{urlError}</p> : null}
+          {slotsFull ? (
+            <p className="apps-picker__note">
+              All five quick-app slots are full — unpin one to add a URL.
+            </p>
+          ) : null}
+        </form>
         {picker.status === "loading" ? (
           <p className="apps-picker__note">Discovering installed applications…</p>
         ) : null}

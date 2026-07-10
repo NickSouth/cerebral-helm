@@ -7,17 +7,28 @@ import CerebralTools
 /// workspace — the tool contract has no path or bundle-id input, so no arbitrary
 /// executable path is accepted by construction.
 public struct NSWorkspaceAppCapability: AppCapability {
-    /// Configured reference id → bundle identifier (`config/references/apps.json`).
-    private let apps: [String: String]
+    /// Configured reference id → bundle identifier (`config/references/apps.json`),
+    /// resolved on each call so a mid-session mint is picked up live (NIC-146).
+    private let appsProvider: @Sendable () -> [String: String]
     private let workspace: any WorkspaceOpening
 
+    /// Static map (tests, and any host with a fixed catalog).
     public init(apps: [String: String], workspace: any WorkspaceOpening = SystemWorkspace()) {
-        self.apps = apps
+        self.init(appsProvider: { apps }, workspace: workspace)
+    }
+
+    /// Live map backed by the shared reference store (NIC-146), so `open <id>` resolves
+    /// a reference minted after startup without a relaunch.
+    public init(
+        appsProvider: @escaping @Sendable () -> [String: String],
+        workspace: any WorkspaceOpening = SystemWorkspace()
+    ) {
+        self.appsProvider = appsProvider
         self.workspace = workspace
     }
 
     public func open(appID: String) async throws -> AppOpenResult {
-        guard let bundleID = apps[appID] else {
+        guard let bundleID = appsProvider()[appID] else {
             throw NativeCapabilityError.notFound(
                 "App reference '\(appID)' is not configured. Add it under Settings → Tools before opening it."
             )
@@ -44,17 +55,29 @@ public struct NSWorkspaceAppCapability: AppCapability {
 /// Opens configured URL references with the system default handler (NIC-79).
 /// Only configured ids resolve; the tool contract carries no raw URL input.
 public struct NSWorkspaceURLCapability: URLCapability {
-    /// Configured reference id → absolute URL string (`config/references/urls.json`).
-    private let urls: [String: String]
+    /// Configured reference id → absolute URL string (`config/references/urls.json` +
+    /// user-minted URLs), resolved on each call so a URL added mid-session opens live
+    /// without a relaunch (NIC-146).
+    private let urlsProvider: @Sendable () -> [String: String]
     private let workspace: any WorkspaceOpening
 
+    /// Static map (tests, and any host with a fixed catalog).
     public init(urls: [String: String], workspace: any WorkspaceOpening = SystemWorkspace()) {
-        self.urls = urls
+        self.init(urlsProvider: { urls }, workspace: workspace)
+    }
+
+    /// Live map backed by the shared reference store (NIC-146): a URL minted through
+    /// `addUrlReference` resolves the same session.
+    public init(
+        urlsProvider: @escaping @Sendable () -> [String: String],
+        workspace: any WorkspaceOpening = SystemWorkspace()
+    ) {
+        self.urlsProvider = urlsProvider
         self.workspace = workspace
     }
 
     public func open(urlID: String) async throws -> URLOpenResult {
-        guard let target = urls[urlID] else {
+        guard let target = urlsProvider()[urlID] else {
             throw NativeCapabilityError.notFound(
                 "URL reference '\(urlID)' is not configured. Add it under Settings → Tools before opening it."
             )

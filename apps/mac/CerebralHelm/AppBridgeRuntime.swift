@@ -69,7 +69,11 @@ final class AppBridgeRuntime: @unchecked Sendable {
             Self.log.error("Reference catalog failed to load; the shell has no live runtime.")
             return nil
         }
-        let composition = MacToolCapabilities.make(references: references)
+        // One shared, reloadable catalog store (NIC-146): both the capability target
+        // maps below and the runtime's parser read through it, so `addUrlReference`'s
+        // reload makes a URL added mid-session openable this launch — no relaunch.
+        let referenceStore = CommandReferenceStore(references)
+        let composition = MacToolCapabilities.make(referenceStore: referenceStore)
         let capabilities = composition.capabilities
         toolCapabilities = capabilities
         // Descriptors are authoritative for permission metadata (ADR-003, NIC-83):
@@ -91,7 +95,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
             guard let payload = try? BridgeMessageCoding.encoder().encode(bridgeEvent),
                   let json = String(data: payload, encoding: .utf8) else { return }
             relay.emit(json)
-        }) else {
+        }, referenceStore: referenceStore) else {
             Self.log.error("Bridge runtime composition failed; the shell has no live runtime.")
             return nil
         }

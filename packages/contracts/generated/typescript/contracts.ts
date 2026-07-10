@@ -431,6 +431,7 @@ export interface CerebralHelmBridgeOperationRequest {
 }
 
 export enum Operation {
+    AddURLReference = "addUrlReference",
     ApplyMode = "applyMode",
     CaptureNote = "captureNote",
     DecideConfirmation = "decideConfirmation",
@@ -438,6 +439,7 @@ export enum Operation {
     GetRecentActivity = "getRecentActivity",
     GetSettings = "getSettings",
     ListApps = "listApps",
+    ListUrls = "listUrls",
     RunSpeedTest = "runSpeedTest",
     SearchNotes = "searchNotes",
     SubmitCommand = "submitCommand",

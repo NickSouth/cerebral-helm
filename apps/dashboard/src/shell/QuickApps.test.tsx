@@ -229,6 +229,53 @@ describe("QuickApps", () => {
     expect(updates[0].quickApps).toContain("terminal");
   });
 
+  it("adds a URL from the picker; it pins as a globe tile that opens by id (NIC-146)", async () => {
+    const { submissions } = renderQuickApps((base) => ({
+      ...base,
+      capabilities: {
+        "native.apps.list": { available: true },
+        "native.app.open": { available: true }
+      }
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
+    await screen.findByRole("dialog", { name: "All applications" });
+
+    fireEvent.change(screen.getByLabelText("URL"), {
+      target: { value: "https://news.ycombinator.com" }
+    });
+    fireEvent.change(screen.getByLabelText("URL name (optional)"), {
+      target: { value: "Hacker News" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    // The URL pins into the active mode and renders as a launchable tile carrying
+    // its real label (resolved from listUrls, not its slug id).
+    const tile = await screen.findByRole("button", { name: "Hacker News" });
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(4));
+
+    // The tile launches through the same deterministic `open <id>` path as an app.
+    fireEvent.click(tile);
+    expect(submissions).toContain("open hacker-news");
+  });
+
+  it("rejects a non-web URL in the picker, pinning nothing (NIC-146)", async () => {
+    renderQuickApps((base) => ({
+      ...base,
+      capabilities: { "native.apps.list": { available: true } }
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
+    await screen.findByRole("dialog", { name: "All applications" });
+
+    fireEvent.change(screen.getByLabelText("URL"), { target: { value: "file:///etc/passwd" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(await screen.findByText(/Only http and https/)).toBeInTheDocument();
+    // Nothing was pinned — all five slots remain empty.
+    expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(5);
+  });
+
   it("empty Pin app slots open the picker when discovery is available", async () => {
     renderQuickApps((base) => ({
       ...base,
