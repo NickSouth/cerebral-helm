@@ -123,10 +123,12 @@ export function QuickApps() {
     };
   }, [canDiscover, bridge]);
 
-  // Pinned URL references (NIC-146) resolve their label + a globe glyph from the
-  // URL catalog — the counterpart of the app-discovery join above, since a URL has
-  // no app-catalog entry. Re-fetched when the pinned set changes so a just-added
-  // URL renders with its real label rather than its slug id.
+  // Pinned URL references (NIC-146) resolve their label + favicon from the URL
+  // catalog — the counterpart of the app-discovery join above, since a URL has no
+  // app-catalog entry. Re-fetched when the pinned set changes so a just-added URL
+  // renders with its real label rather than its slug id, and again whenever a
+  // `mode.quickapps.changed` event fires — a landed favicon re-emits that event
+  // with unchanged pins (NIC-147), so the tile upgrades globe → real icon live.
   const [urls, setUrls] = useState<ReadonlyMap<string, UrlReference>>(new Map());
   const pinnedKey = quickApps.join(",");
   useEffect(() => {
@@ -134,19 +136,28 @@ export function QuickApps() {
       return;
     }
     let cancelled = false;
-    void bridge
-      .listUrls()
-      .then((result) => {
-        if (cancelled) {
-          return;
-        }
-        setUrls(new Map(result.urls.map((url) => [url.id, url])));
-      })
-      .catch(() => {
-        // Degrade: a URL tile falls back to its id label, never breaks the row.
-      });
+    const refresh = () => {
+      void bridge
+        .listUrls()
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+          setUrls(new Map(result.urls.map((url) => [url.id, url])));
+        })
+        .catch(() => {
+          // Degrade: a URL tile falls back to its id label, never breaks the row.
+        });
+    };
+    refresh();
+    const unsubscribe = bridge.subscribe((event) => {
+      if (event.type === "mode.quickapps.changed") {
+        refresh();
+      }
+    });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridge, pinnedKey]);
@@ -209,8 +220,17 @@ export function QuickApps() {
               >
                 <span className="quick-app__icon">
                   {urlRef ? (
-                    // A pinned URL: a globe glyph, never an app icon (NIC-146).
-                    <AppGlyph category="browser" />
+                    urlRef.iconPng ? (
+                      // A pinned URL with a fetched favicon (NIC-147).
+                      <img
+                        className="quick-app__real-icon"
+                        src={`data:image/png;base64,${urlRef.iconPng}`}
+                        alt=""
+                      />
+                    ) : (
+                      // No favicon yet: the globe placeholder (NIC-146/147).
+                      <AppGlyph category="browser" />
+                    )
                   ) : discoveredApp?.iconPng ? (
                     <img
                       className="quick-app__real-icon"

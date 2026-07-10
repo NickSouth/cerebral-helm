@@ -5,6 +5,7 @@ import CerebralContracts
 import CerebralCore
 import CerebralRuntimeHost
 import CerebralStorage
+import CerebralTools
 
 /// NIC-74b: `BridgeSession` maps bridge operation requests onto the live
 /// `CommandRuntime`. These are integration tests — they build a real runtime over
@@ -552,7 +553,7 @@ func pinningWithoutWorkspaceIsUnavailable() async throws {
 
 // MARK: - URL references (NIC-146)
 
-private struct UrlRefDTO: Decodable { let id: String; let label: String; let target: String }
+private struct UrlRefDTO: Decodable { let id: String; let label: String; let target: String; let iconPng: String? }
 private struct AddUrlResult: Decodable { let accepted: Bool; let reference: UrlRefDTO?; let errors: [String] }
 private struct ListUrlsResult: Decodable { let urls: [UrlRefDTO] }
 
@@ -1070,4 +1071,113 @@ func unwiredOperationIsUnavailable() async throws {
     #expect(response.status == .error)
     #expect(response.error?.category == .unavailableCapability)
     #expect(response.error?.code == "bridge_operation_unimplemented")
+}
+
+// MARK: - listUrls / addUrlReference favicons (NIC-147)
+
+/// Polls until `condition` holds or the timeout elapses — the favicon fetch runs in
+/// a detached background task, so tests wait on the cache/emit rather than a return.
+private func waitUntil(timeoutMs: Int = 3000, _ condition: @Sendable () -> Bool) async {
+    let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000)
+    while Date() < deadline {
+        if condition() { return }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+    }
+}
+
+private func quickAppsChangedCount(_ emitted: EmittedEvents) -> Int {
+    emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.quickapps.changed" }.count
+}
+
+@Test("listUrls returns a cached favicon as base64 iconPng; uncached urls omit it")
+func listUrlsReturnsCachedFavicon() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // Warm the cache for the shipped github URL; leave docs cold. No capability, so
+    // no background fetch runs — this isolates the read path.
+    let seed = Data([0x89, 0x50, 0x4E, 0x47, 0x01, 0x02])
+    FaviconCache(directory: paths.faviconCacheDirectory).store(png: seed, forTarget: "https://github.com")
+
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths
+    )
+    let response = await session.execute(operationRequest(.listUrls, "{}"))
+    let urls = try decode(response, as: ListUrlsResult.self).urls
+
+    let github = try #require(urls.first { $0.id == "github" })
+    #expect(github.iconPng == seed.base64EncodedString())
+    let docs = try #require(urls.first { $0.id == "docs" })
+    #expect(docs.iconPng == nil)
+}
+
+@Test("listUrls warms cold favicons in the background, caches them, and emits a refresh")
+func listUrlsWarmsFaviconsAndEmits() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let iconBytes = Data([0x89, 0x50, 0x4E, 0x47, 0xAA, 0xBB, 0xCC])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths,
+        faviconCapability: MockFaviconCapability(icon: iconBytes),
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // First read: cache is cold, so every url omits its icon and a warm pass starts.
+    let first = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(first.urls.allSatisfy { $0.iconPng == nil })
+
+    // The background fetch lands: the cache warms and a refresh event fires.
+    let cache = FaviconCache(directory: paths.faviconCacheDirectory)
+    await waitUntil { cache.icon(forTarget: "https://github.com") != nil }
+    #expect(cache.icon(forTarget: "https://github.com") == iconBytes)
+    await waitUntil { quickAppsChangedCount(emitted) >= 1 }
+    #expect(quickAppsChangedCount(emitted) >= 1)
+
+    // A subsequent read now carries the cached icon.
+    let second = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(second.urls.first { $0.id == "github" }?.iconPng == iconBytes.base64EncodedString())
+}
+
+@Test("a failed favicon fetch records a miss and emits no refresh")
+func failedFaviconRecordsMissNoEmit() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths,
+        faviconCapability: MockFaviconCapability(icon: nil), // every fetch fails
+        emitEventJSON: { emitted.emit($0) }
+    )
+    _ = await session.execute(operationRequest(.listUrls, "{}"))
+
+    let cache = FaviconCache(directory: paths.faviconCacheDirectory)
+    // The miss is recorded (needsFetch becomes false), and no refresh event fires.
+    await waitUntil { !cache.needsFetch(forTarget: "https://github.com") }
+    #expect(!cache.needsFetch(forTarget: "https://github.com"))
+    #expect(cache.icon(forTarget: "https://github.com") == nil)
+    #expect(quickAppsChangedCount(emitted) == 0)
+}
+
+@Test("addUrlReference mints without an icon and warms the new url's favicon")
+func addUrlReferenceWarmsFavicon() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let iconBytes = Data([0x89, 0x50, 0x4E, 0x47, 0x10, 0x20])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths,
+        faviconCapability: MockFaviconCapability(icon: iconBytes)
+    )
+    let response = await session.execute(
+        operationRequest(.addURLReference, #"{"url":"https://news.ycombinator.com","label":"Hacker News"}"#)
+    )
+    let payload = try decode(response, as: AddUrlResult.self)
+    #expect(payload.accepted)
+    // Minted cold: the tile shows its placeholder until the fetch lands.
+    #expect(payload.reference?.iconPng == nil)
+
+    let cache = FaviconCache(directory: paths.faviconCacheDirectory)
+    await waitUntil { cache.icon(forTarget: "https://news.ycombinator.com") != nil }
+    #expect(cache.icon(forTarget: "https://news.ycombinator.com") == iconBytes)
 }

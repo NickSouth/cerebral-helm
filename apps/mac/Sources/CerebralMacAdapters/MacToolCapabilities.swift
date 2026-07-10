@@ -20,6 +20,10 @@ public enum MacToolCapabilities {
         public let capabilities: ToolCapabilities
         public let systemStatus: MacSystemStatusCapability
         public let secretStore: KeychainSecretCapability
+        /// URL-quick-app favicon fetcher (NIC-147). Carried here rather than on
+        /// `ToolCapabilities` because no tool handler consumes it — `BridgeSession`
+        /// drives it directly off `listUrls`/`addUrlReference`, like `secretStore`.
+        public let favicon: MacFaviconCapability
     }
 
     /// `referenceStore` is the shared, reloadable catalog (NIC-146): the app/url
@@ -41,6 +45,7 @@ public enum MacToolCapabilities {
     ) -> Composition {
         let systemStatus = MacSystemStatusCapability()
         let secretStore = KeychainSecretCapability()
+        let favicon = MacFaviconCapability()
         return Composition(
             capabilities: ToolCapabilities(
                 app: NSWorkspaceAppCapability(
@@ -72,7 +77,8 @@ public enum MacToolCapabilities {
                 ]
             ),
             systemStatus: systemStatus,
-            secretStore: secretStore
+            secretStore: secretStore,
+            favicon: favicon
         )
     }
 }

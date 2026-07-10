@@ -62,6 +62,10 @@ public struct WorkspacePaths: Sendable {
     /// Timestamped state backups (`<stateRoot>/backups`), created and verified
     /// before a migration (FR-UPD-04).
     public let backupsDirectory: URL
+    /// Disposable, rebuildable favicon cache for URL quick apps
+    /// (`<stateRoot>/cache/favicons`, NIC-147). Kept under `cache/`, apart from the
+    /// durable state files, because deleting it only forces a re-fetch.
+    public let faviconCacheDirectory: URL
     public let eventLogPath: URL
 
     /// Resolves workspace paths. The environment is selected by `CEREBRAL_ENV`
@@ -98,6 +102,9 @@ public struct WorkspacePaths: Sendable {
             .appendingPathComponent("cerebral.sqlite")
         self.knowledgeRoot = stateRoot.appendingPathComponent("knowledge", isDirectory: true)
         self.backupsDirectory = stateRoot.appendingPathComponent("backups", isDirectory: true)
+        self.faviconCacheDirectory = stateRoot
+            .appendingPathComponent("cache", isDirectory: true)
+            .appendingPathComponent("favicons", isDirectory: true)
 
         let eventLogPath: URL
         if let configured = processEnvironment["CEREBRAL_EVENT_LOG_PATH"], !configured.isEmpty {

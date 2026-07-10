@@ -168,6 +168,10 @@ export interface UrlReference {
   readonly id: string;
   readonly label: string;
   readonly target: string;
+  /** The site's favicon as a base64 PNG (NIC-147), fetched and cached by the host.
+   *  Absent until the fetch lands — the tile shows a globe placeholder meanwhile and
+   *  upgrades live when a `mode.quickapps.changed` event prompts a re-read. */
+  readonly iconPng?: string;
 }
 export interface AddUrlReferenceInput {
   readonly url: string;

@@ -133,6 +133,9 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // Bootstrap restores the last active mode across restarts (FR-MOD-05).
             // The same store the URL adapter reads for surfacing scope (NIC-145).
             modeStateStore: modeStateStore,
+            // Fetches + caches URL-quick-app favicons off listUrls/addUrlReference
+            // (NIC-147); landed icons upgrade tiles live via mode.quickapps.changed.
+            faviconCapability: composition.favicon,
             emitEventJSON: { relay.emit($0) }
         )
     }

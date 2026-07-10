@@ -1,6 +1,7 @@
 import Foundation
 import CerebralContracts
 import CerebralCore
+import CerebralTools
 
 /// Executes versioned bridge operation requests against the live ``CommandRuntime``
 /// (NIC-74b, ADR-004). Transport-agnostic: the WKWebView transport (or a test) hands
@@ -52,6 +53,16 @@ public final class BridgeSession: @unchecked Sendable {
     private let tokenLock = NSLock()
     private var pendingTokens: [String: ConfirmationToken] = [:]
 
+    /// Fetches site favicons for URL quick apps (NIC-147). Optional: a host without
+    /// it (tests, workspace-less hosts) simply serves URL tiles without favicons.
+    /// The fetch runs in the background off `listUrls`/`addUrlReference`; results are
+    /// cached under the state root and pushed live via `mode.quickapps.changed`.
+    private let faviconCapability: (any FaviconCapability)?
+    /// Origins with an in-flight favicon fetch, so overlapping `listUrls` calls never
+    /// crawl the same site twice concurrently.
+    private let faviconLock = NSLock()
+    private var faviconInFlightOrigins: Set<String> = []
+
     public init(
         runtime: CommandRuntime,
         configDirectory: URL,
@@ -59,6 +70,7 @@ public final class BridgeSession: @unchecked Sendable {
         capabilities: [CerebralContracts.Capability] = CompositionCapabilities.bridgeCapabilities(phase: .preMac, nativeCapabilityIDs: []),
         settingsStore: (any SettingsStore)? = nil,
         modeStateStore: (any ModeStateStore)? = nil,
+        faviconCapability: (any FaviconCapability)? = nil,
         emitEventJSON: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.runtime = runtime
@@ -66,6 +78,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.workspace = workspace
         self.settingsStore = settingsStore
         self.modeStateStore = modeStateStore
+        self.faviconCapability = faviconCapability
         self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
     }
@@ -439,9 +452,13 @@ public final class BridgeSession: @unchecked Sendable {
             ) {
                 runtime.updateReferences(fresh)
             }
+            // Kick off the favicon fetch now so the icon is ready by the time the
+            // dashboard re-reads `listUrls` after pinning (NIC-147). The minted DTO
+            // carries no icon yet — the tile shows its placeholder until it lands.
+            warmFavicons([entry])
             return ok(request, payload: AddUrlReferenceResult(
                 accepted: true,
-                reference: UrlReferenceDTO(id: entry.id, label: entry.label, target: entry.target),
+                reference: urlReferenceDTO(entry, cache: faviconCache()),
                 errors: []
             ))
         case let .failure(error):
@@ -469,10 +486,91 @@ public final class BridgeSession: @unchecked Sendable {
         let urls = (try? ReferenceCatalogLoader.load(
             configDirectory: configDirectory, stateRoot: workspace?.stateRoot
         )).map { Array($0.urls.values) } ?? []
+        let cache = faviconCache()
         let sorted = urls
             .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
-            .map { UrlReferenceDTO(id: $0.id, label: $0.label, target: $0.target) }
+            .map { urlReferenceDTO($0, cache: cache) }
+        // Warm any cold favicons in the background; a landed icon upgrades its tile
+        // live via `mode.quickapps.changed` (NIC-147). The read returns immediately.
+        warmFavicons(urls)
         return ok(request, payload: ListUrlsResult(urls: sorted))
+    }
+
+    // MARK: - Favicons (NIC-147)
+
+    private func faviconCache() -> FaviconCache? {
+        workspace.map { FaviconCache(directory: $0.faviconCacheDirectory) }
+    }
+
+    private func urlReferenceDTO(_ entry: ReferenceEntry, cache: FaviconCache?) -> UrlReferenceDTO {
+        UrlReferenceDTO(
+            id: entry.id, label: entry.label, target: entry.target,
+            iconPng: cache?.icon(forTarget: entry.target)?.base64EncodedString()
+        )
+    }
+
+    /// Fetches, in the background, the favicon for every reference whose origin has
+    /// no cached hit or fresh miss — skipping origins already in flight. On success
+    /// the PNG is cached and a `mode.quickapps.changed` event nudges the tiles to
+    /// re-read `listUrls` (NIC-147 owner decision: reuse the per-widget event, so a
+    /// freshly pinned URL shows its placeholder at once and upgrades once fetched).
+    /// No-op without a favicon capability or a durable workspace.
+    private func warmFavicons(_ references: [ReferenceEntry]) {
+        guard let capability = faviconCapability, let cache = faviconCache() else { return }
+        // One representative target per cold origin (favicons are per-origin).
+        var targetByOrigin: [String: String] = [:]
+        for entry in references {
+            guard
+                let origin = FaviconCache.origin(forTarget: entry.target),
+                cache.needsFetch(forTarget: entry.target),
+                targetByOrigin[origin] == nil
+            else { continue }
+            targetByOrigin[origin] = entry.target
+        }
+        let work = claimFaviconOrigins(Set(targetByOrigin.keys))
+            .compactMap { origin in targetByOrigin[origin].map { (origin, $0) } }
+        guard !work.isEmpty else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            var anyStored = false
+            for (origin, target) in work {
+                defer { self.releaseFaviconOrigin(origin) }
+                guard let url = URL(string: target) else { continue }
+                if let png = await capability.fetchFavicon(for: url) {
+                    if cache.store(png: png, forTarget: target) { anyStored = true }
+                } else {
+                    cache.recordMiss(forTarget: target)
+                }
+            }
+            if anyStored { self.emitFaviconRefresh() }
+        }
+    }
+
+    /// Marks the given origins in flight and returns those not already fetching.
+    private func claimFaviconOrigins(_ origins: Set<String>) -> [String] {
+        faviconLock.lock(); defer { faviconLock.unlock() }
+        let fresh = origins.subtracting(faviconInFlightOrigins)
+        faviconInFlightOrigins.formUnion(fresh)
+        return Array(fresh)
+    }
+
+    private func releaseFaviconOrigin(_ origin: String) {
+        faviconLock.lock(); defer { faviconLock.unlock() }
+        faviconInFlightOrigins.remove(origin)
+    }
+
+    /// Re-emits the active mode's `mode.quickapps.changed` (unchanged pins) so its
+    /// tiles re-read `listUrls` and pick up newly cached favicons. Other modes pick
+    /// theirs up on next view — `listUrls` reads the now-warm cache.
+    private func emitFaviconRefresh() {
+        let state = composeBootstrapState()
+        let activeID = bootstrapModeID()
+        guard let mode = state.modes.first(where: { $0.id == activeID }) ?? state.modes.first else { return }
+        emit(BridgeEventFactory.quickAppsChangedEvent(
+            modeId: mode.id, quickApps: mode.quickApps,
+            id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
     }
 
     /// The recent-activity read surface. A fresh session has no activity; the durable
@@ -713,11 +811,15 @@ public final class BridgeSession: @unchecked Sendable {
         let url: String
         let label: String?
     }
-    /// A configured URL reference, as delivered to the dashboard (NIC-146).
+    /// A configured URL reference, as delivered to the dashboard (NIC-146). `iconPng`
+    /// is the site's cached favicon as base64 PNG (NIC-147), omitted when none is
+    /// cached yet — the tile shows its placeholder glyph and upgrades live once the
+    /// background fetch lands (`encodeIfPresent` drops the nil, mirroring app icons).
     private struct UrlReferenceDTO: Encodable {
         let id: String
         let label: String
         let target: String
+        let iconPng: String?
     }
     private struct AddUrlReferenceResult: Encodable {
         let accepted: Bool

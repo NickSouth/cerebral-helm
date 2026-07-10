@@ -169,8 +169,16 @@ export function createMockCerebralBridge(
   // The configured URL references (NIC-146), held mutably so addUrlReference visibly
   // mints and listUrls reflects it — the browser stand-in for the user URL catalog.
   // Seeded with the shipped config/references/urls.json entries.
+  // github carries a favicon (the browser stand-in for a fetched icon, NIC-147);
+  // docs has none, so its tile shows the globe placeholder.
   let urlReferences: UrlReference[] = [
-    { id: "github", label: "GitHub", target: "https://github.com" },
+    {
+      id: "github",
+      label: "GitHub",
+      target: "https://github.com",
+      iconPng:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    },
     { id: "docs", label: "Project Docs", target: "https://docs.cerebralhelm.local" }
   ];
 

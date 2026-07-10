@@ -51,6 +51,16 @@ function withPinnedApp(base: DashboardState): DashboardState {
   };
 }
 
+/** Pin the two shipped URL references: github (has a favicon) + docs (has none). */
+function withPinnedUrls(base: DashboardState): DashboardState {
+  return {
+    ...base,
+    modes: base.modes.map((mode) =>
+      mode.id === "executive" ? { ...mode, quickApps: ["github", "docs"] } : mode
+    )
+  };
+}
+
 function firstAppTile(): HTMLButtonElement {
   const list = screen.getByRole("list");
   const tile = list.querySelector<HTMLButtonElement>("button.quick-app");
@@ -257,6 +267,21 @@ describe("QuickApps", () => {
     // The tile launches through the same deterministic `open <id>` path as an app.
     fireEvent.click(tile);
     expect(submissions).toContain("open hacker-news");
+  });
+
+  it("renders a pinned URL's favicon as an image, and a globe when none is cached (NIC-147)", async () => {
+    renderQuickApps(withPinnedUrls);
+
+    // github carries a favicon → a base64 <img>; docs has none → the globe glyph.
+    const github = await screen.findByRole("button", { name: "GitHub" });
+    await waitFor(() =>
+      expect(github.querySelector("img.quick-app__real-icon")).not.toBeNull()
+    );
+    expect(github.querySelector("img")?.getAttribute("src")).toMatch(/^data:image\/png;base64,/);
+
+    const docs = screen.getByRole("button", { name: "Project Docs" });
+    expect(docs.querySelector("img")).toBeNull();
+    expect(docs.querySelector("svg.app-glyph")).not.toBeNull();
   });
 
   it("rejects a non-web URL in the picker, pinning nothing (NIC-146)", async () => {
