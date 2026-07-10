@@ -9,6 +9,9 @@ public enum CommandIntent: Equatable, Sendable {
     case captureNote(text: String)
     case searchNotes(query: String)
     case runHook(ReferenceEntry)
+    /// Measure current internet download/upload capacity on request (NIC-135) —
+    /// a single read-only `network.speed.test` tool call.
+    case runSpeedTest
     /// Run a configured workflow / quick action (an ordered plan of tool steps
     /// resolved by the action planner).
     case runAction(actionId: String)

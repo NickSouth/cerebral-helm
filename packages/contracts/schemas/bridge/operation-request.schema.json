@@ -31,7 +31,8 @@
         "subscribe",
         "getRecentActivity",
         "listApps",
-        "updateQuickApps"
+        "updateQuickApps",
+        "runSpeedTest"
       ]
     },
     "payload": {

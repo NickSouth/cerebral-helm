@@ -29,6 +29,41 @@ describe("SystemHealthPanel", () => {
     expect(screen.queryByText(/Loading system metrics/)).toBeNull();
   });
 
+  it("renders the Wi-Fi link speed as a single Mbps figure, not an up/down split (NIC-135)", () => {
+    renderPanel((base) => ({
+      ...base,
+      regions: {
+        ...base.regions,
+        systemHealth: {
+          ...base.regions.systemHealth,
+          state: "ready",
+          network: { state: "ready", label: "Network", linkMbps: 866 }
+        }
+      }
+    }));
+
+    expect(screen.getByText("866 Mbps")).toBeInTheDocument();
+    // No directional arrows any more — link speed is one number.
+    expect(screen.queryByText("↑")).toBeNull();
+    expect(screen.queryByText("↓")).toBeNull();
+  });
+
+  it("shows an honest 'No Wi-Fi' when there is no link rate (Ethernet / Wi-Fi off) (NIC-135)", () => {
+    renderPanel((base) => ({
+      ...base,
+      regions: {
+        ...base.regions,
+        systemHealth: {
+          ...base.regions.systemHealth,
+          state: "ready",
+          network: { state: "unavailable", label: "Network" }
+        }
+      }
+    }));
+
+    expect(screen.getByText("No Wi-Fi")).toBeInTheDocument();
+  });
+
   it("shows a same-shape skeleton while a sample is expected, not the unavailable flash (NIC-136)", () => {
     const { container } = renderPanel((base) => ({
       ...base,

@@ -23,8 +23,7 @@ interface MetricsChannelPayload {
 
 interface MetricsNetworkPayload {
   readonly availability?: string;
-  readonly uploadMbps?: number | null;
-  readonly downloadMbps?: number | null;
+  readonly linkMbps?: number | null;
   readonly sampledAt?: string | null;
 }
 
@@ -73,8 +72,7 @@ function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthReg
     network: {
       state: networkState,
       label: "Network",
-      uploadMbps: payload.network?.uploadMbps ?? undefined,
-      downloadMbps: payload.network?.downloadMbps ?? undefined
+      linkMbps: payload.network?.linkMbps ?? undefined
     },
     battery: {
       state: batteryState,

@@ -26,6 +26,7 @@ public struct DirectCommandParser: Sendable {
         "hook <id>",
         "run <action>",
         "apps",
+        "speedtest",
     ]
 
     public init(references: CommandReferences) {
@@ -56,6 +57,9 @@ public struct DirectCommandParser: Sendable {
         case "apps":
             // Argument-free by design: discovery is all-or-nothing and read-only.
             return .parsed(.listApps)
+        case "speedtest":
+            // Argument-free by design: one on-demand internet capacity read (NIC-135).
+            return .parsed(.runSpeedTest)
         default:
             return .unrecognized(UnrecognizedInput(reason: .unknownVerb(verb), suggestions: Self.supportedPatterns))
         }

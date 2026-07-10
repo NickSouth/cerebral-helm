@@ -87,10 +87,9 @@ export interface MetricChannel {
   readonly label: string;
 }
 
-/** Network channel with optional up/down throughput split (mirrors DashboardNetworkChannel). */
+/** Network channel carrying the Wi-Fi link (transmit) rate — the connection's speed (mirrors DashboardNetworkChannel). */
 export interface NetworkChannel extends MetricChannel {
-  readonly uploadMbps?: number;
-  readonly downloadMbps?: number;
+  readonly linkMbps?: number;
 }
 
 /** Battery channel with an optional charge percentage (Mac-only capability; mocked pre-Mac). */

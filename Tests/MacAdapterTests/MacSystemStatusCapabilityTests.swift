@@ -18,20 +18,20 @@ private final class FakeMetricSource: SystemMetricSampling, @unchecked Sendable 
     private let lock = NSLock()
     private var cpuSamples: [CPUTicksSample?]
     private var memorySample: MemorySample?
-    private var networkSamples: [NetworkBytesSample?]
+    private var wifiLink: Double?
     private var batterySample: BatterySample?
     private var displays: Int?
 
     init(
         cpu: [CPUTicksSample?] = [],
         memory: MemorySample? = nil,
-        network: [NetworkBytesSample?] = [],
+        wifiLink: Double? = nil,
         battery: BatterySample? = nil,
         displays: Int? = nil
     ) {
         self.cpuSamples = cpu
         self.memorySample = memory
-        self.networkSamples = network
+        self.wifiLink = wifiLink
         self.batterySample = battery
         self.displays = displays
     }
@@ -44,38 +44,24 @@ private final class FakeMetricSource: SystemMetricSampling, @unchecked Sendable 
 
     func cpuTicks() -> CPUTicksSample? { pop(&cpuSamples) }
     func memory() -> MemorySample? { memorySample }
-    func networkBytes() -> NetworkBytesSample? { pop(&networkSamples) }
+    // The Wi-Fi link rate is instantaneous — the same reading on every sample.
+    func wifiLinkMbps() -> Double? { lock.lock(); defer { lock.unlock() }; return wifiLink }
     func battery() -> BatterySample? { batterySample }
     func displayCount() -> Int? { displays }
-}
-
-/// A controllable monotonic clock for the network-rate denominator.
-private final class FakeNow: @unchecked Sendable {
-    private let lock = NSLock()
-    private var nanos: UInt64 = 1_000_000_000
-
-    func advance(seconds: Double) {
-        lock.lock(); nanos += UInt64(seconds * 1_000_000_000); lock.unlock()
-    }
-
-    func now() -> UInt64 {
-        lock.lock(); defer { lock.unlock() }
-        return nanos
-    }
 }
 
 private func reading(_ readings: [SystemMetricReading], _ id: SystemMetricID) -> SystemMetricReading? {
     readings.first { $0.id == id }
 }
 
-// MARK: - Rate metrics need a delta
+// MARK: - CPU still needs a delta; the Wi-Fi link rate does not
 
-@Test("the first read of the rate metrics reports loading, never a fabricated value")
-func firstRateReadIsLoading() async throws {
+@Test("the first read reports CPU loading, but instantaneous metrics (incl. Wi-Fi link) are available")
+func firstReadCpuLoadingLinkAvailable() async throws {
     let capability = MacSystemStatusCapability(source: FakeMetricSource(
         cpu: [CPUTicksSample(busyTicks: 100, totalTicks: 1000)],
         memory: MemorySample(usedBytes: 8, totalBytes: 16),
-        network: [NetworkBytesSample(inBytes: 1_000_000, outBytes: 0)],
+        wifiLink: 866,
         battery: BatterySample(percent: 80, isCharging: true, isPluggedIn: true),
         displays: 2
     ))
@@ -84,77 +70,57 @@ func firstRateReadIsLoading() async throws {
 
     #expect(reading(readings, .cpu)?.availability == .loading)
     #expect(reading(readings, .cpu)?.value == nil)
-    #expect(reading(readings, .network)?.availability == .loading)
-    // Instantaneous metrics are available immediately.
+    // The Wi-Fi link rate needs no delta — available on the first sample (NIC-135).
+    #expect(reading(readings, .network)?.availability == .available)
+    #expect(reading(readings, .network)?.value == 866.0)
+    #expect(reading(readings, .network)?.unit == "mbps")
     #expect(reading(readings, .memory)?.availability == .available)
     #expect(reading(readings, .memory)?.value == 50.0)
     #expect(reading(readings, .battery)?.value == 80.0)
     #expect(reading(readings, .display)?.value == 2.0)
 }
 
-@Test("the second read computes CPU load and network throughput from the deltas")
-func secondReadComputesRates() async throws {
-    let now = FakeNow()
-    let capability = MacSystemStatusCapability(
-        source: FakeMetricSource(
-            cpu: [
-                CPUTicksSample(busyTicks: 100, totalTicks: 1000),
-                CPUTicksSample(busyTicks: 350, totalTicks: 2000), // 250 busy of 1000 total → 25%
-            ],
-            network: [
-                NetworkBytesSample(inBytes: 1_000_000, outBytes: 500_000),
-                NetworkBytesSample(inBytes: 3_000_000, outBytes: 1_000_000), // ↓2 MB + ↑0.5 MB in 2 s → 8 + 2 Mbit/s
-            ]
-        ),
-        nowNanos: { now.now() }
-    )
+@Test("the second read computes CPU load from the tick delta")
+func secondReadComputesCpuLoad() async throws {
+    let capability = MacSystemStatusCapability(source: FakeMetricSource(
+        cpu: [
+            CPUTicksSample(busyTicks: 100, totalTicks: 1000),
+            CPUTicksSample(busyTicks: 350, totalTicks: 2000), // 250 busy of 1000 total → 25%
+        ]
+    ))
 
-    _ = try await capability.readMetrics([.cpu, .network])
-    now.advance(seconds: 2)
-    let readings = try await capability.readMetrics([.cpu, .network])
+    _ = try await capability.readMetrics([.cpu])
+    let readings = try await capability.readMetrics([.cpu])
 
     let cpu = reading(readings, .cpu)
     #expect(cpu?.availability == .available)
     #expect(cpu?.value == 25.0)
     #expect(cpu?.unit == "percent")
-
-    let network = reading(readings, .network)
-    #expect(network?.availability == .available)
-    #expect(network?.value == 10.0)
-    #expect(network?.unit == "mbps")
 }
 
-@Test("a wrapped network counter reuses the last known rate instead of reporting garbage")
-func wrappedNetworkCounterReusesLastRate() async throws {
-    let now = FakeNow()
-    let capability = MacSystemStatusCapability(
-        source: FakeMetricSource(network: [
-            NetworkBytesSample(inBytes: 1_000_000, outBytes: 500_000),
-            NetworkBytesSample(inBytes: 3_000_000, outBytes: 1_000_000),
-            NetworkBytesSample(inBytes: 500, outBytes: 100), // shrank: wrap
-        ]),
-        nowNanos: { now.now() }
-    )
-
-    _ = try await capability.readMetrics([.network])
-    now.advance(seconds: 2)
-    _ = try await capability.readMetrics([.network]) // 10 mbps
-    now.advance(seconds: 2)
+@Test("no associated Wi-Fi interface reports the network metric unavailable, not a fake value")
+func noWifiInterfaceIsUnavailable() async throws {
+    // Ethernet or Wi-Fi off: the source returns nil.
+    let capability = MacSystemStatusCapability(source: FakeMetricSource(wifiLink: nil))
     let readings = try await capability.readMetrics([.network])
+    #expect(reading(readings, .network)?.availability == .unavailable)
+    #expect(reading(readings, .network)?.value == nil)
 
-    #expect(reading(readings, .network)?.availability == .available)
-    #expect(reading(readings, .network)?.value == 10.0)
+    // A non-positive rate is treated the same as no link.
+    let zero = MacSystemStatusCapability(source: FakeMetricSource(wifiLink: 0))
+    let zeroReadings = try await zero.readMetrics([.network])
+    #expect(reading(zeroReadings, .network)?.availability == .unavailable)
 }
 
 // MARK: - Independent per-metric availability
 
 @Test("a metric that cannot be sampled is unavailable without affecting the others (FR-SHL-06)")
 func perMetricFailureIsIndependent() async throws {
-    // A desktop Mac: no battery; CPU sampling scripted to fail; memory fine.
+    // A desktop Mac: no battery; CPU sampling scripted to fail; memory fine; on Ethernet (no Wi-Fi link).
     let capability = MacSystemStatusCapability(source: FakeMetricSource(
         cpu: [nil],
         memory: MemorySample(usedBytes: 4, totalBytes: 16),
-        network: [],
+        wifiLink: nil,
         battery: nil,
         displays: 1
     ))
@@ -226,8 +192,11 @@ func liveSourceSanity() async throws {
     #expect(memory.totalBytes > 0)
     #expect(memory.usedBytes > 0 && memory.usedBytes <= memory.totalBytes)
 
-    let network = try #require(source.networkBytes())
-    #expect(network.inBytes > 0)
+    // Wi-Fi link rate may legitimately be nil (Ethernet, Wi-Fi off, CI); when
+    // present it is a positive Mbps figure.
+    if let link = source.wifiLinkMbps() {
+        #expect(link > 0)
+    }
 
     let displays = try #require(source.displayCount())
     #expect(displays >= 1)

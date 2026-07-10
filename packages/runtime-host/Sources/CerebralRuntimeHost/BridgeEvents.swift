@@ -124,18 +124,17 @@ public enum BridgeEventFactory {
         }
     }
 
-    /// Network keeps its direction split for the dashboard's up/down display.
+    /// Network carries the Wi-Fi link (transmit) rate — the connection's speed,
+    /// not measured throughput (NIC-135).
     public struct SystemMetricsNetworkChannel: Encodable, Sendable {
         public let availability: String
-        public let uploadMbps: Double?
-        public let downloadMbps: Double?
+        public let linkMbps: Double?
         public let unit: String?
         public let sampledAt: Date?
 
-        public init(availability: String, uploadMbps: Double?, downloadMbps: Double?, unit: String?, sampledAt: Date?) {
+        public init(availability: String, linkMbps: Double?, unit: String?, sampledAt: Date?) {
             self.availability = availability
-            self.uploadMbps = uploadMbps
-            self.downloadMbps = downloadMbps
+            self.linkMbps = linkMbps
             self.unit = unit
             self.sampledAt = sampledAt
         }

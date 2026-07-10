@@ -57,12 +57,6 @@ function BarRow({
   );
 }
 
-/** Extract the throughput figure from the network label (fallback when up/down aren't split out). */
-function networkMbps(label: string): string | null {
-  const match = label.match(/([\d.]+)\s*Mbps/i);
-  return match ? match[1] : null;
-}
-
 /** The four System Health rows, in order — the fixed shape the skeleton mirrors. */
 const HEALTH_ROWS: readonly { glyph: HealthGlyphName; label: string }[] = [
   { glyph: "cpu", label: "CPU" },
@@ -98,7 +92,7 @@ function SystemHealthSkeleton() {
   );
 }
 
-/** L2 System Health (design spec §5.2): CPU/memory usage bars, network throughput, battery. */
+/** L2 System Health (design spec §5.2): CPU/memory usage bars, Wi-Fi link speed, battery. */
 export function SystemHealthPanel() {
   const dashboard = useDashboardState();
   const { systemHealth } = dashboard.regions;
@@ -142,30 +136,12 @@ export function SystemHealthPanel() {
                 <HealthGlyph name="network" />
               </span>
               <span className="metric__label">Network</span>
-              {typeof network.uploadMbps === "number" &&
-              typeof network.downloadMbps === "number" ? (
-                <span className="metric__network">
-                  <span className="net-arrow net-arrow--up" aria-hidden="true">
-                    ↑
-                  </span>
-                  <span className="metric__value">{Math.round(network.uploadMbps)} Mbps</span>
-                  <span className="net-arrow net-arrow--down" aria-hidden="true">
-                    ↓
-                  </span>
-                  <span className="metric__value">{Math.round(network.downloadMbps)} Mbps</span>
-                </span>
-              ) : networkMbps(network.label) ? (
-                <span className="metric__network">
-                  <span className="net-arrow net-arrow--up" aria-hidden="true">
-                    ↑
-                  </span>
-                  <span className="metric__value">{networkMbps(network.label)} Mbps</span>
-                  <span className="net-arrow net-arrow--down" aria-hidden="true">
-                    ↓
-                  </span>
-                </span>
+              {typeof network.linkMbps === "number" ? (
+                // Wi-Fi link speed — the connection's negotiated rate, not throughput (NIC-135).
+                <span className="metric__value">{Math.round(network.linkMbps)} Mbps</span>
               ) : (
-                <span className="metric__value">{network.label}</span>
+                // No associated Wi-Fi interface (Ethernet, Wi-Fi off): honest, not a fake number.
+                <span className="unavailable metric__unavailable">No Wi-Fi</span>
               )}
             </li>
           ) : null}

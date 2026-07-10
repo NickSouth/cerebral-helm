@@ -221,8 +221,7 @@
                   "enum": ["ready", "empty", "stale", "unavailable"]
                 },
                 "label": { "type": "string" },
-                "uploadMbps": { "type": "number", "description": "Uplink throughput in Mbps, when known." },
-                "downloadMbps": { "type": "number", "description": "Downlink throughput in Mbps, when known." }
+                "linkMbps": { "type": "number", "description": "Wi-Fi link (transmit) rate in Mbps — the connection's speed, when known." }
               }
             },
             "battery": {

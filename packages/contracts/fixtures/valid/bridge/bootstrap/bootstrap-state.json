@@ -74,7 +74,7 @@
       "state": "ready",
       "cpuPercent": 18,
       "memoryPercent": 50,
-      "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" },
+      "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "linkMbps": 120 },
       "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" }
     },
     "news": {

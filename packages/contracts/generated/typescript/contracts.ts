@@ -215,16 +215,12 @@ export interface DashboardBatteryChannel {
 }
 
 export interface DashboardNetworkChannel {
+    label: string;
     /**
-     * Downlink throughput in Mbps, when known.
+     * Wi-Fi link (transmit) rate in Mbps — the connection's speed, when known.
      */
-    downloadMbps?: number;
-    label:         string;
-    state:         DashboardRegionState;
-    /**
-     * Uplink throughput in Mbps, when known.
-     */
-    uploadMbps?: number;
+    linkMbps?: number;
+    state:     DashboardRegionState;
 }
 
 export interface DashboardRegionWidgets {
@@ -440,6 +436,7 @@ export enum Operation {
     GetBootstrapState = "getBootstrapState",
     GetRecentActivity = "getRecentActivity",
     ListApps = "listApps",
+    RunSpeedTest = "runSpeedTest",
     SearchNotes = "searchNotes",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",
@@ -965,6 +962,39 @@ export enum ActionStatus {
 export enum CerebralHelmModeApplyOutputStatus {
     PartialSuccess = "partial_success",
     Success = "success",
+}
+
+export interface CerebralHelmNetworkSpeedTestInput {
+}
+
+export interface CerebralHelmNetworkSpeedTestOutput {
+    /**
+     * Measured download capacity in Mbps, when known.
+     */
+    downloadMbps?: number;
+    /**
+     * ok = both directions measured; partial = one direction only; unavailable = the test could
+     * not run.
+     */
+    status: CerebralHelmNetworkSpeedTestOutputStatus;
+    /**
+     * ISO-8601 timestamp when the measurement completed.
+     */
+    testedAt: string;
+    /**
+     * Measured upload capacity in Mbps, when known.
+     */
+    uploadMbps?: number;
+}
+
+/**
+ * ok = both directions measured; partial = one direction only; unavailable = the test could
+ * not run.
+ */
+export enum CerebralHelmNetworkSpeedTestOutputStatus {
+    Ok = "ok",
+    Partial = "partial",
+    Unavailable = "unavailable",
 }
 
 export interface CerebralHelmNoteCaptureInput {

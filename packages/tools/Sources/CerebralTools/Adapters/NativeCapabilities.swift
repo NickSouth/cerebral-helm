@@ -110,6 +110,41 @@ public protocol SystemStatusCapability: Sendable {
     func readMetrics(_ ids: [SystemMetricID]) async throws -> [SystemMetricReading]
 }
 
+// MARK: - network.speed.test
+
+/// The outcome of an on-demand internet capacity measurement (NIC-135). The
+/// figures are a point-in-time measurement in Mbps; a direction is `nil` when the
+/// test could not measure it. This is a read — it measures and mutates nothing.
+public struct NetworkSpeedTestReading: Equatable, Sendable {
+    public enum Status: String, Sendable, Equatable {
+        /// Both directions measured.
+        case ok
+        /// Exactly one direction measured (the other is `nil`).
+        case partial
+        /// The test could not run (no route, tool missing, timed out).
+        case unavailable
+    }
+
+    public let status: Status
+    public let downloadMbps: Double?
+    public let uploadMbps: Double?
+
+    public init(status: Status, downloadMbps: Double?, uploadMbps: Double?) {
+        self.status = status
+        self.downloadMbps = downloadMbps
+        self.uploadMbps = uploadMbps
+    }
+}
+
+/// Runs a bounded, on-demand internet capacity measurement (NIC-135). macOS-native
+/// (Apple's `networkQuality`); the pre-Mac mock reports unavailable. Read-only:
+/// unlike `hook.run`, it is a specific, non-mutating diagnostic, not arbitrary
+/// shell — so it is classified and confirmed as a read (descriptor risk
+/// `read_only`).
+public protocol NetworkSpeedTestCapability: Sendable {
+    func measure() async throws -> NetworkSpeedTestReading
+}
+
 // MARK: - apps.list
 
 /// One installed application, discovered read-only (NIC-119). `iconPNGBase64`

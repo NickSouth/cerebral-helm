@@ -658,6 +658,51 @@ func updateSettingsRequiresPatch() async throws {
     #expect(response.error?.category == .invalidInput)
 }
 
+// MARK: - runSpeedTest (NIC-135)
+
+/// Builds a session at a chosen execution phase; the network.speed.test tool is
+/// `macos_native`, so only a macOS-phase runtime executes it.
+private func makeSession(phase: ExecutionPhase) throws -> BridgeSession {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    return BridgeSession(runtime: try makeCommandRuntime(paths: paths, phase: phase), configDirectory: paths.configDirectory)
+}
+
+private struct SpeedTestResult: Decodable {
+    let status: String
+    let downloadMbps: Double?
+    let uploadMbps: Double?
+    let testedAt: String?
+}
+
+@Test("runSpeedTest returns the measured capacity from the tool (macOS phase)")
+func runSpeedTestReturnsMeasurement() async throws {
+    // The .mocks() bundle backs network.speed.test with a deterministic reading.
+    let session = try makeSession(phase: .macOS)
+    let response = await session.execute(operationRequest(.runSpeedTest, "{}"))
+
+    #expect(response.status == .ok)
+    #expect(response.error == nil)
+    let result = try decode(response, as: SpeedTestResult.self)
+    #expect(result.status == "ok")
+    #expect(result.downloadMbps == 240)
+    #expect(result.uploadMbps == 18)
+    #expect(!(result.testedAt ?? "").isEmpty)
+}
+
+@Test("runSpeedTest degrades to unavailable when the native tool is absent (pre-Mac)")
+func runSpeedTestUnavailablePreMac() async throws {
+    // network.speed.test is macOS-only; a pre-Mac runtime cannot run it, so the
+    // operation reports an honest unavailable rather than hanging or crashing.
+    let session = try makeSession(phase: .preMac)
+    let response = await session.execute(operationRequest(.runSpeedTest, "{}"))
+
+    #expect(response.status == .ok)
+    let result = try decode(response, as: SpeedTestResult.self)
+    #expect(result.status == "unavailable")
+    #expect(result.downloadMbps == nil)
+    #expect(result.uploadMbps == nil)
+}
+
 // MARK: - Unwired operations
 
 @Test("an operation not yet wired returns a structured unavailable error, never a hang")

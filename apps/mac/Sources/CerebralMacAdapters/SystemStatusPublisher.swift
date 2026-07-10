@@ -95,8 +95,7 @@ public actor SystemStatusPublisher {
             memory: channel(snapshot.memory, unit: "percent"),
             network: BridgeEventFactory.SystemMetricsNetworkChannel(
                 availability: snapshot.network.availability.rawValue,
-                uploadMbps: snapshot.network.uploadMbps,
-                downloadMbps: snapshot.network.downloadMbps,
+                linkMbps: snapshot.network.linkMbps,
                 unit: "mbps",
                 sampledAt: snapshot.network.sampledAt
             ),

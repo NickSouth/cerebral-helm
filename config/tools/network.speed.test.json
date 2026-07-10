@@ -1,0 +1,6 @@
+{
+  "id": "network.speed.test",
+  "risk": "read_only",
+  "timeoutMs": 40000,
+  "availableInPreMac": false
+}

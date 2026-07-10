@@ -113,6 +113,43 @@ public struct SystemStatusReadHandler: ToolHandler {
     }
 }
 
+// MARK: - network.speed.test
+
+public struct NetworkSpeedTestHandler: ToolHandler {
+    public let toolID = "network.speed.test"
+    private let capability: any NetworkSpeedTestCapability
+    private let now: @Sendable () -> Date
+
+    public init(capability: any NetworkSpeedTestCapability, now: @escaping @Sendable () -> Date = { Date() }) {
+        self.capability = capability
+        self.now = now
+    }
+
+    public func execute(input: Data) async throws -> Data {
+        do { _ = try CerebralHelmNetworkSpeedTestInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("network.speed.test input does not match its contract.")
+        }
+        do {
+            let reading = try await capability.measure()
+            let status: CerebralHelmNetworkSpeedTestOutputStatus
+            switch reading.status {
+            case .ok: status = .ok
+            case .partial: status = .partial
+            case .unavailable: status = .unavailable
+            }
+            let formatter = ISO8601DateFormatter()
+            return try CerebralHelmNetworkSpeedTestOutput(
+                downloadMbps: reading.downloadMbps,
+                status: status,
+                testedAt: formatter.string(from: now()),
+                uploadMbps: reading.uploadMbps
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 // MARK: - apps.list
 
 public struct AppsListHandler: ToolHandler {

@@ -1272,32 +1272,6 @@
   background: var(--ch-status-error);
 }
 
-/* Network throughput: upload arrow (mode secondary) + up Mbps, download arrow (mode primary) +
-   down Mbps. Kept on a single line (NIC-77 owner rule) — the wider rem-based rails give it room. */
-.metric__network {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-  gap: var(--ch-space-1);
-  /* Start the network figures a little further left (was pushed to the far right). */
-  margin-left: var(--ch-space-2);
-  font-size: var(--ch-font-size-label);
-}
-
-.net-arrow {
-  font-weight: var(--ch-font-weight-semibold);
-  line-height: 1;
-}
-
-.net-arrow--up {
-  color: var(--ch-accent-secondary);
-}
-
-.net-arrow--down {
-  color: var(--ch-accent-primary);
-}
-
 .news__item {
   display: flex;
   flex-direction: column;

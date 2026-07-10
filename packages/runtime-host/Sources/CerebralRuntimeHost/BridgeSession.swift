@@ -129,6 +129,8 @@ public final class BridgeSession: @unchecked Sendable {
             return await listApps(request)
         case .updateQuickApps:
             return updateQuickApps(request)
+        case .runSpeedTest:
+            return await runSpeedTest(request)
         default:
             // captureNote (confirmation-gated local_write returning a synchronous
             // noteId) and subscribe follow later.
@@ -220,6 +222,32 @@ public final class BridgeSession: @unchecked Sendable {
                 code: "note_rejected", message: "The note could not be parsed."
             )
         }
+    }
+
+    private func runSpeedTest(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        // network.speed.test is a read_only tool — it never gates on confirmation,
+        // so this resolves synchronously with the measurement (NIC-135). The bounded
+        // ~30s networkQuality run happens inside runtime.submit; the caller awaits it
+        // while the widget animates its ring.
+        let outcome = await runtime.submit("speedtest", source: .dashboard)
+        guard case let .completed(_, _, result) = outcome,
+              let data = result?.output,
+              let output = try? CerebralHelmNetworkSpeedTestOutput(data: data)
+        else {
+            // The tool could not run, or produced no parseable output: an honest
+            // unavailable, never a fabricated figure.
+            return ok(request, payload: SpeedTestResult(
+                status: "unavailable", downloadMbps: nil, uploadMbps: nil, testedAt: nil
+            ))
+        }
+        return ok(request, payload: SpeedTestResult(
+            status: output.status.rawValue,
+            downloadMbps: output.downloadMbps,
+            uploadMbps: output.uploadMbps,
+            testedAt: output.testedAt
+        ))
     }
 
     private func searchNotes(
@@ -532,6 +560,13 @@ public final class BridgeSession: @unchecked Sendable {
     private struct ListAppsResult: Encodable {
         let apps: [DiscoveredApp]
         let truncated: Bool
+    }
+    private struct SpeedTestResult: Encodable {
+        /// "ok" | "partial" | "unavailable" (mirrors the tool output).
+        let status: String
+        let downloadMbps: Double?
+        let uploadMbps: Double?
+        let testedAt: String?
     }
     private struct UpdateQuickAppsInput: Decodable {
         let modeId: String

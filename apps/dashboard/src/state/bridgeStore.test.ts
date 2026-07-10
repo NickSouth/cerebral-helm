@@ -232,8 +232,7 @@ describe("reduceDashboardState", () => {
         memory: { availability: "available", value: 61.2, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
         network: {
           availability: "available",
-          uploadMbps: 2.1,
-          downloadMbps: 8.4,
+          linkMbps: 866,
           unit: "mbps",
           sampledAt: "2026-06-23T16:00:00.000Z"
         },
@@ -253,8 +252,7 @@ describe("reduceDashboardState", () => {
     expect(health.state).toBe("ready");
     expect(health.cpuPercent).toBe(23.5);
     expect(health.memoryPercent).toBe(61.2);
-    expect(health.network?.uploadMbps).toBe(2.1);
-    expect(health.network?.downloadMbps).toBe(8.4);
+    expect(health.network?.linkMbps).toBe(866);
     expect(health.battery.percent).toBe(76);
     expect(health.battery.state).toBe("ready");
     expect(health.battery.charging).toBe(true);
@@ -273,7 +271,7 @@ describe("reduceDashboardState", () => {
         // First tick on a desktop Mac: rate metrics still warming, no battery.
         cpu: { availability: "loading", value: null, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
         memory: { availability: "available", value: 40, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
-        network: { availability: "loading", uploadMbps: null, downloadMbps: null, unit: "mbps", sampledAt: null },
+        network: { availability: "loading", linkMbps: null, unit: "mbps", sampledAt: null },
         battery: { availability: "unavailable", value: null, unit: "percent", sampledAt: null },
         display: { availability: "available", value: 1, unit: null, sampledAt: "2026-06-23T16:00:00.000Z" }
       }
