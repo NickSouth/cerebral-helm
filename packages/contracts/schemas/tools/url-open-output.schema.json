@@ -4,7 +4,7 @@
   "title": "CerebralHelm Url Open Output",
   "type": "object",
   "additionalProperties": false,
-  "required": ["urlId", "opened", "resolvedUrl"],
+  "required": ["urlId", "opened", "resolvedUrl", "surfaced"],
   "properties": {
     "urlId": {
       "type": "string",
@@ -17,6 +17,9 @@
     "resolvedUrl": {
       "type": "string",
       "minLength": 1
+    },
+    "surfaced": {
+      "type": "boolean"
     }
   }
 }

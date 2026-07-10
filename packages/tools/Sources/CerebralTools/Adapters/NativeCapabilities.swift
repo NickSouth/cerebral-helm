@@ -47,11 +47,15 @@ public struct URLOpenResult: Equatable, Sendable {
     public let urlID: String
     public let opened: Bool
     public let resolvedURL: String
+    /// Whether an existing browser tab CH had opened for this URL was surfaced
+    /// (focused) instead of opening a new one (NIC-145). `false` for a fresh open.
+    public let surfaced: Bool
 
-    public init(urlID: String, opened: Bool, resolvedURL: String) {
+    public init(urlID: String, opened: Bool, resolvedURL: String, surfaced: Bool = false) {
         self.urlID = urlID
         self.opened = opened
         self.resolvedURL = resolvedURL
+        self.surfaced = surfaced
     }
 }
 

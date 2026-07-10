@@ -1,5 +1,6 @@
 #if canImport(AppKit)
 import Foundation
+import CerebralCore
 import CerebralTools
 
 /// Opens configured application references through Launch Services (NIC-79,
@@ -60,6 +61,16 @@ public struct NSWorkspaceURLCapability: URLCapability {
     /// without a relaunch (NIC-146).
     private let urlsProvider: @Sendable () -> [String: String]
     private let workspace: any WorkspaceOpening
+    /// Focuses an existing browser tab CH opened for this URL (NIC-145), or `nil`
+    /// on hosts without surfacing (tests, pre-Mac).
+    private let surface: (any BrowserTabSurface)?
+    /// Records which `(modeID, urlID)` pairs CH opened this session, so surfacing is
+    /// only attempted for a URL CH itself opened in the current mode. `nil` disables it.
+    private let registry: SessionURLOpenRegistry?
+    /// The active mode at open time (`ModeStateStore.loadActiveModeID()`), or `nil`
+    /// when no mode is active — in which case surfacing is skipped and nothing is
+    /// recorded (there is no mode to scope the record to).
+    private let currentModeProvider: @Sendable () -> String?
 
     /// Static map (tests, and any host with a fixed catalog).
     public init(urls: [String: String], workspace: any WorkspaceOpening = SystemWorkspace()) {
@@ -67,13 +78,21 @@ public struct NSWorkspaceURLCapability: URLCapability {
     }
 
     /// Live map backed by the shared reference store (NIC-146): a URL minted through
-    /// `addUrlReference` resolves the same session.
+    /// `addUrlReference` resolves the same session. `surface`/`registry`/
+    /// `currentModeProvider` opt this adapter into re-open surfacing (NIC-145);
+    /// omitting them preserves the plain open-a-new-tab behavior.
     public init(
         urlsProvider: @escaping @Sendable () -> [String: String],
-        workspace: any WorkspaceOpening = SystemWorkspace()
+        workspace: any WorkspaceOpening = SystemWorkspace(),
+        surface: (any BrowserTabSurface)? = nil,
+        registry: SessionURLOpenRegistry? = nil,
+        currentModeProvider: @escaping @Sendable () -> String? = { nil }
     ) {
         self.urlsProvider = urlsProvider
         self.workspace = workspace
+        self.surface = surface
+        self.registry = registry
+        self.currentModeProvider = currentModeProvider
     }
 
     public func open(urlID: String) async throws -> URLOpenResult {
@@ -89,6 +108,19 @@ public struct NSWorkspaceURLCapability: URLCapability {
                 "The configured target for URL reference '\(urlID)' is not a valid absolute URL."
             )
         }
+
+        let modeID = currentModeProvider()
+
+        // Re-open in the same mode surfaces the existing tab instead of a duplicate
+        // (NIC-145). Only attempt it for a URL CH itself opened in this mode; any
+        // non-`surfaced` outcome (tab closed, unsupported browser, denied Automation)
+        // falls through to a fresh open — the honest fallback.
+        if let modeID, let surface, let registry, registry.contains(modeID: modeID, urlID: urlID) {
+            if case .surfaced = await surface.surface(url: url) {
+                return URLOpenResult(urlID: urlID, opened: false, resolvedURL: target, surfaced: true)
+            }
+        }
+
         do {
             try await workspace.openURL(url)
         } catch is CancellationError {
@@ -98,7 +130,10 @@ public struct NSWorkspaceURLCapability: URLCapability {
                 "Opening URL reference '\(urlID)' failed: \(error.localizedDescription)"
             )
         }
-        return URLOpenResult(urlID: urlID, opened: true, resolvedURL: target)
+        // Remember that CH opened this URL in this mode, so the next trigger can
+        // surface it rather than duplicate it.
+        if let modeID { registry?.record(modeID: modeID, urlID: urlID) }
+        return URLOpenResult(urlID: urlID, opened: true, resolvedURL: target, surfaced: false)
     }
 }
 #endif

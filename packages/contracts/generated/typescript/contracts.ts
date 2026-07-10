@@ -1282,6 +1282,7 @@ export interface CerebralHelmURLOpenInput {
 export interface CerebralHelmURLOpenOutput {
     opened:      boolean;
     resolvedUrl: string;
+    surfaced:    boolean;
     urlId:       string;
 }
 

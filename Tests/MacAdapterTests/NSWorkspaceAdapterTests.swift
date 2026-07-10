@@ -192,6 +192,131 @@ func malformedConfiguredURLIsAdapterFailure() async throws {
     #expect(fake.urlOpens.isEmpty)
 }
 
+// MARK: - url.open re-open surfacing (NIC-145)
+
+/// A fake tab surface returning a fixed outcome and recording the URLs it was
+/// asked to surface — so tests can assert whether surfacing was even attempted.
+private struct FakeTabSurface: BrowserTabSurface {
+    let outcome: BrowserSurfaceOutcome
+    let calls: SurfaceCallBox
+    func surface(url: URL) async -> BrowserSurfaceOutcome {
+        calls.record(url)
+        return outcome
+    }
+}
+
+private final class SurfaceCallBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var urls: [URL] = []
+    func record(_ url: URL) { lock.lock(); urls.append(url); lock.unlock() }
+    var all: [URL] { lock.lock(); defer { lock.unlock() }; return urls }
+}
+
+private let githubURL = URL(string: "https://github.com")!
+
+private func surfacingURLCapability(
+    _ fake: FakeWorkspace,
+    outcome: BrowserSurfaceOutcome,
+    calls: SurfaceCallBox,
+    registry: SessionURLOpenRegistry,
+    mode: String? = "executive"
+) -> NSWorkspaceURLCapability {
+    NSWorkspaceURLCapability(
+        urlsProvider: { ["github": "https://github.com"] },
+        workspace: fake,
+        surface: FakeTabSurface(outcome: outcome, calls: calls),
+        registry: registry,
+        currentModeProvider: { mode }
+    )
+}
+
+@Test("the first open in a mode opens fresh, records the url, and never consults the surface")
+func firstOpenRecordsWithoutSurfacing() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    let calls = SurfaceCallBox()
+    let result = try await surfacingURLCapability(fake, outcome: .surfaced, calls: calls, registry: registry)
+        .open(urlID: "github")
+
+    #expect(result == URLOpenResult(urlID: "github", opened: true, resolvedURL: "https://github.com", surfaced: false))
+    #expect(fake.urlOpens == [githubURL])
+    #expect(calls.all.isEmpty) // nothing recorded yet on the first open
+    #expect(registry.contains(modeID: "executive", urlID: "github"))
+}
+
+@Test("re-opening a recorded url in the same mode surfaces the existing tab, not a new one")
+func reopenSurfacesExistingTab() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    registry.record(modeID: "executive", urlID: "github")
+    let calls = SurfaceCallBox()
+    let result = try await surfacingURLCapability(fake, outcome: .surfaced, calls: calls, registry: registry)
+        .open(urlID: "github")
+
+    #expect(result == URLOpenResult(urlID: "github", opened: false, resolvedURL: "https://github.com", surfaced: true))
+    #expect(fake.urlOpens.isEmpty) // no duplicate tab opened
+    #expect(calls.all == [githubURL])
+}
+
+@Test("a recorded url whose tab the user closed falls back to a fresh open")
+func closedTabFallsBackToFreshOpen() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    registry.record(modeID: "executive", urlID: "github")
+    let calls = SurfaceCallBox()
+    let result = try await surfacingURLCapability(fake, outcome: .notFound, calls: calls, registry: registry)
+        .open(urlID: "github")
+
+    #expect(result == URLOpenResult(urlID: "github", opened: true, resolvedURL: "https://github.com", surfaced: false))
+    #expect(fake.urlOpens == [githubURL])
+    #expect(calls.all == [githubURL]) // surfacing was attempted, then fell through
+}
+
+@Test("denied automation falls back to a fresh open")
+func deniedAutomationFallsBackToFreshOpen() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    registry.record(modeID: "executive", urlID: "github")
+    let calls = SurfaceCallBox()
+    let result = try await surfacingURLCapability(fake, outcome: .denied, calls: calls, registry: registry)
+        .open(urlID: "github")
+
+    #expect(result == URLOpenResult(urlID: "github", opened: true, resolvedURL: "https://github.com", surfaced: false))
+    #expect(fake.urlOpens == [githubURL])
+}
+
+@Test("a url recorded in another mode is not surfaced in the current mode")
+func otherModeRecordIsNotSurfaced() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    registry.record(modeID: "developer", urlID: "github") // recorded elsewhere
+    let calls = SurfaceCallBox()
+    // Active mode is executive; the developer-mode record must not match.
+    let result = try await surfacingURLCapability(fake, outcome: .surfaced, calls: calls, registry: registry, mode: "executive")
+        .open(urlID: "github")
+
+    #expect(result.opened)
+    #expect(!result.surfaced)
+    #expect(fake.urlOpens == [githubURL])
+    #expect(calls.all.isEmpty) // surface never consulted for a cross-mode record
+}
+
+@Test("with no active mode, surfacing is skipped and nothing is recorded")
+func noActiveModeSkipsSurfacing() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    let calls = SurfaceCallBox()
+    let result = try await surfacingURLCapability(fake, outcome: .surfaced, calls: calls, registry: registry, mode: nil)
+        .open(urlID: "github")
+
+    #expect(result.opened)
+    #expect(!result.surfaced)
+    #expect(fake.urlOpens == [githubURL])
+    #expect(calls.all.isEmpty)
+    // No mode to key a record under, so a subsequent open also opens fresh.
+    #expect(!registry.contains(modeID: "executive", urlID: "github"))
+}
+
 // MARK: - Shared contract suite (FR-TOL-04, MAC-ADAPTER-6 groundwork)
 
 private func nativeBundle(_ fake: FakeWorkspace) -> ToolCapabilities {

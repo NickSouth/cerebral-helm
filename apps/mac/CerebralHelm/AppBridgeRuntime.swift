@@ -73,7 +73,17 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // maps below and the runtime's parser read through it, so `addUrlReference`'s
         // reload makes a URL added mid-session openable this launch — no relaunch.
         let referenceStore = CommandReferenceStore(references)
-        let composition = MacToolCapabilities.make(referenceStore: referenceStore)
+        // The durable active-mode store is shared: `mode.apply` persists through it,
+        // and the URL adapter reads the current mode through it to scope re-open tab
+        // surfacing (NIC-145). One in-memory registry tracks the `(mode, url)` pairs
+        // CH opened this session.
+        let modeStateStore = try? makeModeStateStore(paths)
+        let urlOpenRegistry = SessionURLOpenRegistry()
+        let composition = MacToolCapabilities.make(
+            referenceStore: referenceStore,
+            urlOpenRegistry: urlOpenRegistry,
+            currentModeProvider: { modeStateStore.flatMap { try? $0.loadActiveModeID() } }
+        )
         let capabilities = composition.capabilities
         toolCapabilities = capabilities
         // Descriptors are authoritative for permission metadata (ADR-003, NIC-83):
@@ -121,7 +131,8 @@ final class AppBridgeRuntime: @unchecked Sendable {
             ),
             settingsStore: settingsStore,
             // Bootstrap restores the last active mode across restarts (FR-MOD-05).
-            modeStateStore: try? makeModeStateStore(paths),
+            // The same store the URL adapter reads for surfacing scope (NIC-145).
+            modeStateStore: modeStateStore,
             emitEventJSON: { relay.emit($0) }
         )
     }

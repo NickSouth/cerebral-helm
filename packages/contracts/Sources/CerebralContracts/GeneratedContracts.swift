@@ -6721,17 +6721,20 @@ public extension CerebralHelmURLOpenInput {
 public struct CerebralHelmURLOpenOutput: Codable {
     public let opened: Bool
     public let resolvedURL: String
+    public let surfaced: Bool
     public let urlID: String
 
     public enum CodingKeys: String, CodingKey {
         case opened
         case resolvedURL = "resolvedUrl"
+        case surfaced
         case urlID = "urlId"
     }
 
-    public init(opened: Bool, resolvedURL: String, urlID: String) {
+    public init(opened: Bool, resolvedURL: String, surfaced: Bool, urlID: String) {
         self.opened = opened
         self.resolvedURL = resolvedURL
+        self.surfaced = surfaced
         self.urlID = urlID
     }
 }
@@ -6757,11 +6760,13 @@ public extension CerebralHelmURLOpenOutput {
     func with(
         opened: Bool? = nil,
         resolvedURL: String? = nil,
+        surfaced: Bool? = nil,
         urlID: String? = nil
     ) -> CerebralHelmURLOpenOutput {
         return CerebralHelmURLOpenOutput(
             opened: opened ?? self.opened,
             resolvedURL: resolvedURL ?? self.resolvedURL,
+            surfaced: surfaced ?? self.surfaced,
             urlID: urlID ?? self.urlID
         )
     }

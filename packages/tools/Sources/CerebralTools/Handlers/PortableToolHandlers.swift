@@ -73,6 +73,7 @@ public struct URLOpenHandler: ToolHandler {
             return try CerebralHelmURLOpenOutput(
                 opened: result.opened,
                 resolvedURL: result.resolvedURL,
+                surfaced: result.surfaced,
                 urlID: result.urlID
             ).jsonData()
         } catch let error as NativeCapabilityError {
