@@ -9,6 +9,7 @@
 
 export interface SettingsPatchChanges {
   readonly defaultModeId?: string;
+  readonly confirmAllActions?: boolean;
   readonly appearance?: {
     readonly density?: "comfortable" | "compact";
     readonly reducedMotion?: boolean;
@@ -17,6 +18,8 @@ export interface SettingsPatchChanges {
   readonly hotkeys?: { readonly commandPalette?: string };
   readonly knowledge?: { readonly rootReference?: string };
   readonly workspace?: { readonly windowsStoredByMode?: boolean; readonly mainDisplayId?: string };
+  /** Per-mode accent overrides keyed by design-token name → `#rrggbb`. */
+  readonly modeColors?: Readonly<Record<string, string>>;
   readonly extensions?: Readonly<Record<string, unknown>>;
 }
 
@@ -36,14 +39,18 @@ const MODE_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const DENSITY_VALUES = new Set(["comfortable", "compact"]);
 const ALLOWED_CHANGE_KEYS = new Set([
   "defaultModeId",
+  "confirmAllActions",
   "appearance",
   "hotkeys",
   "knowledge",
   "workspace",
+  "modeColors",
   "extensions"
 ]);
 const ALLOWED_APPEARANCE_KEYS = new Set(["density", "reducedMotion", "assistantName"]);
 const ASSISTANT_NAME_MAX_LENGTH = 40;
+const MODE_COLOR_KEY_PATTERN = /^(executive|developer|school|entertainment)\.(primary|secondary)$/;
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -70,6 +77,10 @@ export function validateSettingsChanges(changes: unknown): PatchValidation {
     if (typeof value !== "string" || !MODE_ID_PATTERN.test(value)) {
       errors.push("defaultModeId must be a lowercase mode id");
     }
+  }
+
+  if ("confirmAllActions" in changes && typeof changes.confirmAllActions !== "boolean") {
+    errors.push("confirmAllActions must be a boolean");
   }
 
   if ("appearance" in changes) {
@@ -131,6 +142,22 @@ export function validateSettingsChanges(changes: unknown): PatchValidation {
       ("commandPalette" in hotkeys && typeof hotkeys.commandPalette !== "string")
     ) {
       errors.push("hotkeys.commandPalette must be a string");
+    }
+  }
+
+  if ("modeColors" in changes) {
+    const modeColors = changes.modeColors;
+    if (!isPlainObject(modeColors)) {
+      errors.push("modeColors must be an object");
+    } else {
+      for (const [key, value] of Object.entries(modeColors)) {
+        if (!MODE_COLOR_KEY_PATTERN.test(key)) {
+          errors.push(`modeColors key "${key}" is not a known mode accent token`);
+        }
+        if (typeof value !== "string" || !HEX_COLOR_PATTERN.test(value)) {
+          errors.push(`modeColors.${key} must be a #rrggbb hex color`);
+        }
+      }
     }
   }
 

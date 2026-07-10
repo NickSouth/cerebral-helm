@@ -2339,24 +2339,37 @@ public enum CerebralHelmBridgeOperationResponseType: String, Codable {
 // MARK: - CerebralHelmSettingsSnapshot
 public struct CerebralHelmSettingsSnapshot: Codable {
     public let appearance: SettingsSnapshotAppearance
+    /// When true, policy raises every non-read-only action to require confirmation (the 'Ask
+    /// before all actions' tightening; stricter-only, never weakens descriptor policy). Defaults
+    /// to false. Enforced when the command runtime is composed.
+    public let confirmAllActions: Bool
     /// The mode the app opens in on a fresh launch (the durable setting, resolved as stored
     /// value, else the configured default, else `executive`). This is the default-mode setting,
     /// NOT the currently active mode.
     public let defaultModeID: String
     public let knowledge: SettingsSnapshotKnowledge
+    /// Per-mode accent-color overrides, keyed by design-token name (e.g. `executive.primary`)
+    /// with a `#rrggbb` hex value. Sparse: a key is present only when the user has customized
+    /// that channel — otherwise the shipped mode palette default applies (resolved on the
+    /// client, whose token CSS holds the default hex values). Unlike the other snapshot fields
+    /// this is not fully resolved, mirroring the meaningful-unset shape of
+    /// `knowledge.rootReference`.
+    public let modeColors: [String: String]
     public let schemaVersion: String
     public let workspace: SettingsSnapshotWorkspace
 
     public enum CodingKeys: String, CodingKey {
-        case appearance
+        case appearance, confirmAllActions
         case defaultModeID = "defaultModeId"
-        case knowledge, schemaVersion, workspace
+        case knowledge, modeColors, schemaVersion, workspace
     }
 
-    public init(appearance: SettingsSnapshotAppearance, defaultModeID: String, knowledge: SettingsSnapshotKnowledge, schemaVersion: String, workspace: SettingsSnapshotWorkspace) {
+    public init(appearance: SettingsSnapshotAppearance, confirmAllActions: Bool, defaultModeID: String, knowledge: SettingsSnapshotKnowledge, modeColors: [String: String], schemaVersion: String, workspace: SettingsSnapshotWorkspace) {
         self.appearance = appearance
+        self.confirmAllActions = confirmAllActions
         self.defaultModeID = defaultModeID
         self.knowledge = knowledge
+        self.modeColors = modeColors
         self.schemaVersion = schemaVersion
         self.workspace = workspace
     }
@@ -2382,15 +2395,19 @@ public extension CerebralHelmSettingsSnapshot {
 
     func with(
         appearance: SettingsSnapshotAppearance? = nil,
+        confirmAllActions: Bool? = nil,
         defaultModeID: String? = nil,
         knowledge: SettingsSnapshotKnowledge? = nil,
+        modeColors: [String: String]? = nil,
         schemaVersion: String? = nil,
         workspace: SettingsSnapshotWorkspace? = nil
     ) -> CerebralHelmSettingsSnapshot {
         return CerebralHelmSettingsSnapshot(
             appearance: appearance ?? self.appearance,
+            confirmAllActions: confirmAllActions ?? self.confirmAllActions,
             defaultModeID: defaultModeID ?? self.defaultModeID,
             knowledge: knowledge ?? self.knowledge,
+            modeColors: modeColors ?? self.modeColors,
             schemaVersion: schemaVersion ?? self.schemaVersion,
             workspace: workspace ?? self.workspace
         )
@@ -3743,24 +3760,28 @@ public extension CerebralHelmSettingsPatch {
 // MARK: - Changes
 public struct Changes: Codable {
     public let appearance: Appearance?
+    public let confirmAllActions: Bool?
     public let defaultModeID: String?
     public let extensions: [String: JSONAny]?
     public let hotkeys: Hotkeys?
     public let knowledge: Knowledge?
+    public let modeColors: [String: String]?
     public let workspace: Workspace?
 
     public enum CodingKeys: String, CodingKey {
-        case appearance
+        case appearance, confirmAllActions
         case defaultModeID = "defaultModeId"
-        case extensions, hotkeys, knowledge, workspace
+        case extensions, hotkeys, knowledge, modeColors, workspace
     }
 
-    public init(appearance: Appearance?, defaultModeID: String?, extensions: [String: JSONAny]?, hotkeys: Hotkeys?, knowledge: Knowledge?, workspace: Workspace?) {
+    public init(appearance: Appearance?, confirmAllActions: Bool?, defaultModeID: String?, extensions: [String: JSONAny]?, hotkeys: Hotkeys?, knowledge: Knowledge?, modeColors: [String: String]?, workspace: Workspace?) {
         self.appearance = appearance
+        self.confirmAllActions = confirmAllActions
         self.defaultModeID = defaultModeID
         self.extensions = extensions
         self.hotkeys = hotkeys
         self.knowledge = knowledge
+        self.modeColors = modeColors
         self.workspace = workspace
     }
 }
@@ -3785,18 +3806,22 @@ public extension Changes {
 
     func with(
         appearance: Appearance?? = nil,
+        confirmAllActions: Bool?? = nil,
         defaultModeID: String?? = nil,
         extensions: [String: JSONAny]?? = nil,
         hotkeys: Hotkeys?? = nil,
         knowledge: Knowledge?? = nil,
+        modeColors: [String: String]?? = nil,
         workspace: Workspace?? = nil
     ) -> Changes {
         return Changes(
             appearance: appearance ?? self.appearance,
+            confirmAllActions: confirmAllActions ?? self.confirmAllActions,
             defaultModeID: defaultModeID ?? self.defaultModeID,
             extensions: extensions ?? self.extensions,
             hotkeys: hotkeys ?? self.hotkeys,
             knowledge: knowledge ?? self.knowledge,
+            modeColors: modeColors ?? self.modeColors,
             workspace: workspace ?? self.workspace
         )
     }

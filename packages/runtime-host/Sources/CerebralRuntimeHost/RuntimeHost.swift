@@ -56,6 +56,7 @@ public func makeCommandRuntime(
         metadataStore: SQLiteNoteMetadataStore(database: database),
         searchIndex: SQLiteNoteSearchIndex(database: database)
     )
+    let settingsStore = SQLiteSettingsStore(database: database)
     let registry = try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: paths.toolDescriptorsDirectory,
         capabilities: capabilities,
@@ -69,14 +70,24 @@ public func makeCommandRuntime(
         modeStateStore: SQLiteModeStateStore(database: database),
         modeSessionLog: SQLiteModeSessionLog(database: database),
         modeWorkspaceStore: SQLiteModeWorkspaceStore(database: database),
-        settingsStore: SQLiteSettingsStore(database: database),
+        settingsStore: settingsStore,
         // window.arrange resolves apps through the same reference catalog as
         // app.open — configured bundle-id references only, never arbitrary targets.
         appTargets: references.apps.mapValues(\.target)
     )
 
+    // "Ask before all actions" (NIC-137): when the durable flag is set, the policy
+    // engine raises every non-read-only action to require confirmation — a
+    // stricter-only overlay that can never weaken descriptor policy. Read once here,
+    // so toggling it takes effect the next time the runtime is composed.
+    let confirmAllActions = (try? settingsStore.load())?.confirmAllActions == true
+    let policy = confirmAllActions
+        ? PolicyEngine(overrides: .confirmEveryAction)
+        : PolicyEngine()
+
     return CommandRuntime(
         registry: registry,
+        policy: policy,
         phase: phase,
         coordinator: ConfirmationCoordinator(store: SQLiteConfirmationStore(database: database)),
         factory: CommandFactory(clock: SystemClock(), identifiers: UUIDIdentifierGenerator()),

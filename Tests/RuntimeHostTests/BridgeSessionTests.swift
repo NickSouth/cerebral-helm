@@ -621,6 +621,77 @@ func assistantNamePatchPersists() async throws {
     #expect(!(try decode(rejected, as: Accepted.self).accepted))
 }
 
+@Test("per-mode colors persist through the patch path and reject bad keys/values (NIC-137)")
+func modeColorsPatchPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_color001","changes":{"modeColors":{"executive.primary":"#ffd166"}}}}"##
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+    #expect(try makeSettingsStore(paths).load().modeColorsJSON?.contains("executive.primary") == true)
+
+    // A non-hex value is rejected wholesale.
+    let badValue = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"modeColors":{"executive.primary":"not-a-color"}}}}"#
+    ))
+    #expect(!(try decode(badValue, as: Accepted.self).accepted))
+
+    // An unknown accent token key is rejected too.
+    let badKey = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"changes":{"modeColors":{"executive.tertiary":"#ffffff"}}}}"##
+    ))
+    #expect(!(try decode(badKey, as: Accepted.self).accepted))
+}
+
+@Test("the Ask-before-all-actions flag persists through the patch path and rejects a non-boolean (NIC-137)")
+func confirmAllActionsPatchPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_confirm01","changes":{"confirmAllActions":true}}}"#
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+    #expect(try makeSettingsStore(paths).load().confirmAllActions == true)
+
+    // A non-boolean is rejected wholesale.
+    let rejected = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"confirmAllActions":"yes"}}}"#
+    ))
+    #expect(!(try decode(rejected, as: Accepted.self).accepted))
+}
+
+@Test("Ask before all actions gates a local_write command that normally runs unconfirmed (NIC-137)")
+func confirmAllActionsGatesLocalWrite() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // Persist the tightening BEFORE composing the runtime — it is read at composition.
+    try makeSettingsStore(paths).apply(SettingsChanges(confirmAllActions: true))
+
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // note.capture is local_write — it runs without confirmation by default (see
+    // captureNoteReturnsRealId), but the tightening raises it, so the command pauses
+    // and a confirmation disclosure is emitted.
+    let submit = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"note buy milk","source":"dashboard"}"#)
+    )
+    #expect(submit.status == .ok)
+    let confirmations = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "confirmation.changed" }
+    #expect(!confirmations.isEmpty)
+}
+
 @Test("a rejected patch persists nothing")
 func rejectedPatchPersistsNothing() async throws {
     let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
@@ -686,9 +757,11 @@ private struct SettingsSnapshot: Decodable {
     struct Workspace: Decodable { let windowsStoredByMode: Bool; let mainDisplayId: String }
     let schemaVersion: String
     let defaultModeId: String
+    let confirmAllActions: Bool
     let appearance: Appearance
     let knowledge: Knowledge
     let workspace: Workspace
+    let modeColors: [String: String]
 }
 
 @Test("getSettings reflects the persisted values written through updateSettings")
@@ -697,7 +770,7 @@ func getSettingsReflectsPersistedValues() async throws {
     let session = try makeSessionWithSettings(paths)
     let saved = await session.execute(operationRequest(
         .updateSettings,
-        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_read0001","changes":{"defaultModeId":"developer","appearance":{"reducedMotion":true,"assistantName":"Aria"},"knowledge":{"rootReference":"primary-vault"},"workspace":{"windowsStoredByMode":true,"mainDisplayId":"37D8832A-2D66-02CA-B9F7-8F30A301B230"}}}}"#
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_read0001","changes":{"defaultModeId":"developer","confirmAllActions":true,"appearance":{"reducedMotion":true,"assistantName":"Aria"},"knowledge":{"rootReference":"primary-vault"},"workspace":{"windowsStoredByMode":true,"mainDisplayId":"37D8832A-2D66-02CA-B9F7-8F30A301B230"},"modeColors":{"executive.primary":"#ffd166"}}}}"##
     ))
     #expect(try decode(saved, as: Accepted.self).accepted)
 
@@ -708,8 +781,10 @@ func getSettingsReflectsPersistedValues() async throws {
     #expect(response.error == nil)
     let snapshot = try decode(response, as: SettingsSnapshot.self)
     #expect(snapshot.defaultModeId == "developer")
+    #expect(snapshot.confirmAllActions == true)
     #expect(snapshot.appearance.reducedMotion == true)
     #expect(snapshot.appearance.assistantName == "Aria")
+    #expect(snapshot.modeColors["executive.primary"] == "#ffd166")
     #expect(snapshot.knowledge.rootReference == "primary-vault")
     #expect(snapshot.workspace.windowsStoredByMode == true)
     #expect(snapshot.workspace.mainDisplayId == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
@@ -723,8 +798,10 @@ func getSettingsResolvesDefaults() async throws {
     #expect(response.status == .ok)
     let snapshot = try decode(response, as: SettingsSnapshot.self)
     #expect(snapshot.defaultModeId == "executive")           // the configured default
+    #expect(snapshot.confirmAllActions == false)             // descriptor policy governs
     #expect(snapshot.appearance.reducedMotion == false)
     #expect(snapshot.appearance.assistantName == "Heimlich")  // the default identity
+    #expect(snapshot.modeColors.isEmpty)                      // no overrides stored
     #expect(snapshot.knowledge.rootReference == nil)
     #expect(snapshot.workspace.windowsStoredByMode == false)
     #expect(snapshot.workspace.mainDisplayId == "system-primary")

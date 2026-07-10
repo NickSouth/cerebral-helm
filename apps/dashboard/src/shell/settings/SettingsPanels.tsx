@@ -1,12 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useDashboardState } from "../../state/DashboardStateProvider";
 import { useAppearance, DEFAULT_ASSISTANT_NAME } from "../../state/AppearanceProvider";
-import { toModeId } from "../../tokens/tokens";
+import { toModeId, MODE_IDS, MODE_DEFAULT_COLORS, type ModeTokenName } from "../../tokens/tokens";
 import { Unavailable } from "../../components/Unavailable";
 import { humanizeId } from "../labels";
 import { useUpdateSettings } from "./useUpdateSettings";
 import { useSettingsSnapshot } from "./SettingsSnapshotProvider";
-import { postShellControl } from "../shellControl";
+import { postShellControl, isShellControlAvailable } from "../shellControl";
 import { PERMISSION_TOOLS } from "./permissionsCatalog";
 import wiredManifest from "../quickActions.manifest.json";
 import type { SettingsCategoryId } from "./categories";
@@ -65,6 +65,11 @@ const SYSTEM_PRIMARY = "system-primary";
 interface LoginItemWindow extends Window {
   __cerebralLoginItem?: { status?: string };
   __cerebralLoginItemUpdate?: (status: string) => void;
+}
+
+interface KnowledgeRootWindow extends Window {
+  /** Set by the native shell after the NSOpenPanel folder picker resolves (NIC-138). */
+  __cerebralKnowledgeRootUpdate?: (path: string) => void;
 }
 
 /**
@@ -250,31 +255,64 @@ function GeneralPanelBody() {
 // --- Permissions ----------------------------------------------------------
 
 function PermissionsPanel() {
+  // The tightening toggle seeds from the persisted read (NIC-141).
+  const { status } = useSettingsSnapshot();
+  return status === "loading" ? <SettingsLoading /> : <PermissionsPanelBody />;
+}
+
+function PermissionsPanelBody() {
+  const { snapshot } = useSettingsSnapshot();
+  const updateSettings = useUpdateSettings();
+  const [confirmAll, setConfirmAll] = useState(() => snapshot?.confirmAllActions ?? false);
+
+  function onToggle(next: boolean) {
+    setConfirmAll(next);
+    void updateSettings({ confirmAllActions: next });
+  }
+
   return (
-    <Section title="Enabled tools">
-      <p className="settings-note">
-        Risk classification and confirmation policy are set by deterministic policy outside this
-        window and cannot be changed here — they are inspected, never overridden.
-      </p>
-      <ul className="settings-list">
-        {PERMISSION_TOOLS.map((tool) => (
-          <li key={tool.id} className="settings-list__item">
-            <div className="settings-list__text">
-              <span className="settings-list__title">{tool.id}</span>
-              <span className="settings-list__sub">{tool.purpose}</span>
-            </div>
-            <div className="settings-list__meta">
-              <span className="settings-badge" data-risk={tool.risk}>
-                {humanizeId(tool.risk)}
-              </span>
-              <span className="settings-list__policy">
-                {tool.requiresConfirmation ? "Confirms" : "No confirmation"}
-              </span>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </Section>
+    <>
+      <Section title="Confirmation">
+        <Field
+          label="Ask before all actions"
+          hint="Require confirmation before every action across the app. This only tightens — it adds confirmation and can never remove one that policy already requires. Applies on next launch."
+        >
+          <label className="settings-switch">
+            <input
+              type="checkbox"
+              checked={confirmAll}
+              aria-label="Ask before all actions"
+              onChange={(event) => onToggle(event.target.checked)}
+            />
+            <span className="settings-switch__track" aria-hidden="true" />
+          </label>
+        </Field>
+      </Section>
+      <Section title="Enabled tools">
+        <p className="settings-note">
+          Each tool&apos;s risk class and baseline confirmation are deterministic and cannot be
+          relaxed here — the switch above only ever adds confirmation, never removes it.
+        </p>
+        <ul className="settings-list">
+          {PERMISSION_TOOLS.map((tool) => (
+            <li key={tool.id} className="settings-list__item">
+              <div className="settings-list__text">
+                <span className="settings-list__title">{tool.id}</span>
+                <span className="settings-list__sub">{tool.purpose}</span>
+              </div>
+              <div className="settings-list__meta">
+                <span className="settings-badge" data-risk={tool.risk}>
+                  {humanizeId(tool.risk)}
+                </span>
+                <span className="settings-list__policy">
+                  {tool.requiresConfirmation ? "Confirms" : "No confirmation"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </Section>
+    </>
   );
 }
 
@@ -417,14 +455,16 @@ function ActionsPanel() {
 
 // --- Customization --------------------------------------------------------
 
+const MODE_COLOR_CHANNELS = ["primary", "secondary"] as const;
+
 function CustomizationPanel() {
-  // Seeds from — and live-updates — the global assistant name (AppearanceProvider,
-  // fed by getSettings). Typing updates the dashboard name in place where they share
-  // a tree (the browser overlay); the edit persists on commit for every surface.
-  const { assistantName, setAssistantName } = useAppearance();
+  // Seeds from — and live-updates — the global assistant name and per-mode accent colors
+  // (AppearanceProvider, fed by getSettings). Editing recolors/renames the dashboard in
+  // place where they share a tree (the browser overlay); the edit persists on commit.
+  const { assistantName, setAssistantName, modeColors, setModeColor } = useAppearance();
   const updateSettings = useUpdateSettings();
 
-  function commit() {
+  function commitName() {
     const trimmed = assistantName.trim();
     // Never persist an empty name — restore the default identity instead.
     const next = trimmed.length === 0 ? DEFAULT_ASSISTANT_NAME : trimmed;
@@ -434,30 +474,64 @@ function CustomizationPanel() {
     void updateSettings({ appearance: { assistantName: next } });
   }
 
+  // The override map is replaced wholesale on write, so persist the full current set of
+  // overrides (defaults are never stored — an un-edited channel stays absent).
+  function commitColors() {
+    void updateSettings({ modeColors });
+  }
+
   return (
-    <Section title="Assistant">
-      <Field
-        label="Assistant name"
-        hint="The name shown for your assistant across the dashboard. Defaults to Heimlich."
-      >
-        <input
-          type="text"
-          className="settings-input"
-          value={assistantName}
-          maxLength={40}
-          placeholder={DEFAULT_ASSISTANT_NAME}
-          aria-label="Assistant name"
-          onChange={(event) => setAssistantName(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              commit();
-            }
-          }}
-        />
-      </Field>
-      <p className="settings-note">Per-mode accent colors are customizable here soon.</p>
-    </Section>
+    <>
+      <Section title="Assistant">
+        <Field
+          label="Assistant name"
+          hint="The name shown for your assistant across the dashboard. Defaults to Heimlich."
+        >
+          <input
+            type="text"
+            className="settings-input"
+            value={assistantName}
+            maxLength={40}
+            placeholder={DEFAULT_ASSISTANT_NAME}
+            aria-label="Assistant name"
+            onChange={(event) => setAssistantName(event.target.value)}
+            onBlur={commitName}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                commitName();
+              }
+            }}
+          />
+        </Field>
+      </Section>
+      <Section title="Mode colors">
+        <p className="settings-note">
+          Each mode&apos;s primary and secondary accent. Changes recolor the dashboard live; leave a
+          swatch untouched to keep its shipped color.
+        </p>
+        {MODE_IDS.map((modeId) => (
+          <Field key={modeId} label={humanizeId(modeId)}>
+            <div className="settings-color-pair">
+              {MODE_COLOR_CHANNELS.map((channel) => {
+                const tokenName = `${modeId}.${channel}` as ModeTokenName;
+                const value = modeColors[tokenName] ?? MODE_DEFAULT_COLORS[tokenName];
+                return (
+                  <input
+                    key={channel}
+                    type="color"
+                    className="settings-color"
+                    value={value}
+                    aria-label={`${humanizeId(modeId)} ${channel} color`}
+                    onChange={(event) => setModeColor(tokenName, event.target.value)}
+                    onBlur={commitColors}
+                  />
+                );
+              })}
+            </div>
+          </Field>
+        ))}
+      </Section>
+    </>
   );
 }
 
@@ -473,35 +547,63 @@ function SetupPanelBody() {
   const { snapshot } = useSettingsSnapshot();
   const updateSettings = useUpdateSettings();
   const [rootReference, setRootReference] = useState(() => snapshot?.knowledge.rootReference ?? "");
+  // The native NSOpenPanel picker is a macOS-host concern (off the versioned bridge);
+  // in a plain browser there is no channel, so the Browse button is honest-disabled.
+  const canBrowse = isShellControlAvailable();
 
-  function commit() {
-    const trimmed = rootReference.trim();
+  function persist(next: string) {
+    const trimmed = next.trim();
     if (trimmed) {
       void updateSettings({ knowledge: { rootReference: trimmed } });
     }
   }
 
+  // The native shell posts back the folder chosen in the Finder picker (NIC-138): reflect
+  // it and persist through the validated settings path. Registered once for the panel's life.
+  useEffect(() => {
+    const target = window as KnowledgeRootWindow;
+    target.__cerebralKnowledgeRootUpdate = (path: string) => {
+      setRootReference(path);
+      persist(path);
+    };
+    return () => {
+      delete target.__cerebralKnowledgeRootUpdate;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <>
       <Section title="Knowledge root">
         <Field
-          label="Root reference"
-          hint="Where durable Markdown knowledge lives. Editable now; a native folder picker arrives with the knowledge system."
+          label="Root folder"
+          hint="Where durable Markdown knowledge lives. Choose a folder, or type a path. Changing it re-points to the new location — it never moves or deletes what is already there. Applies with the knowledge system."
         >
-          <input
-            type="text"
-            className="settings-input"
-            value={rootReference}
-            placeholder="e.g. knowledge-root"
-            aria-label="Knowledge root reference"
-            onChange={(event) => setRootReference(event.target.value)}
-            onBlur={commit}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                commit();
-              }
-            }}
-          />
+          <div className="settings-root-picker">
+            <input
+              type="text"
+              className="settings-input"
+              value={rootReference}
+              placeholder="e.g. ~/CerebralHelm/knowledge"
+              aria-label="Knowledge root reference"
+              onChange={(event) => setRootReference(event.target.value)}
+              onBlur={() => persist(rootReference)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  persist(rootReference);
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="settings-button"
+              disabled={!canBrowse}
+              title={canBrowse ? undefined : "Choosing a folder requires the macOS host"}
+              onClick={() => postShellControl("pickKnowledgeRoot")}
+            >
+              Browse…
+            </button>
+          </div>
         </Field>
       </Section>
       <Section title="Library">

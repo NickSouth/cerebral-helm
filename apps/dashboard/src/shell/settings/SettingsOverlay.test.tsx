@@ -83,9 +83,10 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
 
     fireEvent.click(within(dialog).getByRole("tab", { name: "Permissions" }));
     expect(within(dialog).queryByLabelText("Reduce motion")).toBeNull();
-    // Permissions is read-only inspection: real tool ids + the deterministic-policy statement.
-    expect(within(dialog).getByText("hook.run")).toBeInTheDocument();
-    expect(within(dialog).getByText(/cannot be changed here/)).toBeInTheDocument();
+    // Permissions inspection: real tool ids + the deterministic-policy statement (it seeds
+    // the tightening toggle from the persisted read, so the list settles asynchronously).
+    expect(await within(dialog).findByText("hook.run")).toBeInTheDocument();
+    expect(within(dialog).getByText(/cannot be relaxed here/)).toBeInTheDocument();
   });
 
   it("offers only stable-identity displays for Main display, defaulting to System primary (NIC-120b)", async () => {
@@ -146,15 +147,23 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(input).toHaveValue("knowledge-root");
   });
 
+  it("honest-disables the knowledge-root Browse button without a native shell (NIC-138)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+    expect(await within(dialog).findByRole("button", { name: "Browse…" })).toBeDisabled();
+  });
+
   it("applies persisted reduced motion app-wide at startup, before settings is opened (NIC-141)", async () => {
     const bridge = createMockCerebralBridge();
     bridge.getSettings = () =>
       Promise.resolve({
         schemaVersion: "1.0.0",
         defaultModeId: "executive",
-        appearance: { reducedMotion: true },
+        appearance: { reducedMotion: true, assistantName: "Heimlich" },
         knowledge: { rootReference: null },
-        workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary" }
+        workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary" },
+        modeColors: {}
       });
     const store = createBridgeStore(bridge, loadBootstrapState());
     render(
@@ -218,6 +227,51 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     fireEvent.change(input, { target: { value: "Nova" } });
     expect(screen.getByRole("region", { name: "Nova" })).toBeInTheDocument();
     fireEvent.blur(input);
+    await waitFor(() => expect(accepted).toEqual([true]));
+  });
+
+  it("recolors a mode's accent live and persists an accepted patch (NIC-137)", async () => {
+    const { bridge } = renderApp();
+    const accepted: boolean[] = [];
+    const original = bridge.updateSettings.bind(bridge);
+    bridge.updateSettings = async (input) => {
+      const result = await original(input);
+      accepted.push(result.accepted);
+      return result;
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Customization" }));
+    const primary = await within(dialog).findByLabelText("Executive primary color");
+    expect(primary).toHaveValue("#e8b765"); // the shipped default (no override stored)
+
+    // Picking a color overrides the mode token on the document root, re-theming live,
+    // then persists on commit.
+    fireEvent.change(primary, { target: { value: "#ff0000" } });
+    expect(
+      document.documentElement.style.getPropertyValue("--ch-mode-executive-primary")
+    ).toBe("#ff0000");
+    fireEvent.blur(primary);
+    await waitFor(() => expect(accepted).toEqual([true]));
+  });
+
+  it("tightens confirmation via 'Ask before all actions' and persists an accepted patch (NIC-137)", async () => {
+    const { bridge } = renderApp();
+    const accepted: boolean[] = [];
+    const original = bridge.updateSettings.bind(bridge);
+    bridge.updateSettings = async (input) => {
+      const result = await original(input);
+      accepted.push(result.accepted);
+      return result;
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Permissions" }));
+    const toggle = await within(dialog).findByLabelText("Ask before all actions");
+    expect(toggle).not.toBeChecked(); // the mock persists false
+
+    fireEvent.click(toggle);
+    expect(toggle).toBeChecked();
     await waitFor(() => expect(accepted).toEqual([true]));
   });
 });
@@ -299,5 +353,31 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
 
     fireEvent.click(within(surface).getByRole("button", { name: "Close settings" }));
     expect(postMessage).toHaveBeenCalledWith({ action: "closeSettings" });
+  });
+
+  it("chooses the knowledge root through the native Finder picker and persists it (NIC-138)", async () => {
+    const postMessage = vi.fn();
+    (window as unknown as ShellControlWindow).webkit = {
+      messageHandlers: { shellControl: { postMessage } }
+    };
+    const { SettingsApp } = await import("../../app/SettingsApp");
+    render(<SettingsApp />);
+    const surface = screen.getByRole("main", { name: "Settings" });
+
+    fireEvent.click(within(surface).getByRole("tab", { name: "Setup" }));
+    const browse = await within(surface).findByRole("button", { name: "Browse…" });
+    expect(browse).toBeEnabled();
+    fireEvent.click(browse);
+    expect(postMessage).toHaveBeenCalledWith({ action: "pickKnowledgeRoot" });
+
+    // The native shell posts the chosen folder back; the panel reflects it in the field.
+    act(() => {
+      (
+        window as unknown as { __cerebralKnowledgeRootUpdate?: (path: string) => void }
+      ).__cerebralKnowledgeRootUpdate?.("/Users/me/CerebralHelm/knowledge");
+    });
+    expect(within(surface).getByLabelText("Knowledge root reference")).toHaveValue(
+      "/Users/me/CerebralHelm/knowledge"
+    );
   });
 });

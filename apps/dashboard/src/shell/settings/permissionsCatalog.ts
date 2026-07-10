@@ -29,9 +29,14 @@ interface RawDescriptor {
   readonly confirmationPolicyKey?: string;
 }
 
-/** Only `read_only` tools skip confirmation; every writing/side-effecting risk class confirms. */
+/**
+ * Baseline confirmation, mirroring the `PolicyEngine` (Swift): read-only AND local-write
+ * (reversible, local — open a configured app/url, capture a note) run without confirmation;
+ * every external / shell / financial / destructive class confirms. (The "Ask before all
+ * actions" setting can tighten local-write on top of this, but the baseline is per descriptor.)
+ */
 function requiresConfirmation(risk: string): boolean {
-  return risk !== "read_only";
+  return risk !== "read_only" && risk !== "local_write";
 }
 
 function toPermissionTool(descriptor: RawDescriptor): PermissionTool {

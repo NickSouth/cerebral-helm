@@ -403,8 +403,74 @@
   min-width: 14rem;
 }
 
+/* Knowledge-root picker: text field + native Finder "Browse…" button. */
+.settings-root-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  flex: none;
+}
+
+.settings-button {
+  font: inherit;
+  font-size: var(--ch-font-size-base);
+  white-space: nowrap;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: color-mix(in srgb, var(--ch-accent-primary) 12%, transparent);
+  color: var(--ch-text-primary);
+  cursor: pointer;
+  transition: background var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.settings-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ch-accent-primary) 22%, transparent);
+}
+
+.settings-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-button:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
 .settings-select:focus-visible,
 .settings-input:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
+/* Per-mode accent color pickers (native color wheel popup). */
+.settings-color-pair {
+  display: flex;
+  gap: var(--ch-space-2);
+  flex: none;
+}
+
+.settings-color {
+  width: 2.5rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-color::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.settings-color::-webkit-color-swatch {
+  border: none;
+  border-radius: calc(var(--ch-radius-md) - 2px);
+}
+
+.settings-color:focus-visible {
   outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
   outline-offset: var(--ch-focus-ring-offset);
 }

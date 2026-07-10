@@ -26,20 +26,24 @@ func appliedFieldsRoundTrip() throws {
     let store = try makeStore()
     try store.apply(SettingsChanges(
         defaultModeID: "developer",
+        confirmAllActions: true,
         appearanceDensity: "compact",
         appearanceReducedMotion: true,
         appearanceAssistantName: "Aria",
         commandPaletteHotkey: "cmd+shift+space",
         knowledgeRootReference: "workspace",
         windowsStoredByMode: true,
+        modeColorsJSON: ##"{"executive.primary":"#ffd166"}"##,
         extensionsJSON: #"{"x-theme-lab":{"glow":2}}"#
     ))
 
     let loaded = try store.load()
     #expect(loaded.defaultModeID == "developer")
+    #expect(loaded.confirmAllActions == true)
     #expect(loaded.appearanceDensity == "compact")
     #expect(loaded.appearanceReducedMotion == true)
     #expect(loaded.appearanceAssistantName == "Aria")
+    #expect(loaded.modeColorsJSON == ##"{"executive.primary":"#ffd166"}"##)
     #expect(loaded.commandPaletteHotkey == "cmd+shift+space")
     #expect(loaded.knowledgeRootReference == "workspace")
     #expect(loaded.windowsStoredByMode == true)
@@ -90,6 +94,21 @@ func assistantNameRoundTrips() throws {
     #expect(loaded.defaultModeID == "school")
 }
 
+@Test("per-mode color overrides round-trip and merge like every field (NIC-137)")
+func modeColorsRoundTrip() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(modeColorsJSON: ##"{"executive.primary":"#ffd166"}"##))
+    #expect(try store.load().modeColorsJSON == ##"{"executive.primary":"#ffd166"}"##)
+
+    // An unrelated patch preserves it; a later patch replaces the map wholesale.
+    try store.apply(SettingsChanges(defaultModeID: "school"))
+    #expect(try store.load().modeColorsJSON == ##"{"executive.primary":"#ffd166"}"##)
+    try store.apply(SettingsChanges(modeColorsJSON: ##"{"developer.secondary":"#7fc4dc"}"##))
+    let loaded = try store.load()
+    #expect(loaded.modeColorsJSON == ##"{"developer.secondary":"#7fc4dc"}"##)
+    #expect(loaded.defaultModeID == "school")
+}
+
 @Test("a partial patch preserves every unrelated stored field")
 func partialPatchPreservesOtherFields() throws {
     let store = try makeStore()
@@ -117,15 +136,19 @@ func presentFieldOverwrites() throws {
 func settingsChangesLiftsValidatedFields() {
     let changes = SettingsChanges(validatedChanges: [
         "defaultModeId": "entertainment",
+        "confirmAllActions": true,
         "appearance": ["density": "compact", "reducedMotion": true, "assistantName": "Aria"],
         "hotkeys": ["commandPalette": "cmd+space"],
         "knowledge": ["rootReference": "vault"],
+        "modeColors": ["executive.primary": "#ffd166"],
         "extensions": ["x-lab": ["on": true]],
     ])
     #expect(changes.defaultModeID == "entertainment")
+    #expect(changes.confirmAllActions == true)
     #expect(changes.appearanceDensity == "compact")
     #expect(changes.appearanceReducedMotion == true)
     #expect(changes.appearanceAssistantName == "Aria")
+    #expect(changes.modeColorsJSON?.contains("executive.primary") == true)
     #expect(changes.commandPaletteHotkey == "cmd+space")
     #expect(changes.knowledgeRootReference == "vault")
     #expect(changes.extensionsJSON?.contains("x-lab") == true)

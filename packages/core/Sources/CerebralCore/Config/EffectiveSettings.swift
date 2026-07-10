@@ -47,15 +47,30 @@ public enum EffectiveSettings {
                 assistantName: stored.appearanceAssistantName ?? defaultAssistantName,
                 reducedMotion: stored.appearanceReducedMotion ?? false
             ),
+            confirmAllActions: stored.confirmAllActions ?? false,
             defaultModeID: stored.defaultModeID ?? configDefaultModeID ?? fallbackModeID,
             knowledge: SettingsSnapshotKnowledge(
                 rootReference: stored.knowledgeRootReference
             ),
+            // Sparse pass-through: the client fills palette defaults for any token not
+            // overridden. A malformed stored blob degrades to "no overrides" rather than
+            // erroring the read.
+            modeColors: decodeModeColors(stored.modeColorsJSON),
             schemaVersion: schemaVersion,
             workspace: SettingsSnapshotWorkspace(
                 mainDisplayID: stored.mainDisplayID ?? systemPrimaryDisplayID,
                 windowsStoredByMode: stored.windowsStoredByMode ?? false
             )
         )
+    }
+
+    private static func decodeModeColors(_ json: String?) -> [String: String] {
+        guard
+            let data = json?.data(using: .utf8),
+            let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+        else {
+            return [:]
+        }
+        return decoded
     }
 }

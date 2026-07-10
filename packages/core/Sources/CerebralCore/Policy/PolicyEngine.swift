@@ -24,6 +24,19 @@ public extension PolicyOverrides {
         .financial: .deny,
         .purchaseOrBooking: .deny,
     ])
+
+    /// The "Ask before all actions" tightening (settings-driven): raises every
+    /// non-read-only risk class to require confirmation. Read-only stays allowed — a
+    /// status read is not an action. Stricter-only, so a class that already denies or
+    /// confirms is unchanged; it can never relax descriptor policy.
+    static let confirmEveryAction = PolicyOverrides(minimumDecisions: [
+        .localWrite: .requireConfirmation,
+        .externalWrite: .requireConfirmation,
+        .shell: .requireConfirmation,
+        .financial: .requireConfirmation,
+        .purchaseOrBooking: .requireConfirmation,
+        .destructive: .requireConfirmation,
+    ])
 }
 
 /// One tool invocation presented to the policy engine.

@@ -22,6 +22,9 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$"
         },
+        "confirmAllActions": {
+          "type": "boolean"
+        },
         "appearance": {
           "type": "object",
           "additionalProperties": false,
@@ -71,6 +74,16 @@
               "type": "string",
               "minLength": 1
             }
+          }
+        },
+        "modeColors": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(executive|developer|school|entertainment)\\.(primary|secondary)$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
           }
         },
         "extensions": {

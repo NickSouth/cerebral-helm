@@ -1,7 +1,13 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { MODE_IDS, MODE_TOKEN_NAMES, isRegisteredModeTokenName, modeTokenCssVar } from "./tokens";
+import {
+  MODE_DEFAULT_COLORS,
+  MODE_IDS,
+  MODE_TOKEN_NAMES,
+  isRegisteredModeTokenName,
+  modeTokenCssVar
+} from "./tokens";
 import manifest from "./tokens.manifest.json";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -21,6 +27,14 @@ describe("design tokens", () => {
   it("defines a CSS custom property for every registered mode token name", () => {
     for (const name of MODE_TOKEN_NAMES) {
       expect(defines(tokensCss, modeTokenCssVar(name))).toBe(true);
+    }
+  });
+
+  it("keeps the default mode colors in lockstep with the tokens.css :root values", () => {
+    for (const name of MODE_TOKEN_NAMES) {
+      const cssVar = modeTokenCssVar(name);
+      const match = tokensCss.match(new RegExp(`${cssVar}\\s*:\\s*(#[0-9a-fA-F]{3,8})`));
+      expect(match?.[1]?.toLowerCase()).toBe(MODE_DEFAULT_COLORS[name]);
     }
   });
 

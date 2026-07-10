@@ -27,6 +27,23 @@ export const MODE_TOKEN_NAMES = [
 ] as const;
 export type ModeTokenName = (typeof MODE_TOKEN_NAMES)[number];
 
+/**
+ * The shipped default hex for each mode theme token, mirroring the `:root` values in
+ * tokens.css (the runtime source of truth for values). Kept in lockstep by tokens.test.ts.
+ * Used to seed the Customization color pickers so an un-customized channel shows its palette
+ * default, and as the fallback the user's per-mode overrides layer on top of (NIC-137).
+ */
+export const MODE_DEFAULT_COLORS: Readonly<Record<ModeTokenName, string>> = {
+  "executive.primary": "#e8b765",
+  "executive.secondary": "#5fd2e8",
+  "developer.primary": "#7fc4dc",
+  "developer.secondary": "#afc6d6",
+  "school.primary": "#3e7bfa",
+  "school.secondary": "#e8b765",
+  "entertainment.primary": "#34d38a",
+  "entertainment.secondary": "#5fd2e8"
+};
+
 /** Semantic accent tokens that every component reads (resolved per mode via data-mode). */
 export const SEMANTIC_ACCENT_VARS = ["--ch-accent-primary", "--ch-accent-secondary"] as const;
 

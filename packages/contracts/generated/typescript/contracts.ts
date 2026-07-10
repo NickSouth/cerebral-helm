@@ -504,12 +504,27 @@ export enum CerebralHelmBridgeOperationResponseType {
 export interface CerebralHelmSettingsSnapshot {
     appearance: SettingsSnapshotAppearance;
     /**
+     * When true, policy raises every non-read-only action to require confirmation (the 'Ask
+     * before all actions' tightening; stricter-only, never weakens descriptor policy). Defaults
+     * to false. Enforced when the command runtime is composed.
+     */
+    confirmAllActions: boolean;
+    /**
      * The mode the app opens in on a fresh launch (the durable setting, resolved as stored
      * value, else the configured default, else `executive`). This is the default-mode setting,
      * NOT the currently active mode.
      */
     defaultModeId: string;
     knowledge:     SettingsSnapshotKnowledge;
+    /**
+     * Per-mode accent-color overrides, keyed by design-token name (e.g. `executive.primary`)
+     * with a `#rrggbb` hex value. Sparse: a key is present only when the user has customized
+     * that channel — otherwise the shipped mode palette default applies (resolved on the
+     * client, whose token CSS holds the default hex values). Unlike the other snapshot fields
+     * this is not fully resolved, mirroring the meaningful-unset shape of
+     * `knowledge.rootReference`.
+     */
+    modeColors:    { [key: string]: string };
     schemaVersion: string;
     workspace:     SettingsSnapshotWorkspace;
 }
@@ -768,12 +783,14 @@ export interface CerebralHelmSettingsPatch {
 }
 
 export interface Changes {
-    appearance?:    Appearance;
-    defaultModeId?: string;
-    extensions?:    { [key: string]: any };
-    hotkeys?:       Hotkeys;
-    knowledge?:     Knowledge;
-    workspace?:     Workspace;
+    appearance?:        Appearance;
+    confirmAllActions?: boolean;
+    defaultModeId?:     string;
+    extensions?:        { [key: string]: any };
+    hotkeys?:           Hotkeys;
+    knowledge?:         Knowledge;
+    modeColors?:        { [key: string]: string };
+    workspace?:         Workspace;
 }
 
 export interface Appearance {

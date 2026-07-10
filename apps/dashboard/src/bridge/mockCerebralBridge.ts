@@ -190,9 +190,13 @@ export function createMockCerebralBridge(
       return Promise.resolve({
         schemaVersion: "1.0.0",
         defaultModeId: "developer",
+        confirmAllActions: false,
         appearance: { reducedMotion: false, assistantName: "Heimlich" },
         knowledge: { rootReference: "knowledge-root" },
-        workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" }
+        workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" },
+        // No color overrides in the preview so modes read at their shipped palette; the
+        // picker still demonstrates live recolor on interaction.
+        modeColors: {}
       });
     },
     listApps() {

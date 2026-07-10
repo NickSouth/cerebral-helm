@@ -139,6 +139,18 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         )
     }
 
+    /// Push the folder chosen in the native NSOpenPanel picker into the Setup panel
+    /// (NIC-138); the panel persists it through the validated settings patch. The path
+    /// is escaped for the JS string literal so spaces, quotes, and backslashes survive.
+    func pushKnowledgeRoot(_ path: String) {
+        let escaped = path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        webView.evaluateJavaScript(
+            "window.__cerebralKnowledgeRootUpdate && window.__cerebralKnowledgeRootUpdate(\"\(escaped)\");"
+        )
+    }
+
     // MARK: - WKScriptMessageHandler (web → native shell control)
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {

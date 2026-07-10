@@ -119,9 +119,11 @@ describe("wkWebViewCerebralBridge", () => {
     const snapshot = {
       schemaVersion: "1.0.0",
       defaultModeId: "developer",
+      confirmAllActions: true,
       appearance: { reducedMotion: true, assistantName: "Aria" },
       knowledge: { rootReference: null },
-      workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" }
+      workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" },
+      modeColors: { "executive.primary": "#ffd166" }
     };
     reply({
       type: "bridge.operation.response",

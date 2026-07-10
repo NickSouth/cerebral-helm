@@ -99,6 +99,9 @@ export interface SettingsSnapshot {
   /** The default-mode setting (stored, else configured, else `executive`) — NOT the
    *  currently active mode. */
   readonly defaultModeId: string;
+  /** When true, policy requires confirmation before every non-read-only action (the
+   *  'Ask before all actions' tightening). Defaults to false. */
+  readonly confirmAllActions: boolean;
   readonly appearance: {
     readonly reducedMotion: boolean;
     /** The assistant's display name across the dashboard; defaults to `Heimlich`. */
@@ -111,6 +114,10 @@ export interface SettingsSnapshot {
     /** `system-primary` sentinel when unset. */
     readonly mainDisplayId: string;
   };
+  /** Per-mode accent overrides keyed by design-token name (e.g. `executive.primary`) →
+   *  `#rrggbb`. Sparse: a key is present only when customized; the client fills palette
+   *  defaults for every un-overridden channel. */
+  readonly modeColors: Readonly<Record<string, string>>;
 }
 
 export interface RecentActivityQuery {
