@@ -9,6 +9,10 @@
   gap: var(--ch-space-3);
   height: 100vh;
   padding: var(--ch-space-4);
+  /* Push the whole shell below the display's notch (NIC-155). Paired with the (100vh − notch)
+     root font-size in app.css: the shift down is exactly offset by the proportional shrink, so
+     the bottom bar stays pinned and nothing scrolls. Inert (0) on non-notched displays. */
+  padding-top: calc(var(--ch-space-4) + var(--ch-safe-area-top));
   box-sizing: border-box;
   overflow: hidden;
 }

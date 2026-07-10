@@ -130,8 +130,20 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         // *behind* normal windows, so opening an app layers it above CerebralHelm
         // instead of switching Spaces. Multi-display backdrops follow in NIC-120b;
         // until then a secondary display shows the plain desktop.
-        let screenFrame = (screen ?? NSScreen.screens.first ?? NSScreen.main)?.frame
+        let hostScreen = screen ?? NSScreen.screens.first ?? NSScreen.main
+        let screenFrame = hostScreen?.frame
             ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+
+        // Seed the top safe-area inset before first paint (NIC-155). The backdrop fills the whole
+        // screen frame, so on a notched built-in display the top bar would sit under the notch;
+        // the dashboard lowers itself and scales to fit off this value. Injected at documentStart
+        // so there's no first-frame flash, then kept current by `fit(to:)` as displays change.
+        let initialSafeAreaTop = hostScreen?.safeAreaInsets.top ?? 0
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: Self.safeAreaScript(top: initialSafeAreaTop),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
         window = DashboardBackdropWindow(
             contentRect: screenFrame,
             styleMask: [.borderless],
@@ -170,6 +182,18 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         if window.frame != screen.frame {
             window.setFrame(screen.frame, display: true)
         }
+        // Re-publish the notch inset for the (possibly new) host display (NIC-155): a moved or
+        // re-targeted backdrop must lower itself for a notched screen and un-lower for an external
+        // one. Cheap and idempotent — the value only changes the CSS var when it actually differs.
+        webView.evaluateJavaScript(Self.safeAreaScript(top: screen.safeAreaInsets.top))
+    }
+
+    /// JS that publishes the top safe-area inset to the dashboard as the `--ch-safe-area-top`
+    /// custom property (NIC-155). The web layer scales off `(100vh − inset)` and pads the shell
+    /// down by the inset, so the top bar clears the notch and everything still fits `100vh`.
+    private static func safeAreaScript(top: CGFloat) -> String {
+        let px = max(0, top)
+        return "document.documentElement.style.setProperty('--ch-safe-area-top', '\(px)px');"
     }
 
     /// Routes a shared-session bridge event (lifecycle/confirmation/config) to the
