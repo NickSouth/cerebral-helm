@@ -219,6 +219,17 @@ export function createMockCerebralBridge(
       });
       return Promise.resolve({ accepted: true, quickApps: input.quickApps, errors: [] });
     },
+    runSpeedTest() {
+      // A representative measurement for browser previews (NIC-135). The short
+      // delay lets the widget's progress ring animate the way the ~30s native
+      // run would; the real bridge resolves when networkQuality completes.
+      return new Promise((resolve) => {
+        setTimeout(
+          () => resolve({ status: "ok", downloadMbps: 243.7, uploadMbps: 17.9, testedAt: new Date().toISOString() }),
+          2600
+        );
+      });
+    },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);
       return () => {

@@ -12,6 +12,7 @@ import type {
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
+  SpeedTestResult,
   Unsubscribe,
   UpdateQuickAppsResult,
   UpdateSettingsResult
@@ -248,6 +249,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     updateQuickApps(input) {
       return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });
+    },
+    runSpeedTest() {
+      return operation<SpeedTestResult>("runSpeedTest", {});
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);

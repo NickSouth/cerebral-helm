@@ -1272,6 +1272,167 @@
   background: var(--ch-status-error);
 }
 
+/* Network row: link speed right-aligned + a sideways wedge that opens the
+   on-demand speed test as a floating callout over the centre panel (NIC-135). */
+.metric__value--network {
+  margin-left: auto;
+}
+
+.netspeed__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--ch-text-faint);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.netspeed__toggle:hover {
+  color: var(--ch-text-muted);
+}
+
+.netspeed__wedge {
+  transition: transform 0.2s ease;
+}
+
+/* Sideways wedge points right (expand); flips to point back on open. */
+.netspeed__toggle[data-open="true"] .netspeed__wedge {
+  transform: rotate(180deg);
+}
+
+/* The floating callout: a small card anchored to the right of the row, portalled
+   to <body> at a fixed measured position so it overlaps the centre panel and never
+   grows the System Health panel (panels use overflow:hidden + backdrop-filter). */
+.netspeed {
+  position: fixed;
+  z-index: 60;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ch-space-2);
+  width: 150px;
+  padding: var(--ch-space-3);
+  background: var(--ch-surface-raised);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* Callout wedge pointing left, back toward System Health. */
+.netspeed::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-right: 8px solid var(--ch-surface-raised);
+}
+
+.netspeed__ring-wrap {
+  flex: 0 0 auto;
+  line-height: 0;
+}
+
+.netspeed__ring {
+  transform: rotate(-90deg);
+}
+
+.netspeed__ring-track {
+  stroke: var(--ch-panel-border);
+}
+
+.netspeed__ring-fill {
+  stroke: var(--ch-accent-primary);
+  stroke-linecap: round;
+  stroke-dasharray: 94.25;
+  stroke-dashoffset: 94.25;
+  transition: stroke-dashoffset 0.35s ease;
+}
+
+/* No incremental progress from networkQuality: fill over the bounded run and
+   snap to full when the real result lands. */
+.netspeed__ring[data-phase="measuring"] .netspeed__ring-fill {
+  animation: netspeed-fill 30s linear forwards;
+}
+
+.netspeed__ring[data-phase="done"] .netspeed__ring-fill {
+  stroke-dashoffset: 0;
+}
+
+@keyframes netspeed-fill {
+  from {
+    stroke-dashoffset: 94.25;
+  }
+  to {
+    stroke-dashoffset: 6;
+  }
+}
+
+.netspeed__readout {
+  text-align: center;
+  min-height: 1.4em;
+  font-size: var(--ch-font-size-sm);
+}
+
+.netspeed__note {
+  color: var(--ch-text-muted);
+}
+
+.netspeed__figures {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+
+.netspeed__figure {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--ch-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.netspeed__arrow {
+  color: var(--ch-accent-secondary);
+  font-weight: var(--ch-font-weight-semibold);
+}
+
+.netspeed__unit {
+  color: var(--ch-text-faint);
+  font-size: var(--ch-font-size-label);
+}
+
+.netspeed__run {
+  align-self: stretch;
+  padding: 5px 12px;
+  border: 1px solid var(--ch-panel-border);
+  background: var(--ch-surface-panel);
+  color: var(--ch-text-primary);
+  border-radius: 6px;
+  font-size: var(--ch-font-size-label);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.netspeed__run:hover:not(:disabled) {
+  border-color: var(--ch-accent-primary);
+}
+
+.netspeed__run:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .news__item {
   display: flex;
   flex-direction: column;
