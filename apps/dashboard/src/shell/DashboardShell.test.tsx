@@ -264,14 +264,18 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     expect(container.querySelector(".bottom-bar__mode")).toHaveTextContent("Executive");
   });
 
-  it("opens the settings window from the gear and no longer surfaces Emergency (E3 / NIC-63)", () => {
+  it("opens the settings window from the gear and no longer surfaces Emergency (E3 / NIC-63)", async () => {
     renderShell();
     const bar = statusBar();
     const settings = bar.getByRole("button", { name: "Settings" });
     expect(settings).toBeEnabled();
     expect(bar.queryByRole("button", { name: "Emergency" })).toBeNull();
     fireEvent.click(settings);
-    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    // The settings surface reads persisted settings on open (NIC-141); waitFor lets
+    // that async read settle inside act so it doesn't leak past the test.
+    await waitFor(() =>
+      expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument()
+    );
   });
 
   it("shows honest-unavailable weather and battery when the dashboard is offline", () => {

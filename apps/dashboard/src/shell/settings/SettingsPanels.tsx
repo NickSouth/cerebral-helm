@@ -5,6 +5,7 @@ import { toModeId } from "../../tokens/tokens";
 import { Unavailable } from "../../components/Unavailable";
 import { humanizeId } from "../labels";
 import { useUpdateSettings } from "./useUpdateSettings";
+import { useSettingsSnapshot } from "./SettingsSnapshotProvider";
 import { postShellControl } from "../shellControl";
 import { PERMISSION_TOOLS } from "./permissionsCatalog";
 import wiredManifest from "../quickActions.manifest.json";
@@ -36,6 +37,19 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 /** A read-only value (contract inspection — not an editable control). */
 function ReadonlyValue({ children }: { children: ReactNode }) {
   return <span className="settings-readonly">{children}</span>;
+}
+
+/**
+ * Shown while a panel's persisted values are being read (NIC-141). A panel whose
+ * controls seed from the settings snapshot never renders them until the read settles,
+ * so a wrong default is never briefly editable.
+ */
+function SettingsLoading() {
+  return (
+    <p className="settings-note" role="status">
+      Loading your settings…
+    </p>
+  );
 }
 
 // --- General --------------------------------------------------------------
@@ -96,12 +110,26 @@ function LaunchAtLoginField() {
 }
 
 function GeneralPanel() {
+  // Gate on the persisted read so the controls seed from settled state (NIC-141).
+  const { status } = useSettingsSnapshot();
+  return status === "loading" ? <SettingsLoading /> : <GeneralPanelBody />;
+}
+
+function GeneralPanelBody() {
   const { modes, mode, capabilities, displayTopology } = useDashboardState();
+  // Ready → persisted values; error → null → fall back to the safe defaults.
+  const { snapshot } = useSettingsSnapshot();
   const updateSettings = useUpdateSettings();
   const selectId = useId();
-  const [defaultModeId, setDefaultModeId] = useState(() => toModeId(mode));
-  const [windowsStoredByMode, setWindowsStoredByMode] = useState(false);
-  const [mainDisplayId, setMainDisplayId] = useState(SYSTEM_PRIMARY);
+  const [defaultModeId, setDefaultModeId] = useState(
+    () => snapshot?.defaultModeId ?? toModeId(mode)
+  );
+  const [windowsStoredByMode, setWindowsStoredByMode] = useState(
+    () => snapshot?.workspace.windowsStoredByMode ?? false
+  );
+  const [mainDisplayId, setMainDisplayId] = useState(
+    () => snapshot?.workspace.mainDisplayId ?? SYSTEM_PRIMARY
+  );
   const windowsCapability = capabilities?.["native.workspace.windows"];
   // Only stable identities may be persisted (NIC-87 safe-degradation rule): a
   // session-scoped fallback id would silently stop matching after reconnect.
@@ -416,8 +444,14 @@ function SetupPanel() {
 // --- Knowledge ------------------------------------------------------------
 
 function KnowledgePanel() {
+  const { status } = useSettingsSnapshot();
+  return status === "loading" ? <SettingsLoading /> : <KnowledgePanelBody />;
+}
+
+function KnowledgePanelBody() {
+  const { snapshot } = useSettingsSnapshot();
   const updateSettings = useUpdateSettings();
-  const [rootReference, setRootReference] = useState("");
+  const [rootReference, setRootReference] = useState(() => snapshot?.knowledge.rootReference ?? "");
 
   function commit() {
     const trimmed = rootReference.trim();

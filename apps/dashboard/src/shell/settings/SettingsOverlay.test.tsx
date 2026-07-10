@@ -76,11 +76,11 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(within(dialog).getByRole("button", { name: /Shut down CerebralHelm/ })).toBeDisabled();
   });
 
-  it("swaps the right pane when a category is selected", () => {
+  it("swaps the right pane when a category is selected", async () => {
     renderApp();
     const dialog = openSettings();
-    // General is the default — its Default mode control is present.
-    expect(within(dialog).getByLabelText("Default mode")).toBeInTheDocument();
+    // General is the default — its Default mode control seeds from the persisted read.
+    expect(await within(dialog).findByLabelText("Default mode")).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("tab", { name: "Permissions" }));
     expect(within(dialog).queryByLabelText("Default mode")).toBeNull();
@@ -89,7 +89,7 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(within(dialog).getByText(/cannot be changed here/)).toBeInTheDocument();
   });
 
-  it("offers only stable-identity displays for Main display, defaulting to System primary (NIC-120b)", () => {
+  it("offers only stable-identity displays for Main display, defaulting to System primary (NIC-120b)", async () => {
     const { bridge } = renderApp();
     act(() => {
       bridge.emit({
@@ -120,13 +120,62 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     });
 
     const dialog = openSettings();
-    const select = within(dialog).getByRole("combobox", { name: "Main display" });
+    const select = await within(dialog).findByRole("combobox", { name: "Main display" });
     expect(select).toHaveValue("system-primary");
     const labels = within(select)
       .getAllByRole("option")
       .map((option) => option.textContent);
     // A session-scoped (non-stable) id must never be offered for persistence.
     expect(labels).toEqual(["System primary", "Built-in Display (primary)"]);
+  });
+
+  it("seeds General controls from the persisted settings snapshot (NIC-141)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    // The mock returns a representative persisted state: developer + windows-stored-by-mode on.
+    const modeSelect = await within(dialog).findByRole("combobox", { name: "Default mode" });
+    expect(modeSelect).toHaveValue("developer");
+    expect(within(dialog).getByLabelText("Windows Stored by Mode")).toBeChecked();
+  });
+
+  it("seeds the Knowledge root from the persisted settings snapshot (NIC-141)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Knowledge" }));
+    const input = await within(dialog).findByLabelText("Knowledge root reference");
+    expect(input).toHaveValue("knowledge-root");
+  });
+
+  it("applies persisted reduced motion app-wide at startup, before settings is opened (NIC-141)", async () => {
+    const bridge = createMockCerebralBridge();
+    bridge.getSettings = () =>
+      Promise.resolve({
+        schemaVersion: "1.0.0",
+        defaultModeId: "executive",
+        appearance: { reducedMotion: true },
+        knowledge: { rootReference: null },
+        workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary" }
+      });
+    const store = createBridgeStore(bridge, loadBootstrapState());
+    render(
+      <BridgeProvider bridge={bridge}>
+        <DashboardStateProvider store={store}>
+          <AppearanceProvider>
+            <ThemeProvider>
+              <ActionStatusProvider>
+                <SettingsProvider>
+                  <DashboardShell />
+                </SettingsProvider>
+              </ActionStatusProvider>
+            </ThemeProvider>
+          </AppearanceProvider>
+        </DashboardStateProvider>
+      </BridgeProvider>
+    );
+    // No settings interaction: the persisted preference reaches the themed root on its own.
+    await waitFor(() =>
+      expect(document.querySelector(".app-root")?.getAttribute("data-reduced-motion")).toBe("true")
+    );
   });
 
   it("applies the Reduce motion toggle app-wide and submits an accepted patch", async () => {
@@ -186,7 +235,9 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
     render(<SettingsApp />);
     const surface = screen.getByRole("main", { name: "Settings" });
 
-    const toggle = within(surface).getByLabelText("Launch at login");
+    // The Launch-at-login control is in the General panel, which seeds from the
+    // persisted read (NIC-141), so it mounts once that settles.
+    const toggle = await within(surface).findByLabelText("Launch at login");
     expect(toggle).toBeEnabled();
     expect(toggle).not.toBeChecked();
 
