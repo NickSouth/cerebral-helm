@@ -312,8 +312,12 @@ public final class BridgeSession: @unchecked Sendable {
         }
         // Auto-mint (owner decision, 2026-07-06): any discovered app that no
         // reference targets gets one minted now, so a mid-session install is
-        // pinnable immediately. (`open <minted-id>` resolves from the next
-        // launch — the parser's references compose at startup.)
+        // pinnable immediately. Then live-reload the shared reference catalog so
+        // `open <minted-id>` resolves this session too (NIC-150): the parser and —
+        // on the macOS shell — the app.open target map both read the runtime's
+        // reference store, exactly as `addUrlReference` reloads after minting a
+        // URL. Without the reload a freshly installed app opened only after a
+        // relaunch (the store composes once at startup).
         if let workspace {
             let shipped = (try? ReferenceCatalogLoader.load(configDirectory: configDirectory))
                 .map { Array($0.apps.values) } ?? []
@@ -324,6 +328,11 @@ public final class BridgeSession: @unchecked Sendable {
                 shipped: shipped,
                 stateRoot: workspace.stateRoot
             )
+            if let fresh = try? ReferenceCatalogLoader.load(
+                configDirectory: configDirectory, stateRoot: workspace.stateRoot
+            ) {
+                runtime.updateReferences(fresh)
+            }
         }
         // Join discovered apps onto the configured app references by bundle id
         // (the reference `target`). `referenceId` is the pinnable key: only a

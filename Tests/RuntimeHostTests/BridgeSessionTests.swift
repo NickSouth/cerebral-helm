@@ -420,6 +420,32 @@ func listAppsMintsAndPins() async throws {
     #expect(developer?.quickApps == [safariRef])
 }
 
+@Test("listApps live-reloads references so a freshly discovered app opens this session (NIC-150)")
+func listAppsMakesDiscoveredAppOpenableWithoutRestart() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let runtime = try makeCommandRuntime(paths: paths, phase: .macOS, capabilities: .mocks())
+    let session = BridgeSession(
+        runtime: runtime, configDirectory: paths.configDirectory, workspace: paths
+    )
+
+    // Safari has no shipped reference and nothing is minted into the fresh state
+    // root yet, so `open safari` is unrecognized before discovery runs — this is
+    // the just-installed baseline (the reference store composes at startup).
+    let before = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"open safari"}"#)
+    )
+    #expect(try !decode(before, as: Receipt.self).accepted)
+
+    // Discovery mints `safari` and live-reloads the shared catalog…
+    _ = await session.execute(operationRequest(.listApps, "{}"))
+
+    // …so the same command now resolves this session — no relaunch.
+    let after = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"open safari"}"#)
+    )
+    #expect(try decode(after, as: Receipt.self).accepted)
+}
+
 @Test("listApps is a structured unavailable pre-Mac, never a mock success")
 func listAppsUnavailablePreMac() async throws {
     let session = try makeSession()
