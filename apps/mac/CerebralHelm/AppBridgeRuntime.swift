@@ -26,6 +26,11 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// are told first (window re-hosting), then the dashboard via one
     /// `display.topology.changed` event.
     private let displayObserver: DisplayTopologyObserver
+    /// Watches the Applications folders (NIC-150): when an app is installed
+    /// mid-session it re-discovers, re-mints its reference, and live-reloads the
+    /// runtime's reference catalog, so `open <id>` resolves without a relaunch and
+    /// without the user first opening the More Apps picker.
+    private let appsFolderObserver: ApplicationsFolderObserver
     /// Inputs for the runtime permission recheck (NIC-83): the composed bundle,
     /// the descriptor-declared permission requirements, and the platform checker.
     private let toolCapabilities: ToolCapabilities
@@ -138,6 +143,26 @@ final class AppBridgeRuntime: @unchecked Sendable {
             faviconCapability: composition.favicon,
             emitEventJSON: { relay.emit($0) }
         )
+        // Live app-install detection (NIC-150): the same re-mint + reference-reload
+        // the shell runs at startup and `listApps` runs on picker open, driven now
+        // by a debounced watch on the Applications folders — so a freshly installed
+        // app is openable by id this session with no user action. Runs off-main on
+        // the watcher's queue; `updateReferences` is lock-guarded.
+        let referencesReload: @Sendable () -> Void = {
+            guard let shipped = try? ReferenceCatalogLoader.load(configDirectory: paths.configDirectory) else { return }
+            let installed = MacAppDiscoveryCapability.enumerate(includeIcons: false).apps.map {
+                UserAppReferences.DiscoveredApp(bundleID: $0.bundleID, name: $0.name)
+            }
+            UserAppReferences.mint(
+                discovered: installed, shipped: Array(shipped.apps.values), stateRoot: paths.stateRoot
+            )
+            guard let fresh = try? ReferenceCatalogLoader.load(
+                configDirectory: paths.configDirectory, stateRoot: paths.stateRoot
+            ) else { return }
+            runtime.updateReferences(fresh)
+        }
+        appsFolderObserver = ApplicationsFolderObserver(reload: referencesReload)
+        appsFolderObserver.start()
     }
 
     /// Re-derive the capability flags from current platform permissions (NIC-83).
