@@ -217,8 +217,8 @@ describe("QuickApps", () => {
       capabilities: { "native.apps.list": { available: true } }
     }));
 
-    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
-    await screen.findByRole("dialog", { name: "All applications" });
+    fireEvent.click(screen.getAllByRole("button", { name: "Pin app" })[0]);
+    await screen.findByRole("dialog", { name: "Pin an app" });
     await screen.findByText("Terminal");
 
     // Clean slate: five empty Pin app slots before the write.
@@ -245,8 +245,8 @@ describe("QuickApps", () => {
       }
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
-    await screen.findByRole("dialog", { name: "All applications" });
+    fireEvent.click(screen.getAllByRole("button", { name: "Pin app" })[0]);
+    await screen.findByRole("dialog", { name: "Pin an app" });
 
     // Safari has no configured reference — honest hint, no pin control.
     expect(await screen.findAllByText("Not a configured app reference")).not.toHaveLength(0);
@@ -268,8 +268,8 @@ describe("QuickApps", () => {
       }
     }));
 
-    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
-    await screen.findByRole("dialog", { name: "All applications" });
+    fireEvent.click(screen.getAllByRole("button", { name: "Pin app" })[0]);
+    await screen.findByRole("dialog", { name: "Pin an app" });
 
     fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://news.ycombinator.com" }
@@ -302,8 +302,8 @@ describe("QuickApps", () => {
       { onAddUrl: (input) => calls.push(input) }
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
-    await screen.findByRole("dialog", { name: "All applications" });
+    fireEvent.click(screen.getAllByRole("button", { name: "Pin app" })[0]);
+    await screen.findByRole("dialog", { name: "Pin an app" });
 
     fireEvent.change(screen.getByLabelText("URL"), { target: { value: "https://mail.google.com" } });
     fireEvent.change(screen.getByLabelText("URL name (optional)"), { target: { value: "Work Mail" } });
@@ -326,10 +326,10 @@ describe("QuickApps", () => {
       }
     }));
 
-    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
-    await screen.findByRole("dialog", { name: "All applications" });
+    fireEvent.click(screen.getAllByRole("button", { name: "Pin app" })[0]);
+    await screen.findByRole("dialog", { name: "Pin an app" });
 
-    // The "Open Chrome in a profile" section lists each profile with its own pin.
+    // The Chrome profiles section lists each profile with its own pin.
     fireEvent.click(await screen.findByRole("button", { name: "Pin Chrome — Personal" }));
 
     // The pinned tile is badged with the profile avatar (the badge class is unique
@@ -360,8 +360,8 @@ describe("QuickApps", () => {
       capabilities: { "native.apps.list": { available: true } }
     }));
 
-    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
-    await screen.findByRole("dialog", { name: "All applications" });
+    fireEvent.click(screen.getAllByRole("button", { name: "Pin app" })[0]);
+    await screen.findByRole("dialog", { name: "Pin an app" });
 
     fireEvent.change(screen.getByLabelText("URL"), { target: { value: "file:///etc/passwd" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
@@ -371,7 +371,7 @@ describe("QuickApps", () => {
     expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(5);
   });
 
-  it("empty Pin app slots open the picker when discovery is available", async () => {
+  it("empty Pin app slots open the pin popover when discovery is available (NIC-148)", async () => {
     renderQuickApps((base) => ({
       ...base,
       capabilities: { "native.apps.list": { available: true } }
@@ -379,6 +379,44 @@ describe("QuickApps", () => {
     const pinSlot = screen.getAllByRole("button", { name: "Pin app" })[0];
     expect(pinSlot).toBeEnabled();
     fireEvent.click(pinSlot);
-    expect(await screen.findByRole("dialog", { name: "All applications" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Pin an app" })).toBeInTheDocument();
+  });
+
+  it("More Apps is a pure launcher — no pin or URL controls (NIC-148)", async () => {
+    renderQuickApps((base) => ({
+      ...base,
+      capabilities: {
+        "native.apps.list": { available: true },
+        "native.app.open": { available: true }
+      }
+    }));
+    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
+    await screen.findByRole("dialog", { name: "All applications" });
+    await screen.findByText("Terminal");
+
+    // Pinning lives only in the pin popover now — the launcher window has neither
+    // Pin controls nor the Add-URL form.
+    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    expect(screen.queryByLabelText("URL")).toBeNull();
+  });
+
+  it("More Apps posts openMoreApps to the native shell when the channel exists (NIC-148)", () => {
+    const posted: unknown[] = [];
+    (window as unknown as { webkit?: unknown }).webkit = {
+      messageHandlers: { shellControl: { postMessage: (m: unknown) => posted.push(m) } }
+    };
+    try {
+      renderQuickApps((base) => ({
+        ...base,
+        capabilities: { "native.apps.list": { available: true } }
+      }));
+      fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
+      // The native shell owns the launcher window — post the open action, and do
+      // NOT fall back to the in-webview overlay.
+      expect(posted).toContainEqual({ action: "openMoreApps" });
+      expect(screen.queryByRole("dialog", { name: "All applications" })).toBeNull();
+    } finally {
+      delete (window as unknown as { webkit?: unknown }).webkit;
+    }
   });
 });

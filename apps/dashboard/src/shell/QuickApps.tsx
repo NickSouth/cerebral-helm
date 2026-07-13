@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Panel } from "./Panel";
 import { AppGlyph } from "./AppGlyph";
 import { MoreAppsPicker } from "./MoreAppsPicker";
+import { PinPopover } from "./PinPopover";
+import { postShellControl } from "./shellControl";
 import { toModeId } from "../tokens/tokens";
 import type { AppReference, ChromeProfile, DiscoveredApp, UrlReference } from "../bridge/cerebralBridge";
 import { useActiveMode } from "./useActiveMode";
@@ -90,7 +92,19 @@ export function QuickApps() {
   const discoverDisabledReason = readOnly
     ? "Unavailable while the app is in read-only recovery"
     : (appsList?.degradedReason ?? "App discovery is available on the macOS host");
+  // More Apps opens the launch-only window; an empty slot opens the pin popover
+  // anchored to that slot (NIC-148). Two distinct surfaces, two triggers.
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pinAnchor, setPinAnchor] = useState<HTMLElement | null>(null);
+
+  // Inside the native shell, More Apps is a top-most window (backdrop-policy) —
+  // `openMoreApps` asks the shell to open it. A plain browser has no channel, so
+  // `postShellControl` returns false and we fall back to the in-webview overlay.
+  const openMoreApps = () => {
+    if (!postShellControl("openMoreApps")) {
+      setPickerOpen(true);
+    }
+  };
 
   // Real OS icons on tiles (NIC-119): once discovery is available, map each
   // configured reference id onto its discovered app (icon + real name). The
@@ -329,7 +343,7 @@ export function QuickApps() {
               disabled={!canDiscover}
               aria-disabled={!canDiscover}
               title={canDiscover ? "Pin an app to this slot" : discoverDisabledReason}
-              onClick={canDiscover ? () => setPickerOpen(true) : undefined}
+              onClick={canDiscover ? (event) => setPinAnchor(event.currentTarget) : undefined}
             >
               <span className="quick-app__icon" aria-hidden="true">
                 <PinGlyph />
@@ -345,7 +359,7 @@ export function QuickApps() {
             disabled={!canDiscover}
             aria-disabled={!canDiscover}
             title={canDiscover ? "Browse installed applications" : discoverDisabledReason}
-            onClick={canDiscover ? () => setPickerOpen(true) : undefined}
+            onClick={canDiscover ? openMoreApps : undefined}
           >
             <span className="quick-app__icon" aria-hidden="true">
               <AppsGridGlyph />
@@ -355,6 +369,7 @@ export function QuickApps() {
         </li>
       </ul>
       {pickerOpen ? <MoreAppsPicker onClose={() => setPickerOpen(false)} /> : null}
+      {pinAnchor ? <PinPopover anchor={pinAnchor} onClose={() => setPinAnchor(null)} /> : null}
     </Panel>
   );
 }

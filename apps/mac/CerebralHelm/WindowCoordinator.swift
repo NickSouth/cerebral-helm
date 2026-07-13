@@ -27,6 +27,9 @@ final class WindowCoordinator: @unchecked Sendable {
     /// The dedicated settings window (backdrop-policy decision): created lazily on
     /// first open, then reused warm. `nil` until then and always `nil` in recovery.
     private var settings: SettingsWindowController?
+    /// The floating More Apps launcher window (NIC-148): built fresh on each open so
+    /// the app list is current, and torn down on close. `nil` while closed.
+    private var moreApps: MoreAppsWindowController?
     /// One additional backdrop per connected non-main display (NIC-120b), keyed by
     /// the display's topology id. Created/removed by `reconcileBackdrops` on every
     /// topology change; each binds the SAME shared session (no second runtime).
@@ -135,6 +138,7 @@ final class WindowCoordinator: @unchecked Sendable {
             secondary.deliverBridgeEvent(json)
         }
         settings?.deliverBridgeEvent(json)
+        moreApps?.deliverBridgeEvent(json)
         if json.contains("\"config.changed\"") {
             palette?.deliverBridgeEvent(json)
         }
@@ -309,6 +313,26 @@ final class WindowCoordinator: @unchecked Sendable {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Open the floating More Apps launcher window (NIC-148). Built fresh each time
+    /// (any open one is replaced) so its app list and capabilities are current — it
+    /// is a transient launcher, not a warm-reused panel. No-op in recovery.
+    func openMoreApps() {
+        guard let session, let dashboardRoot else { return }
+        moreApps?.close()
+        let controller = MoreAppsWindowController(dashboardRoot: dashboardRoot, session: session)
+        controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        moreApps = controller
+        controller.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Close and release the More Apps window — the × control, Escape, or an
+    /// accepted app launch all post `closeMoreApps` (dismiss-on-open, NIC-148).
+    func closeMoreApps() {
+        moreApps?.close()
+        moreApps = nil
+    }
+
     /// Dismiss the palette (already done by its control channel), bring the dashboard forward,
     /// and dispatch the submitted text through the dashboard's command bus. The Heimlich chat
     /// was removed (NIC-124): a command's result surfaces in the dashboard status line, and an
@@ -377,10 +401,12 @@ final class WindowCoordinator: @unchecked Sendable {
     }
 
     /// Apply a web-driven shell action (NIC-76 increment 4, extended by the
-    /// backdrop-policy decision): the palette-hotkey rebind from the settings
-    /// "Hotkeys" panel, plus opening/closing the dedicated settings window (the
+    /// backdrop-policy decision and NIC-148): the palette-hotkey rebind from the
+    /// settings "Hotkeys" panel, opening/closing the dedicated settings window (the
     /// dashboard gear posts `openSettings`; the settings surface's × posts
-    /// `closeSettings`). Window control is a Mac-only concern kept off the
+    /// `closeSettings`), and opening/closing the floating More Apps launcher (the
+    /// More Apps tile posts `openMoreApps`; its ×, Escape, or an accepted launch
+    /// post `closeMoreApps`). Window control is a Mac-only concern kept off the
     /// portable bridge.
     private func handleShellControl(_ body: [String: Any]) {
         switch body["action"] as? String {
@@ -392,6 +418,10 @@ final class WindowCoordinator: @unchecked Sendable {
             openSettings()
         case "closeSettings":
             settings?.close()
+        case "openMoreApps":
+            openMoreApps()
+        case "closeMoreApps":
+            closeMoreApps()
         case "setLoginItem":
             // Launch-at-login toggle (NIC-89): register/unregister via the
             // SMAppService seam and push the OS's resulting status back to the
