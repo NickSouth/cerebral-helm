@@ -1,16 +1,16 @@
 {
   "schemaVersion": "1.0.0",
-  "messageId": "brmsg_000000000000000000000022",
+  "messageId": "brmsg_000000000000000000000028",
   "type": "bridge.operation.response",
-  "operation": "addUrlReference",
+  "operation": "addChromeProfileReference",
   "status": "ok",
   "error": null,
   "payload": {
     "accepted": true,
     "reference": {
-      "id": "hacker-news",
-      "label": "Hacker News",
-      "target": "https://news.ycombinator.com",
+      "id": "chrome-work",
+      "label": "Chrome — Work",
+      "target": "com.google.Chrome",
       "profile": "Profile 1"
     },
     "errors": []

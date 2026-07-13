@@ -29,6 +29,11 @@ public enum ReferenceCatalogLoader {
         if let stateRoot {
             apps += mergeableUserReferences(UserAppReferences.load(stateRoot: stateRoot), shipped: apps)
             urls += mergeableUserReferences(UserURLReferences.load(stateRoot: stateRoot), shipped: urls)
+            // Chrome-profile references (NIC-151) deliberately share one bundle id
+            // (`com.google.Chrome`) across profiles, so they dedupe by id only —
+            // matching on target would collapse every profile into one, or be
+            // shadowed by an auto-minted plain-Chrome app reference.
+            apps += mergeableByIDOnly(UserChromeProfileReferences.load(stateRoot: stateRoot), existing: apps)
         }
         let hooks = try loadCatalog(referencesDirectory.appendingPathComponent("hooks.json"))
         let modeIds = try loadModeIds(configDirectory.appendingPathComponent("modes", isDirectory: true))
@@ -48,6 +53,16 @@ public enum ReferenceCatalogLoader {
         return minted.filter {
             !shippedIDs.contains($0.id) && !shippedTargets.contains($0.target)
         }
+    }
+
+    /// User entries safe to append when only their id must be unique (not their
+    /// target) — used for Chrome-profile references, which intentionally reuse one
+    /// bundle id across many profiles (NIC-151).
+    private static func mergeableByIDOnly(
+        _ minted: [ReferenceEntry], existing: [ReferenceEntry]
+    ) -> [ReferenceEntry] {
+        let existingIDs = Set(existing.map(\.id))
+        return minted.filter { !existingIDs.contains($0.id) }
     }
 
     private static func loadCatalog(_ url: URL) throws -> [ReferenceEntry] {

@@ -141,6 +141,9 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // Fetches + caches URL-quick-app favicons off listUrls/addUrlReference
             // (NIC-147); landed icons upgrade tiles live via mode.quickapps.changed.
             faviconCapability: composition.favicon,
+            // Enumerates Chrome profiles for the profile dropdown + avatar badges
+            // (NIC-151), driven off listChromeProfiles.
+            chromeProfiles: composition.chromeProfiles,
             emitEventJSON: { relay.emit($0) }
         )
         // Live app-install detection (NIC-150): the same re-mint + reference-reload

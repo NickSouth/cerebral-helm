@@ -21,6 +21,10 @@ public enum UserURLReferences {
         case emptyURL
         case invalidURL
         case unsupportedScheme
+        /// The Chrome profile contained characters outside the allowed set — a
+        /// guard against smuggling extra launch flags into `--profile-directory`
+        /// (NIC-151). Mirrors the reference-catalog schema `profile` pattern.
+        case invalidProfile
     }
 
     private struct CatalogFile: Codable {
@@ -49,19 +53,34 @@ public enum UserURLReferences {
     ///
     /// - A bare host (`github.com`) is treated as `https://github.com`.
     /// - Only `http`/`https` are accepted; anything else fails `unsupportedScheme`.
-    /// - Idempotent by target: re-adding the same URL returns the existing entry
-    ///   rather than minting a duplicate.
+    /// - `profile` is an optional Google Chrome profile directory (NIC-151): when
+    ///   present the minted reference opens in that Chrome profile. It is validated
+    ///   against the same pattern as the reference-catalog schema; an empty/blank
+    ///   value is treated as no profile. An invalid value fails `invalidProfile`.
+    /// - Idempotent by `(target, profile)`: re-adding the same URL *with the same
+    ///   profile* returns the existing entry, but the same URL with a different
+    ///   profile mints a distinct reference — so a site like Gmail can be pinned
+    ///   once per profile (work vs personal).
     /// - `existingIDs` must contain every already-configured reference id (apps and
     ///   URLs, shipped and user) so the minted id is globally unique.
     @discardableResult
     public static func add(
         url: String,
         label: String?,
+        profile: String? = nil,
         existingIDs: Set<String>,
         stateRoot: URL
     ) -> Result<ReferenceEntry, AddError> {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .failure(.emptyURL) }
+
+        // A blank profile is simply "no profile"; a non-blank one must match the
+        // allowed set, so it cannot carry extra `--profile-directory` flags.
+        let trimmedProfile = profile?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedProfile = (trimmedProfile?.isEmpty == false) ? trimmedProfile : nil
+        if let normalizedProfile, !isValidProfile(normalizedProfile) {
+            return .failure(.invalidProfile)
+        }
 
         // A scheme-less entry defaults to https, so "github.com" is accepted.
         var candidate = trimmed
@@ -76,8 +95,9 @@ public enum UserURLReferences {
         guard let host = components.host, !host.isEmpty else { return .failure(.invalidURL) }
 
         var minted = load(stateRoot: stateRoot)
-        // Idempotent by target: the same URL already minted returns its entry.
-        if let existing = minted.first(where: { $0.target == candidate }) {
+        // Idempotent by (target, profile): the same URL+profile returns its entry,
+        // but the same URL under a different profile is a distinct pin.
+        if let existing = minted.first(where: { $0.target == candidate && $0.profile == normalizedProfile }) {
             return .success(existing)
         }
 
@@ -87,7 +107,7 @@ public enum UserURLReferences {
         let taken = existingIDs.union(minted.map(\.id))
         let id = uniqueID(base, taken: taken)
 
-        let entry = ReferenceEntry(id: id, label: labelText, target: candidate)
+        let entry = ReferenceEntry(id: id, label: labelText, target: candidate, profile: normalizedProfile)
         minted.append(entry)
         persist(minted, stateRoot: stateRoot)
         return .success(entry)
@@ -110,6 +130,12 @@ public enum UserURLReferences {
     /// Reference ids must match the config-id grammar `^[a-z][a-z0-9-]*$`.
     private static func isValidID(_ id: String) -> Bool {
         id.range(of: "^[a-z][a-z0-9-]*$", options: .regularExpression) != nil
+    }
+
+    /// Chrome profile directories must match the reference-catalog schema pattern
+    /// `^[A-Za-z0-9 ._-]+$`, so a profile value cannot inject extra launch flags.
+    private static func isValidProfile(_ profile: String) -> Bool {
+        profile.range(of: "^[A-Za-z0-9 ._-]+$", options: .regularExpression) != nil
     }
 
     private static func uniqueID(_ base: String, taken: Set<String>) -> String {

@@ -24,6 +24,10 @@ public enum MacToolCapabilities {
         /// `ToolCapabilities` because no tool handler consumes it — `BridgeSession`
         /// drives it directly off `listUrls`/`addUrlReference`, like `secretStore`.
         public let favicon: MacFaviconCapability
+        /// Chrome profile enumeration for the profile dropdown + avatar badges
+        /// (NIC-151). Like `favicon`, `BridgeSession` drives it directly off
+        /// `listChromeProfiles` — not a gated tool.
+        public let chromeProfiles: MacChromeProfileDiscoveryCapability
     }
 
     /// `referenceStore` is the shared, reloadable catalog (NIC-146): the app/url
@@ -46,17 +50,23 @@ public enum MacToolCapabilities {
         let systemStatus = MacSystemStatusCapability()
         let secretStore = KeychainSecretCapability()
         let favicon = MacFaviconCapability()
+        let chromeProfiles = MacChromeProfileDiscoveryCapability()
+        // One launcher shared by both open paths so its profile→window registry is
+        // consistent across app-tile and URL-tile opens (NIC-151).
+        let chromeLauncher = ChromeProfileLauncher(workspace: workspace)
         return Composition(
             capabilities: ToolCapabilities(
                 app: NSWorkspaceAppCapability(
-                    appsProvider: { referenceStore.current.apps.mapValues(\.target) }, workspace: workspace
+                    appsProvider: { referenceStore.current.apps }, workspace: workspace,
+                    chromeLauncher: chromeLauncher
                 ),
                 url: NSWorkspaceURLCapability(
-                    urlsProvider: { referenceStore.current.urls.mapValues(\.target) },
+                    urlsProvider: { referenceStore.current.urls },
                     workspace: workspace,
                     surface: browserTabSurface,
                     registry: urlOpenRegistry,
-                    currentModeProvider: currentModeProvider
+                    currentModeProvider: currentModeProvider,
+                    chromeLauncher: chromeLauncher
                 ),
                 process: ProcessHookCapability(),
                 systemStatus: systemStatus,
@@ -78,7 +88,8 @@ public enum MacToolCapabilities {
             ),
             systemStatus: systemStatus,
             secretStore: secretStore,
-            favicon: favicon
+            favicon: favicon,
+            chromeProfiles: chromeProfiles
         )
     }
 }

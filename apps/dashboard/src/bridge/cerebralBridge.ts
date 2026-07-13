@@ -172,11 +172,17 @@ export interface UrlReference {
    *  Absent until the fetch lands — the tile shows a globe placeholder meanwhile and
    *  upgrades live when a `mode.quickapps.changed` event prompts a re-read. */
   readonly iconPng?: string;
+  /** The Google Chrome profile the reference opens in (NIC-151), when configured;
+   *  absent for the default open behavior. */
+  readonly profile?: string;
 }
 export interface AddUrlReferenceInput {
   readonly url: string;
   /** Optional display label; defaults to the URL's host when omitted. */
   readonly label?: string;
+  /** Optional Google Chrome profile directory (`--profile-directory`, NIC-151); when
+   *  set the minted URL opens in that Chrome profile. */
+  readonly profile?: string;
 }
 export interface AddUrlReferenceResult {
   readonly accepted: boolean;
@@ -186,6 +192,38 @@ export interface AddUrlReferenceResult {
 }
 export interface ListUrlsResult {
   readonly urls: readonly UrlReference[];
+}
+
+/** A Google Chrome profile discovered on this machine (NIC-151). `directory` is the
+ *  `--profile-directory` value a reference stores; `name` is the display name shown
+ *  in the dropdown; `iconPng` is the account avatar (base64 PNG) when available. */
+export interface ChromeProfile {
+  readonly directory: string;
+  readonly name: string;
+  readonly iconPng?: string;
+}
+/** An app reference (NIC-151), e.g. a pinned Chrome profile: `target` is a bundle id
+ *  and `profile` is the Chrome profile it opens in. */
+export interface AppReference {
+  readonly id: string;
+  readonly label: string;
+  readonly target: string;
+  readonly profile?: string;
+}
+export interface ChromeProfilesResult {
+  readonly profiles: readonly ChromeProfile[];
+  /** The user's pinned Chrome-profile app references, so a pinned tile can resolve
+   *  its label + avatar by matching `profile` back to a discovered profile. */
+  readonly references: readonly AppReference[];
+}
+export interface AddChromeProfileInput {
+  readonly directory: string;
+  readonly name?: string;
+}
+export interface AddChromeProfileResult {
+  readonly accepted: boolean;
+  readonly reference: AppReference | null;
+  readonly errors: readonly string[];
 }
 
 // --- FR-OBS-04 read surface (shape from get-recent-activity-response fixture) ---
@@ -257,6 +295,12 @@ export interface CerebralBridge {
   /** The configured URL references (shipped + user-minted), so pinned URL tiles render
    *  with their real labels — the URL counterpart of {@link listApps} (NIC-146). */
   listUrls(): Promise<ListUrlsResult>;
+  /** The user's Chrome profiles (NIC-151) for the profile dropdown + avatar badges,
+   *  plus the pinned Chrome-profile references so their tiles resolve label + avatar. */
+  listChromeProfiles(): Promise<ChromeProfilesResult>;
+  /** Mint an app reference that opens Chrome in a specific profile (NIC-151), so a
+   *  Chrome profile can be pinned as a quick app; the returned id is the pinnable key. */
+  addChromeProfileReference(input: AddChromeProfileInput): Promise<AddChromeProfileResult>;
   /** Run an on-demand internet speed test (NIC-135). Resolves when the ~30s
    *  measurement completes; read-only, so it never gates on confirmation. */
   runSpeedTest(): Promise<SpeedTestResult>;

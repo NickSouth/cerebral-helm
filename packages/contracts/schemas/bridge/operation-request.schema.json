@@ -35,7 +35,9 @@
         "runSpeedTest",
         "getSettings",
         "addUrlReference",
-        "listUrls"
+        "listUrls",
+        "listChromeProfiles",
+        "addChromeProfileReference"
       ]
     },
     "payload": {

@@ -63,6 +63,11 @@ public final class BridgeSession: @unchecked Sendable {
     private let faviconLock = NSLock()
     private var faviconInFlightOrigins: Set<String> = []
 
+    /// Enumerates the user's Chrome profiles for the profile dropdown and avatar
+    /// badges (NIC-151). Optional: a host without it (tests, non-Mac) serves an
+    /// empty profile list, so the UI simply offers no profile choices.
+    private let chromeProfiles: (any ChromeProfileDiscoveryCapability)?
+
     public init(
         runtime: CommandRuntime,
         configDirectory: URL,
@@ -71,6 +76,7 @@ public final class BridgeSession: @unchecked Sendable {
         settingsStore: (any SettingsStore)? = nil,
         modeStateStore: (any ModeStateStore)? = nil,
         faviconCapability: (any FaviconCapability)? = nil,
+        chromeProfiles: (any ChromeProfileDiscoveryCapability)? = nil,
         emitEventJSON: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.runtime = runtime
@@ -79,6 +85,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.settingsStore = settingsStore
         self.modeStateStore = modeStateStore
         self.faviconCapability = faviconCapability
+        self.chromeProfiles = chromeProfiles
         self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
     }
@@ -146,6 +153,10 @@ public final class BridgeSession: @unchecked Sendable {
             return addUrlReference(request)
         case .listUrls:
             return listUrls(request)
+        case .listChromeProfiles:
+            return await listChromeProfiles(request)
+        case .addChromeProfileReference:
+            return addChromeProfileReference(request)
         case .runSpeedTest:
             return await runSpeedTest(request)
         case .getSettings:
@@ -448,7 +459,7 @@ public final class BridgeSession: @unchecked Sendable {
             )
         }
         switch UserURLReferences.add(
-            url: input.url, label: input.label,
+            url: input.url, label: input.label, profile: input.profile,
             existingIDs: configuredReferenceIDs(), stateRoot: workspace.stateRoot
         ) {
         case let .success(entry):
@@ -482,6 +493,7 @@ public final class BridgeSession: @unchecked Sendable {
         case .emptyURL: return "Enter a URL to add."
         case .invalidURL: return "That doesn't look like a valid web address."
         case .unsupportedScheme: return "Only http and https web addresses can be added."
+        case .invalidProfile: return "The Chrome profile can only contain letters, numbers, spaces, dots, hyphens, and underscores."
         }
     }
 
@@ -505,6 +517,81 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: ListUrlsResult(urls: sorted))
     }
 
+    // MARK: - Chrome profiles (NIC-151)
+
+    /// The user's Chrome profiles for the profile dropdown + avatar badges (NIC-151):
+    /// directory name (the `--profile-directory` value a reference stores), display
+    /// name, and an optional avatar PNG. An empty list on a host without the
+    /// capability (non-Mac, tests) — the UI then offers no profile choices.
+    private func listChromeProfiles(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let profiles = (try? await chromeProfiles?.listProfiles()) ?? []
+        // The pinned Chrome-profile app references (NIC-151), so the dashboard can
+        // render a pinned "Chrome — Work" tile with its label + avatar (by matching
+        // the reference's profile directory back to a discovered profile).
+        let references = (try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace?.stateRoot
+        )).map { catalog in
+            catalog.apps.values
+                .filter { $0.target == UserChromeProfileReferences.chromeBundleID && $0.profile != nil }
+                .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+                .map { AppReferenceDTO(id: $0.id, label: $0.label, target: $0.target, profile: $0.profile) }
+        } ?? []
+        return ok(request, payload: ChromeProfilesResult(
+            profiles: profiles.map {
+                ChromeProfileDTO(directory: $0.directory, name: $0.name, iconPng: $0.iconPNGBase64)
+            },
+            references: references
+        ))
+    }
+
+    /// Mints an app reference that opens Google Chrome in a specific profile (NIC-151),
+    /// so a Chrome profile can be pinned as a quick app the same way any app is. The
+    /// minted reference targets `com.google.Chrome` and carries the profile directory,
+    /// so `app.open` launches it with `--profile-directory` (NIC-151 increment 3).
+    private func addChromeProfileReference(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) -> CerebralHelmBridgeOperationResponse {
+        guard let input: AddChromeProfileInput = decodePayload(request) else {
+            return invalidInput(request, "addChromeProfileReference requires a profile directory.")
+        }
+        guard let workspace else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "chrome_profiles_unavailable",
+                message: "Pinning a Chrome profile requires a durable workspace."
+            )
+        }
+        switch UserChromeProfileReferences.add(
+            directory: input.directory, name: input.name,
+            existingIDs: configuredReferenceIDs(), stateRoot: workspace.stateRoot
+        ) {
+        case let .success(entry):
+            if let fresh = try? ReferenceCatalogLoader.load(
+                configDirectory: configDirectory, stateRoot: workspace.stateRoot
+            ) {
+                runtime.updateReferences(fresh)
+            }
+            return ok(request, payload: AddChromeProfileResult(
+                accepted: true,
+                reference: AppReferenceDTO(id: entry.id, label: entry.label, target: entry.target, profile: entry.profile),
+                errors: []
+            ))
+        case let .failure(error):
+            return ok(request, payload: AddChromeProfileResult(
+                accepted: false, reference: nil, errors: [Self.message(for: error)]
+            ))
+        }
+    }
+
+    private static func message(for error: UserChromeProfileReferences.AddError) -> String {
+        switch error {
+        case .emptyDirectory: return "Choose a Chrome profile to pin."
+        case .invalidProfile: return "That Chrome profile name isn't valid."
+        }
+    }
+
     // MARK: - Favicons (NIC-147)
 
     private func faviconCache() -> FaviconCache? {
@@ -514,7 +601,8 @@ public final class BridgeSession: @unchecked Sendable {
     private func urlReferenceDTO(_ entry: ReferenceEntry, cache: FaviconCache?) -> UrlReferenceDTO {
         UrlReferenceDTO(
             id: entry.id, label: entry.label, target: entry.target,
-            iconPng: cache?.icon(forTarget: entry.target)?.base64EncodedString()
+            iconPng: cache?.icon(forTarget: entry.target)?.base64EncodedString(),
+            profile: entry.profile
         )
     }
 
@@ -819,6 +907,9 @@ public final class BridgeSession: @unchecked Sendable {
     private struct AddUrlReferenceInput: Decodable {
         let url: String
         let label: String?
+        /// Optional Google Chrome profile directory (`--profile-directory`, NIC-151);
+        /// when present the minted URL opens in that Chrome profile.
+        let profile: String?
     }
     /// A configured URL reference, as delivered to the dashboard (NIC-146). `iconPng`
     /// is the site's cached favicon as base64 PNG (NIC-147), omitted when none is
@@ -829,6 +920,9 @@ public final class BridgeSession: @unchecked Sendable {
         let label: String
         let target: String
         let iconPng: String?
+        /// The reference's Chrome profile, when one is configured (NIC-151);
+        /// `encodeIfPresent` omits it otherwise, so profile-less tiles are unchanged.
+        let profile: String?
     }
     private struct AddUrlReferenceResult: Encodable {
         let accepted: Bool
@@ -838,6 +932,36 @@ public final class BridgeSession: @unchecked Sendable {
     }
     private struct ListUrlsResult: Encodable {
         let urls: [UrlReferenceDTO]
+    }
+    /// A Chrome profile for the dropdown + avatar badges (NIC-151). `directory` is the
+    /// `--profile-directory` value; `iconPng` is the account avatar, omitted when none.
+    private struct ChromeProfileDTO: Encodable {
+        let directory: String
+        let name: String
+        let iconPng: String?
+    }
+    private struct ChromeProfilesResult: Encodable {
+        let profiles: [ChromeProfileDTO]
+        /// The user's pinned Chrome-profile app references, so a pinned tile resolves
+        /// its label + profile (and thence its avatar) without a separate feed.
+        let references: [AppReferenceDTO]
+    }
+    private struct AddChromeProfileInput: Decodable {
+        let directory: String
+        let name: String?
+    }
+    /// A configured app reference (NIC-151): mirrors `UrlReferenceDTO` but for an app
+    /// target (a bundle id). `profile` is the Chrome profile it opens in, when set.
+    private struct AppReferenceDTO: Encodable {
+        let id: String
+        let label: String
+        let target: String
+        let profile: String?
+    }
+    private struct AddChromeProfileResult: Encodable {
+        let accepted: Bool
+        let reference: AppReferenceDTO?
+        let errors: [String]
     }
     /// Mirrors the bridge `getRecentActivity` payload wrapper `{ recentActivity: … }`.
     private struct RecentActivityEnvelope: Encodable {

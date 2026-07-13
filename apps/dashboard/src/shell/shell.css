@@ -1059,7 +1059,21 @@
 
 .quick-app__icon {
   display: inline-flex;
+  position: relative;
   color: var(--ch-accent-secondary);
+}
+
+/* The Chrome-profile avatar badge (NIC-151): a small round overlay in the tile
+   icon's bottom-left corner, signifying which Chrome profile the tile opens in. */
+.quick-app__profile-badge {
+  position: absolute;
+  bottom: -2px;
+  left: -3px;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 1.5px var(--ch-surface-base);
 }
 
 .quick-app__icon .app-glyph {
@@ -2090,6 +2104,7 @@
 
 .apps-picker__add-url-row {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--ch-space-2);
 }
 
@@ -2105,6 +2120,10 @@
 }
 
 .apps-picker__add-url-field--name {
+  flex: 0 1 34%;
+}
+
+.apps-picker__add-url-field--profile {
   flex: 0 1 34%;
 }
 
@@ -2251,6 +2270,61 @@
 .apps-picker__unpinnable {
   font-size: 0.62rem;
   color: var(--ch-text-muted);
+}
+
+/* Open Chrome in a profile (NIC-151): a compact list of the user's Chrome profiles,
+   each pinnable as its own quick app, avatar and all. */
+.apps-picker__profiles {
+  margin-top: var(--ch-space-2);
+  border-top: 1px solid var(--ch-panel-border);
+  padding-top: var(--ch-space-2);
+}
+
+.apps-picker__profiles-title {
+  margin: 0 0 var(--ch-space-1);
+  font-size: var(--ch-font-size-sm);
+  font-weight: 600;
+  color: var(--ch-text-muted);
+}
+
+.apps-picker__profiles-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.apps-picker__profile {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.apps-picker__profile-avatar {
+  display: inline-flex;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--ch-accent-secondary);
+}
+
+.apps-picker__profile-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.apps-picker__profile-avatar .app-glyph {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.apps-picker__profile-name {
+  flex: 1 1 auto;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
 }
 
 /* Tile-level unpin (owner decision): a small × revealed on hover/focus. */

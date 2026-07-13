@@ -431,6 +431,7 @@ export interface CerebralHelmBridgeOperationRequest {
 }
 
 export enum Operation {
+    AddChromeProfileReference = "addChromeProfileReference",
     AddURLReference = "addUrlReference",
     ApplyMode = "applyMode",
     CaptureNote = "captureNote",
@@ -439,6 +440,7 @@ export enum Operation {
     GetRecentActivity = "getRecentActivity",
     GetSettings = "getSettings",
     ListApps = "listApps",
+    ListChromeProfiles = "listChromeProfiles",
     ListUrls = "listUrls",
     RunSpeedTest = "runSpeedTest",
     SearchNotes = "searchNotes",
@@ -879,9 +881,10 @@ export interface CerebralHelmReferenceCatalog {
 }
 
 export interface Reference {
-    id:     string;
-    label:  string;
-    target: string;
+    id:       string;
+    label:    string;
+    profile?: string;
+    target:   string;
 }
 
 export interface CerebralHelmAppOpenInput {

@@ -1,8 +1,10 @@
 import type { DashboardBootstrapState } from "./types";
 import type {
+  AppReference,
   BridgeEvent,
   BridgeEventListener,
   CerebralBridge,
+  ChromeProfile,
   RecentActivity,
   SettingsSnapshot,
   Unsubscribe,
@@ -111,16 +113,30 @@ function slugId(label: string): string {
   return /^[a-z][a-z0-9-]*$/.test(slug) ? slug : `link-${slug}`.replace(/-+$/g, "") || "link";
 }
 
-/** The mock's stand-in for the bridge's `addUrlReference` minting (NIC-146): http/https only,
- *  scheme-less host defaults to https, idempotent by target, id unique across `taken`. */
+/** The mock's stand-in for the bridge's `addUrlReference` minting (NIC-146/151): http/https
+ *  only, scheme-less host defaults to https, an optional Chrome profile (blank → none,
+ *  validated), idempotent by (target, profile), id unique across `taken`. Mirrors the
+ *  Swift `UserURLReferences.add`. */
 function mintUrlReference(
   rawUrl: string,
   label: string | undefined,
+  profile: string | undefined,
   existing: readonly UrlReference[]
 ): { reference: UrlReference | null; error?: string } {
   const trimmed = rawUrl.trim();
   if (!trimmed) {
     return { reference: null, error: "Enter a URL to add." };
+  }
+  // A blank profile is "no profile"; a non-blank one must match the reference-catalog
+  // pattern so it cannot smuggle extra `--profile-directory` flags (NIC-151).
+  const trimmedProfile = profile?.trim();
+  const normalizedProfile = trimmedProfile ? trimmedProfile : undefined;
+  if (normalizedProfile && !/^[A-Za-z0-9 ._-]+$/.test(normalizedProfile)) {
+    return {
+      reference: null,
+      error:
+        "The Chrome profile can only contain letters, numbers, spaces, dots, hyphens, and underscores."
+    };
   }
   const candidate = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
   let parsed: URL;
@@ -132,9 +148,11 @@ function mintUrlReference(
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     return { reference: null, error: "Only http and https web addresses can be added." };
   }
-  const existingByTarget = existing.find((url) => url.target === candidate);
-  if (existingByTarget) {
-    return { reference: existingByTarget };
+  const existingMatch = existing.find(
+    (url) => url.target === candidate && url.profile === normalizedProfile
+  );
+  if (existingMatch) {
+    return { reference: existingMatch };
   }
   const labelText = label?.trim() || parsed.hostname;
   const taken = new Set(existing.map((url) => url.id));
@@ -146,7 +164,9 @@ function mintUrlReference(
     }
     id = `${id}-${counter}`;
   }
-  return { reference: { id, label: labelText, target: candidate } };
+  return {
+    reference: { id, label: labelText, target: candidate, ...(normalizedProfile ? { profile: normalizedProfile } : {}) }
+  };
 }
 
 export function createMockCerebralBridge(
@@ -181,6 +201,21 @@ export function createMockCerebralBridge(
     },
     { id: "docs", label: "Project Docs", target: "https://docs.cerebralhelm.local" }
   ];
+
+  // The user's Chrome profiles (NIC-151), the browser stand-in for what the Mac
+  // adapter reads from Chrome's Local State. Personal carries a sample avatar.
+  const chromeProfiles: ChromeProfile[] = [
+    {
+      directory: "Default",
+      name: "Personal",
+      iconPng:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    },
+    { directory: "Profile 1", name: "Work" }
+  ];
+  // Pinned Chrome-profile app references, held mutably so addChromeProfileReference
+  // visibly mints and listChromeProfiles reflects it (mirrors urlReferences).
+  let chromeProfileRefs: AppReference[] = [];
 
   function emit(event: BridgeEvent): void {
     // Snapshot so a listener that unsubscribes mid-dispatch can't mutate the live set.
@@ -340,7 +375,8 @@ export function createMockCerebralBridge(
         "vscode",
         "claude-desktop",
         "xcode",
-        ...urlReferences.map((url) => url.id)
+        ...urlReferences.map((url) => url.id),
+        ...chromeProfileRefs.map((ref) => ref.id)
       ]);
       const unknown = input.quickApps.filter((id) => !known.has(id));
       if (unknown.length > 0) {
@@ -362,10 +398,11 @@ export function createMockCerebralBridge(
       return Promise.resolve({ accepted: true, quickApps: input.quickApps, errors: [] });
     },
     addUrlReference(input) {
-      // Mirror the bridge's minting (NIC-146): http/https only, idempotent by target.
-      // An accepted add persists into the mutable catalog so listUrls reflects it and
-      // the freshly minted id can pin through updateQuickApps this same session.
-      const { reference, error } = mintUrlReference(input.url, input.label, urlReferences);
+      // Mirror the bridge's minting (NIC-146/151): http/https only, an optional Chrome
+      // profile, idempotent by (target, profile). An accepted add persists into the
+      // mutable catalog so listUrls reflects it and the freshly minted id can pin
+      // through updateQuickApps this same session.
+      const { reference, error } = mintUrlReference(input.url, input.label, input.profile, urlReferences);
       if (!reference) {
         return Promise.resolve({ accepted: false, reference: null, errors: [error ?? "The URL could not be added."] });
       }
@@ -378,6 +415,37 @@ export function createMockCerebralBridge(
       // The configured URL references, sorted by label like the bridge (NIC-146).
       const sorted = [...urlReferences].sort((a, b) => a.label.localeCompare(b.label));
       return Promise.resolve({ urls: sorted });
+    },
+    listChromeProfiles() {
+      // Discovered profiles + the pinned Chrome-profile references (NIC-151).
+      return Promise.resolve({
+        profiles: [...chromeProfiles],
+        references: [...chromeProfileRefs].sort((a, b) => a.label.localeCompare(b.label))
+      });
+    },
+    addChromeProfileReference(input) {
+      // Mirror the bridge: mint an app reference opening Chrome in the chosen
+      // profile, idempotent by directory, so listChromeProfiles reflects it and the
+      // returned id pins through updateQuickApps this same session (NIC-151).
+      const directory = input.directory.trim();
+      if (!directory) {
+        return Promise.resolve({ accepted: false, reference: null, errors: ["Choose a Chrome profile to pin."] });
+      }
+      const existing = chromeProfileRefs.find((ref) => ref.profile === directory);
+      if (existing) {
+        return Promise.resolve({ accepted: true, reference: existing, errors: [] });
+      }
+      const name = input.name?.trim() || directory;
+      const taken = new Set([...chromeProfileRefs, ...urlReferences].map((ref) => ref.id));
+      let id = slugId(`chrome-${name}`);
+      if (taken.has(id)) {
+        let counter = 2;
+        while (taken.has(`${id}-${counter}`)) counter += 1;
+        id = `${id}-${counter}`;
+      }
+      const reference: AppReference = { id, label: `Chrome — ${name}`, target: "com.google.Chrome", profile: directory };
+      chromeProfileRefs = [...chromeProfileRefs, reference];
+      return Promise.resolve({ accepted: true, reference, errors: [] });
     },
     runSpeedTest() {
       // A representative measurement for browser previews (NIC-135). The short

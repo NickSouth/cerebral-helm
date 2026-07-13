@@ -78,6 +78,57 @@ func onlyWebSchemesMint() throws {
     #expect(UserURLReferences.load(stateRoot: stateRoot).isEmpty)
 }
 
+@Test("a Chrome profile is persisted on the minted reference (NIC-151)")
+func mintPersistsProfile() throws {
+    let stateRoot = try temporaryStateRoot()
+    let entry = try #require(try UserURLReferences.add(
+        url: "https://mail.google.com", label: "Work Mail", profile: "Profile 1",
+        existingIDs: [], stateRoot: stateRoot
+    ).get())
+    #expect(entry.profile == "Profile 1")
+    #expect(UserURLReferences.load(stateRoot: stateRoot) == [entry]) // durable across reload
+}
+
+@Test("the same URL under different profiles mints distinct references (NIC-151)")
+func sameUrlDifferentProfilesAreDistinct() throws {
+    let stateRoot = try temporaryStateRoot()
+    let work = try #require(try UserURLReferences.add(
+        url: "https://mail.google.com", label: "Work Mail", profile: "Profile 1",
+        existingIDs: [], stateRoot: stateRoot
+    ).get())
+    let personal = try #require(try UserURLReferences.add(
+        url: "https://mail.google.com", label: "Personal Mail", profile: "Default",
+        existingIDs: [], stateRoot: stateRoot
+    ).get())
+    #expect(work.id != personal.id)
+    #expect(UserURLReferences.load(stateRoot: stateRoot).count == 2)
+
+    // Re-adding the exact same URL+profile is still idempotent.
+    let workAgain = try #require(try UserURLReferences.add(
+        url: "https://mail.google.com", label: "Work Mail", profile: "Profile 1",
+        existingIDs: [], stateRoot: stateRoot
+    ).get())
+    #expect(workAgain.id == work.id)
+    #expect(UserURLReferences.load(stateRoot: stateRoot).count == 2)
+}
+
+@Test("a blank profile is treated as no profile; a flag-injecting one is rejected (NIC-151)")
+func profileValidation() throws {
+    let stateRoot = try temporaryStateRoot()
+    let blank = try #require(try UserURLReferences.add(
+        url: "https://example.com", label: "Example", profile: "   ",
+        existingIDs: [], stateRoot: stateRoot
+    ).get())
+    #expect(blank.profile == nil)
+
+    #expect(UserURLReferences.add(
+        url: "https://evil.example", label: "Evil", profile: "Default --load-extension=/tmp/evil",
+        existingIDs: [], stateRoot: stateRoot
+    ) == .failure(.invalidProfile))
+    // The rejected add persisted nothing beyond the blank-profile mint.
+    #expect(UserURLReferences.load(stateRoot: stateRoot) == [blank])
+}
+
 @Test("the reference loader merges minted URLs; shipped wins on id and target")
 func loaderMergesUserURLReferences() throws {
     let stateRoot = try temporaryStateRoot()

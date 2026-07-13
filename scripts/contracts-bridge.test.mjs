@@ -36,7 +36,9 @@ const bridgeOperations = new Set([
   "runSpeedTest",
   "getSettings",
   "addUrlReference",
-  "listUrls"
+  "listUrls",
+  "listChromeProfiles",
+  "addChromeProfileReference"
 ]);
 
 function readJson(filePath) {

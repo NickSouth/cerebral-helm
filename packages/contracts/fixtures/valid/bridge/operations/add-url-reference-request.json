@@ -5,6 +5,7 @@
   "operation": "addUrlReference",
   "payload": {
     "url": "https://news.ycombinator.com",
-    "label": "Hacker News"
+    "label": "Hacker News",
+    "profile": "Profile 1"
   }
 }

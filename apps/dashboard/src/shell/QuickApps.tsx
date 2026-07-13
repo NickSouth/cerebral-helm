@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Panel } from "./Panel";
 import { AppGlyph } from "./AppGlyph";
 import { MoreAppsPicker } from "./MoreAppsPicker";
 import { toModeId } from "../tokens/tokens";
-import type { DiscoveredApp, UrlReference } from "../bridge/cerebralBridge";
+import type { AppReference, ChromeProfile, DiscoveredApp, UrlReference } from "../bridge/cerebralBridge";
 import { useActiveMode } from "./useActiveMode";
 import { appDefinition } from "../appCatalog/appCatalog";
 import { useBridge } from "../state/BridgeProvider";
@@ -162,6 +162,44 @@ export function QuickApps() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridge, pinnedKey]);
 
+  // Chrome profiles (NIC-151): the avatar map (directory → profile) badges any tile
+  // that opens in a Chrome profile, and the reference map (id → app reference) lets a
+  // pinned "Chrome — Work" tile resolve its label + profile. Re-fetched with the pins,
+  // and on mode.quickapps.changed so a just-pinned profile tile renders at once.
+  const [profilesByDir, setProfilesByDir] = useState<ReadonlyMap<string, ChromeProfile>>(new Map());
+  const [chromeRefsById, setChromeRefsById] = useState<ReadonlyMap<string, AppReference>>(new Map());
+  useEffect(() => {
+    if (quickApps.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    const refresh = () => {
+      void bridge
+        .listChromeProfiles()
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+          setProfilesByDir(new Map(result.profiles.map((p) => [p.directory, p])));
+          setChromeRefsById(new Map(result.references.map((ref) => [ref.id, ref])));
+        })
+        .catch(() => {
+          // Degrade: tiles fall back to no badge / id label, never break the row.
+        });
+    };
+    refresh();
+    const unsubscribe = bridge.subscribe((event) => {
+      if (event.type === "mode.quickapps.changed") {
+        refresh();
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridge, pinnedKey]);
+
   // Left-click unpin path (owner decision): every pinned tile carries its own
   // unpin control — no trip through the picker. The write rides the same
   // validated override path; the mode.quickapps.changed event removes the tile.
@@ -176,7 +214,20 @@ export function QuickApps() {
       });
   };
 
+  // Leading-edge debounce for tile clicks (NIC-151): a profiled URL's first click
+  // launches Chrome and its window/tab takes a moment to appear, so rapid repeat
+  // clicks in that gap would each open a duplicate tab before surfacing can engage.
+  // The first click fires immediately; further clicks on the same tile within the
+  // cooldown are ignored — making a launch effectively idempotent under fast clicks.
+  const LAUNCH_COOLDOWN_MS = 800;
+  const lastLaunchRef = useRef<Map<string, number>>(new Map());
+
   const launch = (id: string, label: string) => {
+    const now = Date.now();
+    if (now - (lastLaunchRef.current.get(id) ?? 0) < LAUNCH_COOLDOWN_MS) {
+      return;
+    }
+    lastLaunchRef.current.set(id, now);
     void bridge
       .submitCommand({ rawInput: `open ${id}`, source: "dashboard" })
       .then((receipt) => {
@@ -189,14 +240,22 @@ export function QuickApps() {
       });
   };
 
+  // The Chrome app icon (for pinned "Chrome — <profile>" tiles), if discovery found it.
+  const chromeIcon = [...discovered.values()].find((a) => a.bundleId === "com.google.Chrome")?.iconPng;
+
   return (
     <Panel label="Quick Apps" labelId="region-quick-apps">
       <ul className="quick-apps">
         {apps.map((id) => {
           const urlRef = urls.get(id);
+          const chromeRef = chromeRefsById.get(id);
           const app = appDefinition(id);
           const discoveredApp = discovered.get(id);
-          const label = urlRef?.label ?? app?.label ?? discoveredApp?.name ?? id;
+          const label = urlRef?.label ?? chromeRef?.label ?? app?.label ?? discoveredApp?.name ?? id;
+          // The Chrome profile this tile opens in (a profiled URL, or a Chrome-profile
+          // app tile) → its avatar badge, when the profile was discovered (NIC-151).
+          const profileDir = urlRef?.profile ?? chromeRef?.profile;
+          const profileAvatar = profileDir ? profilesByDir.get(profileDir)?.iconPng : undefined;
           return (
             <li key={id} className="quick-app-slot">
               {!readOnly ? (
@@ -231,6 +290,13 @@ export function QuickApps() {
                       // No favicon yet: the globe placeholder (NIC-146/147).
                       <AppGlyph category="browser" />
                     )
+                  ) : chromeRef ? (
+                    // A pinned "Chrome — <profile>" tile (NIC-151): Chrome's icon.
+                    chromeIcon ? (
+                      <img className="quick-app__real-icon" src={`data:image/png;base64,${chromeIcon}`} alt="" />
+                    ) : (
+                      <AppGlyph category="browser" />
+                    )
                   ) : discoveredApp?.iconPng ? (
                     <img
                       className="quick-app__real-icon"
@@ -240,6 +306,15 @@ export function QuickApps() {
                   ) : (
                     <AppGlyph category={app?.category ?? "files"} />
                   )}
+                  {/* The Chrome-profile avatar badge (NIC-151), bottom-left corner. */}
+                  {profileAvatar ? (
+                    <img
+                      className="quick-app__profile-badge"
+                      src={`data:image/png;base64,${profileAvatar}`}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                  ) : null}
                 </span>
                 <span className="quick-app__label">{label}</span>
               </button>

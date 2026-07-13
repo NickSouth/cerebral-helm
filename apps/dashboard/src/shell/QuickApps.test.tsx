@@ -12,7 +12,10 @@ import type { DashboardState } from "../state/dashboardState";
 
 function renderQuickApps(
   mutate?: (base: DashboardState) => DashboardState,
-  spies?: { onUpdateQuickApps?: (input: { modeId: string; quickApps: readonly string[] }) => void }
+  spies?: {
+    onUpdateQuickApps?: (input: { modeId: string; quickApps: readonly string[] }) => void;
+    onAddUrl?: (input: { url: string; label?: string; profile?: string }) => void;
+  }
 ) {
   const bridge = createMockCerebralBridge();
   const submissions: string[] = [];
@@ -25,6 +28,10 @@ function renderQuickApps(
     updateQuickApps(input: { modeId: string; quickApps: readonly string[] }) {
       spies?.onUpdateQuickApps?.(input);
       return bridge.updateQuickApps(input);
+    },
+    addUrlReference(input: { url: string; label?: string; profile?: string }) {
+      spies?.onAddUrl?.(input);
+      return bridge.addUrlReference(input);
     }
   };
   const base = loadBootstrapState();
@@ -107,6 +114,19 @@ describe("QuickApps", () => {
     fireEvent.click(tile);
     expect(submissions).toHaveLength(1);
     expect(submissions[0]).toMatch(/^open [a-z][a-z0-9-]*$/);
+  });
+
+  it("debounces rapid repeat clicks on a tile into a single open (NIC-151)", () => {
+    const { submissions } = renderQuickApps((base) => ({
+      ...withPinnedApp(base),
+      capabilities: { "native.app.open": { available: true } }
+    }));
+    const tile = firstAppTile();
+    fireEvent.click(tile);
+    fireEvent.click(tile);
+    fireEvent.click(tile);
+    // Only the first click dispatched; the rapid repeats within the cooldown are dropped.
+    expect(submissions).toHaveLength(1);
   });
 
   it("keeps every tile disabled in read-only recovery, capability or not (NIC-64)", () => {
@@ -267,6 +287,56 @@ describe("QuickApps", () => {
     // The tile launches through the same deterministic `open <id>` path as an app.
     fireEvent.click(tile);
     expect(submissions).toContain("open hacker-news");
+  });
+
+  it("passes the selected Chrome profile from the picker dropdown through addUrlReference (NIC-151)", async () => {
+    const calls: Array<{ url: string; label?: string; profile?: string }> = [];
+    renderQuickApps(
+      (base) => ({
+        ...base,
+        capabilities: {
+          "native.apps.list": { available: true },
+          "native.app.open": { available: true }
+        }
+      }),
+      { onAddUrl: (input) => calls.push(input) }
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
+    await screen.findByRole("dialog", { name: "All applications" });
+
+    fireEvent.change(screen.getByLabelText("URL"), { target: { value: "https://mail.google.com" } });
+    fireEvent.change(screen.getByLabelText("URL name (optional)"), { target: { value: "Work Mail" } });
+    // The profile field is a dropdown of discovered Chrome profiles (NIC-151); it
+    // appears once listChromeProfiles resolves. "Profile 1" is the Work profile.
+    const profileSelect = await screen.findByLabelText("Chrome profile (optional)");
+    fireEvent.change(profileSelect, { target: { value: "Profile 1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await screen.findByRole("button", { name: "Work Mail" });
+    expect(calls).toContainEqual({ url: "https://mail.google.com", label: "Work Mail", profile: "Profile 1" });
+  });
+
+  it("pins a Chrome profile from the picker and shows its avatar badge (NIC-151)", async () => {
+    renderQuickApps((base) => ({
+      ...base,
+      capabilities: {
+        "native.apps.list": { available: true },
+        "native.app.open": { available: true }
+      }
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
+    await screen.findByRole("dialog", { name: "All applications" });
+
+    // The "Open Chrome in a profile" section lists each profile with its own pin.
+    fireEvent.click(await screen.findByRole("button", { name: "Pin Chrome — Personal" }));
+
+    // The pinned tile is badged with the profile avatar (the badge class is unique
+    // to a quick-app tile; Personal carries a sample avatar in the mock).
+    await waitFor(() =>
+      expect(document.querySelector(".quick-apps img.quick-app__profile-badge")).not.toBeNull()
+    );
   });
 
   it("renders a pinned URL's favicon as an image, and a globe when none is cached (NIC-147)", async () => {

@@ -13,7 +13,8 @@
         "target": "https://github.com",
         "iconPng": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
       },
-      { "id": "docs", "label": "Project Docs", "target": "https://docs.cerebralhelm.local" }
+      { "id": "docs", "label": "Project Docs", "target": "https://docs.cerebralhelm.local" },
+      { "id": "work-mail", "label": "Work Mail", "target": "https://mail.google.com", "profile": "Profile 1" }
     ]
   }
 }

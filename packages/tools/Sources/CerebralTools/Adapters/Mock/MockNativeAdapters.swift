@@ -240,3 +240,22 @@ public struct MockFaviconCapability: FaviconCapability {
 
     public func fetchFavicon(for url: URL) async -> Data? { icon }
 }
+
+/// Deterministic Chrome-profile-discovery mock (NIC-151): a fixed representative
+/// pair of profiles. Like the favicon mock this is a background UI enrichment, not
+/// a gated tool capability, so there is no capability matrix to check. Icons are
+/// omitted — the honest non-Mac default (the UI falls back to a generic glyph).
+public struct MockChromeProfileDiscoveryCapability: ChromeProfileDiscoveryCapability {
+    public var profiles: [ChromeProfile]
+
+    public init(
+        profiles: [ChromeProfile] = [
+            ChromeProfile(directory: "Default", name: "Personal", iconPNGBase64: nil),
+            ChromeProfile(directory: "Profile 1", name: "Work", iconPNGBase64: nil),
+        ]
+    ) {
+        self.profiles = profiles
+    }
+
+    public func listProfiles() async throws -> [ChromeProfile] { profiles }
+}

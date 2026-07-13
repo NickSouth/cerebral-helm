@@ -4,7 +4,7 @@ import { useDashboardState } from "../state/DashboardStateProvider";
 import { useActiveMode } from "./useActiveMode";
 import { useUiPosture } from "../state/useUiPosture";
 import { toModeId } from "../tokens/tokens";
-import type { DiscoveredApp } from "../bridge/cerebralBridge";
+import type { ChromeProfile, DiscoveredApp } from "../bridge/cerebralBridge";
 import { AppGlyph } from "./AppGlyph";
 
 const MAX_QUICK_APPS = 5;
@@ -44,7 +44,12 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState("");
   const [urlLabel, setUrlLabel] = useState("");
+  const [urlProfile, setUrlProfile] = useState("");
   const [urlError, setUrlError] = useState<string | null>(null);
+  // The user's Chrome profiles (NIC-151): populate the URL profile dropdown and the
+  // "Open Chrome in a profile" pin section. Empty when Chrome isn't installed.
+  const [chromeProfiles, setChromeProfiles] = useState<readonly ChromeProfile[]>([]);
+  const [pinnedProfiles, setPinnedProfiles] = useState<ReadonlySet<string>>(new Set());
 
   const appOpen = state.capabilities?.["native.app.open"];
   const openAvailable = appOpen?.available === true && !readOnly;
@@ -69,6 +74,29 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
         if (!cancelled) {
           setPicker({ status: "error", message: "App discovery is unavailable right now." });
         }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge]);
+
+  // Load Chrome profiles for the dropdown + the pin section (NIC-151). Also tracks
+  // which profiles are already pinned (by directory) so the section shows Pinned.
+  useEffect(() => {
+    let cancelled = false;
+    bridge
+      .listChromeProfiles()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setChromeProfiles(result.profiles);
+        setPinnedProfiles(
+          new Set(result.references.map((ref) => ref.profile).filter((p): p is string => Boolean(p)))
+        );
+      })
+      .catch(() => {
+        // No profiles: the dropdown hides and the section shows nothing — degrade.
       });
     return () => {
       cancelled = true;
@@ -157,7 +185,11 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
     setUrlError(null);
     setWriteError(null);
     bridge
-      .addUrlReference({ url, label: urlLabel.trim() || undefined })
+      .addUrlReference({
+        url,
+        label: urlLabel.trim() || undefined,
+        profile: urlProfile.trim() || undefined
+      })
       .then((result) => {
         if (!result.accepted || !result.reference) {
           setUrlError(result.errors[0] ?? "The URL could not be added.");
@@ -165,12 +197,37 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
         }
         setUrlInput("");
         setUrlLabel("");
+        setUrlProfile("");
         // Re-adding an already-pinned URL is a no-op pin (idempotent) — nothing to write.
         if (!quickApps.includes(result.reference.id)) {
           submitQuickApps([...quickApps, result.reference.id]);
         }
       })
       .catch(() => setUrlError("The URL could not be added."))
+      .finally(() => setBusy(false));
+  }
+
+  // Pin "Chrome — <profile>" (NIC-151): mint the Chrome-profile app reference, then
+  // pin the returned id into the active mode — the same mint-then-pin path a URL takes.
+  function pinChromeProfile(profile: ChromeProfile) {
+    if (busy || readOnly || slotsFull) {
+      return;
+    }
+    setBusy(true);
+    setWriteError(null);
+    bridge
+      .addChromeProfileReference({ directory: profile.directory, name: profile.name })
+      .then((result) => {
+        if (!result.accepted || !result.reference) {
+          setWriteError(result.errors[0] ?? "That Chrome profile couldn't be pinned.");
+          return;
+        }
+        setPinnedProfiles((prev) => new Set([...prev, profile.directory]));
+        if (!quickApps.includes(result.reference.id)) {
+          submitQuickApps([...quickApps, result.reference.id]);
+        }
+      })
+      .catch(() => setWriteError("That Chrome profile couldn't be pinned."))
       .finally(() => setBusy(false));
   }
 
@@ -258,6 +315,25 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
               onChange={(event) => setUrlLabel(event.target.value)}
               disabled={busy || readOnly}
             />
+            {/* Optional Chrome profile (NIC-151): a dropdown of the user's real Chrome
+                profiles (display name shown, directory name sent). Hidden when Chrome
+                exposes no profiles. Empty selection = default browser behavior. */}
+            {chromeProfiles.length > 0 ? (
+              <select
+                className="apps-picker__add-url-field apps-picker__add-url-field--profile"
+                aria-label="Chrome profile (optional)"
+                value={urlProfile}
+                onChange={(event) => setUrlProfile(event.target.value)}
+                disabled={busy || readOnly}
+              >
+                <option value="">Default browser</option>
+                {chromeProfiles.map((profile) => (
+                  <option key={profile.directory} value={profile.directory}>
+                    {`Chrome — ${profile.name}`}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <button
               type="submit"
               className="apps-picker__add-url-submit"
@@ -274,6 +350,50 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
             </p>
           ) : null}
         </form>
+        {/* Open Chrome in a specific profile (NIC-151): each discovered profile is
+            pinnable as its own quick app ("Chrome — Work"), avatar and all. */}
+        {chromeProfiles.length > 0 ? (
+          <section className="apps-picker__profiles" aria-label="Chrome profiles">
+            <h3 className="apps-picker__profiles-title">Open Chrome in a profile</h3>
+            <ul className="apps-picker__profiles-list">
+              {chromeProfiles.map((profile) => {
+                const alreadyPinned = pinnedProfiles.has(profile.directory);
+                return (
+                  <li key={profile.directory} className="apps-picker__profile">
+                    <span className="apps-picker__profile-avatar" aria-hidden="true">
+                      {profile.iconPng ? (
+                        <img src={`data:image/png;base64,${profile.iconPng}`} alt="" />
+                      ) : (
+                        <AppGlyph category="browser" />
+                      )}
+                    </span>
+                    <span className="apps-picker__profile-name">{`Chrome — ${profile.name}`}</span>
+                    <button
+                      type="button"
+                      className="apps-picker__pin"
+                      aria-label={
+                        alreadyPinned
+                          ? `Chrome — ${profile.name} already pinned`
+                          : `Pin Chrome — ${profile.name}`
+                      }
+                      disabled={busy || readOnly || alreadyPinned || slotsFull}
+                      title={
+                        alreadyPinned
+                          ? "Already pinned"
+                          : slotsFull
+                            ? "All five quick-app slots are full — unpin one first."
+                            : undefined
+                      }
+                      onClick={() => pinChromeProfile(profile)}
+                    >
+                      {alreadyPinned ? "Pinned" : "Pin"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
         {picker.status === "loading" ? (
           <p className="apps-picker__note">Discovering installed applications…</p>
         ) : null}

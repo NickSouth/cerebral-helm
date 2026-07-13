@@ -579,9 +579,48 @@ func pinningWithoutWorkspaceIsUnavailable() async throws {
 
 // MARK: - URL references (NIC-146)
 
-private struct UrlRefDTO: Decodable { let id: String; let label: String; let target: String; let iconPng: String? }
+private struct UrlRefDTO: Decodable { let id: String; let label: String; let target: String; let iconPng: String?; let profile: String? }
 private struct AddUrlResult: Decodable { let accepted: Bool; let reference: UrlRefDTO?; let errors: [String] }
 private struct ListUrlsResult: Decodable { let urls: [UrlRefDTO] }
+private struct AppRefDTO: Decodable { let id: String; let label: String; let target: String; let profile: String? }
+private struct AddChromeProfileResult: Decodable { let accepted: Bool; let reference: AppRefDTO?; let errors: [String] }
+
+@Test("addChromeProfileReference mints a Chrome-targeted app reference that pins and opens (NIC-151)")
+func addChromeProfileReferenceMintsAndPins() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let added = try decode(await session.execute(operationRequest(
+        .addChromeProfileReference,
+        #"{"directory":"Profile 1","name":"Work"}"#
+    )), as: AddChromeProfileResult.self)
+    #expect(added.accepted)
+    #expect(added.reference?.id == "chrome-work")
+    #expect(added.reference?.target == "com.google.Chrome")
+    #expect(added.reference?.profile == "Profile 1")
+
+    // The minted id pins through the same validated path an app id clears…
+    let refId = try #require(added.reference?.id)
+    let pin = try decode(await session.execute(operationRequest(
+        .updateQuickApps, #"{"modeId":"developer","quickApps":["\#(refId)"]}"#
+    )), as: QuickAppsResult.self)
+    #expect(pin.accepted)
+
+    // …and the parser resolves `open <id>` this same session (catalog reload).
+    let opened = try decode(await session.execute(operationRequest(
+        .submitCommand, #"{"rawInput":"open \#(refId)"}"#
+    )), as: Receipt.self)
+    #expect(opened.accepted)
+}
+
+@Test("addChromeProfileReference refuses an empty directory without minting (NIC-151)")
+func addChromeProfileReferenceRefusesEmpty() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let result = try decode(await session.execute(operationRequest(
+        .addChromeProfileReference, #"{"directory":""}"#
+    )), as: AddChromeProfileResult.self)
+    #expect(!result.accepted)
+    #expect(result.reference == nil)
+    #expect(!result.errors.isEmpty)
+}
 
 @Test("addUrlReference mints an http URL and lists it back alongside shipped ones (NIC-146)")
 func addUrlReferenceMintsAndLists() async throws {
@@ -597,6 +636,39 @@ func addUrlReferenceMintsAndLists() async throws {
     let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
     #expect(listed.urls.contains { $0.id == "hacker-news" })
     #expect(listed.urls.contains { $0.id == "github" }) // shipped catalog is included
+}
+
+@Test("addUrlReference carries a Chrome profile through the mint and lists it back (NIC-151)")
+func addUrlReferenceWithProfile() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let added = try decode(await session.execute(operationRequest(
+        .addURLReference,
+        #"{"url":"https://mail.google.com","label":"Work Mail","profile":"Profile 1"}"#
+    )), as: AddUrlResult.self)
+    #expect(added.accepted)
+    #expect(added.reference?.profile == "Profile 1")
+
+    // The profile round-trips through the read feed so the tile/form can show it.
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(listed.urls.first { $0.id == added.reference?.id }?.profile == "Profile 1")
+    // Shipped, profile-less references still omit the field.
+    #expect(listed.urls.first { $0.id == "github" }?.profile == nil)
+}
+
+@Test("addUrlReference rejects a flag-injecting Chrome profile without minting (NIC-151)")
+func addUrlReferenceRejectsInvalidProfile() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let result = try decode(await session.execute(operationRequest(
+        .addURLReference,
+        #"{"url":"https://mail.google.com","label":"Work Mail","profile":"Default --load-extension=/tmp/evil"}"#
+    )), as: AddUrlResult.self)
+    #expect(!result.accepted)
+    #expect(result.reference == nil)
+    #expect(!result.errors.isEmpty)
+
+    // Nothing was minted, so the read feed never carries the rejected profile.
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(!listed.urls.contains { $0.target == "https://mail.google.com" })
 }
 
 @Test("a minted URL reference pins as a quick app through the same validated path (NIC-146)")
