@@ -94,6 +94,34 @@ final class MoreAppsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         webView.load(URLRequest(url: Self.moreAppsURL))
     }
 
+    /// Drop the launcher directly under the More Apps button (owner preference,
+    /// NIC-148): horizontally centered on the button and just below its bottom edge,
+    /// clamped to the screen's visible frame so it never runs off an edge. `anchor`
+    /// is the button's rect in screen coordinates (AppKit, y-up).
+    func positionUnder(_ anchor: NSRect, on screen: NSScreen) {
+        let gap: CGFloat = 8
+        let visible = screen.visibleFrame
+        var frame = window.frame
+        let originX = min(
+            max(anchor.midX - frame.width / 2, visible.minX + 8),
+            visible.maxX - frame.width - 8
+        )
+        let originY = max(anchor.minY - gap - frame.height, visible.minY + 8)
+        frame.origin = NSPoint(x: originX, y: originY)
+        window.setFrame(frame, display: true)
+    }
+
+    /// Fallback placement when the button's anchor isn't known: toward the right
+    /// edge of the screen, vertically centered, clear of the edge.
+    func positionOnRight(of screen: NSScreen) {
+        let visible = screen.visibleFrame
+        let margin: CGFloat = 24
+        var frame = window.frame
+        frame.origin.x = visible.maxX - frame.width - margin
+        frame.origin.y = visible.midY - frame.height / 2
+        window.setFrame(frame, display: true)
+    }
+
     func show() {
         window.makeKeyAndOrderFront(nil)
     }

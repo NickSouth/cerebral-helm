@@ -12,7 +12,7 @@ import { useDashboardState } from "../state/DashboardStateProvider";
 import { useActiveMode } from "./useActiveMode";
 import { useUiPosture } from "../state/useUiPosture";
 import { toModeId } from "../tokens/tokens";
-import type { ChromeProfile, DiscoveredApp } from "../bridge/cerebralBridge";
+import type { AppReference, ChromeProfile, DiscoveredApp } from "../bridge/cerebralBridge";
 import { AppGlyph } from "./AppGlyph";
 
 const MAX_QUICK_APPS = 5;
@@ -58,7 +58,15 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
   const [urlProfile, setUrlProfile] = useState("");
   const [urlError, setUrlError] = useState<string | null>(null);
   const [chromeProfiles, setChromeProfiles] = useState<readonly ChromeProfile[]>([]);
-  const [pinnedProfiles, setPinnedProfiles] = useState<ReadonlySet<string>>(new Set());
+  // The user's Chrome-profile references are a GLOBAL catalog (a profile pinned in
+  // any mode mints one reference), so "already pinned" must be judged against THIS
+  // mode's quickApps — never the mere existence of a reference — otherwise a profile
+  // pinned in one mode reads as pinned everywhere (NIC-148 fix).
+  const [profileRefs, setProfileRefs] = useState<readonly AppReference[]>([]);
+  const dirByRef = new Map(profileRefs.map((ref) => [ref.id, ref.profile]));
+  const pinnedDirsInMode = new Set(
+    quickApps.map((id) => dirByRef.get(id)).filter((dir): dir is string => Boolean(dir))
+  );
 
   // Anchor the card under the clicked slot with a wedge pointing at it. Fixed
   // (viewport) coordinates via a portal so no ancestor's overflow can clip it, and
@@ -115,9 +123,7 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
           return;
         }
         setChromeProfiles(result.profiles);
-        setPinnedProfiles(
-          new Set(result.references.map((ref) => ref.profile).filter((p): p is string => Boolean(p)))
-        );
+        setProfileRefs(result.references);
       })
       .catch(() => {
         // No profiles: the dropdown hides and the section shows nothing — degrade.
@@ -211,9 +217,12 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
           setWriteError(result.errors[0] ?? "That Chrome profile couldn't be pinned.");
           return;
         }
-        setPinnedProfiles((prev) => new Set([...prev, profile.directory]));
-        if (!quickApps.includes(result.reference.id)) {
-          submitQuickApps([...quickApps, result.reference.id]);
+        // Learn the minted reference so `pinnedDirsInMode` recognizes it the moment
+        // the quickApps write lands (the ref may be brand new to this catalog).
+        const minted = result.reference;
+        setProfileRefs((prev) => (prev.some((ref) => ref.id === minted.id) ? prev : [...prev, minted]));
+        if (!quickApps.includes(minted.id)) {
+          submitQuickApps([...quickApps, minted.id]);
         }
       })
       .catch(() => setWriteError("That Chrome profile couldn't be pinned."))
@@ -330,7 +339,7 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
               <h3 className="pin-pop__section-title">Chrome profiles</h3>
               <ul className="pin-pop__list">
                 {chromeProfiles.map((profile) => {
-                  const alreadyPinned = pinnedProfiles.has(profile.directory);
+                  const alreadyPinned = pinnedDirsInMode.has(profile.directory);
                   return (
                     <li key={profile.directory} className="pin-pop__row">
                       <span className="pin-pop__avatar" aria-hidden="true">

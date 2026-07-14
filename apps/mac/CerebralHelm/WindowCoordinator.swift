@@ -316,14 +316,39 @@ final class WindowCoordinator: @unchecked Sendable {
     /// Open the floating More Apps launcher window (NIC-148). Built fresh each time
     /// (any open one is replaced) so its app list and capabilities are current — it
     /// is a transient launcher, not a warm-reused panel. No-op in recovery.
-    func openMoreApps() {
+    ///
+    /// `anchor` is the More Apps button's rect in the dashboard webview's viewport
+    /// (from `getBoundingClientRect`); the backdrop fills the screen frame, so it
+    /// converts to screen coordinates through the dashboard window and the launcher
+    /// drops directly under the button. Absent anchor degrades to a right-edge open.
+    func openMoreApps(anchor: [String: Any]? = nil) {
         guard let session, let dashboardRoot else { return }
         moreApps?.close()
         let controller = MoreAppsWindowController(dashboardRoot: dashboardRoot, session: session)
         controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
         moreApps = controller
+        let screen = dashboard?.window.screen ?? mainScreen() ?? NSScreen.main
+        if let anchor, let dashboardWindow = dashboard?.window,
+           let anchorRect = Self.anchorScreenRect(anchor, in: dashboardWindow), let screen {
+            controller.positionUnder(anchorRect, on: screen)
+        } else if let screen {
+            controller.positionOnRight(of: screen)
+        }
         controller.show()
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Convert a viewport rect `{x,y,width,height}` (web CSS px, y-down from the
+    /// top-left) into an AppKit screen rect (y-up). The borderless backdrop fills
+    /// the screen frame with the webview as its whole content view, so the webview
+    /// origin is the window's top-left corner.
+    private static func anchorScreenRect(_ anchor: [String: Any], in window: NSWindow) -> NSRect? {
+        guard
+            let x = anchor["x"] as? Double, let y = anchor["y"] as? Double,
+            let w = anchor["width"] as? Double, let h = anchor["height"] as? Double
+        else { return nil }
+        let frame = window.frame
+        return NSRect(x: frame.minX + x, y: frame.maxY - y - h, width: w, height: h)
     }
 
     /// Close and release the More Apps window — the × control, Escape, or an
@@ -419,7 +444,7 @@ final class WindowCoordinator: @unchecked Sendable {
         case "closeSettings":
             settings?.close()
         case "openMoreApps":
-            openMoreApps()
+            openMoreApps(anchor: body["anchor"] as? [String: Any])
         case "closeMoreApps":
             closeMoreApps()
         case "setLoginItem":

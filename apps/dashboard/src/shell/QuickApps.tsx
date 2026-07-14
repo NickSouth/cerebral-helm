@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Panel } from "./Panel";
 import { AppGlyph } from "./AppGlyph";
 import { MoreAppsPicker } from "./MoreAppsPicker";
@@ -98,10 +98,14 @@ export function QuickApps() {
   const [pinAnchor, setPinAnchor] = useState<HTMLElement | null>(null);
 
   // Inside the native shell, More Apps is a top-most window (backdrop-policy) —
-  // `openMoreApps` asks the shell to open it. A plain browser has no channel, so
+  // `openMoreApps` asks the shell to open it, passing the button's viewport rect so
+  // the shell can drop the window directly under it (the backdrop fills the screen,
+  // so the rect maps to screen coordinates). A plain browser has no channel, so
   // `postShellControl` returns false and we fall back to the in-webview overlay.
-  const openMoreApps = () => {
-    if (!postShellControl("openMoreApps")) {
+  const openMoreApps = (event: MouseEvent<HTMLButtonElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const anchor = { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+    if (!postShellControl("openMoreApps", { anchor })) {
       setPickerOpen(true);
     }
   };

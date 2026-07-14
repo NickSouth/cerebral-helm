@@ -30,6 +30,7 @@
 		CE0000000000000000000043 /* ConfirmationWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000042 /* ConfirmationWindowController.swift */; };
 		CE0000000000000000000045 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000044 /* SettingsWindowController.swift */; };
 		CE0000000000000000000047 /* MoreAppsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000046 /* MoreAppsWindowController.swift */; };
+		CE0000000000000000000049 /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000048 /* MainMenu.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -52,6 +53,7 @@
 		CE0000000000000000000042 /* ConfirmationWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmationWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000044 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000046 /* MoreAppsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreAppsWindowController.swift; sourceTree = "<group>"; };
+		CE0000000000000000000048 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -108,6 +110,7 @@
 				CE0000000000000000000042 /* ConfirmationWindowController.swift */,
 				CE0000000000000000000044 /* SettingsWindowController.swift */,
 				CE0000000000000000000046 /* MoreAppsWindowController.swift */,
+				CE0000000000000000000048 /* MainMenu.swift */,
 			);
 			path = CerebralHelm;
 			sourceTree = "<group>";
@@ -209,6 +212,7 @@
 				CE0000000000000000000043 /* ConfirmationWindowController.swift in Sources */,
 				CE0000000000000000000045 /* SettingsWindowController.swift in Sources */,
 				CE0000000000000000000047 /* MoreAppsWindowController.swift in Sources */,
+				CE0000000000000000000049 /* MainMenu.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

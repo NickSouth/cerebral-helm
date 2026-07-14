@@ -6,6 +6,7 @@ import { ActionStatusProvider } from "../state/ActionStatusProvider";
 import { createBridgeStore } from "../state/bridgeStore";
 import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
 import type { DashboardState } from "../state/dashboardState";
+import type { ChromeProfilesResult } from "../bridge/cerebralBridge";
 
 /** NIC-119 part 1 (NIC-85): quick app tiles reflect capability flags and dispatch
  *  `open <id>` through the bridge — honest-disabled when the capability is absent. */
@@ -15,6 +16,7 @@ function renderQuickApps(
   spies?: {
     onUpdateQuickApps?: (input: { modeId: string; quickApps: readonly string[] }) => void;
     onAddUrl?: (input: { url: string; label?: string; profile?: string }) => void;
+    chromeProfiles?: ChromeProfilesResult;
   }
 ) {
   const bridge = createMockCerebralBridge();
@@ -32,6 +34,11 @@ function renderQuickApps(
     addUrlReference(input: { url: string; label?: string; profile?: string }) {
       spies?.onAddUrl?.(input);
       return bridge.addUrlReference(input);
+    },
+    listChromeProfiles() {
+      return spies?.chromeProfiles
+        ? Promise.resolve(spies.chromeProfiles)
+        : bridge.listChromeProfiles();
     }
   };
   const base = loadBootstrapState();
@@ -339,6 +346,28 @@ describe("QuickApps", () => {
     );
   });
 
+  it("a Chrome profile pinned in another mode is still pinnable here — per-mode, not global (NIC-148)", async () => {
+    // The reference exists globally (minted when pinned in some other mode) but is
+    // NOT in this mode's quickApps, so it must read as pinnable, not "Pinned".
+    renderQuickApps(
+      (base) => ({ ...base, capabilities: { "native.apps.list": { available: true } } }),
+      {
+        chromeProfiles: {
+          profiles: [{ directory: "Profile 1", name: "Work" }],
+          references: [
+            { id: "chrome-work", label: "Chrome — Work", target: "com.google.Chrome", profile: "Profile 1" }
+          ]
+        }
+      }
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Pin app" })[0]);
+    await screen.findByRole("dialog", { name: "Pin an app" });
+
+    const pin = await screen.findByRole("button", { name: "Pin Chrome — Work" });
+    expect(pin).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Chrome — Work already pinned" })).toBeNull();
+  });
+
   it("renders a pinned URL's favicon as an image, and a globe when none is cached (NIC-147)", async () => {
     renderQuickApps(withPinnedUrls);
 
@@ -411,9 +440,9 @@ describe("QuickApps", () => {
         capabilities: { "native.apps.list": { available: true } }
       }));
       fireEvent.click(screen.getByRole("button", { name: /More Apps/ }));
-      // The native shell owns the launcher window — post the open action, and do
-      // NOT fall back to the in-webview overlay.
-      expect(posted).toContainEqual({ action: "openMoreApps" });
+      // The native shell owns the launcher window — post the open action (with the
+      // button's anchor rect), and do NOT fall back to the in-webview overlay.
+      expect(posted).toContainEqual(expect.objectContaining({ action: "openMoreApps" }));
       expect(screen.queryByRole("dialog", { name: "All applications" })).toBeNull();
     } finally {
       delete (window as unknown as { webkit?: unknown }).webkit;
