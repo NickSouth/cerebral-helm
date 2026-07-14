@@ -28,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+        // Install the main menu (esp. the Edit menu) so the standard editing
+        // shortcuts — ⌘V paste into the URL pin field / command bar / settings —
+        // reach the hosted WKWebView. Without an Edit menu macOS never routes them.
+        MainMenu.install(appName: "CerebralHelm")
         switch Bootstrap.run() {
         case let .ready(paths):
             enterReady(paths)

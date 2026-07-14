@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000022",
+  "type": "bridge.operation.response",
+  "operation": "addUrlReference",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "accepted": true,
+    "reference": {
+      "id": "hacker-news",
+      "label": "Hacker News",
+      "target": "https://news.ycombinator.com",
+      "profile": "Profile 1"
+    },
+    "errors": []
+  }
+}

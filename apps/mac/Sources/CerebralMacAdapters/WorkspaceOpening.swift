@@ -18,6 +18,10 @@ public protocol WorkspaceOpening: Sendable {
     func isApplicationRunning(bundleIdentifier bundleID: String) -> Bool
     /// Launches (or activates) the application at `url`.
     func openApplication(at url: URL) async throws
+    /// Launches the application at `url`, passing `arguments` on launch. Used to
+    /// open an app reference in a specific Chrome profile (`--profile-directory`,
+    /// NIC-151); a fresh instance is launched so the arguments reach the app.
+    func openApplication(at url: URL, arguments: [String]) async throws
     /// Opens `url` with its default handler.
     func openURL(_ url: URL) async throws
 }
@@ -40,6 +44,24 @@ public struct SystemWorkspace: WorkspaceOpening {
         // concurrency boundary.
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    public func openApplication(at url: URL, arguments: [String]) async throws {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.arguments = arguments
+        // A fresh instance so the launch arguments (the `--profile-directory` flag)
+        // reach the app: a running Chrome forwards this instance's command line to
+        // its singleton and opens the named profile, then the new instance exits.
+        configuration.createsNewApplicationInstance = true
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {

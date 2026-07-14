@@ -34,7 +34,11 @@ const bridgeOperations = new Set([
   "listApps",
   "updateQuickApps",
   "runSpeedTest",
-  "getSettings"
+  "getSettings",
+  "addUrlReference",
+  "listUrls",
+  "listChromeProfiles",
+  "addChromeProfileReference"
 ]);
 
 function readJson(filePath) {

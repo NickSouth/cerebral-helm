@@ -27,6 +27,9 @@ final class WindowCoordinator: @unchecked Sendable {
     /// The dedicated settings window (backdrop-policy decision): created lazily on
     /// first open, then reused warm. `nil` until then and always `nil` in recovery.
     private var settings: SettingsWindowController?
+    /// The floating More Apps launcher window (NIC-148): built fresh on each open so
+    /// the app list is current, and torn down on close. `nil` while closed.
+    private var moreApps: MoreAppsWindowController?
     /// One additional backdrop per connected non-main display (NIC-120b), keyed by
     /// the display's topology id. Created/removed by `reconcileBackdrops` on every
     /// topology change; each binds the SAME shared session (no second runtime).
@@ -135,6 +138,7 @@ final class WindowCoordinator: @unchecked Sendable {
             secondary.deliverBridgeEvent(json)
         }
         settings?.deliverBridgeEvent(json)
+        moreApps?.deliverBridgeEvent(json)
         if json.contains("\"config.changed\"") {
             palette?.deliverBridgeEvent(json)
         }
@@ -309,6 +313,51 @@ final class WindowCoordinator: @unchecked Sendable {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Open the floating More Apps launcher window (NIC-148). Built fresh each time
+    /// (any open one is replaced) so its app list and capabilities are current — it
+    /// is a transient launcher, not a warm-reused panel. No-op in recovery.
+    ///
+    /// `anchor` is the More Apps button's rect in the dashboard webview's viewport
+    /// (from `getBoundingClientRect`); the backdrop fills the screen frame, so it
+    /// converts to screen coordinates through the dashboard window and the launcher
+    /// drops directly under the button. Absent anchor degrades to a right-edge open.
+    func openMoreApps(anchor: [String: Any]? = nil) {
+        guard let session, let dashboardRoot else { return }
+        moreApps?.close()
+        let controller = MoreAppsWindowController(dashboardRoot: dashboardRoot, session: session)
+        controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        moreApps = controller
+        let screen = dashboard?.window.screen ?? mainScreen() ?? NSScreen.main
+        if let anchor, let dashboardWindow = dashboard?.window,
+           let anchorRect = Self.anchorScreenRect(anchor, in: dashboardWindow), let screen {
+            controller.positionUnder(anchorRect, on: screen)
+        } else if let screen {
+            controller.positionOnRight(of: screen)
+        }
+        controller.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Convert a viewport rect `{x,y,width,height}` (web CSS px, y-down from the
+    /// top-left) into an AppKit screen rect (y-up). The borderless backdrop fills
+    /// the screen frame with the webview as its whole content view, so the webview
+    /// origin is the window's top-left corner.
+    private static func anchorScreenRect(_ anchor: [String: Any], in window: NSWindow) -> NSRect? {
+        guard
+            let x = anchor["x"] as? Double, let y = anchor["y"] as? Double,
+            let w = anchor["width"] as? Double, let h = anchor["height"] as? Double
+        else { return nil }
+        let frame = window.frame
+        return NSRect(x: frame.minX + x, y: frame.maxY - y - h, width: w, height: h)
+    }
+
+    /// Close and release the More Apps window — the × control, Escape, or an
+    /// accepted app launch all post `closeMoreApps` (dismiss-on-open, NIC-148).
+    func closeMoreApps() {
+        moreApps?.close()
+        moreApps = nil
+    }
+
     /// Dismiss the palette (already done by its control channel), bring the dashboard forward,
     /// and dispatch the submitted text through the dashboard's command bus. The Heimlich chat
     /// was removed (NIC-124): a command's result surfaces in the dashboard status line, and an
@@ -377,10 +426,12 @@ final class WindowCoordinator: @unchecked Sendable {
     }
 
     /// Apply a web-driven shell action (NIC-76 increment 4, extended by the
-    /// backdrop-policy decision): the palette-hotkey rebind from the settings
-    /// "Hotkeys" panel, plus opening/closing the dedicated settings window (the
+    /// backdrop-policy decision and NIC-148): the palette-hotkey rebind from the
+    /// settings "Hotkeys" panel, opening/closing the dedicated settings window (the
     /// dashboard gear posts `openSettings`; the settings surface's × posts
-    /// `closeSettings`). Window control is a Mac-only concern kept off the
+    /// `closeSettings`), and opening/closing the floating More Apps launcher (the
+    /// More Apps tile posts `openMoreApps`; its ×, Escape, or an accepted launch
+    /// post `closeMoreApps`). Window control is a Mac-only concern kept off the
     /// portable bridge.
     private func handleShellControl(_ body: [String: Any]) {
         switch body["action"] as? String {
@@ -392,6 +443,10 @@ final class WindowCoordinator: @unchecked Sendable {
             openSettings()
         case "closeSettings":
             settings?.close()
+        case "openMoreApps":
+            openMoreApps(anchor: body["anchor"] as? [String: Any])
+        case "closeMoreApps":
+            closeMoreApps()
         case "setLoginItem":
             // Launch-at-login toggle (NIC-89): register/unregister via the
             // SMAppService seam and push the OS's resulting status back to the

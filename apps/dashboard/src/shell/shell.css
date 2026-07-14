@@ -1043,7 +1043,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--ch-space-2);
+  gap: 0.313rem;
   width: 100%;
   min-height: 5rem;
   font: inherit;
@@ -1059,15 +1059,30 @@
 
 .quick-app__icon {
   display: inline-flex;
+  position: relative;
   color: var(--ch-accent-secondary);
 }
 
+/* The Chrome-profile avatar badge (NIC-151): a small round overlay in the tile
+   icon's bottom-left corner, signifying which Chrome profile the tile opens in. */
+.quick-app__profile-badge {
+  position: absolute;
+  bottom: -2px;
+  left: -3px;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 1.5px var(--ch-surface-base);
+}
+
 .quick-app__icon .app-glyph {
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 2.25rem;
+  height: 2.25rem;
 }
 
 .quick-app__label {
+  font-size: 0.688rem;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -2025,25 +2040,48 @@
   background: rgba(0, 0, 0, 0.45);
 }
 
+/* The More Apps launcher window (NIC-148): tall and two-wide so scrolling reveals
+   more, with a CerebralHelm-themed bar (not native chrome). Still centered as an
+   overlay here; increment 3 hosts this same view in a top-most native window. */
 .apps-picker {
   position: fixed;
   z-index: 990;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(720px, 90vw);
-  max-height: min(560px, 82vh);
+  width: min(360px, 92vw);
+  max-height: min(620px, 84vh);
   display: flex;
   flex-direction: column;
   border-radius: var(--ch-radius-lg);
-  border: 1px solid var(--ch-panel-border);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 22%, var(--ch-panel-border));
   background: var(--ch-surface-raised);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
   overflow: hidden;
 }
 
 .apps-picker:focus {
   outline: none;
+}
+
+/* The standalone variant fills its own native window (NIC-148): no centering,
+   scrim, or float chrome — the window frames it. `.apps-window` paints the
+   backdrop so the themed bar + list read against the mode background. */
+.apps-window {
+  width: 100%;
+  min-height: 100vh;
+  background: linear-gradient(var(--ch-bg-gradient-top), var(--ch-bg-base));
+}
+
+.apps-picker--standalone {
+  position: static;
+  transform: none;
+  width: 100%;
+  height: 100vh;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .apps-picker__header {
@@ -2052,6 +2090,10 @@
   justify-content: space-between;
   padding: var(--ch-space-3) var(--ch-space-4);
   border-bottom: 1px solid var(--ch-panel-border);
+  background: linear-gradient(
+    color-mix(in srgb, var(--ch-accent-primary) 8%, transparent),
+    transparent
+  );
 }
 
 .apps-picker__title {
@@ -2060,58 +2102,67 @@
   color: var(--ch-text-primary);
 }
 
+/* A themed × (like the settings window), not native window chrome. */
 .apps-picker__close {
-  border: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
   background: none;
   color: var(--ch-text-muted);
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
 }
 
 .apps-picker__close:hover {
-  color: var(--ch-text-primary);
+  border-color: var(--ch-accent-primary);
+  color: var(--ch-accent-primary);
 }
 
+/* Two-wide, scrollable list of launchable apps. */
 .apps-picker__grid {
   list-style: none;
   margin: 0;
-  padding: var(--ch-space-4);
+  padding: var(--ch-space-3);
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: var(--ch-space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ch-space-2);
   overflow-y: auto;
 }
 
 .apps-picker__item {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--ch-space-1);
-  text-align: center;
+  min-width: 0;
 }
 
 .apps-picker__icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 1.6rem;
+  height: 1.6rem;
+  flex: 0 0 auto;
   color: var(--ch-text-muted);
 }
 
 .apps-picker__icon img {
-  width: 40px;
-  height: 40px;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: var(--ch-radius-sm);
 }
 
 .apps-picker__name {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: var(--ch-font-size-sm);
   color: var(--ch-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
 }
 
 .apps-picker__note {
@@ -2123,25 +2174,29 @@
 
 /* Real OS icons on quick-app tiles + pin controls in the picker (NIC-119c). */
 
+/* rem, not px, so a real OS icon tracks the empty-slot glyph (2.25rem) at every
+   root-font size — the viewport-height type scale (NIC-77) shrinks rem on short
+   displays, and a fixed-px icon would drift larger than the glyph beside it. */
 .quick-app__real-icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--ch-radius-sm);
 }
 
-/* The app tile is the primary launch control (NIC-149): icon + name in one
-   button, mirroring a quick-app tile. Disabled = honest (no capability or no
-   configured reference), never hidden. */
+/* Each app is one full-width launch row (icon + name) in the two-wide grid. */
 .apps-picker__launch {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: var(--ch-space-1);
+  gap: var(--ch-space-2);
+  width: 100%;
+  min-width: 0;
   border: none;
   background: none;
-  padding: 0;
-  max-width: 100%;
+  padding: var(--ch-space-2);
+  border-radius: var(--ch-radius-md);
   cursor: pointer;
+  text-align: left;
 }
 
 .apps-picker__launch:disabled {
@@ -2149,17 +2204,204 @@
   cursor: default;
 }
 
-.apps-picker__launch:hover:not(:disabled) .apps-picker__icon {
-  color: var(--ch-text-primary);
+.apps-picker__launch:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
 }
 
-.apps-picker__actions {
+/* The pin popover (NIC-148): the anchored, in-webview surface that owns every pin
+   route (app · URL · Chrome profile). Portaled to <body>, positioned in fixed
+   coordinates under the clicked empty slot with a wedge pointing at it. */
+.pin-pop-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 995;
+  background: transparent;
+}
+
+.pin-pop {
+  position: fixed;
+  z-index: 996;
+  width: min(20rem, 92vw);
+  max-height: min(28rem, 80vh);
   display: flex;
-  gap: var(--ch-space-1);
+  flex-direction: column;
+  border-radius: var(--ch-radius-lg);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 26%, var(--ch-panel-border));
+  background: var(--ch-surface-raised);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
 }
 
-.apps-picker__pin,
-.apps-picker__open {
+.pin-pop:focus {
+  outline: none;
+}
+
+.pin-pop__wedge {
+  position: absolute;
+  top: -7px;
+  width: 13px;
+  height: 13px;
+  background: var(--ch-surface-raised);
+  border-left: 1px solid color-mix(in srgb, var(--ch-accent-primary) 26%, var(--ch-panel-border));
+  border-top: 1px solid color-mix(in srgb, var(--ch-accent-primary) 26%, var(--ch-panel-border));
+  transform: rotate(45deg);
+}
+
+.pin-pop__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border-bottom: 1px solid var(--ch-panel-border);
+}
+
+.pin-pop__title {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-accent-primary);
+}
+
+.pin-pop__close {
+  width: 1.4rem;
+  height: 1.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+  background: none;
+  color: var(--ch-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pin-pop__close:hover {
+  border-color: var(--ch-accent-primary);
+  color: var(--ch-accent-primary);
+}
+
+.pin-pop__add-url {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-3);
+  border-bottom: 1px solid var(--ch-panel-border);
+}
+
+.pin-pop__add-url-row {
+  display: flex;
+  gap: var(--ch-space-2);
+}
+
+.pin-pop__field {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+  background: var(--ch-surface-base);
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-1) var(--ch-space-2);
+}
+
+.pin-pop__field:focus {
+  outline: none;
+  border-color: var(--ch-text-muted);
+}
+
+.pin-pop__field:disabled {
+  opacity: 0.55;
+}
+
+.pin-pop__add-url-submit {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 45%, var(--ch-panel-border));
+  border-radius: var(--ch-radius-sm);
+  background: none;
+  color: var(--ch-accent-primary);
+  font-size: var(--ch-font-size-sm);
+  padding: 1px var(--ch-space-3);
+  cursor: pointer;
+}
+
+.pin-pop__add-url-submit:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ch-accent-primary) 12%, transparent);
+}
+
+.pin-pop__add-url-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pin-pop__scroll {
+  overflow-y: auto;
+}
+
+.pin-pop__section {
+  padding: var(--ch-space-2) var(--ch-space-3);
+}
+
+.pin-pop__section + .pin-pop__section {
+  border-top: 1px solid var(--ch-panel-border);
+}
+
+.pin-pop__section-title {
+  margin: 0 0 var(--ch-space-1);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ch-text-faint);
+}
+
+.pin-pop__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pin-pop__row {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-1) 0;
+}
+
+.pin-pop__avatar {
+  display: inline-flex;
+  position: relative;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: 0 0 auto;
+  color: var(--ch-accent-secondary);
+}
+
+.pin-pop__avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--ch-radius-sm);
+  object-fit: cover;
+}
+
+.pin-pop__avatar .app-glyph {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.pin-pop__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pin-pop__pin {
+  flex: 0 0 auto;
   border: 1px solid var(--ch-panel-border);
   border-radius: var(--ch-radius-sm);
   background: none;
@@ -2169,19 +2411,25 @@
   cursor: pointer;
 }
 
-.apps-picker__pin:hover:not(:disabled),
-.apps-picker__open:hover:not(:disabled) {
+.pin-pop__pin:hover:not(:disabled) {
   background: var(--ch-surface-base);
 }
 
-.apps-picker__pin:disabled,
-.apps-picker__open:disabled {
+.pin-pop__pin:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-.apps-picker__unpinnable {
+.pin-pop__unpinnable {
+  flex: 0 0 auto;
   font-size: 0.62rem;
+  color: var(--ch-text-muted);
+}
+
+.pin-pop__note {
+  margin: 0;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  font-size: var(--ch-font-size-sm);
   color: var(--ch-text-muted);
 }
 

@@ -1,3 +1,4 @@
+import Foundation
 import CerebralCore
 
 /// Deterministic mock native adapters for the pre-Mac foundation.
@@ -224,4 +225,37 @@ public struct MockAppDiscoveryCapability: AppDiscoveryCapability {
         try CapabilityGate.check(CapabilityMatrix.Capability.appsList, matrix: matrix, fault: fault)
         return AppDiscoveryResult(apps: apps, truncated: false)
     }
+}
+
+/// Deterministic favicon mock (NIC-147): returns a fixed icon (or nothing). Favicon
+/// fetch is a background UI enrichment, not a gated tool capability, so — unlike the
+/// other mocks — there is no capability matrix to check; the honest non-Mac default
+/// is `nil` (no favicon), which leaves the URL tile on its placeholder glyph.
+public struct MockFaviconCapability: FaviconCapability {
+    public var icon: Data?
+
+    public init(icon: Data? = nil) {
+        self.icon = icon
+    }
+
+    public func fetchFavicon(for url: URL) async -> Data? { icon }
+}
+
+/// Deterministic Chrome-profile-discovery mock (NIC-151): a fixed representative
+/// pair of profiles. Like the favicon mock this is a background UI enrichment, not
+/// a gated tool capability, so there is no capability matrix to check. Icons are
+/// omitted — the honest non-Mac default (the UI falls back to a generic glyph).
+public struct MockChromeProfileDiscoveryCapability: ChromeProfileDiscoveryCapability {
+    public var profiles: [ChromeProfile]
+
+    public init(
+        profiles: [ChromeProfile] = [
+            ChromeProfile(directory: "Default", name: "Personal", iconPNGBase64: nil),
+            ChromeProfile(directory: "Profile 1", name: "Work", iconPNGBase64: nil),
+        ]
+    ) {
+        self.profiles = profiles
+    }
+
+    public func listProfiles() async throws -> [ChromeProfile] { profiles }
 }

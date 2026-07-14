@@ -33,7 +33,11 @@
         "listApps",
         "updateQuickApps",
         "runSpeedTest",
-        "getSettings"
+        "getSettings",
+        "addUrlReference",
+        "listUrls",
+        "listChromeProfiles",
+        "addChromeProfileReference"
       ]
     },
     "payload": {

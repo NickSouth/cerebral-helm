@@ -2140,6 +2140,8 @@ public extension CerebralHelmBridgeOperationRequest {
 }
 
 public enum Operation: String, Codable {
+    case addChromeProfileReference = "addChromeProfileReference"
+    case addURLReference = "addUrlReference"
     case applyMode = "applyMode"
     case captureNote = "captureNote"
     case decideConfirmation = "decideConfirmation"
@@ -2147,6 +2149,8 @@ public enum Operation: String, Codable {
     case getRecentActivity = "getRecentActivity"
     case getSettings = "getSettings"
     case listApps = "listApps"
+    case listChromeProfiles = "listChromeProfiles"
+    case listUrls = "listUrls"
     case runSpeedTest = "runSpeedTest"
     case searchNotes = "searchNotes"
     case submitCommand = "submitCommand"
@@ -4217,11 +4221,14 @@ public extension CerebralHelmReferenceCatalog {
 
 // MARK: - Reference
 public struct Reference: Codable {
-    public let id, label, target: String
+    public let id, label: String
+    public let profile: String?
+    public let target: String
 
-    public init(id: String, label: String, target: String) {
+    public init(id: String, label: String, profile: String?, target: String) {
         self.id = id
         self.label = label
+        self.profile = profile
         self.target = target
     }
 }
@@ -4247,11 +4254,13 @@ public extension Reference {
     func with(
         id: String? = nil,
         label: String? = nil,
+        profile: String?? = nil,
         target: String? = nil
     ) -> Reference {
         return Reference(
             id: id ?? self.id,
             label: label ?? self.label,
+            profile: profile ?? self.profile,
             target: target ?? self.target
         )
     }
@@ -6719,17 +6728,20 @@ public extension CerebralHelmURLOpenInput {
 public struct CerebralHelmURLOpenOutput: Codable {
     public let opened: Bool
     public let resolvedURL: String
+    public let surfaced: Bool
     public let urlID: String
 
     public enum CodingKeys: String, CodingKey {
         case opened
         case resolvedURL = "resolvedUrl"
+        case surfaced
         case urlID = "urlId"
     }
 
-    public init(opened: Bool, resolvedURL: String, urlID: String) {
+    public init(opened: Bool, resolvedURL: String, surfaced: Bool, urlID: String) {
         self.opened = opened
         self.resolvedURL = resolvedURL
+        self.surfaced = surfaced
         self.urlID = urlID
     }
 }
@@ -6755,11 +6767,13 @@ public extension CerebralHelmURLOpenOutput {
     func with(
         opened: Bool? = nil,
         resolvedURL: String? = nil,
+        surfaced: Bool? = nil,
         urlID: String? = nil
     ) -> CerebralHelmURLOpenOutput {
         return CerebralHelmURLOpenOutput(
             opened: opened ?? self.opened,
             resolvedURL: resolvedURL ?? self.resolvedURL,
+            surfaced: surfaced ?? self.surfaced,
             urlID: urlID ?? self.urlID
         )
     }

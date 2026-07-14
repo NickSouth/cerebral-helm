@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000026",
+  "type": "bridge.operation.response",
+  "operation": "listChromeProfiles",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "profiles": [
+      { "directory": "Default", "name": "Personal", "iconPng": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" },
+      { "directory": "Profile 1", "name": "Work" }
+    ],
+    "references": [
+      { "id": "chrome-work", "label": "Chrome — Work", "target": "com.google.Chrome", "profile": "Profile 1" }
+    ]
+  }
+}

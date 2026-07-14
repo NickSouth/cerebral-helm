@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000028",
+  "type": "bridge.operation.response",
+  "operation": "addChromeProfileReference",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "accepted": true,
+    "reference": {
+      "id": "chrome-work",
+      "label": "Chrome — Work",
+      "target": "com.google.Chrome",
+      "profile": "Profile 1"
+    },
+    "errors": []
+  }
+}

@@ -24,9 +24,17 @@ private final class FakeWorkspace: WorkspaceOpening, @unchecked Sendable {
     let running: Set<String>
     let failsToOpen: Bool
 
+    /// An app launched with arguments (the Chrome-with-profile path, NIC-151) — used
+    /// for both app references and profiled URLs (the URL is passed as an argument).
+    struct AppLaunch: Equatable {
+        let appURL: URL
+        let arguments: [String]
+    }
+
     private let lock = NSLock()
     private var openedApplications: [URL] = []
     private var openedURLs: [URL] = []
+    private var appLaunches: [AppLaunch] = []
 
     init(installed: [String: URL] = [:], running: Set<String> = [], failsToOpen: Bool = false) {
         self.installed = installed
@@ -47,9 +55,20 @@ private final class FakeWorkspace: WorkspaceOpening, @unchecked Sendable {
         record(url, into: \.openedApplications)
     }
 
+    func openApplication(at url: URL, arguments: [String]) async throws {
+        if failsToOpen { throw OpenFailure() }
+        recordAppLaunch(AppLaunch(appURL: url, arguments: arguments))
+    }
+
     func openURL(_ url: URL) async throws {
         if failsToOpen { throw OpenFailure() }
         record(url, into: \.openedURLs)
+    }
+
+    private func recordAppLaunch(_ launch: AppLaunch) {
+        lock.lock()
+        appLaunches.append(launch)
+        lock.unlock()
     }
 
     private func record(_ url: URL, into keyPath: ReferenceWritableKeyPath<FakeWorkspace, [URL]>) {
@@ -66,6 +85,11 @@ private final class FakeWorkspace: WorkspaceOpening, @unchecked Sendable {
     var urlOpens: [URL] {
         lock.lock(); defer { lock.unlock() }
         return openedURLs
+    }
+
+    var launchedApps: [AppLaunch] {
+        lock.lock(); defer { lock.unlock() }
+        return appLaunches
     }
 }
 
@@ -107,6 +131,35 @@ func alreadyRunningAppIsActivated() async throws {
     #expect(!result.launched)
     // Activation still goes through the workspace so the app comes to front.
     #expect(fake.applicationOpens == [vscodeURL])
+}
+
+/// An app adapter whose single reference (Chrome) carries a profile, via the
+/// entry-provider init.
+private func profileAppCapability(_ fake: FakeWorkspace, profile: String) -> NSWorkspaceAppCapability {
+    NSWorkspaceAppCapability(
+        appsProvider: { ["chrome-work": ReferenceEntry(id: "chrome-work", label: "Chrome (Work)", target: "com.google.Chrome", profile: profile)] },
+        workspace: fake
+    )
+}
+
+@Test("a profile-bearing app reference launches the app with --profile-directory")
+func profileAppLaunchesWithFlag() async throws {
+    let fake = workspaceWithChrome()
+    let result = try await profileAppCapability(fake, profile: "Work").open(appID: "chrome-work")
+
+    #expect(result == AppOpenResult(appID: "chrome-work", launched: true, alreadyRunning: false))
+    #expect(fake.launchedApps == [FakeWorkspace.AppLaunch(appURL: chromeURL, arguments: ["--profile-directory=Work"])])
+    #expect(fake.applicationOpens.isEmpty) // never went through the plain launch path
+}
+
+@Test("a profile-bearing app already running is still reported alreadyRunning")
+func profileAppAlreadyRunning() async throws {
+    let fake = FakeWorkspace(installed: ["com.google.Chrome": chromeURL], running: ["com.google.Chrome"])
+    let result = try await profileAppCapability(fake, profile: "Work").open(appID: "chrome-work")
+
+    #expect(result.alreadyRunning)
+    #expect(!result.launched)
+    #expect(fake.launchedApps == [FakeWorkspace.AppLaunch(appURL: chromeURL, arguments: ["--profile-directory=Work"])])
 }
 
 @Test("an unconfigured app reference is notFound with settings remediation, and never reaches the workspace")
@@ -190,6 +243,238 @@ func malformedConfiguredURLIsAdapterFailure() async throws {
         }
     }
     #expect(fake.urlOpens.isEmpty)
+}
+
+// MARK: - url.open re-open surfacing (NIC-145)
+
+/// A fake tab surface returning a fixed outcome and recording the URLs it was
+/// asked to surface — so tests can assert whether surfacing was even attempted.
+private struct FakeTabSurface: BrowserTabSurface {
+    let outcome: BrowserSurfaceOutcome
+    let calls: SurfaceCallBox
+    func surface(url: URL) async -> BrowserSurfaceOutcome {
+        calls.record(url)
+        return outcome
+    }
+}
+
+private final class SurfaceCallBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var urls: [URL] = []
+    func record(_ url: URL) { lock.lock(); urls.append(url); lock.unlock() }
+    var all: [URL] { lock.lock(); defer { lock.unlock() }; return urls }
+}
+
+private let githubURL = URL(string: "https://github.com")!
+
+private func surfacingURLCapability(
+    _ fake: FakeWorkspace,
+    outcome: BrowserSurfaceOutcome,
+    calls: SurfaceCallBox,
+    registry: SessionURLOpenRegistry,
+    mode: String? = "executive"
+) -> NSWorkspaceURLCapability {
+    NSWorkspaceURLCapability(
+        urlsProvider: { ["github": ReferenceEntry(id: "github", label: "GitHub", target: "https://github.com")] },
+        workspace: fake,
+        surface: FakeTabSurface(outcome: outcome, calls: calls),
+        registry: registry,
+        currentModeProvider: { mode }
+    )
+}
+
+private let chromeURL = URL(fileURLWithPath: "/Applications/Google Chrome.app")
+
+/// A workspace with both VS Code and Chrome installed, for the profile path.
+private func workspaceWithChrome(failsToOpen: Bool = false) -> FakeWorkspace {
+    FakeWorkspace(
+        installed: [
+            "com.microsoft.VSCode": vscodeURL,
+            "com.google.Chrome": chromeURL,
+        ],
+        failsToOpen: failsToOpen
+    )
+}
+
+/// A URL adapter whose single reference carries a Chrome profile. Surfacing is
+/// wired so a re-trigger can surface the existing tab (NIC-151).
+private func profileURLCapability(
+    _ fake: FakeWorkspace,
+    profile: String,
+    calls: SurfaceCallBox = SurfaceCallBox(),
+    registry: SessionURLOpenRegistry = SessionURLOpenRegistry(),
+    mode: String? = "executive"
+) -> NSWorkspaceURLCapability {
+    NSWorkspaceURLCapability(
+        urlsProvider: { ["work-mail": ReferenceEntry(id: "work-mail", label: "Work Mail", target: "https://mail.google.com", profile: profile)] },
+        workspace: fake,
+        surface: FakeTabSurface(outcome: .surfaced, calls: calls),
+        registry: registry,
+        currentModeProvider: { mode }
+    )
+}
+
+@Test("a profile-bearing URL opens in Chrome with the URL passed as a --profile-directory argument")
+func profileURLOpensInChrome() async throws {
+    let fake = workspaceWithChrome()
+    // First open in this mode (no prior record) → surfacing is not attempted; it
+    // opens fresh in Chrome with the URL as a command-line argument so Chrome routes
+    // it into the named profile (not as an open-document, which would land in the
+    // current profile — the bug NIC-151 fixes).
+    let result = try await profileURLCapability(fake, profile: "Profile 1").open(urlID: "work-mail")
+
+    #expect(result == URLOpenResult(urlID: "work-mail", opened: true, resolvedURL: "https://mail.google.com", surfaced: false))
+    #expect(fake.launchedApps == [
+        FakeWorkspace.AppLaunch(
+            appURL: chromeURL,
+            arguments: ["--profile-directory=Profile 1", "https://mail.google.com"]
+        )
+    ])
+    #expect(fake.urlOpens.isEmpty) // never went through the default-handler path
+}
+
+@Test("a profiled URL delegates to the launcher, which reuses the profile window (NIC-151)")
+func profileURLReusesProfileWindow() async throws {
+    let fake = workspaceWithChrome()
+    let scripting = FakeChromeScripting()
+    let launcher = ChromeProfileLauncher(
+        workspace: fake, scripting: scripting,
+        settle: { scripting.setWindows([42], front: 42) } // the launch's window appears
+    )
+    // Seed the registry with a first launch so window 42 is recorded for the profile.
+    _ = try await launcher.open(profile: "Profile 1", url: nil)
+    scripting.resetCalls()
+
+    // No surface/registry wired here, so NIC-145 is skipped and the launcher runs.
+    let capability = NSWorkspaceURLCapability(
+        urlsProvider: { ["work-mail": ReferenceEntry(id: "work-mail", label: "Work Mail", target: "https://mail.google.com", profile: "Profile 1")] },
+        workspace: fake,
+        chromeLauncher: launcher
+    )
+    let launchesBefore = fake.launchedApps.count // just the seed launch
+    let result = try await capability.open(urlID: "work-mail")
+
+    #expect(result.opened)
+    #expect(fake.launchedApps.count == launchesBefore) // reused the window — no fresh launch
+    #expect(scripting.recordedTabs.map(\.url) == [URL(string: "https://mail.google.com")!]) // tab opened there
+    #expect(scripting.recordedFocusCalls == [42])
+}
+
+@Test("a profiled URL never consults the profile-blind global surfacer (NIC-151)")
+func profileURLBypassesGlobalSurfacer() async throws {
+    let fake = workspaceWithChrome()
+    let registry = SessionURLOpenRegistry()
+    registry.record(modeID: "executive", urlID: "work-mail") // a prior record would trigger NIC-145…
+    let calls = SurfaceCallBox()
+
+    // …but a profiled URL routes through the launcher (here nil → fallback arg-launch)
+    // and must NEVER call the global, profile-blind surfacer — that could focus a tab
+    // in the wrong profile. Profile-scoped surfacing lives in the launcher instead.
+    _ = try await profileURLCapability(fake, profile: "Profile 1", calls: calls, registry: registry)
+        .open(urlID: "work-mail")
+
+    #expect(calls.all.isEmpty) // the global surfacer was never consulted
+    #expect(fake.launchedApps == [
+        FakeWorkspace.AppLaunch(appURL: chromeURL, arguments: ["--profile-directory=Profile 1", "https://mail.google.com"])
+    ])
+}
+
+@Test("a profile-bearing URL fails honestly when Chrome is not installed")
+func profileURLWithoutChromeFails() async throws {
+    let fake = workspace() // VS Code only, no Chrome
+
+    await #expect(throws: NativeCapabilityError.self) {
+        _ = try await profileURLCapability(fake, profile: "Default").open(urlID: "work-mail")
+    }
+    #expect(fake.launchedApps.isEmpty)
+    #expect(fake.urlOpens.isEmpty) // no silent fallback to the default browser
+}
+
+@Test("the first open in a mode opens fresh, records the url, and never consults the surface")
+func firstOpenRecordsWithoutSurfacing() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    let calls = SurfaceCallBox()
+    let result = try await surfacingURLCapability(fake, outcome: .surfaced, calls: calls, registry: registry)
+        .open(urlID: "github")
+
+    #expect(result == URLOpenResult(urlID: "github", opened: true, resolvedURL: "https://github.com", surfaced: false))
+    #expect(fake.urlOpens == [githubURL])
+    #expect(calls.all.isEmpty) // nothing recorded yet on the first open
+    #expect(registry.contains(modeID: "executive", urlID: "github"))
+}
+
+@Test("re-opening a recorded url in the same mode surfaces the existing tab, not a new one")
+func reopenSurfacesExistingTab() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    registry.record(modeID: "executive", urlID: "github")
+    let calls = SurfaceCallBox()
+    let result = try await surfacingURLCapability(fake, outcome: .surfaced, calls: calls, registry: registry)
+        .open(urlID: "github")
+
+    #expect(result == URLOpenResult(urlID: "github", opened: false, resolvedURL: "https://github.com", surfaced: true))
+    #expect(fake.urlOpens.isEmpty) // no duplicate tab opened
+    #expect(calls.all == [githubURL])
+}
+
+@Test("a recorded url whose tab the user closed falls back to a fresh open")
+func closedTabFallsBackToFreshOpen() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    registry.record(modeID: "executive", urlID: "github")
+    let calls = SurfaceCallBox()
+    let result = try await surfacingURLCapability(fake, outcome: .notFound, calls: calls, registry: registry)
+        .open(urlID: "github")
+
+    #expect(result == URLOpenResult(urlID: "github", opened: true, resolvedURL: "https://github.com", surfaced: false))
+    #expect(fake.urlOpens == [githubURL])
+    #expect(calls.all == [githubURL]) // surfacing was attempted, then fell through
+}
+
+@Test("denied automation falls back to a fresh open")
+func deniedAutomationFallsBackToFreshOpen() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    registry.record(modeID: "executive", urlID: "github")
+    let calls = SurfaceCallBox()
+    let result = try await surfacingURLCapability(fake, outcome: .denied, calls: calls, registry: registry)
+        .open(urlID: "github")
+
+    #expect(result == URLOpenResult(urlID: "github", opened: true, resolvedURL: "https://github.com", surfaced: false))
+    #expect(fake.urlOpens == [githubURL])
+}
+
+@Test("a url recorded in another mode is not surfaced in the current mode")
+func otherModeRecordIsNotSurfaced() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    registry.record(modeID: "developer", urlID: "github") // recorded elsewhere
+    let calls = SurfaceCallBox()
+    // Active mode is executive; the developer-mode record must not match.
+    let result = try await surfacingURLCapability(fake, outcome: .surfaced, calls: calls, registry: registry, mode: "executive")
+        .open(urlID: "github")
+
+    #expect(result.opened)
+    #expect(!result.surfaced)
+    #expect(fake.urlOpens == [githubURL])
+    #expect(calls.all.isEmpty) // surface never consulted for a cross-mode record
+}
+
+@Test("with no active mode, surfacing is skipped and nothing is recorded")
+func noActiveModeSkipsSurfacing() async throws {
+    let fake = workspace()
+    let registry = SessionURLOpenRegistry()
+    let calls = SurfaceCallBox()
+    let result = try await surfacingURLCapability(fake, outcome: .surfaced, calls: calls, registry: registry, mode: nil)
+        .open(urlID: "github")
+
+    #expect(result.opened)
+    #expect(!result.surfaced)
+    #expect(fake.urlOpens == [githubURL])
+    #expect(calls.all.isEmpty)
+    // No mode to key a record under, so a subsequent open also opens fresh.
+    #expect(!registry.contains(modeID: "executive", urlID: "github"))
 }
 
 // MARK: - Shared contract suite (FR-TOL-04, MAC-ADAPTER-6 groundwork)

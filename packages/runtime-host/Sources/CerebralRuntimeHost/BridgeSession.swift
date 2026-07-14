@@ -1,6 +1,7 @@
 import Foundation
 import CerebralContracts
 import CerebralCore
+import CerebralTools
 
 /// Executes versioned bridge operation requests against the live ``CommandRuntime``
 /// (NIC-74b, ADR-004). Transport-agnostic: the WKWebView transport (or a test) hands
@@ -52,6 +53,21 @@ public final class BridgeSession: @unchecked Sendable {
     private let tokenLock = NSLock()
     private var pendingTokens: [String: ConfirmationToken] = [:]
 
+    /// Fetches site favicons for URL quick apps (NIC-147). Optional: a host without
+    /// it (tests, workspace-less hosts) simply serves URL tiles without favicons.
+    /// The fetch runs in the background off `listUrls`/`addUrlReference`; results are
+    /// cached under the state root and pushed live via `mode.quickapps.changed`.
+    private let faviconCapability: (any FaviconCapability)?
+    /// Origins with an in-flight favicon fetch, so overlapping `listUrls` calls never
+    /// crawl the same site twice concurrently.
+    private let faviconLock = NSLock()
+    private var faviconInFlightOrigins: Set<String> = []
+
+    /// Enumerates the user's Chrome profiles for the profile dropdown and avatar
+    /// badges (NIC-151). Optional: a host without it (tests, non-Mac) serves an
+    /// empty profile list, so the UI simply offers no profile choices.
+    private let chromeProfiles: (any ChromeProfileDiscoveryCapability)?
+
     public init(
         runtime: CommandRuntime,
         configDirectory: URL,
@@ -59,6 +75,8 @@ public final class BridgeSession: @unchecked Sendable {
         capabilities: [CerebralContracts.Capability] = CompositionCapabilities.bridgeCapabilities(phase: .preMac, nativeCapabilityIDs: []),
         settingsStore: (any SettingsStore)? = nil,
         modeStateStore: (any ModeStateStore)? = nil,
+        faviconCapability: (any FaviconCapability)? = nil,
+        chromeProfiles: (any ChromeProfileDiscoveryCapability)? = nil,
         emitEventJSON: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.runtime = runtime
@@ -66,6 +84,8 @@ public final class BridgeSession: @unchecked Sendable {
         self.workspace = workspace
         self.settingsStore = settingsStore
         self.modeStateStore = modeStateStore
+        self.faviconCapability = faviconCapability
+        self.chromeProfiles = chromeProfiles
         self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
     }
@@ -129,6 +149,14 @@ public final class BridgeSession: @unchecked Sendable {
             return await listApps(request)
         case .updateQuickApps:
             return updateQuickApps(request)
+        case .addURLReference:
+            return addUrlReference(request)
+        case .listUrls:
+            return listUrls(request)
+        case .listChromeProfiles:
+            return await listChromeProfiles(request)
+        case .addChromeProfileReference:
+            return addChromeProfileReference(request)
         case .runSpeedTest:
             return await runSpeedTest(request)
         case .getSettings:
@@ -295,8 +323,12 @@ public final class BridgeSession: @unchecked Sendable {
         }
         // Auto-mint (owner decision, 2026-07-06): any discovered app that no
         // reference targets gets one minted now, so a mid-session install is
-        // pinnable immediately. (`open <minted-id>` resolves from the next
-        // launch — the parser's references compose at startup.)
+        // pinnable immediately. Then live-reload the shared reference catalog so
+        // `open <minted-id>` resolves this session too (NIC-150): the parser and —
+        // on the macOS shell — the app.open target map both read the runtime's
+        // reference store, exactly as `addUrlReference` reloads after minting a
+        // URL. Without the reload a freshly installed app opened only after a
+        // relaunch (the store composes once at startup).
         if let workspace {
             let shipped = (try? ReferenceCatalogLoader.load(configDirectory: configDirectory))
                 .map { Array($0.apps.values) } ?? []
@@ -307,6 +339,11 @@ public final class BridgeSession: @unchecked Sendable {
                 shipped: shipped,
                 stateRoot: workspace.stateRoot
             )
+            if let fresh = try? ReferenceCatalogLoader.load(
+                configDirectory: configDirectory, stateRoot: workspace.stateRoot
+            ) {
+                runtime.updateReferences(fresh)
+            }
         }
         // Join discovered apps onto the configured app references by bundle id
         // (the reference `target`). `referenceId` is the pinnable key: only a
@@ -343,13 +380,17 @@ public final class BridgeSession: @unchecked Sendable {
                 message: "Pinning requires a durable workspace."
             )
         }
-        let known = Set(appReferencesByTarget().values)
+        // A quick-app slot may hold any configured app or URL reference id (NIC-146):
+        // a pinned URL is just another quick-app tile, so both catalogs are valid
+        // pin targets. Arbitrary paths/URLs still can't enter — only ids that name a
+        // reference the catalog already resolves.
+        let known = configuredReferenceIDs()
         let unknown = input.quickApps.filter { !known.contains($0) }
         guard unknown.isEmpty else {
             return ok(request, payload: UpdateQuickAppsResult(
                 accepted: false,
                 quickApps: input.quickApps,
-                errors: unknown.map { "\"\($0)\" is not a configured app reference." }
+                errors: unknown.map { "\"\($0)\" is not a configured app or URL reference." }
             ))
         }
 
@@ -386,6 +427,247 @@ public final class BridgeSession: @unchecked Sendable {
             references.apps.values.map { ($0.target, $0.id) },
             uniquingKeysWith: { first, _ in first }
         )
+    }
+
+    /// Every configured reference id the parser resolves — app and URL, shipped and
+    /// user-minted. This is the pinnable-id set (`updateQuickApps`, NIC-146) and the
+    /// uniqueness domain a newly minted URL id must avoid, so a pinned URL's
+    /// `open <id>` can never resolve ambiguously against an app of the same id.
+    private func configuredReferenceIDs() -> Set<String> {
+        guard let references = try? ReferenceCatalogLoader.load(configDirectory: configDirectory, stateRoot: workspace?.stateRoot) else {
+            return []
+        }
+        return Set(references.apps.keys).union(references.urls.keys)
+    }
+
+    /// Mints a user URL reference through the same auto-minting mechanism as user
+    /// app references (NIC-146): a user-entered URL becomes a configured reference,
+    /// so it can then be pinned as a quick app through the validated write path. Only
+    /// `http`/`https` URLs mint — never an arbitrary scheme. Requires a durable
+    /// workspace (the state root the user catalog lives under).
+    private func addUrlReference(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) -> CerebralHelmBridgeOperationResponse {
+        guard let input: AddUrlReferenceInput = decodePayload(request) else {
+            return invalidInput(request, "addUrlReference requires a url.")
+        }
+        guard let workspace else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "url_references_unavailable",
+                message: "Adding a URL requires a durable workspace."
+            )
+        }
+        switch UserURLReferences.add(
+            url: input.url, label: input.label, profile: input.profile,
+            existingIDs: configuredReferenceIDs(), stateRoot: workspace.stateRoot
+        ) {
+        case let .success(entry):
+            // Live-reload the shared catalog so the minted id resolves this session:
+            // the runtime's parser (`open <id>`) and — on the macOS shell — the
+            // url.open capability map both read the same store (NIC-146). Without this
+            // the URL would open only after a relaunch.
+            if let fresh = try? ReferenceCatalogLoader.load(
+                configDirectory: configDirectory, stateRoot: workspace.stateRoot
+            ) {
+                runtime.updateReferences(fresh)
+            }
+            // Kick off the favicon fetch now so the icon is ready by the time the
+            // dashboard re-reads `listUrls` after pinning (NIC-147). The minted DTO
+            // carries no icon yet — the tile shows its placeholder until it lands.
+            warmFavicons([entry])
+            return ok(request, payload: AddUrlReferenceResult(
+                accepted: true,
+                reference: urlReferenceDTO(entry, cache: faviconCache()),
+                errors: []
+            ))
+        case let .failure(error):
+            return ok(request, payload: AddUrlReferenceResult(
+                accepted: false, reference: nil, errors: [Self.message(for: error)]
+            ))
+        }
+    }
+
+    private static func message(for error: UserURLReferences.AddError) -> String {
+        switch error {
+        case .emptyURL: return "Enter a URL to add."
+        case .invalidURL: return "That doesn't look like a valid web address."
+        case .unsupportedScheme: return "Only http and https web addresses can be added."
+        case .invalidProfile: return "The Chrome profile can only contain letters, numbers, spaces, dots, hyphens, and underscores."
+        }
+    }
+
+    /// The configured URL references (shipped + user-minted), sorted by label — the
+    /// dashboard's read feed for rendering pinned URL tiles with their real labels
+    /// (NIC-146). Apps have `listApps` discovery for this; URLs have no discovery,
+    /// so this is their equivalent. Workspace-less hosts still see the shipped set.
+    private func listUrls(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) -> CerebralHelmBridgeOperationResponse {
+        let urls = (try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace?.stateRoot
+        )).map { Array($0.urls.values) } ?? []
+        let cache = faviconCache()
+        let sorted = urls
+            .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+            .map { urlReferenceDTO($0, cache: cache) }
+        // Warm any cold favicons in the background; a landed icon upgrades its tile
+        // live via `mode.quickapps.changed` (NIC-147). The read returns immediately.
+        warmFavicons(urls)
+        return ok(request, payload: ListUrlsResult(urls: sorted))
+    }
+
+    // MARK: - Chrome profiles (NIC-151)
+
+    /// The user's Chrome profiles for the profile dropdown + avatar badges (NIC-151):
+    /// directory name (the `--profile-directory` value a reference stores), display
+    /// name, and an optional avatar PNG. An empty list on a host without the
+    /// capability (non-Mac, tests) — the UI then offers no profile choices.
+    private func listChromeProfiles(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let profiles = (try? await chromeProfiles?.listProfiles()) ?? []
+        // The pinned Chrome-profile app references (NIC-151), so the dashboard can
+        // render a pinned "Chrome — Work" tile with its label + avatar (by matching
+        // the reference's profile directory back to a discovered profile).
+        let references = (try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace?.stateRoot
+        )).map { catalog in
+            catalog.apps.values
+                .filter { $0.target == UserChromeProfileReferences.chromeBundleID && $0.profile != nil }
+                .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+                .map { AppReferenceDTO(id: $0.id, label: $0.label, target: $0.target, profile: $0.profile) }
+        } ?? []
+        return ok(request, payload: ChromeProfilesResult(
+            profiles: profiles.map {
+                ChromeProfileDTO(directory: $0.directory, name: $0.name, iconPng: $0.iconPNGBase64)
+            },
+            references: references
+        ))
+    }
+
+    /// Mints an app reference that opens Google Chrome in a specific profile (NIC-151),
+    /// so a Chrome profile can be pinned as a quick app the same way any app is. The
+    /// minted reference targets `com.google.Chrome` and carries the profile directory,
+    /// so `app.open` launches it with `--profile-directory` (NIC-151 increment 3).
+    private func addChromeProfileReference(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) -> CerebralHelmBridgeOperationResponse {
+        guard let input: AddChromeProfileInput = decodePayload(request) else {
+            return invalidInput(request, "addChromeProfileReference requires a profile directory.")
+        }
+        guard let workspace else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "chrome_profiles_unavailable",
+                message: "Pinning a Chrome profile requires a durable workspace."
+            )
+        }
+        switch UserChromeProfileReferences.add(
+            directory: input.directory, name: input.name,
+            existingIDs: configuredReferenceIDs(), stateRoot: workspace.stateRoot
+        ) {
+        case let .success(entry):
+            if let fresh = try? ReferenceCatalogLoader.load(
+                configDirectory: configDirectory, stateRoot: workspace.stateRoot
+            ) {
+                runtime.updateReferences(fresh)
+            }
+            return ok(request, payload: AddChromeProfileResult(
+                accepted: true,
+                reference: AppReferenceDTO(id: entry.id, label: entry.label, target: entry.target, profile: entry.profile),
+                errors: []
+            ))
+        case let .failure(error):
+            return ok(request, payload: AddChromeProfileResult(
+                accepted: false, reference: nil, errors: [Self.message(for: error)]
+            ))
+        }
+    }
+
+    private static func message(for error: UserChromeProfileReferences.AddError) -> String {
+        switch error {
+        case .emptyDirectory: return "Choose a Chrome profile to pin."
+        case .invalidProfile: return "That Chrome profile name isn't valid."
+        }
+    }
+
+    // MARK: - Favicons (NIC-147)
+
+    private func faviconCache() -> FaviconCache? {
+        workspace.map { FaviconCache(directory: $0.faviconCacheDirectory) }
+    }
+
+    private func urlReferenceDTO(_ entry: ReferenceEntry, cache: FaviconCache?) -> UrlReferenceDTO {
+        UrlReferenceDTO(
+            id: entry.id, label: entry.label, target: entry.target,
+            iconPng: cache?.icon(forTarget: entry.target)?.base64EncodedString(),
+            profile: entry.profile
+        )
+    }
+
+    /// Fetches, in the background, the favicon for every reference whose origin has
+    /// no cached hit or fresh miss — skipping origins already in flight. On success
+    /// the PNG is cached and a `mode.quickapps.changed` event nudges the tiles to
+    /// re-read `listUrls` (NIC-147 owner decision: reuse the per-widget event, so a
+    /// freshly pinned URL shows its placeholder at once and upgrades once fetched).
+    /// No-op without a favicon capability or a durable workspace.
+    private func warmFavicons(_ references: [ReferenceEntry]) {
+        guard let capability = faviconCapability, let cache = faviconCache() else { return }
+        // One representative target per cold origin (favicons are per-origin).
+        var targetByOrigin: [String: String] = [:]
+        for entry in references {
+            guard
+                let origin = FaviconCache.origin(forTarget: entry.target),
+                cache.needsFetch(forTarget: entry.target),
+                targetByOrigin[origin] == nil
+            else { continue }
+            targetByOrigin[origin] = entry.target
+        }
+        let work = claimFaviconOrigins(Set(targetByOrigin.keys))
+            .compactMap { origin in targetByOrigin[origin].map { (origin, $0) } }
+        guard !work.isEmpty else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            var anyStored = false
+            for (origin, target) in work {
+                defer { self.releaseFaviconOrigin(origin) }
+                guard let url = URL(string: target) else { continue }
+                if let png = await capability.fetchFavicon(for: url) {
+                    if cache.store(png: png, forTarget: target) { anyStored = true }
+                } else {
+                    cache.recordMiss(forTarget: target)
+                }
+            }
+            if anyStored { self.emitFaviconRefresh() }
+        }
+    }
+
+    /// Marks the given origins in flight and returns those not already fetching.
+    private func claimFaviconOrigins(_ origins: Set<String>) -> [String] {
+        faviconLock.lock(); defer { faviconLock.unlock() }
+        let fresh = origins.subtracting(faviconInFlightOrigins)
+        faviconInFlightOrigins.formUnion(fresh)
+        return Array(fresh)
+    }
+
+    private func releaseFaviconOrigin(_ origin: String) {
+        faviconLock.lock(); defer { faviconLock.unlock() }
+        faviconInFlightOrigins.remove(origin)
+    }
+
+    /// Re-emits the active mode's `mode.quickapps.changed` (unchanged pins) so its
+    /// tiles re-read `listUrls` and pick up newly cached favicons. Other modes pick
+    /// theirs up on next view — `listUrls` reads the now-warm cache.
+    private func emitFaviconRefresh() {
+        let state = composeBootstrapState()
+        let activeID = bootstrapModeID()
+        guard let mode = state.modes.first(where: { $0.id == activeID }) ?? state.modes.first else { return }
+        emit(BridgeEventFactory.quickAppsChangedEvent(
+            modeId: mode.id, quickApps: mode.quickApps,
+            id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
     }
 
     /// The recent-activity read surface. A fresh session has no activity; the durable
@@ -620,6 +902,65 @@ public final class BridgeSession: @unchecked Sendable {
     private struct UpdateQuickAppsResult: Encodable {
         let accepted: Bool
         let quickApps: [String]
+        let errors: [String]
+    }
+    private struct AddUrlReferenceInput: Decodable {
+        let url: String
+        let label: String?
+        /// Optional Google Chrome profile directory (`--profile-directory`, NIC-151);
+        /// when present the minted URL opens in that Chrome profile.
+        let profile: String?
+    }
+    /// A configured URL reference, as delivered to the dashboard (NIC-146). `iconPng`
+    /// is the site's cached favicon as base64 PNG (NIC-147), omitted when none is
+    /// cached yet — the tile shows its placeholder glyph and upgrades live once the
+    /// background fetch lands (`encodeIfPresent` drops the nil, mirroring app icons).
+    private struct UrlReferenceDTO: Encodable {
+        let id: String
+        let label: String
+        let target: String
+        let iconPng: String?
+        /// The reference's Chrome profile, when one is configured (NIC-151);
+        /// `encodeIfPresent` omits it otherwise, so profile-less tiles are unchanged.
+        let profile: String?
+    }
+    private struct AddUrlReferenceResult: Encodable {
+        let accepted: Bool
+        /// The minted (or already-existing) reference when accepted; nil on rejection.
+        let reference: UrlReferenceDTO?
+        let errors: [String]
+    }
+    private struct ListUrlsResult: Encodable {
+        let urls: [UrlReferenceDTO]
+    }
+    /// A Chrome profile for the dropdown + avatar badges (NIC-151). `directory` is the
+    /// `--profile-directory` value; `iconPng` is the account avatar, omitted when none.
+    private struct ChromeProfileDTO: Encodable {
+        let directory: String
+        let name: String
+        let iconPng: String?
+    }
+    private struct ChromeProfilesResult: Encodable {
+        let profiles: [ChromeProfileDTO]
+        /// The user's pinned Chrome-profile app references, so a pinned tile resolves
+        /// its label + profile (and thence its avatar) without a separate feed.
+        let references: [AppReferenceDTO]
+    }
+    private struct AddChromeProfileInput: Decodable {
+        let directory: String
+        let name: String?
+    }
+    /// A configured app reference (NIC-151): mirrors `UrlReferenceDTO` but for an app
+    /// target (a bundle id). `profile` is the Chrome profile it opens in, when set.
+    private struct AppReferenceDTO: Encodable {
+        let id: String
+        let label: String
+        let target: String
+        let profile: String?
+    }
+    private struct AddChromeProfileResult: Encodable {
+        let accepted: Bool
+        let reference: AppReferenceDTO?
         let errors: [String]
     }
     /// Mirrors the bridge `getRecentActivity` payload wrapper `{ recentActivity: … }`.

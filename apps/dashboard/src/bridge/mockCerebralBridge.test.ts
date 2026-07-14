@@ -124,6 +124,95 @@ describe("MockCerebralBridge", () => {
     expect(activity.errors.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("mints a URL reference through addUrlReference and lists + pins it (NIC-146)", async () => {
+    const bridge = createMockCerebralBridge();
+    const added = await bridge.addUrlReference({
+      url: "https://news.ycombinator.com",
+      label: "Hacker News"
+    });
+    expect(added.accepted).toBe(true);
+    expect(added.reference?.id).toBe("hacker-news");
+    expect(added.reference?.target).toBe("https://news.ycombinator.com");
+
+    const listed = await bridge.listUrls();
+    const ids = listed.urls.map((url) => url.id);
+    expect(ids).toContain("hacker-news"); // minted
+    expect(ids).toContain("github"); // shipped catalog is included
+
+    // The minted id pins through the same slot validation an app id clears.
+    const pin = await bridge.updateQuickApps({ modeId: "developer", quickApps: ["hacker-news"] });
+    expect(pin.accepted).toBe(true);
+  });
+
+  it("addUrlReference carries a Chrome profile; same URL under different profiles is distinct (NIC-151)", async () => {
+    const bridge = createMockCerebralBridge();
+    const work = await bridge.addUrlReference({
+      url: "https://mail.google.com",
+      label: "Work Mail",
+      profile: "Profile 1"
+    });
+    expect(work.reference?.profile).toBe("Profile 1");
+
+    const personal = await bridge.addUrlReference({
+      url: "https://mail.google.com",
+      label: "Personal Mail",
+      profile: "Default"
+    });
+    expect(personal.reference?.profile).toBe("Default");
+    // Same target, different profile → a distinct pin, not a collapse to the first.
+    expect(personal.reference?.id).not.toBe(work.reference?.id);
+
+    const listed = await bridge.listUrls();
+    expect(listed.urls.filter((url) => url.target === "https://mail.google.com").length).toBe(2);
+  });
+
+  it("addUrlReference rejects a flag-injecting Chrome profile without minting (NIC-151)", async () => {
+    const bridge = createMockCerebralBridge();
+    const result = await bridge.addUrlReference({
+      url: "https://mail.google.com",
+      profile: "Default --load-extension=/tmp/evil"
+    });
+    expect(result.accepted).toBe(false);
+    expect(result.reference).toBeNull();
+    expect(result.errors[0]).toMatch(/Chrome profile/);
+    expect((await bridge.listUrls()).urls.some((url) => url.target === "https://mail.google.com")).toBe(
+      false
+    );
+  });
+
+  it("lists Chrome profiles and mints a pinnable Chrome-profile reference (NIC-151)", async () => {
+    const bridge = createMockCerebralBridge();
+    const listed = await bridge.listChromeProfiles();
+    expect(listed.profiles.map((p) => p.directory)).toContain("Profile 1");
+    expect(listed.references).toHaveLength(0);
+
+    const added = await bridge.addChromeProfileReference({ directory: "Profile 1", name: "Work" });
+    expect(added.accepted).toBe(true);
+    expect(added.reference?.target).toBe("com.google.Chrome");
+    expect(added.reference?.profile).toBe("Profile 1");
+
+    // The pinned reference now surfaces in listChromeProfiles, and re-pinning is idempotent.
+    const after = await bridge.listChromeProfiles();
+    expect(after.references.map((r) => r.id)).toEqual([added.reference?.id]);
+    const again = await bridge.addChromeProfileReference({ directory: "Profile 1", name: "Work" });
+    expect(again.reference?.id).toBe(added.reference?.id);
+    expect((await bridge.listChromeProfiles()).references).toHaveLength(1);
+  });
+
+  it("addUrlReference refuses a non-web scheme without minting (NIC-146)", async () => {
+    const bridge = createMockCerebralBridge();
+    const result = await bridge.addUrlReference({ url: "file:///etc/passwd" });
+    expect(result.accepted).toBe(false);
+    expect(result.reference).toBeNull();
+    expect(result.errors[0]).toMatch(/http and https/);
+
+    // A scheme-less host still mints (defaults to https); the catalog stays web-only.
+    expect((await bridge.addUrlReference({ url: "example.com" })).reference?.target).toBe(
+      "https://example.com"
+    );
+    expect((await bridge.listUrls()).urls.every((url) => url.target.startsWith("http"))).toBe(true);
+  });
+
   it("getSettings returns a resolved snapshot with representative non-default values (NIC-141)", async () => {
     const bridge = createMockCerebralBridge();
     const settings = await bridge.getSettings();

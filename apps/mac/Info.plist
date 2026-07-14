@@ -20,6 +20,8 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>CerebralHelm uses Apple Events to focus the browser tab it already opened for a link, instead of opening a duplicate.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>

@@ -1,6 +1,9 @@
 import type { DashboardBootstrapState } from "./types";
 import type {
+  AddChromeProfileResult,
+  AddUrlReferenceResult,
   ApplyModeResult,
+  ChromeProfilesResult,
   BridgeEvent,
   BridgeEventListener,
   BridgeEventType,
@@ -9,6 +12,7 @@ import type {
   CommandReceipt,
   DecideConfirmationResult,
   ListAppsResult,
+  ListUrlsResult,
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
@@ -254,6 +258,18 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     updateQuickApps(input) {
       return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });
+    },
+    addUrlReference(input) {
+      return operation<AddUrlReferenceResult>("addUrlReference", { ...input });
+    },
+    listUrls() {
+      return operation<ListUrlsResult>("listUrls", {});
+    },
+    listChromeProfiles() {
+      return operation<ChromeProfilesResult>("listChromeProfiles", {});
+    },
+    addChromeProfileReference(input) {
+      return operation<AddChromeProfileResult>("addChromeProfileReference", { ...input });
     },
     runSpeedTest() {
       return operation<SpeedTestResult>("runSpeedTest", {});

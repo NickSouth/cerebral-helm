@@ -5,6 +5,7 @@ import CerebralContracts
 import CerebralCore
 import CerebralRuntimeHost
 import CerebralStorage
+import CerebralTools
 
 /// NIC-74b: `BridgeSession` maps bridge operation requests onto the live
 /// `CommandRuntime`. These are integration tests — they build a real runtime over
@@ -419,6 +420,32 @@ func listAppsMintsAndPins() async throws {
     #expect(developer?.quickApps == [safariRef])
 }
 
+@Test("listApps live-reloads references so a freshly discovered app opens this session (NIC-150)")
+func listAppsMakesDiscoveredAppOpenableWithoutRestart() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let runtime = try makeCommandRuntime(paths: paths, phase: .macOS, capabilities: .mocks())
+    let session = BridgeSession(
+        runtime: runtime, configDirectory: paths.configDirectory, workspace: paths
+    )
+
+    // Safari has no shipped reference and nothing is minted into the fresh state
+    // root yet, so `open safari` is unrecognized before discovery runs — this is
+    // the just-installed baseline (the reference store composes at startup).
+    let before = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"open safari"}"#)
+    )
+    #expect(try !decode(before, as: Receipt.self).accepted)
+
+    // Discovery mints `safari` and live-reloads the shared catalog…
+    _ = await session.execute(operationRequest(.listApps, "{}"))
+
+    // …so the same command now resolves this session — no relaunch.
+    let after = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"open safari"}"#)
+    )
+    #expect(try decode(after, as: Receipt.self).accepted)
+}
+
 @Test("listApps is a structured unavailable pre-Mac, never a mock success")
 func listAppsUnavailablePreMac() async throws {
     let session = try makeSession()
@@ -545,6 +572,166 @@ func pinningWithoutWorkspaceIsUnavailable() async throws {
     let response = await session.execute(operationRequest(
         .updateQuickApps,
         #"{"modeId":"developer","quickApps":["vscode"]}"#
+    ))
+    #expect(response.status == .error)
+    #expect(response.error?.category == .unavailableCapability)
+}
+
+// MARK: - URL references (NIC-146)
+
+private struct UrlRefDTO: Decodable { let id: String; let label: String; let target: String; let iconPng: String?; let profile: String? }
+private struct AddUrlResult: Decodable { let accepted: Bool; let reference: UrlRefDTO?; let errors: [String] }
+private struct ListUrlsResult: Decodable { let urls: [UrlRefDTO] }
+private struct AppRefDTO: Decodable { let id: String; let label: String; let target: String; let profile: String? }
+private struct AddChromeProfileResult: Decodable { let accepted: Bool; let reference: AppRefDTO?; let errors: [String] }
+
+@Test("addChromeProfileReference mints a Chrome-targeted app reference that pins and opens (NIC-151)")
+func addChromeProfileReferenceMintsAndPins() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let added = try decode(await session.execute(operationRequest(
+        .addChromeProfileReference,
+        #"{"directory":"Profile 1","name":"Work"}"#
+    )), as: AddChromeProfileResult.self)
+    #expect(added.accepted)
+    #expect(added.reference?.id == "chrome-work")
+    #expect(added.reference?.target == "com.google.Chrome")
+    #expect(added.reference?.profile == "Profile 1")
+
+    // The minted id pins through the same validated path an app id clears…
+    let refId = try #require(added.reference?.id)
+    let pin = try decode(await session.execute(operationRequest(
+        .updateQuickApps, #"{"modeId":"developer","quickApps":["\#(refId)"]}"#
+    )), as: QuickAppsResult.self)
+    #expect(pin.accepted)
+
+    // …and the parser resolves `open <id>` this same session (catalog reload).
+    let opened = try decode(await session.execute(operationRequest(
+        .submitCommand, #"{"rawInput":"open \#(refId)"}"#
+    )), as: Receipt.self)
+    #expect(opened.accepted)
+}
+
+@Test("addChromeProfileReference refuses an empty directory without minting (NIC-151)")
+func addChromeProfileReferenceRefusesEmpty() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let result = try decode(await session.execute(operationRequest(
+        .addChromeProfileReference, #"{"directory":""}"#
+    )), as: AddChromeProfileResult.self)
+    #expect(!result.accepted)
+    #expect(result.reference == nil)
+    #expect(!result.errors.isEmpty)
+}
+
+@Test("addUrlReference mints an http URL and lists it back alongside shipped ones (NIC-146)")
+func addUrlReferenceMintsAndLists() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let added = try decode(await session.execute(operationRequest(
+        .addURLReference,
+        #"{"url":"https://news.ycombinator.com","label":"Hacker News"}"#
+    )), as: AddUrlResult.self)
+    #expect(added.accepted)
+    #expect(added.reference?.id == "hacker-news")
+    #expect(added.reference?.target == "https://news.ycombinator.com")
+
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(listed.urls.contains { $0.id == "hacker-news" })
+    #expect(listed.urls.contains { $0.id == "github" }) // shipped catalog is included
+}
+
+@Test("addUrlReference carries a Chrome profile through the mint and lists it back (NIC-151)")
+func addUrlReferenceWithProfile() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let added = try decode(await session.execute(operationRequest(
+        .addURLReference,
+        #"{"url":"https://mail.google.com","label":"Work Mail","profile":"Profile 1"}"#
+    )), as: AddUrlResult.self)
+    #expect(added.accepted)
+    #expect(added.reference?.profile == "Profile 1")
+
+    // The profile round-trips through the read feed so the tile/form can show it.
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(listed.urls.first { $0.id == added.reference?.id }?.profile == "Profile 1")
+    // Shipped, profile-less references still omit the field.
+    #expect(listed.urls.first { $0.id == "github" }?.profile == nil)
+}
+
+@Test("addUrlReference rejects a flag-injecting Chrome profile without minting (NIC-151)")
+func addUrlReferenceRejectsInvalidProfile() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let result = try decode(await session.execute(operationRequest(
+        .addURLReference,
+        #"{"url":"https://mail.google.com","label":"Work Mail","profile":"Default --load-extension=/tmp/evil"}"#
+    )), as: AddUrlResult.self)
+    #expect(!result.accepted)
+    #expect(result.reference == nil)
+    #expect(!result.errors.isEmpty)
+
+    // Nothing was minted, so the read feed never carries the rejected profile.
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(!listed.urls.contains { $0.target == "https://mail.google.com" })
+}
+
+@Test("a minted URL reference pins as a quick app through the same validated path (NIC-146)")
+func mintedUrlPinsAsQuickApp() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let minted = try decode(await session.execute(operationRequest(
+        .addURLReference, #"{"url":"https://example.com","label":"Example"}"#
+    )), as: AddUrlResult.self)
+    let refId = try #require(minted.reference?.id)
+
+    // The URL id clears the same updateQuickApps existence check an app id does,
+    // and composes back through the read side mixed with an app reference.
+    let pin = try decode(await session.execute(operationRequest(
+        .updateQuickApps, #"{"modeId":"developer","quickApps":["\#(refId)","vscode"]}"#
+    )), as: QuickAppsResult.self)
+    #expect(pin.accepted)
+    let developer = session.composeBootstrapState().modes.first { $0.id == "developer" }
+    #expect(developer?.quickApps == [refId, "vscode"])
+}
+
+@Test("a minted URL is openable in the same session — the catalog reloads after the mint (NIC-146)")
+func mintedUrlIsImmediatelyOpenable() async throws {
+    let (session, _) = try makeWorkspaceSession()
+
+    // Before the mint the id is unknown to the parser, so `open` is rejected.
+    let before = try decode(await session.execute(operationRequest(
+        .submitCommand, #"{"rawInput":"open example-live"}"#
+    )), as: Receipt.self)
+    #expect(!before.accepted)
+
+    let minted = try decode(await session.execute(operationRequest(
+        .addURLReference, #"{"url":"https://example.live","label":"Example Live"}"#
+    )), as: AddUrlResult.self)
+    #expect(minted.reference?.id == "example-live")
+
+    // After the mint the parser resolves `open <id>` this same session (reference
+    // reload) — the command is accepted onto the bus, no relaunch required.
+    let after = try decode(await session.execute(operationRequest(
+        .submitCommand, #"{"rawInput":"open example-live"}"#
+    )), as: Receipt.self)
+    #expect(after.accepted)
+}
+
+@Test("addUrlReference refuses a non-web scheme without minting (NIC-146)")
+func addUrlReferenceRefusesNonWebScheme() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let result = try decode(await session.execute(operationRequest(
+        .addURLReference, #"{"url":"file:///etc/passwd"}"#
+    )), as: AddUrlResult.self)
+    #expect(!result.accepted)
+    #expect(result.reference == nil)
+    #expect(!result.errors.isEmpty)
+
+    // It never entered the catalog — listUrls only ever returns web targets.
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(listed.urls.allSatisfy { $0.target.hasPrefix("http") })
+}
+
+@Test("addUrlReference without a workspace is unavailable, never a silent mint (NIC-146)")
+func addUrlReferenceWithoutWorkspaceUnavailable() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(
+        .addURLReference, #"{"url":"https://example.com"}"#
     ))
     #expect(response.status == .error)
     #expect(response.error?.category == .unavailableCapability)
@@ -982,4 +1169,113 @@ func unwiredOperationIsUnavailable() async throws {
     #expect(response.status == .error)
     #expect(response.error?.category == .unavailableCapability)
     #expect(response.error?.code == "bridge_operation_unimplemented")
+}
+
+// MARK: - listUrls / addUrlReference favicons (NIC-147)
+
+/// Polls until `condition` holds or the timeout elapses — the favicon fetch runs in
+/// a detached background task, so tests wait on the cache/emit rather than a return.
+private func waitUntil(timeoutMs: Int = 3000, _ condition: @Sendable () -> Bool) async {
+    let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000)
+    while Date() < deadline {
+        if condition() { return }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+    }
+}
+
+private func quickAppsChangedCount(_ emitted: EmittedEvents) -> Int {
+    emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.quickapps.changed" }.count
+}
+
+@Test("listUrls returns a cached favicon as base64 iconPng; uncached urls omit it")
+func listUrlsReturnsCachedFavicon() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // Warm the cache for the shipped github URL; leave docs cold. No capability, so
+    // no background fetch runs — this isolates the read path.
+    let seed = Data([0x89, 0x50, 0x4E, 0x47, 0x01, 0x02])
+    FaviconCache(directory: paths.faviconCacheDirectory).store(png: seed, forTarget: "https://github.com")
+
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths
+    )
+    let response = await session.execute(operationRequest(.listUrls, "{}"))
+    let urls = try decode(response, as: ListUrlsResult.self).urls
+
+    let github = try #require(urls.first { $0.id == "github" })
+    #expect(github.iconPng == seed.base64EncodedString())
+    let docs = try #require(urls.first { $0.id == "docs" })
+    #expect(docs.iconPng == nil)
+}
+
+@Test("listUrls warms cold favicons in the background, caches them, and emits a refresh")
+func listUrlsWarmsFaviconsAndEmits() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let iconBytes = Data([0x89, 0x50, 0x4E, 0x47, 0xAA, 0xBB, 0xCC])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths,
+        faviconCapability: MockFaviconCapability(icon: iconBytes),
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // First read: cache is cold, so every url omits its icon and a warm pass starts.
+    let first = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(first.urls.allSatisfy { $0.iconPng == nil })
+
+    // The background fetch lands: the cache warms and a refresh event fires.
+    let cache = FaviconCache(directory: paths.faviconCacheDirectory)
+    await waitUntil { cache.icon(forTarget: "https://github.com") != nil }
+    #expect(cache.icon(forTarget: "https://github.com") == iconBytes)
+    await waitUntil { quickAppsChangedCount(emitted) >= 1 }
+    #expect(quickAppsChangedCount(emitted) >= 1)
+
+    // A subsequent read now carries the cached icon.
+    let second = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(second.urls.first { $0.id == "github" }?.iconPng == iconBytes.base64EncodedString())
+}
+
+@Test("a failed favicon fetch records a miss and emits no refresh")
+func failedFaviconRecordsMissNoEmit() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths,
+        faviconCapability: MockFaviconCapability(icon: nil), // every fetch fails
+        emitEventJSON: { emitted.emit($0) }
+    )
+    _ = await session.execute(operationRequest(.listUrls, "{}"))
+
+    let cache = FaviconCache(directory: paths.faviconCacheDirectory)
+    // The miss is recorded (needsFetch becomes false), and no refresh event fires.
+    await waitUntil { !cache.needsFetch(forTarget: "https://github.com") }
+    #expect(!cache.needsFetch(forTarget: "https://github.com"))
+    #expect(cache.icon(forTarget: "https://github.com") == nil)
+    #expect(quickAppsChangedCount(emitted) == 0)
+}
+
+@Test("addUrlReference mints without an icon and warms the new url's favicon")
+func addUrlReferenceWarmsFavicon() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let iconBytes = Data([0x89, 0x50, 0x4E, 0x47, 0x10, 0x20])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths,
+        faviconCapability: MockFaviconCapability(icon: iconBytes)
+    )
+    let response = await session.execute(
+        operationRequest(.addURLReference, #"{"url":"https://news.ycombinator.com","label":"Hacker News"}"#)
+    )
+    let payload = try decode(response, as: AddUrlResult.self)
+    #expect(payload.accepted)
+    // Minted cold: the tile shows its placeholder until the fetch lands.
+    #expect(payload.reference?.iconPng == nil)
+
+    let cache = FaviconCache(directory: paths.faviconCacheDirectory)
+    await waitUntil { cache.icon(forTarget: "https://news.ycombinator.com") != nil }
+    #expect(cache.icon(forTarget: "https://news.ycombinator.com") == iconBytes)
 }

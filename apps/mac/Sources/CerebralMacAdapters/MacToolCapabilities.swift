@@ -20,18 +20,54 @@ public enum MacToolCapabilities {
         public let capabilities: ToolCapabilities
         public let systemStatus: MacSystemStatusCapability
         public let secretStore: KeychainSecretCapability
+        /// URL-quick-app favicon fetcher (NIC-147). Carried here rather than on
+        /// `ToolCapabilities` because no tool handler consumes it — `BridgeSession`
+        /// drives it directly off `listUrls`/`addUrlReference`, like `secretStore`.
+        public let favicon: MacFaviconCapability
+        /// Chrome profile enumeration for the profile dropdown + avatar badges
+        /// (NIC-151). Like `favicon`, `BridgeSession` drives it directly off
+        /// `listChromeProfiles` — not a gated tool.
+        public let chromeProfiles: MacChromeProfileDiscoveryCapability
     }
 
+    /// `referenceStore` is the shared, reloadable catalog (NIC-146): the app/url
+    /// capabilities read their target maps through it, so a mid-session mint (reloaded
+    /// via `CommandRuntime.updateReferences`) resolves without a relaunch — the same
+    /// store the runtime's parser reads.
+    ///
+    /// `urlOpenRegistry` + `currentModeProvider` opt the URL adapter into re-open
+    /// tab surfacing (NIC-145): a URL CH already opened in the active mode is
+    /// surfaced through `browserTabSurface` instead of duplicated. The defaults
+    /// (a throwaway registry and a `nil` mode) keep the plain open behavior, so
+    /// callers and tests that only pass `referenceStore` are unaffected.
     public static func make(
-        references: CommandReferences,
-        workspace: any WorkspaceOpening = SystemWorkspace()
+        referenceStore: CommandReferenceStore,
+        workspace: any WorkspaceOpening = SystemWorkspace(),
+        browserTabSurface: any BrowserTabSurface = DefaultBrowserTabSurface(),
+        urlOpenRegistry: SessionURLOpenRegistry = SessionURLOpenRegistry(),
+        currentModeProvider: @escaping @Sendable () -> String? = { nil }
     ) -> Composition {
         let systemStatus = MacSystemStatusCapability()
         let secretStore = KeychainSecretCapability()
+        let favicon = MacFaviconCapability()
+        let chromeProfiles = MacChromeProfileDiscoveryCapability()
+        // One launcher shared by both open paths so its profile→window registry is
+        // consistent across app-tile and URL-tile opens (NIC-151).
+        let chromeLauncher = ChromeProfileLauncher(workspace: workspace)
         return Composition(
             capabilities: ToolCapabilities(
-                app: NSWorkspaceAppCapability(apps: references.apps.mapValues(\.target), workspace: workspace),
-                url: NSWorkspaceURLCapability(urls: references.urls.mapValues(\.target), workspace: workspace),
+                app: NSWorkspaceAppCapability(
+                    appsProvider: { referenceStore.current.apps }, workspace: workspace,
+                    chromeLauncher: chromeLauncher
+                ),
+                url: NSWorkspaceURLCapability(
+                    urlsProvider: { referenceStore.current.urls },
+                    workspace: workspace,
+                    surface: browserTabSurface,
+                    registry: urlOpenRegistry,
+                    currentModeProvider: currentModeProvider,
+                    chromeLauncher: chromeLauncher
+                ),
                 process: ProcessHookCapability(),
                 systemStatus: systemStatus,
                 networkSpeedTest: MacNetworkSpeedTestCapability(),
@@ -51,7 +87,9 @@ public enum MacToolCapabilities {
                 ]
             ),
             systemStatus: systemStatus,
-            secretStore: secretStore
+            secretStore: secretStore,
+            favicon: favicon,
+            chromeProfiles: chromeProfiles
         )
     }
 }

@@ -1,13 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useBridge } from "../state/BridgeProvider";
 import { useDashboardState } from "../state/DashboardStateProvider";
-import { useActiveMode } from "./useActiveMode";
 import { useUiPosture } from "../state/useUiPosture";
-import { toModeId } from "../tokens/tokens";
 import type { DiscoveredApp } from "../bridge/cerebralBridge";
 import { AppGlyph } from "./AppGlyph";
-
-const MAX_QUICK_APPS = 5;
 
 type PickerState =
   | { readonly status: "loading" }
@@ -15,32 +11,35 @@ type PickerState =
   | { readonly status: "ready"; readonly apps: readonly DiscoveredApp[]; readonly truncated: boolean };
 
 /**
- * The More Apps picker (NIC-119, NIC-149): installed applications from the
- * read-only `apps.list` discovery capability, with real OS icons where the
- * adapter could render one (the category glyph is the honest fallback).
+ * The More Apps window (NIC-148): a pure launcher over the read-only `apps.list`
+ * discovery capability (NIC-119). Split from the old combined picker — pinning
+ * moved to {@link PinPopover}, this surface only *opens* apps. Each entry dispatches
+ * the deterministic `open <referenceId>` command (FR-CMD-01), gated on
+ * `native.app.open`; an accepted launch closes the window (launcher semantics,
+ * NIC-149) so the opened app takes the foreground and the backdrop returns clean.
  *
- * Launching (NIC-149): the picker is an alternate launcher — the app tile and
- * its Open control dispatch the same deterministic `open <referenceId>` command
- * as a pinned quick-app tile, gated on `native.app.open` like every launch
- * surface. An accepted launch closes the picker.
+ * The window is tall and two-wide (owner decision) so scrolling reveals more, and
+ * wears a CerebralHelm-themed bar with a themed × rather than native chrome.
  *
- * Pinning (NIC-119c): a discovered app backed by a configured app reference can
- * be pinned into (or unpinned from) the active mode's five quick-app slots. The
- * write rides the validated config-override path — the bridge rejects unknown
- * references, and an accepted write emits `mode.quickapps.changed` so tiles
- * refresh everywhere. Apps without a configured reference say so honestly;
- * arbitrary paths can never enter the slots from here.
+ * Two variants (NIC-148): `overlay` is the centered in-webview card with a
+ * click-dismiss scrim — the browser-preview fallback when there's no native shell.
+ * `standalone` fills its own top-most native window (`index.html?surface=moreapps`),
+ * so it drops the scrim and centering and lets the window chrome frame it. Both
+ * dispatch the same `open <id>` and close on an accepted launch (`onClose`), which
+ * in the standalone surface asks the native shell to close the window.
  */
-export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
+export function MoreAppsPicker({
+  onClose,
+  variant = "overlay"
+}: {
+  onClose: () => void;
+  variant?: "overlay" | "standalone";
+}) {
   const bridge = useBridge();
   const state = useDashboardState();
-  const { quickApps } = useActiveMode();
   const { readOnly } = useUiPosture();
-  const modeId = toModeId(state.mode);
   const dialogRef = useRef<HTMLDivElement>(null);
   const [picker, setPicker] = useState<PickerState>({ status: "loading" });
-  const [busy, setBusy] = useState(false);
-  const [writeError, setWriteError] = useState<string | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
 
   const appOpen = state.capabilities?.["native.app.open"];
@@ -92,8 +91,7 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
           setLaunchError(`I couldn't open ${name} — it isn't a configured app reference.`);
           return;
         }
-        // An accepted launch closes the picker — launcher semantics: the opened
-        // app takes the foreground, the backdrop returns clean.
+        // Opening an app closes the window — it doesn't need to persist (NIC-148).
         onClose();
       })
       .catch(() => {
@@ -112,74 +110,20 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
     return openAvailable ? `Open ${app.name}` : openUnavailableReason;
   }
 
-  function submitQuickApps(next: readonly string[]) {
-    setBusy(true);
-    setWriteError(null);
-    bridge
-      .updateQuickApps({ modeId, quickApps: next })
-      .then((result) => {
-        if (!result.accepted) {
-          setWriteError(result.errors[0] ?? "The change was rejected by config validation.");
-        }
-        // An accepted write refreshes the tiles via the bridge's
-        // mode.quickapps.changed event — no optimistic state here, the config
-        // is the truth.
-      })
-      .catch(() => {
-        setWriteError("The change could not be written.");
-      })
-      .finally(() => setBusy(false));
-  }
-
-  function pin(referenceId: string) {
-    submitQuickApps([...quickApps, referenceId]);
-  }
-
-  function unpin(referenceId: string) {
-    submitQuickApps(quickApps.filter((id) => id !== referenceId));
-  }
-
-  const slotsFull = quickApps.length >= MAX_QUICK_APPS;
-
-  function pinControl(app: DiscoveredApp) {
-    if (!app.referenceId) {
-      return null;
-    }
-    const referenceId = app.referenceId;
-    if (quickApps.includes(referenceId)) {
-      return (
-        <button
-          type="button"
-          className="apps-picker__pin"
-          disabled={busy}
-          onClick={() => unpin(referenceId)}
-        >
-          Unpin
-        </button>
-      );
-    }
-    return (
-      <button
-        type="button"
-        className="apps-picker__pin"
-        disabled={busy || slotsFull}
-        title={slotsFull ? "All five quick-app slots are full — unpin one first." : undefined}
-        onClick={() => pin(referenceId)}
-      >
-        Pin
-      </button>
-    );
-  }
+  const standalone = variant === "standalone";
 
   return (
     <>
-      {/* Click-to-dismiss scrim: a mouse convenience; Escape and × are the
-          keyboard paths, so the static-element rules are suppressed. */}
-      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
-      <div className="apps-picker-scrim" onClick={onClose} />
+      {/* Click-to-dismiss scrim: a mouse convenience only in the overlay variant;
+          Escape and × are the keyboard paths, so the static-element rules are
+          suppressed. The standalone window has no scrim — it IS the window. */}
+      {standalone ? null : (
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+        <div className="apps-picker-scrim" onClick={onClose} />
+      )}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
-        className="apps-picker"
+        className={standalone ? "apps-picker apps-picker--standalone" : "apps-picker"}
         role="dialog"
         aria-modal="true"
         aria-label="All applications"
@@ -224,26 +168,10 @@ export function MoreAppsPicker({ onClose }: { onClose: () => void }) {
                     </span>
                     <span className="apps-picker__name">{app.name}</span>
                   </button>
-                  <span className="apps-picker__actions">
-                    <button
-                      type="button"
-                      className="apps-picker__open"
-                      disabled={!canLaunch(app)}
-                      title={launchTitle(app)}
-                      onClick={() => launch(app)}
-                    >
-                      Open
-                    </button>
-                    {pinControl(app)}
-                  </span>
-                  {!app.referenceId ? (
-                    <span className="apps-picker__unpinnable">Not a configured app reference</span>
-                  ) : null}
                 </li>
               ))}
             </ul>
             {launchError ? <p className="apps-picker__note">{launchError}</p> : null}
-            {writeError ? <p className="apps-picker__note">{writeError}</p> : null}
             {picker.truncated ? (
               <p className="apps-picker__note">Showing the first entries — the full list was capped.</p>
             ) : null}

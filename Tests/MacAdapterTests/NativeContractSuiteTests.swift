@@ -30,6 +30,9 @@ private final class SuiteWorkspace: WorkspaceOpening, @unchecked Sendable {
     }
     func isApplicationRunning(bundleIdentifier bundleID: String) -> Bool { false }
     func openApplication(at url: URL) async throws { if failsToOpen { throw OpenFailure() } }
+    func openApplication(at url: URL, arguments: [String]) async throws {
+        if failsToOpen { throw OpenFailure() }
+    }
     func openURL(_ url: URL) async throws { if failsToOpen { throw OpenFailure() } }
 }
 
