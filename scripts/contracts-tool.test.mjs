@@ -19,7 +19,8 @@ const mvpToolIds = new Set([
   "system.status.read",
   "window.arrange",
   "apps.list",
-  "network.speed.test"
+  "network.speed.test",
+  "apps.quitall"
 ]);
 
 const riskClasses = new Set([
