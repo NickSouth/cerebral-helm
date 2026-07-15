@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useDashboardState } from "../../state/DashboardStateProvider";
-import { useBridge } from "../../state/BridgeProvider";
-import type { CapturedWindow, LayoutSpec } from "../../bridge/cerebralBridge";
+import { LayoutEditor } from "./LayoutEditor";
 import { useAppearance, DEFAULT_ASSISTANT_NAME } from "../../state/AppearanceProvider";
 import { toModeId, MODE_IDS, MODE_DEFAULT_COLORS, type ModeTokenName } from "../../tokens/tokens";
 import { Unavailable } from "../../components/Unavailable";
@@ -377,101 +376,6 @@ function ModesPanel() {
   return status === "loading" ? <SettingsLoading /> : <ModesPanelBody />;
 }
 
-/**
- * Per-mode layout authoring (NIC-142): capture the currently-arranged windows,
- * snap them to named frames, designate the dynamic quick-toggle slot, choose the
- * display, and Save through the validated override path. Live capture is a macOS
- * host feature; in a plain browser it degrades honestly.
- */
-function LayoutEditor({ modeId, label }: { modeId: string; label: string }) {
-  const bridge = useBridge();
-  const [captured, setCaptured] = useState<readonly CapturedWindow[] | null>(null);
-  const [display, setDisplay] = useState<"primary" | "secondary">("primary");
-  const [dynamicRef, setDynamicRef] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-
-  const capture = async (): Promise<void> => {
-    setStatus(null);
-    try {
-      const result = await bridge.captureLayout();
-      setCaptured(result.windows);
-      setDynamicRef(result.windows[0]?.ref ?? null);
-      if (result.windows.length === 0) {
-        setStatus("No configured app windows are open to capture.");
-      }
-    } catch {
-      setStatus("Live capture is available on the macOS host.");
-    }
-  };
-
-  const save = async (): Promise<void> => {
-    if (!captured || captured.length === 0) {
-      return;
-    }
-    const dynamic = captured.find((window) => window.ref === dynamicRef) ?? captured[0];
-    const statics = captured
-      .filter((window) => window.ref !== dynamic.ref)
-      .map((window) => ({ ref: window.ref, kind: window.kind, frame: window.frame }));
-    const layout: LayoutSpec = {
-      display,
-      // A layout needs at least one window; if the only captured window is the
-      // dynamic slot, place it statically too.
-      windows: statics.length > 0 ? statics : [{ ref: dynamic.ref, kind: dynamic.kind, frame: dynamic.frame }],
-      quickToggle: { frame: dynamic.frame, targets: [{ ref: dynamic.ref, kind: dynamic.kind }] }
-    };
-    const result = await bridge.updateLayout({ modeId, layout });
-    setStatus(result.accepted ? "Layout saved." : (result.errors[0] ?? "Save failed."));
-  };
-
-  return (
-    <div className="settings-layout-editor">
-      <div className="settings-layout-editor__head">
-        <span className="settings-list__title">{label}</span>
-        <button type="button" className="settings-button" onClick={() => void capture()}>
-          Capture current windows
-        </button>
-      </div>
-
-      {captured && captured.length > 0 ? (
-        <>
-          <Field label="Opens on" hint="Which display the layout opens on.">
-            <select
-              className="settings-select"
-              value={display}
-              aria-label={`${label} layout display`}
-              onChange={(event) => setDisplay(event.target.value as "primary" | "secondary")}
-            >
-              <option value="primary">Primary</option>
-              <option value="secondary">Secondary</option>
-            </select>
-          </Field>
-          <fieldset className="settings-layout-editor__windows">
-            <legend className="settings-list__sub">Dynamic quick-toggle window</legend>
-            {captured.map((window) => (
-              <label key={window.ref} className="settings-layout-editor__window">
-                <input
-                  type="radio"
-                  name={`${modeId}-dynamic`}
-                  checked={window.ref === dynamicRef}
-                  onChange={() => setDynamicRef(window.ref)}
-                />
-                <span>
-                  {humanizeId(window.ref)} · {window.frame}
-                </span>
-              </label>
-            ))}
-          </fieldset>
-          <button type="button" className="settings-button settings-button--primary" onClick={() => void save()}>
-            Save layout
-          </button>
-        </>
-      ) : null}
-
-      {status ? <p className="settings-note">{status}</p> : null}
-    </div>
-  );
-}
-
 function ModesPanelBody() {
   const { modes, mode, capabilities } = useDashboardState();
   const { snapshot } = useSettingsSnapshot();
@@ -483,6 +387,9 @@ function ModesPanelBody() {
     () => snapshot?.workspace.windowsStoredByMode ?? false
   );
   const windowsCapability = capabilities?.["native.workspace.windows"];
+  // Which mode's layout editor is open inline (the plain-browser fallback). In the
+  // native shell the "Edit layout" button opens a dedicated window instead (NIC-142).
+  const [editingModeId, setEditingModeId] = useState<string | null>(null);
 
   function onDefaultModeChange(nextId: string) {
     setDefaultModeId(nextId as typeof defaultModeId);
@@ -492,6 +399,14 @@ function ModesPanelBody() {
   function onWindowsToggle(next: boolean) {
     setWindowsStoredByMode(next);
     void updateSettings({ workspace: { windowsStoredByMode: next } });
+  }
+
+  function openLayoutEditor(modeId: string) {
+    // Prefer the dedicated native editor window; fall back to the inline editor when
+    // there is no native channel (a plain browser).
+    if (!postShellControl("openLayoutEditor", { modeId })) {
+      setEditingModeId((current) => (current === modeId ? null : modeId));
+    }
   }
 
   return (
@@ -535,14 +450,34 @@ function ModesPanelBody() {
       </Section>
       <Section title="Mode layouts">
         <p className="settings-note">
-          Arrange your app windows, then capture them as a layout. Pick which window is the dynamic
-          quick-toggle slot and which display it opens on. Executive has no layout.
+          Author each mode's window arrangement — which apps and URLs open where, and the hotswap
+          window. Executive has no layout.
         </p>
-        {modes
-          .filter((modeView) => modeView.id !== "executive")
-          .map((modeView) => (
-            <LayoutEditor key={modeView.id} modeId={modeView.id} label={modeView.label} />
-          ))}
+        <ul className="settings-list">
+          {modes
+            .filter((modeView) => modeView.id !== "executive")
+            .map((modeView) => (
+              <li key={modeView.id} className="settings-list__item">
+                <span className="settings-list__title">{modeView.label}</span>
+                <button
+                  type="button"
+                  className="settings-button"
+                  aria-label={`Edit ${modeView.label} layout`}
+                  onClick={() => openLayoutEditor(modeView.id)}
+                >
+                  Edit layout
+                </button>
+              </li>
+            ))}
+        </ul>
+        {editingModeId ? (
+          <LayoutEditor
+            key={editingModeId}
+            modeId={editingModeId}
+            label={modes.find((modeView) => modeView.id === editingModeId)?.label ?? humanizeId(editingModeId)}
+            onClose={() => setEditingModeId(null)}
+          />
+        ) : null}
       </Section>
       <Section title="Configured modes">
         <p className="settings-note">

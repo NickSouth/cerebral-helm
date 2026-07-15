@@ -43,7 +43,8 @@
         "toggleLayout",
         "pinLayoutWindow",
         "updateLayout",
-        "captureLayout"
+        "captureLayout",
+        "addLayoutTarget"
       ]
     },
     "payload": {

@@ -31,6 +31,19 @@ struct LayoutSession: Sendable {
         )
     }
 
+    /// A copy with `window` appended as a quick-toggle target (NIC-142 session-only
+    /// add). Idempotent — a ref already present is returned unchanged. Returns nil
+    /// when there is no dynamic slot to add into (a session-only add cannot mint one).
+    func withAddedToggleTarget(_ window: LayoutSessionWindow) -> LayoutSession? {
+        guard let toggle = quickToggle else { return nil }
+        if toggle.targets.contains(where: { $0.ref == window.ref }) { return self }
+        return LayoutSession(
+            modeID: modeID,
+            windows: windows,
+            quickToggle: LayoutSessionToggle(activeRef: toggle.activeRef, targets: toggle.targets + [window])
+        )
+    }
+
     var snapshot: LayoutSessionSnapshot {
         LayoutSessionSnapshot(
             modeId: modeID,

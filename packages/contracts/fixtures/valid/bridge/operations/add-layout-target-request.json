@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000037",
+  "type": "bridge.operation.request",
+  "operation": "addLayoutTarget",
+  "payload": {
+    "ref": "terminal"
+  }
+}

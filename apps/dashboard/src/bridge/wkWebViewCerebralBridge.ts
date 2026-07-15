@@ -17,6 +17,7 @@ import type {
   ListUrlsResult,
   OpenLayoutResult,
   PinLayoutWindowResult,
+  AddLayoutTargetResult,
   ToggleLayoutResult,
   UpdateLayoutResult,
   RecentActivity,
@@ -292,6 +293,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     pinLayoutWindow(input) {
       return operation<PinLayoutWindowResult>("pinLayoutWindow", { ...input });
+    },
+    addLayoutTarget(input) {
+      return operation<AddLayoutTargetResult>("addLayoutTarget", { ...input });
     },
     updateLayout(input) {
       return operation<UpdateLayoutResult>("updateLayout", { ...input });

@@ -44,7 +44,8 @@ const bridgeOperations = new Set([
   "toggleLayout",
   "pinLayoutWindow",
   "updateLayout",
-  "captureLayout"
+  "captureLayout",
+  "addLayoutTarget"
 ]);
 
 function readJson(filePath) {

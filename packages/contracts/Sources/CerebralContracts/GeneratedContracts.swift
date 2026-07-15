@@ -2142,6 +2142,7 @@ public extension CerebralHelmBridgeOperationRequest {
 
 public enum Operation: String, Codable {
     case addChromeProfileReference = "addChromeProfileReference"
+    case addLayoutTarget = "addLayoutTarget"
     case addURLReference = "addUrlReference"
     case applyMode = "applyMode"
     case captureLayout = "captureLayout"

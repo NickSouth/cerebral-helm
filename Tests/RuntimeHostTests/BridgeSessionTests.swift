@@ -315,6 +315,7 @@ func recentActivityEmptyEnvelope() async throws {
 private struct CloseLayoutResult: Decodable { let closed: Bool }
 private struct ToggleLayoutResult: Decodable { let accepted: Bool }
 private struct PinLayoutWindowResult: Decodable { let accepted: Bool }
+private struct AddLayoutTargetResult: Decodable { let accepted: Bool }
 private struct UpdateLayoutResult: Decodable { let accepted: Bool }
 private struct CaptureLayoutResult: Decodable {
     struct Window: Decodable { let ref: String; let kind: String; let frame: String }
@@ -618,6 +619,55 @@ func pinLayoutWindowPreservesQuickApps() async throws {
     )
     #expect(override.quickApps == ["vscode"])
     #expect(override.layout != nil)
+}
+
+@Test("addLayoutTarget adds a session-only toggle target, emits it, and does NOT persist (NIC-142)")
+func addLayoutTargetSessionOnly() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // Terminal is a configured app reference and not already a toggle target.
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"terminal"}"#))
+    #expect(try decode(add, as: AddLayoutTargetResult.self).accepted)
+    #expect(activeToggleTargets(emitted).contains("terminal"))
+
+    // Session-only: nothing was written to the mode override (contrast pinLayoutWindow).
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: paths.overridesDirectory.appendingPathComponent("developer.json").path
+        )
+    )
+}
+
+@Test("addLayoutTarget is idempotent for a ref already in the slot")
+func addLayoutTargetIdempotent() async throws {
+    let session = try makeSession()
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // vscode is the developer layout's initial toggle target.
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"vscode"}"#))
+    #expect(try decode(add, as: AddLayoutTargetResult.self).accepted)
+}
+
+@Test("addLayoutTarget with no active session is not accepted")
+func addLayoutTargetNoSession() async throws {
+    let session = try makeSession()
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"terminal"}"#))
+    #expect(try !decode(add, as: AddLayoutTargetResult.self).accepted)
+}
+
+@Test("addLayoutTarget rejects an unknown reference")
+func addLayoutTargetUnknownRef() async throws {
+    let session = try makeSession()
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"not-a-real-ref"}"#))
+    #expect(try !decode(add, as: AddLayoutTargetResult.self).accepted)
 }
 
 private final class EmittedEvents: @unchecked Sendable {

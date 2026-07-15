@@ -34,6 +34,13 @@ final class WindowCoordinator: @unchecked Sendable {
     /// positioned above the bottom bar's mode control, dismissed on select / Escape /
     /// click-away. `nil` while closed.
     private var modeMenu: ModeMenuWindowController?
+    /// The transparent, top-most layout hotswap "+" pin window (NIC-142): built fresh
+    /// on each open, positioned above the bottom bar's "+", dismissed on × / Escape /
+    /// click-away. `nil` while closed.
+    private var layoutPin: LayoutPinWindowController?
+    /// The per-mode layout editor window (NIC-142): built fresh on each open (it is
+    /// mode-specific), torn down on close. `nil` while closed.
+    private var layoutEditor: LayoutEditorWindowController?
     /// One additional backdrop per connected non-main display (NIC-120b), keyed by
     /// the display's topology id. Created/removed by `reconcileBackdrops` on every
     /// topology change; each binds the SAME shared session (no second runtime).
@@ -158,6 +165,8 @@ final class WindowCoordinator: @unchecked Sendable {
         }
         settings?.deliverBridgeEvent(json)
         moreApps?.deliverBridgeEvent(json)
+        layoutPin?.deliverBridgeEvent(json)
+        layoutEditor?.deliverBridgeEvent(json)
         if json.contains("\"config.changed\"") {
             palette?.deliverBridgeEvent(json)
             // Keep the open dropdown's active-mode highlight and theme current if the mode
@@ -416,6 +425,58 @@ final class WindowCoordinator: @unchecked Sendable {
         modeMenu = nil
     }
 
+    /// Open the transparent, top-most layout hotswap "+" pin window above the bottom
+    /// bar's "+" (NIC-142). Built fresh each open (any existing one is replaced) so its
+    /// app discovery is current — a transient picker, not a warm panel. `anchor` is the
+    /// "+" button's rect in the reporting webview's viewport; the backdrop fills the
+    /// screen frame, so it converts through that window and the picker drops directly
+    /// above the "+". Absent anchor degrades to a bottom-left open. No-op in recovery.
+    func openLayoutPin(anchor: [String: Any]? = nil, from source: DashboardWindowController? = nil) {
+        guard let session, let dashboardRoot else { return }
+        layoutPin?.close()
+        let controller = LayoutPinWindowController(dashboardRoot: dashboardRoot, session: session)
+        controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        layoutPin = controller
+        let anchorWindow = source?.window ?? dashboard?.window
+        let screen = anchorWindow?.screen ?? mainScreen() ?? NSScreen.main
+        if let anchor, let anchorWindow,
+           let anchorRect = Self.anchorScreenRect(anchor, in: anchorWindow), let screen {
+            controller.positionAbove(anchorRect, on: screen)
+        } else if let screen {
+            controller.positionBottomLeft(on: screen)
+        }
+        controller.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Close and release the layout-pin window — the ×, Escape, or click-away all post
+    /// `closeLayoutPin` (or the window resigning key routes here).
+    func closeLayoutPin() {
+        layoutPin?.close()
+        layoutPin = nil
+    }
+
+    /// Open the per-mode layout editor window (NIC-142). Built fresh each open (any open
+    /// one is replaced) so it edits the requested mode. Centered, frameless, top-most.
+    /// No-op in recovery or without a mode id.
+    func openLayoutEditor(modeID: String) {
+        guard let session, let dashboardRoot, !modeID.isEmpty else { return }
+        layoutEditor?.close()
+        let controller = LayoutEditorWindowController(
+            dashboardRoot: dashboardRoot, session: session, modeID: modeID
+        )
+        controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        layoutEditor = controller
+        controller.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Close and release the layout editor window — its × posts `closeLayoutEditor`.
+    func closeLayoutEditor() {
+        layoutEditor?.close()
+        layoutEditor = nil
+    }
+
     /// Dismiss the palette (already done by its control channel), bring the dashboard forward,
     /// and dispatch the submitted text through the dashboard's command bus. The Heimlich chat
     /// was removed (NIC-124): a command's result surfaces in the dashboard status line, and an
@@ -509,6 +570,15 @@ final class WindowCoordinator: @unchecked Sendable {
             openModeMenu(anchor: body["anchor"] as? [String: Any], from: source)
         case "closeModeMenu":
             closeModeMenu()
+        case "openLayoutPin":
+            openLayoutPin(anchor: body["anchor"] as? [String: Any], from: source)
+        case "closeLayoutPin":
+            closeLayoutPin()
+        case "openLayoutEditor":
+            guard let modeID = body["modeId"] as? String else { return }
+            openLayoutEditor(modeID: modeID)
+        case "closeLayoutEditor":
+            closeLayoutEditor()
         case "setLoginItem":
             // Launch-at-login toggle (NIC-89): register/unregister via the
             // SMAppService seam and push the OS's resulting status back to the

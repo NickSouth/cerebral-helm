@@ -32,6 +32,8 @@
 		CE0000000000000000000047 /* MoreAppsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000046 /* MoreAppsWindowController.swift */; };
 		CE0000000000000000000049 /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000048 /* MainMenu.swift */; };
 		CE000000000000000000004B /* ModeMenuWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000004A /* ModeMenuWindowController.swift */; };
+		CE000000000000000000004D /* LayoutPinWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000004C /* LayoutPinWindowController.swift */; };
+		CE000000000000000000004F /* LayoutEditorWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000004E /* LayoutEditorWindowController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -56,6 +58,8 @@
 		CE0000000000000000000046 /* MoreAppsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreAppsWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000048 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
 		CE000000000000000000004A /* ModeMenuWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeMenuWindowController.swift; sourceTree = "<group>"; };
+		CE000000000000000000004C /* LayoutPinWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutPinWindowController.swift; sourceTree = "<group>"; };
+		CE000000000000000000004E /* LayoutEditorWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutEditorWindowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -114,6 +118,8 @@
 				CE0000000000000000000046 /* MoreAppsWindowController.swift */,
 				CE0000000000000000000048 /* MainMenu.swift */,
 				CE000000000000000000004A /* ModeMenuWindowController.swift */,
+				CE000000000000000000004C /* LayoutPinWindowController.swift */,
+				CE000000000000000000004E /* LayoutEditorWindowController.swift */,
 			);
 			path = CerebralHelm;
 			sourceTree = "<group>";
@@ -217,6 +223,8 @@
 				CE0000000000000000000047 /* MoreAppsWindowController.swift in Sources */,
 				CE0000000000000000000049 /* MainMenu.swift in Sources */,
 				CE000000000000000000004B /* ModeMenuWindowController.swift in Sources */,
+				CE000000000000000000004D /* LayoutPinWindowController.swift in Sources */,
+				CE000000000000000000004F /* LayoutEditorWindowController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

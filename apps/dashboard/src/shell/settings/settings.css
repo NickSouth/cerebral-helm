@@ -443,6 +443,252 @@
   color: var(--ch-text-primary);
 }
 
+/* The layout authoring canvas (NIC-142 increment 5): a proportional view of the
+   display; each window is a draggable/resizable rectangle that snaps to a named frame. */
+.layout-canvas {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background:
+    linear-gradient(color-mix(in srgb, var(--ch-accent-primary) 6%, transparent), transparent),
+    var(--ch-surface-sunken, rgb(0 0 0 / 0.18));
+  overflow: hidden;
+  touch-action: none;
+}
+
+.layout-canvas__win {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ch-space-2);
+  box-sizing: border-box;
+  border: 1.5px solid color-mix(in srgb, var(--ch-accent-secondary) 55%, transparent);
+  border-radius: var(--ch-radius-sm);
+  background: color-mix(in srgb, var(--ch-accent-secondary) 16%, var(--ch-surface-raised));
+  color: var(--ch-text-primary);
+  cursor: grab;
+  user-select: none;
+  overflow: hidden;
+}
+
+.layout-canvas__win[data-dragging="true"] {
+  cursor: grabbing;
+  z-index: 3;
+  opacity: 0.92;
+}
+
+.layout-canvas__win[data-hotswap="true"] {
+  border-color: var(--ch-accent-primary);
+  background: color-mix(in srgb, var(--ch-accent-primary) 20%, var(--ch-surface-raised));
+  z-index: 2;
+}
+
+.layout-canvas__win-label {
+  font-size: var(--ch-font-size-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layout-canvas__win-frame {
+  font-size: var(--ch-font-size-xs);
+  color: var(--ch-text-muted);
+}
+
+.layout-canvas__remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 1.35rem;
+  height: 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--ch-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.layout-canvas__remove:hover,
+.layout-canvas__remove:focus-visible {
+  color: var(--ch-status-error);
+  background: color-mix(in srgb, var(--ch-text-primary) 12%, transparent);
+}
+
+.layout-canvas__handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 50%,
+    color-mix(in srgb, var(--ch-accent-primary) 70%, transparent) 50%
+  );
+  border-bottom-right-radius: var(--ch-radius-sm);
+}
+
+/* Editor add controls + the hotswap targets section (NIC-142 increment 6). */
+.layout-editor__adders {
+  display: flex;
+  gap: var(--ch-space-2);
+}
+
+.layout-editor__hotswap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.layout-editor__hotswap-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.layout-editor__hotswap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-1);
+  padding: var(--ch-space-1) var(--ch-space-2);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 32%, var(--ch-panel-border));
+  border-radius: var(--ch-radius-pill);
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+}
+
+/* Icon-first chip: the target's app icon / URL favicon (Chrome-profile aware),
+   matching the bottom-bar hotswap pill (NIC-142). */
+.layout-editor__hotswap-chip-icon {
+  position: relative;
+  display: inline-flex;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--ch-accent-secondary);
+}
+
+.layout-editor__hotswap-chip-icon img {
+  width: 100%;
+  height: 100%;
+  border-radius: 22%;
+  object-fit: cover;
+}
+
+.layout-editor__hotswap-chip-icon .app-glyph {
+  width: 100%;
+  height: 100%;
+}
+
+.layout-editor__hotswap-chip-badge {
+  position: absolute;
+  bottom: -2px;
+  left: -3px;
+  width: 0.6rem !important;
+  height: 0.6rem !important;
+  border-radius: 50% !important;
+  box-shadow: 0 0 0 1.5px var(--ch-surface-base);
+}
+
+.layout-editor__hotswap-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--ch-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.layout-editor__hotswap-remove:hover,
+.layout-editor__hotswap-remove:focus-visible {
+  color: var(--ch-status-error);
+}
+
+/* The standalone layout editor window (NIC-142, `?surface=layouteditor`): a themed
+   frameless window (the same "own window" treatment as More Apps / Settings), with a
+   themed header + × instead of native chrome. */
+.layout-editor-window {
+  width: 100%;
+  min-height: 100vh;
+  background: linear-gradient(var(--ch-bg-gradient-top), var(--ch-bg-base));
+}
+
+.layout-editor--standalone {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+}
+
+.layout-editor__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ch-space-3) var(--ch-space-4);
+  border-bottom: 1px solid var(--ch-panel-border);
+  background: linear-gradient(
+    color-mix(in srgb, var(--ch-accent-primary) 8%, transparent),
+    transparent
+  );
+}
+
+.layout-editor__title {
+  margin: 0;
+  font-size: var(--ch-font-size-md);
+  color: var(--ch-text-primary);
+}
+
+.layout-editor__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--ch-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--ch-radius-sm);
+  cursor: pointer;
+}
+
+.layout-editor__close:hover,
+.layout-editor__close:focus-visible {
+  color: var(--ch-text-primary);
+  background: color-mix(in srgb, var(--ch-text-primary) 12%, transparent);
+}
+
+.layout-editor__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-4);
+  overflow-y: auto;
+}
+
 .settings-button {
   font: inherit;
   font-size: var(--ch-font-size-base);

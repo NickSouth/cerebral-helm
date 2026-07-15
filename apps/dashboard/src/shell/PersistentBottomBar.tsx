@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { postShellControl } from "./shellControl";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useSettings } from "../state/SettingsProvider";
@@ -6,8 +6,8 @@ import { useAppearance } from "../state/AppearanceProvider";
 import { useBridge } from "../state/BridgeProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import type { LayoutSession } from "../state/dashboardState";
-import type { DiscoveredApp } from "../bridge/cerebralBridge";
 import { AppGlyph } from "./AppGlyph";
+import { LayoutPinPicker } from "./LayoutPinPicker";
 import { useResolvedAppIcons, type ResolvedIcon } from "./useResolvedAppIcons";
 import { armModeWave } from "./modeWave";
 import { heimlichStateLabel } from "./labels";
@@ -241,20 +241,18 @@ function HotswapTileFace({ icon }: { icon: ResolvedIcon }) {
 function LayoutBar({ session }: { session: LayoutSession }) {
   const bridge = useBridge();
   const toggle = session.quickToggle;
-  const [picker, setPicker] = useState<readonly DiscoveredApp[] | null>(null);
   const resolve = useResolvedAppIcons(toggle?.targets.map((target) => target.ref) ?? []);
+  // The "+" opens the native layout-pin window (top-most, above the "+", so it can
+  // overlap the open layout windows — the backdrop never lifts). In a plain browser
+  // there is no native channel, so it falls back to the in-webview picker overlay.
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  const openPicker = async (): Promise<void> => {
-    const result = await bridge.listApps();
-    const pinned = new Set(toggle?.targets.map((target) => target.ref) ?? []);
-    // Only reference-backed apps are pinnable, and never one already in the slot.
-    setPicker(
-      result.apps.filter((app) => app.referenceId && !pinned.has(app.referenceId))
-    );
-  };
-  const pin = (ref: string): void => {
-    void bridge.pinLayoutWindow({ modeId: session.modeId, ref });
-    setPicker(null);
+  const openPin = (event: ReactMouseEvent<HTMLButtonElement>): void => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const anchor = { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+    if (!postShellControl("openLayoutPin", { anchor })) {
+      setPickerOpen(true);
+    }
   };
 
   return (
@@ -287,39 +285,12 @@ function LayoutBar({ session }: { session: LayoutSession }) {
             type="button"
             className="bottom-bar__layout-add"
             aria-label="Pin a window"
-            aria-expanded={picker !== null}
-            onClick={() => {
-              if (picker !== null) {
-                setPicker(null);
-              } else {
-                void openPicker();
-              }
-            }}
+            aria-expanded={pickerOpen}
+            onClick={openPin}
           >
             <span aria-hidden="true">+</span>
           </button>
-          {picker !== null ? (
-            <ul className="bottom-bar__layout-picker" role="menu" aria-label="Pin a window">
-              {picker.length === 0 ? (
-                <li className="bottom-bar__layout-picker-empty">No pinnable apps</li>
-              ) : (
-                picker.map((app) => (
-                  <li key={app.referenceId}>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="bottom-bar__layout-picker-item"
-                      onClick={() => {
-                        pin(app.referenceId as string);
-                      }}
-                    >
-                      {app.name}
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
-          ) : null}
+          {pickerOpen ? <LayoutPinPicker variant="overlay" onClose={() => setPickerOpen(false)} /> : null}
         </span>
       ) : null}
       <span className="bottom-bar__layout-sep" aria-hidden="true" />

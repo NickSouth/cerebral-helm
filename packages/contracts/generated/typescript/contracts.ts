@@ -433,6 +433,7 @@ export interface CerebralHelmBridgeOperationRequest {
 
 export enum Operation {
     AddChromeProfileReference = "addChromeProfileReference",
+    AddLayoutTarget = "addLayoutTarget",
     AddURLReference = "addUrlReference",
     ApplyMode = "applyMode",
     CaptureLayout = "captureLayout",

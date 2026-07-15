@@ -207,6 +207,8 @@ public final class BridgeSession: @unchecked Sendable {
             return await updateLayout(request)
         case .captureLayout:
             return await captureLayout(request)
+        case .addLayoutTarget:
+            return await addLayoutTarget(request)
         default:
             // captureNote (confirmation-gated local_write returning a synchronous
             // noteId) and subscribe follow later.
@@ -459,6 +461,50 @@ public final class BridgeSession: @unchecked Sendable {
         case let .rejected(errors):
             return ok(request, payload: PinLayoutWindowResult(accepted: false, errors: errors.map(\.message)))
         }
+    }
+
+    /// Adds a quick-toggle target to the ACTIVE layout session for this session only
+    /// (NIC-142) — the bottom-bar "+" live add. Unlike `pinLayoutWindow` it does NOT
+    /// persist to the override: the target lives in the in-memory session and is gone
+    /// when the layout closes or the mode switches. Requires an active session with a
+    /// dynamic slot; idempotent for a ref already present. No confirmation — the
+    /// session was authorized when the layout opened.
+    private func addLayoutTarget(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: AddLayoutTargetInput = decodePayload(request), !input.ref.isEmpty else {
+            return invalidInput(request, "addLayoutTarget requires a ref.")
+        }
+        guard let session = peekActiveLayoutSession(), let toggle = session.quickToggle else {
+            // No active layout or no dynamic slot to add into (a session-only add
+            // cannot mint a slot).
+            return ok(request, payload: AddLayoutTargetResult(accepted: false))
+        }
+        // Already a target → accepted no-op, no re-emit (idempotent).
+        if toggle.targets.contains(where: { $0.ref == input.ref }) {
+            return ok(request, payload: AddLayoutTargetResult(accepted: true))
+        }
+        // Resolve the ref against the reference catalog — the existence check plus the
+        // kind/label/bundle id the session window needs.
+        let references = try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace?.stateRoot
+        )
+        let window: LayoutSessionWindow
+        if let entry = references?.apps[input.ref] {
+            window = LayoutSessionWindow(ref: input.ref, kind: "app", label: entry.label, bundleID: entry.target)
+        } else if let entry = references?.urls[input.ref] {
+            window = LayoutSessionWindow(ref: input.ref, kind: "url", label: entry.label, bundleID: nil)
+        } else {
+            return ok(request, payload: AddLayoutTargetResult(accepted: false))
+        }
+        guard let updated = session.withAddedToggleTarget(window) else {
+            return ok(request, payload: AddLayoutTargetResult(accepted: false))
+        }
+        setActiveLayoutSession(updated)
+        emit(BridgeEventFactory.layoutSessionChangedEvent(
+            session: updated.snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+        return ok(request, payload: AddLayoutTargetResult(accepted: true))
     }
 
     /// Writes a full authored layout to a mode's override (NIC-142 authoring) — the
@@ -1334,6 +1380,12 @@ public final class BridgeSession: @unchecked Sendable {
     private struct PinLayoutWindowResult: Encodable {
         let accepted: Bool
         let errors: [String]
+    }
+    private struct AddLayoutTargetInput: Decodable {
+        let ref: String
+    }
+    private struct AddLayoutTargetResult: Encodable {
+        let accepted: Bool
     }
     private struct UpdateLayoutInput: Decodable {
         let modeId: String

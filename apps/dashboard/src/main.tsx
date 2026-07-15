@@ -59,6 +59,22 @@ if (surface === "palette") {
       </React.StrictMode>
     );
   });
+} else if (surface === "layoutpin") {
+  void import("./app/LayoutPinApp").then(({ LayoutPinApp }) => {
+    root.render(
+      <React.StrictMode>
+        <LayoutPinApp />
+      </React.StrictMode>
+    );
+  });
+} else if (surface === "layouteditor") {
+  void import("./app/LayoutEditorApp").then(({ LayoutEditorApp }) => {
+    root.render(
+      <React.StrictMode>
+        <LayoutEditorApp />
+      </React.StrictMode>
+    );
+  });
 } else {
   void import("./app/AppRoot").then(({ AppRoot }) => {
     root.render(

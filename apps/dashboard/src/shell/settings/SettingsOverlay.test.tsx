@@ -144,12 +144,23 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     const dialog = openSettings();
     fireEvent.click(within(dialog).getByRole("tab", { name: "Modes" }));
 
-    // Capture the first non-Executive mode's currently-arranged windows.
-    const captureButtons = await within(dialog).findAllByRole("button", { name: "Capture current windows" });
-    fireEvent.click(captureButtons[0]);
-    // The captured windows become dynamic-slot options and a Save appears.
+    // Open the first non-Executive mode's layout editor. There is no native channel in
+    // jsdom, so "Edit layout" falls back to the inline editor (NIC-142 increment 4).
+    const editButtons = await within(dialog).findAllByRole("button", { name: /^Edit .+ layout$/ });
+    fireEvent.click(editButtons[0]);
+
+    // Capture the mode's currently-arranged windows (seeds the canvas + hotswap slot).
+    const capture = await within(dialog).findByRole("button", { name: "Capture current windows" });
+    fireEvent.click(capture);
     const save = await within(dialog).findByRole("button", { name: "Save layout" });
-    expect(within(dialog).getAllByRole("radio").length).toBeGreaterThanOrEqual(2);
+
+    // Add a second hotswap target via the Quick Apps-style picker (NIC-142 increment 6).
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Add hotswap target" }));
+    const picker = await within(dialog).findByRole("dialog", { name: "Add a hotswap target" });
+    fireEvent.click(await within(picker).findByRole("button", { name: "Add Terminal" }));
+    // The target becomes a removable chip in the hotswap list.
+    await within(dialog).findByRole("button", { name: "Remove hotswap Terminal" });
+    fireEvent.click(within(picker).getByRole("button", { name: "Close pin menu" }));
 
     fireEvent.click(save);
     await within(dialog).findByText("Layout saved.");

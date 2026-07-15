@@ -567,6 +567,32 @@ export function createMockCerebralBridge(
       }
       return Promise.resolve({ accepted: true, errors: [] });
     },
+    addLayoutTarget(input) {
+      // Session-only "+" live add (NIC-142): append the reference to the active
+      // session's dynamic slot and re-broadcast. No persistence (the mock never
+      // writes overrides anyway) — the distinction from pinLayoutWindow is the op.
+      const toggle = activeLayout?.quickToggle;
+      if (!activeLayout || !toggle) {
+        return Promise.resolve({ accepted: false });
+      }
+      if (!toggle.targets.some((target) => target.ref === input.ref)) {
+        activeLayout = {
+          ...activeLayout,
+          quickToggle: {
+            ...toggle,
+            targets: [...toggle.targets, { ref: input.ref, kind: "app", label: mockRefLabel(input.ref) }]
+          }
+        };
+        emit({
+          eventId: "brevt_mock_layout_add01",
+          type: "layout.session.changed",
+          schemaVersion: "1.0.0",
+          timestamp: new Date().toISOString(),
+          payload: { session: activeLayout }
+        });
+      }
+      return Promise.resolve({ accepted: true });
+    },
     updateLayout() {
       // The settings editor's Save; the mock accepts a well-formed layout (NIC-142).
       return Promise.resolve({ accepted: true, errors: [] });

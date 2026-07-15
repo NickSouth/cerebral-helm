@@ -117,7 +117,7 @@ describe("DashboardShell structure", () => {
     });
   });
 
-  it("pins a window to the quick-toggle slot via the + control (NIC-142)", async () => {
+  it("adds a session-only window via the + control's pin picker (NIC-142)", async () => {
     const { bridge } = renderShell();
     const bar = screen.getByRole("contentinfo", { name: "Status bar" });
     await act(async () => {
@@ -127,10 +127,11 @@ describe("DashboardShell structure", () => {
     // Terminal is not a toggle target yet.
     expect(within(section).queryByRole("button", { name: "Terminal" })).toBeNull();
 
-    // Open the picker and pin Terminal.
+    // No native channel in jsdom, so the "+" falls back to the in-webview picker
+    // overlay; add Terminal from it (session-only add).
     fireEvent.click(within(section).getByRole("button", { name: "Pin a window" }));
-    const menu = await within(section).findByRole("menu", { name: "Pin a window" });
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Terminal" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a layout window" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Add Terminal" }));
 
     // Terminal is now a pressable quick-toggle target.
     await waitFor(() => {

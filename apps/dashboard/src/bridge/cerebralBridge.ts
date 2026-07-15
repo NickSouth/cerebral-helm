@@ -275,6 +275,15 @@ export interface PinLayoutWindowResult {
   readonly accepted: boolean;
   readonly errors: readonly string[];
 }
+/** Add a reference to the ACTIVE layout session's dynamic slot for this session only
+ *  (NIC-142) — the bottom-bar "+" live add. Unlike {@link PinLayoutWindowInput} it does
+ *  not persist to the mode override; the target is gone when layout mode closes. */
+export interface AddLayoutTargetInput {
+  readonly ref: string;
+}
+export interface AddLayoutTargetResult {
+  readonly accepted: boolean;
+}
 
 /** The 8 named window frames (mirrors `window-arrange-input` / the layout schema). */
 export type LayoutFrame =
@@ -410,6 +419,10 @@ export interface CerebralBridge {
    *  (NIC-142), persisted through the validated override path. The updated session
    *  arrives via `layout.session.changed`. */
   pinLayoutWindow(input: PinLayoutWindowInput): Promise<PinLayoutWindowResult>;
+  /** Add a reference to the active layout session's dynamic slot for this session only
+   *  (NIC-142) — the bottom-bar "+" live add. Non-persistent; the updated session
+   *  arrives via `layout.session.changed`. */
+  addLayoutTarget(input: AddLayoutTargetInput): Promise<AddLayoutTargetResult>;
   /** Save a full authored layout for a mode (NIC-142 authoring), persisted through
    *  the validated override path. */
   updateLayout(input: UpdateLayoutInput): Promise<UpdateLayoutResult>;
