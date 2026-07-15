@@ -3741,9 +3741,11 @@ public enum Frame: String, Codable {
     case centered = "centered"
     case full = "full"
     case leftHalf = "left-half"
+    case leftThird = "left-third"
     case leftTwoThirds = "left-two-thirds"
     case rightHalf = "right-half"
     case rightThird = "right-third"
+    case rightTwoThirds = "right-two-thirds"
     case topHalf = "top-half"
 }
 

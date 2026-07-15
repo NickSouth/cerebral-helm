@@ -119,6 +119,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.layoutDisplayIDProvider = { [weak bridgeRuntime] in
             bridgeRuntime?.storedLayoutDisplayID()
         }
+        // Feed the reserved bottom-bar strips to the layout arrange so windows land above
+        // the bar the first time, not after the snap observer nudges them (NIC-142).
+        coordinator.onReservedStripsChanged = { [weak bridgeRuntime] strips in
+            bridgeRuntime?.setReservedStrips(strips)
+        }
         bridgeRuntime.startDisplayObservation { [weak self] topology in
             self?.coordinator.handleDisplayTopologyChange(topology)
         }

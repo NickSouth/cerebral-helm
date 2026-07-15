@@ -48,7 +48,10 @@ export function LayoutEditor({
   onClose?: () => void;
 }) {
   const bridge = useBridge();
-  const [statics, setStatics] = useState<EditorWindow[] | null>(null);
+  // The editor is usable from empty (NIC-142): the canvas + Add controls show right
+  // away; "Capture current windows" is an optional convenience that appends the
+  // currently-arranged windows as statics.
+  const [statics, setStatics] = useState<EditorWindow[]>([]);
   const [hotswap, setHotswap] = useState<HotswapState | null>(null);
   // Resolve each hotswap target's icon the same way the bottom-bar pill does, so the
   // editor chips are icon-first and Chrome-profile aware (NIC-142).
@@ -60,17 +63,19 @@ export function LayoutEditor({
     setStatus(null);
     try {
       const result = await bridge.captureLayout();
-      const windows = result.windows.map((window) => ({ ...window, label: humanizeId(window.ref) }));
-      if (windows.length === 0) {
-        setStatics([]);
-        setHotswap(null);
-        setStatus("No configured app windows are open to capture. Add windows below.");
+      if (result.windows.length === 0) {
+        setStatus("No configured app windows are open to capture.");
         return;
       }
-      // The first captured window seeds the hotswap slot; the rest are static.
-      const [first, ...rest] = windows;
-      setStatics(rest);
-      setHotswap({ frame: first.frame, targets: [{ ref: first.ref, kind: first.kind, label: first.label }] });
+      // Append the captured windows as statics (deduped by ref) — the user designates
+      // hotswap targets explicitly.
+      setStatics((current) => {
+        const existing = new Set(current.map((window) => window.ref));
+        const additions = result.windows
+          .filter((window) => !existing.has(window.ref))
+          .map((window) => ({ ref: window.ref, kind: window.kind, label: humanizeId(window.ref), frame: window.frame }));
+        return [...current, ...additions];
+      });
     } catch {
       setStatus("Live capture is available on the macOS host.");
     }
@@ -80,9 +85,7 @@ export function LayoutEditor({
     if (id === HOTSWAP_ID) {
       setHotswap((current) => (current ? { ...current, frame } : current));
     } else {
-      setStatics((current) =>
-        current ? current.map((window) => (window.ref === id ? { ...window, frame } : window)) : current
-      );
+      setStatics((current) => current.map((window) => (window.ref === id ? { ...window, frame } : window)));
     }
   };
 
@@ -90,17 +93,16 @@ export function LayoutEditor({
     if (id === HOTSWAP_ID) {
       setHotswap(null);
     } else {
-      setStatics((current) => (current ? current.filter((window) => window.ref !== id) : current));
+      setStatics((current) => current.filter((window) => window.ref !== id));
     }
   };
 
   const addStatic = (ref: string, kind: ReferenceKind, refLabel: string): void => {
     setStatics((current) => {
-      const base = current ?? [];
-      if (base.some((window) => window.ref === ref)) {
-        return base;
+      if (current.some((window) => window.ref === ref)) {
+        return current;
       }
-      return [...base, { ref, kind, label: refLabel, frame: DEFAULT_FRAME }];
+      return [...current, { ref, kind, label: refLabel, frame: DEFAULT_FRAME }];
     });
   };
 
@@ -127,7 +129,7 @@ export function LayoutEditor({
   };
 
   const save = async (): Promise<void> => {
-    const staticWindows = (statics ?? []).map((window) => ({
+    const staticWindows = statics.map((window) => ({
       ref: window.ref,
       kind: window.kind,
       frame: window.frame
@@ -154,29 +156,25 @@ export function LayoutEditor({
     setStatus(result.accepted ? "Layout saved." : (result.errors[0] ?? "Save failed."));
   };
 
-  const items: CanvasItem[] =
-    statics === null
-      ? []
-      : [
-          ...statics.map((window) => ({ id: window.ref, label: window.label, frame: window.frame })),
-          ...(hotswap
-            ? [
-                {
-                  id: HOTSWAP_ID,
-                  label: `Hotswap · ${hotswap.targets.length}`,
-                  frame: hotswap.frame,
-                  hotswap: true
-                }
-              ]
-            : [])
-        ];
+  const items: CanvasItem[] = [
+    ...statics.map((window) => ({ id: window.ref, label: window.label, frame: window.frame })),
+    ...(hotswap
+      ? [
+          {
+            id: HOTSWAP_ID,
+            label: `Hotswap · ${hotswap.targets.length}`,
+            frame: hotswap.frame,
+            hotswap: true
+          }
+        ]
+      : [])
+  ];
 
-  const controls =
-    statics !== null ? (
-      <>
+  const controls = (
+    <>
         <p className="settings-note">
-          Drag each window to move it or its corner to resize; it snaps to the nearest frame. The
-          accent rectangle is the hotswap slot.
+          Add apps, URLs, or Chrome profiles below, then drag each window to move it or a corner to
+          resize — it snaps to the nearest frame. The accent rectangle is the hotswap slot.
         </p>
         <LayoutCanvas items={items} onChangeFrame={changeFrame} onRemove={removeItem} />
 
@@ -243,7 +241,7 @@ export function LayoutEditor({
           />
         ) : null}
       </>
-    ) : null;
+  );
 
   const captureButton = (
     <button type="button" className="settings-button" onClick={() => void capture()}>

@@ -205,6 +205,8 @@
         "bottom-half",
         "left-two-thirds",
         "right-third",
+        "left-third",
+        "right-two-thirds",
         "centered"
       ]
     },

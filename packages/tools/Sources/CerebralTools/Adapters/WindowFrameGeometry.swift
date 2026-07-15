@@ -24,6 +24,10 @@ public enum WindowFrameGeometry {
             return WindowRect(x: x, y: y, width: w * 2 / 3, height: h)
         case .rightThird:
             return WindowRect(x: x + w * 2 / 3, y: y, width: w / 3, height: h)
+        case .leftThird:
+            return WindowRect(x: x, y: y, width: w / 3, height: h)
+        case .rightTwoThirds:
+            return WindowRect(x: x + w / 3, y: y, width: w * 2 / 3, height: h)
         case .centered:
             return WindowRect(x: x + w / 8, y: y + h / 8, width: w * 3 / 4, height: h * 3 / 4)
         }

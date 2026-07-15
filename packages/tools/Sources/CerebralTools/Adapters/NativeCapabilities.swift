@@ -246,6 +246,8 @@ public enum WindowFrame: String, Sendable, CaseIterable {
     case bottomHalf = "bottom-half"
     case leftTwoThirds = "left-two-thirds"
     case rightThird = "right-third"
+    case leftThird = "left-third"
+    case rightTwoThirds = "right-two-thirds"
     case centered
 }
 

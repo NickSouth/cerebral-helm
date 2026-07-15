@@ -27,7 +27,7 @@ struct LayoutSession: Sendable {
         return LayoutSession(
             modeID: modeID,
             windows: windows,
-            quickToggle: LayoutSessionToggle(activeRef: ref, targets: toggle.targets)
+            quickToggle: LayoutSessionToggle(activeRef: ref, targets: toggle.targets, frame: toggle.frame)
         )
     }
 
@@ -40,7 +40,9 @@ struct LayoutSession: Sendable {
         return LayoutSession(
             modeID: modeID,
             windows: windows,
-            quickToggle: LayoutSessionToggle(activeRef: toggle.activeRef, targets: toggle.targets + [window])
+            quickToggle: LayoutSessionToggle(
+                activeRef: toggle.activeRef, targets: toggle.targets + [window], frame: toggle.frame
+            )
         )
     }
 
@@ -73,6 +75,9 @@ struct LayoutSessionToggle: Sendable {
     /// The reference currently shown in the dynamic slot (the first target on open).
     let activeRef: String
     let targets: [LayoutSessionWindow]
+    /// The named frame the hotswap slot occupies — every target is re-arranged into it
+    /// when surfaced, so a moved window returns to place on toggle (NIC-142).
+    let frame: String?
 }
 
 /// The UI-facing layout-session payload (no bundle ids — the dashboard addresses

@@ -26,9 +26,31 @@ function clampMove(rect: FrameRect): FrameRect {
   return { ...rect, x: clamp(rect.x, 0, 1 - rect.w), y: clamp(rect.y, 0, 1 - rect.h) };
 }
 
-function clampResize(rect: FrameRect): FrameRect {
-  return { ...rect, w: clamp(rect.w, MIN_SIZE, 1 - rect.x), h: clamp(rect.h, MIN_SIZE, 1 - rect.y) };
+/** The 4 resize corners (`n`/`s` = top/bottom edge, `w`/`e` = left/right edge). */
+type Corner = "nw" | "ne" | "sw" | "se";
+
+/** Resize by dragging one corner, keeping the opposite corner fixed and clamping each
+ *  moved edge inside the board with a sensible minimum size. */
+function resizeRect(start: FrameRect, dx: number, dy: number, corner: Corner): FrameRect {
+  let { x, y, w, h } = start;
+  if (corner.includes("w")) {
+    const nx = clamp(x + dx, 0, x + w - MIN_SIZE);
+    w += x - nx;
+    x = nx;
+  } else {
+    w = clamp(w + dx, MIN_SIZE, 1 - x);
+  }
+  if (corner.includes("n")) {
+    const ny = clamp(y + dy, 0, y + h - MIN_SIZE);
+    h += y - ny;
+    y = ny;
+  } else {
+    h = clamp(h + dy, MIN_SIZE, 1 - y);
+  }
+  return { x, y, w, h };
 }
+
+const CORNERS: readonly Corner[] = ["nw", "ne", "sw", "se"];
 
 /**
  * The layout authoring canvas (NIC-142): a proportional view of the chosen display with
@@ -55,7 +77,7 @@ export function LayoutCanvas({
   const startRef = useRef<{ px: number; py: number; rect: FrameRect } | null>(null);
 
   const beginDrag =
-    (id: string, frame: LayoutFrame, mode: "move" | "resize") =>
+    (id: string, frame: LayoutFrame, mode: "move" | Corner) =>
     (event: ReactPointerEvent<HTMLElement>) => {
       event.preventDefault();
       event.stopPropagation();
@@ -80,7 +102,7 @@ export function LayoutCanvas({
         const next =
           mode === "move"
             ? clampMove({ ...start.rect, x: start.rect.x + dx, y: start.rect.y + dy })
-            : clampResize({ ...start.rect, w: start.rect.w + dx, h: start.rect.h + dy });
+            : resizeRect(start.rect, dx, dy, mode);
         const updated: DragState = { id, rect: next };
         dragRef.current = updated;
         setDrag(updated);
@@ -130,11 +152,15 @@ export function LayoutCanvas({
             >
               ×
             </button>
-            <span
-              className="layout-canvas__handle"
-              aria-hidden="true"
-              onPointerDown={beginDrag(item.id, item.frame, "resize")}
-            />
+            {CORNERS.map((corner) => (
+              <span
+                key={corner}
+                className="layout-canvas__handle"
+                data-corner={corner}
+                aria-hidden="true"
+                onPointerDown={beginDrag(item.id, item.frame, corner)}
+              />
+            ))}
           </div>
         );
       })}

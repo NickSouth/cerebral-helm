@@ -523,19 +523,37 @@
   background: color-mix(in srgb, var(--ch-text-primary) 12%, transparent);
 }
 
+/* Four corner resize handles (NIC-142): a larger grab target so any edge is easy to
+   move; the free rect then snaps to the nearest named frame. */
 .layout-canvas__handle {
   position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--ch-accent-primary);
+  background: var(--ch-surface-raised);
+  border-radius: 50%;
+  z-index: 4;
+}
+
+.layout-canvas__handle[data-corner="nw"] {
+  top: -8px;
+  left: -8px;
   cursor: nwse-resize;
-  background: linear-gradient(
-    135deg,
-    transparent 50%,
-    color-mix(in srgb, var(--ch-accent-primary) 70%, transparent) 50%
-  );
-  border-bottom-right-radius: var(--ch-radius-sm);
+}
+.layout-canvas__handle[data-corner="ne"] {
+  top: -8px;
+  right: -8px;
+  cursor: nesw-resize;
+}
+.layout-canvas__handle[data-corner="sw"] {
+  bottom: -8px;
+  left: -8px;
+  cursor: nesw-resize;
+}
+.layout-canvas__handle[data-corner="se"] {
+  bottom: -8px;
+  right: -8px;
+  cursor: nwse-resize;
 }
 
 /* Editor add controls + the hotswap targets section (NIC-142 increment 6). */

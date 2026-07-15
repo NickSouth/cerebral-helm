@@ -70,6 +70,14 @@ public struct SystemAXWindows: AXWindowSurface {
             let position = AXValueCreate(.cgPoint, &origin),
             let sizeValue = AXValueCreate(.cgSize, &size)
         else { return false }
+        // Cross-display moves are flaky with a single position+size write: the window
+        // lands on the target display but keeps its old size (the size is clamped
+        // against the origin display before the move settles) — the symptom is "moved
+        // to the right monitor but not sized to its frame". Set position → size →
+        // position → size so the final size is applied on the destination display (the
+        // Rectangle/Magnet idiom); the last two calls decide success.
+        _ = AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, position)
+        _ = AXUIElementSetAttributeValue(axWindow, kAXSizeAttribute as CFString, sizeValue)
         let movedResult = AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, position)
         let sizedResult = AXUIElementSetAttributeValue(axWindow, kAXSizeAttribute as CFString, sizeValue)
         return movedResult == .success && sizedResult == .success
@@ -98,12 +106,20 @@ public struct SystemAXWindows: AXWindowSurface {
     private func mainWindow(pid: pid_t) -> AXUIElement? {
         let application = AXUIElementCreateApplication(pid)
         var windowValue: CFTypeRef?
-        guard
-            AXUIElementCopyAttributeValue(application, kAXMainWindowAttribute as CFString, &windowValue) == .success,
-            let window = windowValue
-        else { return nil }
-        // A CFTypeRef from the main-window attribute is an AXUIElement by contract.
-        return unsafeDowncast(window as AnyObject, to: AXUIElement.self)
+        if AXUIElementCopyAttributeValue(application, kAXMainWindowAttribute as CFString, &windowValue) == .success,
+           let window = windowValue {
+            // A CFTypeRef from the main-window attribute is an AXUIElement by contract.
+            return unsafeDowncast(window as AnyObject, to: AXUIElement.self)
+        }
+        // Fall back to the app's first window: some apps never set a main window, and a
+        // just-launched app may not have one yet — arrange should still target a real
+        // window rather than silently no-op (the layout arrange, NIC-142).
+        var windowsValue: CFTypeRef?
+        if AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+           let windows = windowsValue as? [AnyObject], let first = windows.first {
+            return unsafeDowncast(first, to: AXUIElement.self)
+        }
+        return nil
     }
 }
 
@@ -119,13 +135,19 @@ public struct AXWindowCapability: WindowCapability {
     /// workflow, so when this returns a display it overrides the workflow's baked
     /// (now vestigial) primary/secondary; `nil` keeps the requested display.
     private let layoutDisplay: @Sendable () -> WindowDisplay?
+    /// The reserved bottom-bar strips (NIC-142/144): an arranged window is kept above
+    /// the persistent bottom bar so it lands correctly the first time, rather than
+    /// overlapping and being nudged up afterwards by the window-snap observer.
+    private let reservedStrips: @Sendable () -> [ReservedStrip]
 
     public init(
         surface: any AXWindowSurface = SystemAXWindows(),
-        layoutDisplay: @escaping @Sendable () -> WindowDisplay? = { nil }
+        layoutDisplay: @escaping @Sendable () -> WindowDisplay? = { nil },
+        reservedStrips: @escaping @Sendable () -> [ReservedStrip] = { [] }
     ) {
         self.surface = surface
         self.layoutDisplay = layoutDisplay
+        self.reservedStrips = reservedStrips
     }
 
     public func inspect() async throws -> [WindowInfo] {
@@ -144,7 +166,23 @@ public struct AXWindowCapability: WindowCapability {
         guard let visible = surface.visibleFrame(for: target) ?? surface.visibleFrame(for: .primary) else {
             return .unsupported("No display is available to arrange on.")
         }
-        return apply(Self.resolve(frame, in: visible), bundleID: bundleID)
+        let rect = Self.reserveBottomBar(Self.resolve(frame, in: visible), strips: reservedStrips())
+        return apply(rect, bundleID: bundleID)
+    }
+
+    /// Keep an arranged AX-space rect above the persistent bottom bar (NIC-142) by
+    /// running it through the same `WindowSnapCorrection` the snap observer uses — so
+    /// the window fits above the bar on the first placement, with no post-arrange jump.
+    /// Round-trips through AppKit-global coordinates (the space the correction speaks).
+    static func reserveBottomBar(_ axRect: CGRect, strips: [ReservedStrip]) -> CGRect {
+        guard !strips.isEmpty, let primaryHeight = NSScreen.screens.first?.frame.height else { return axRect }
+        // AX top-left → AppKit bottom-left (y flips about the primary display height).
+        let appKit = CGRect(x: axRect.minX, y: primaryHeight - axRect.maxY, width: axRect.width, height: axRect.height)
+        guard let corrected = WindowSnapCorrection.correct(frame: appKit, strips: strips) else { return axRect }
+        return CGRect(
+            x: corrected.minX, y: primaryHeight - corrected.maxY,
+            width: corrected.width, height: corrected.height
+        )
     }
 
     public func captureFrame(bundleID: String) async throws -> WindowRect? {

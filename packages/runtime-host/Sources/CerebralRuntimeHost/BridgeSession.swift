@@ -86,6 +86,10 @@ public final class BridgeSession: @unchecked Sendable {
     /// Reads visible windows' frames for live layout capture (NIC-142) — the AX
     /// geometry capability. Optional: absent pre-Mac, so capture degrades honestly.
     private let window: (any WindowCapability)?
+    /// Resolves the default browser's bundle id (NIC-142) so a layout URL window that
+    /// opens in the default browser (no Chrome profile) can be arranged like an app.
+    /// A URL with a Chrome profile always targets `com.google.Chrome`.
+    private let defaultBrowserBundleID: (@Sendable () -> String?)?
 
     /// The active layout session (NIC-142), when a layout is open. Ephemeral
     /// runtime state — started by `openLayout`, cleared by `closeLayout` or a mode
@@ -107,6 +111,7 @@ public final class BridgeSession: @unchecked Sendable {
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
         window: (any WindowCapability)? = nil,
+        defaultBrowserBundleID: (@Sendable () -> String?)? = nil,
         emitEventJSON: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.runtime = runtime
@@ -120,6 +125,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.app = app
         self.url = url
         self.window = window
+        self.defaultBrowserBundleID = defaultBrowserBundleID
         self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
     }
@@ -312,12 +318,104 @@ public final class BridgeSession: @unchecked Sendable {
             session: session.snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
 
-        // Open + arrange the windows through the same command bus as any workflow.
-        let workflowID = LayoutWorkflowSynthesizer.workflowID(modeID: input.modeId)
-        let outcome = await runtime.submit("run \(workflowID)", source: .dashboard)
-        registerAwaitingConfirmation(outcome)
+        // Force the correct setup on open (NIC-142, owner direction 2026-07-15): open and
+        // arrange EVERY static window + hotswap target from the authored (override-merged)
+        // layout so nothing cold-starts on toggle, then hide the inactive hotswaps.
+        // Direct capability calls (authorized once at open; the same executor bypass as
+        // toggle/close). This supersedes the synthesized-workflow open, which read the
+        // SHIPPED layout and so fought the override-merged session's frames.
+        await openAndArrangeLayout(layout: layout, session: session)
 
         return ok(request, payload: OpenLayoutResult(accepted: true, modeId: input.modeId))
+    }
+
+    /// Opens + arranges an entire layout on entry (NIC-142): every static window and
+    /// EVERY hotswap target is opened and arranged into its frame from the resolved
+    /// (override-merged) layout, then the inactive hotswap apps are hidden so only the
+    /// active one shows. Opening all hotswaps up front means toggling never cold-starts
+    /// a window (owner direction). URL windows are opened but not arranged (a URL is not
+    /// an app; browser placement is a later increment). App-level hide, so two hotswaps
+    /// sharing a bundle (e.g. two Chrome profiles) are never hidden out from under the
+    /// active one.
+    private func openAndArrangeLayout(layout: Layout, session: LayoutSession) async {
+        // ref → bundle id for app windows, from the already-resolved session.
+        var appBundleByRef: [String: String] = [:]
+        for window in session.windows where window.bundleID != nil {
+            appBundleByRef[window.ref] = window.bundleID
+        }
+        for target in session.quickToggle?.targets ?? [] where target.bundleID != nil {
+            appBundleByRef[target.ref] = target.bundleID
+        }
+        let references = try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace?.stateRoot
+        )
+
+        // The window to arrange for a ref: the app bundle for an app, or the browser
+        // bundle for a URL (Chrome for a profiled URL, else the default browser) — a
+        // URL "window" is its browser (NIC-142).
+        func arrangeBundle(_ ref: String, kind: Kind) -> String? {
+            switch kind {
+            case .app:
+                return appBundleByRef[ref]
+            case .url:
+                guard let entry = references?.urls[ref] else { return nil }
+                return entry.profile != nil ? UserChromeProfileReferences.chromeBundleID : defaultBrowserBundleID?()
+            }
+        }
+        func arrange(_ ref: String, kind: Kind, _ frameRaw: String) async {
+            guard let bundle = arrangeBundle(ref, kind: kind), let frame = WindowFrame(rawValue: frameRaw) else {
+                return
+            }
+            _ = try? await window?.arrange(bundleID: bundle, frame: frame, display: .primary)
+        }
+        func surface(_ ref: String, kind: Kind) async {
+            switch kind {
+            case .app: _ = try? await app?.open(appID: ref)
+            case .url: _ = try? await url?.open(urlID: ref)
+            }
+        }
+
+        // Static windows: open + arrange (apps and URLs).
+        for staticWindow in layout.windows {
+            await surface(staticWindow.ref, kind: staticWindow.kind)
+            await arrange(staticWindow.ref, kind: staticWindow.kind, staticWindow.frame.rawValue)
+        }
+
+        // Hotswap targets: open + arrange ALL, then hide every inactive app (URL targets
+        // share the browser window, so they are surfaced by tab rather than hidden).
+        guard let toggle = layout.quickToggle else { return }
+        let frameRaw = toggle.frame.rawValue
+        let activeRef = session.quickToggle?.activeRef ?? toggle.targets.first?.ref
+        for target in toggle.targets {
+            await surface(target.ref, kind: target.kind)
+            await arrange(target.ref, kind: target.kind, frameRaw)
+        }
+        let activeBundle = activeRef.flatMap { appBundleByRef[$0] }
+        let inactiveBundles = Set(toggle.targets.compactMap { target -> String? in
+            guard target.kind == .app, let bundle = appBundleByRef[target.ref], bundle != activeBundle else {
+                return nil
+            }
+            return bundle
+        })
+        if !inactiveBundles.isEmpty {
+            _ = try? await workspaceWindows?.hideApplications(bundleIDs: Array(inactiveBundles))
+        }
+        // Bring the active hotswap forward and re-arrange it last so it shows in place.
+        if let activeRef, let active = toggle.targets.first(where: { $0.ref == activeRef }) {
+            await surface(active.ref, kind: active.kind)
+            await arrange(active.ref, kind: active.kind, frameRaw)
+        }
+    }
+
+    /// The browser bundle id to arrange for a layout URL window (NIC-142): Chrome for a
+    /// profiled URL, else the default browser. nil when the ref is unknown or no default
+    /// browser resolver is wired.
+    private func urlBrowserBundleID(forURLRef ref: String) -> String? {
+        let references = try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace?.stateRoot
+        )
+        guard let entry = references?.urls[ref] else { return nil }
+        return entry.profile != nil ? UserChromeProfileReferences.chromeBundleID : defaultBrowserBundleID?()
     }
 
     /// Exits layout mode: hides the session's app windows (permission-free, like
@@ -370,12 +468,23 @@ public final class BridgeSession: @unchecked Sendable {
             _ = try? await windows.hideApplications(bundleIDs: [bundleID])
         }
 
-        // Surface the pressed target directly (authorized once at open; no re-prompt).
+        // Surface the pressed target directly (authorized once at open; no re-prompt),
+        // then re-arrange it into the hotswap frame — the user may have moved it, and a
+        // freshly surfaced window lands wherever the app put it, so force it back to the
+        // slot on every swap (NIC-142).
+        let frame = toggle.frame.flatMap(WindowFrame.init(rawValue:))
         switch target.kind {
         case "url":
             _ = try? await url?.open(urlID: target.ref)
+            // A URL "window" is its browser: Chrome for a profiled URL, else the default.
+            if let frame, let bundleID = urlBrowserBundleID(forURLRef: target.ref) {
+                _ = try? await window?.arrange(bundleID: bundleID, frame: frame, display: .primary)
+            }
         default:
             _ = try? await app?.open(appID: target.ref)
+            if let frame, let bundleID = target.bundleID {
+                _ = try? await window?.arrange(bundleID: bundleID, frame: frame, display: .primary)
+            }
         }
 
         let updated = session.withActiveToggle(input.ref)
@@ -656,7 +765,8 @@ public final class BridgeSession: @unchecked Sendable {
             guard let first = qt.targets.first else { return nil }
             return LayoutSessionToggle(
                 activeRef: first.ref,
-                targets: qt.targets.map { resolve(ref: $0.ref, kind: $0.kind) }
+                targets: qt.targets.map { resolve(ref: $0.ref, kind: $0.kind) },
+                frame: qt.frame.rawValue
             )
         }
         return LayoutSession(modeID: modeID, windows: windows, quickToggle: toggle)

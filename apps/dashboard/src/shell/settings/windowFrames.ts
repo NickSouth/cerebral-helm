@@ -21,11 +21,12 @@ export const FRAME_RECTS: Readonly<Record<LayoutFrame, FrameRect>> = {
   "bottom-half": { x: 0, y: 0.5, w: 1, h: 0.5 },
   "left-two-thirds": { x: 0, y: 0, w: 2 / 3, h: 1 },
   "right-third": { x: 2 / 3, y: 0, w: 1 / 3, h: 1 },
+  "left-third": { x: 0, y: 0, w: 1 / 3, h: 1 },
+  "right-two-thirds": { x: 1 / 3, y: 0, w: 2 / 3, h: 1 },
   centered: { x: 0.125, y: 0.125, w: 0.75, h: 0.75 }
 };
 
-/** Declaration order must match the backend `WindowFrame` enum so ties break the same
- *  way (`WindowFrameGeometry.snap` breaks ties by enum order). */
+/** Declaration order (ties break toward the earlier frame). */
 const FRAME_ORDER: readonly LayoutFrame[] = [
   "full",
   "left-half",
@@ -34,32 +35,35 @@ const FRAME_ORDER: readonly LayoutFrame[] = [
   "bottom-half",
   "left-two-thirds",
   "right-third",
+  "left-third",
+  "right-two-thirds",
   "centered"
 ];
 
-function intersectionOverUnion(a: FrameRect, b: FrameRect): number {
-  const ix = Math.max(a.x, b.x);
-  const iy = Math.max(a.y, b.y);
-  const iMaxX = Math.min(a.x + a.w, b.x + b.w);
-  const iMaxY = Math.min(a.y + a.h, b.y + b.h);
-  const iw = iMaxX - ix;
-  const ih = iMaxY - iy;
-  if (iw <= 0 || ih <= 0) {
-    return 0;
-  }
-  const intersection = iw * ih;
-  const union = a.w * a.h + b.w * b.h - intersection;
-  return union > 0 ? intersection / union : 0;
+/** Sum of absolute differences of the four edges (left, top, right, bottom). */
+function edgeDistance(a: FrameRect, b: FrameRect): number {
+  return (
+    Math.abs(a.x - b.x) +
+    Math.abs(a.y - b.y) +
+    Math.abs(a.x + a.w - (b.x + b.w)) +
+    Math.abs(a.y + a.h - (b.y + b.h))
+  );
 }
 
-/** The named frame a free rect most closely occupies, by intersection-over-union —
- *  the frontend mirror of `WindowFrameGeometry.snap` (same tie-break order). */
+/**
+ * The named frame a dragged/resized rect snaps to, by nearest edges (NIC-142). Edge
+ * distance — not intersection-over-union — so a thin frame like right-third is just as
+ * reachable as a big one: IoU is dominated by area, which makes a narrow target
+ * (little overlap) nearly impossible to hit, whereas matching the four edges treats
+ * every frame equally. The canvas only needs to get *close* to a frame's edges for it
+ * to win.
+ */
 export function snapToFrame(rect: FrameRect): LayoutFrame {
   let best: LayoutFrame = "full";
-  let bestScore = -1;
+  let bestScore = Infinity;
   for (const frame of FRAME_ORDER) {
-    const score = intersectionOverUnion(rect, FRAME_RECTS[frame]);
-    if (score > bestScore) {
+    const score = edgeDistance(rect, FRAME_RECTS[frame]);
+    if (score < bestScore) {
       bestScore = score;
       best = frame;
     }

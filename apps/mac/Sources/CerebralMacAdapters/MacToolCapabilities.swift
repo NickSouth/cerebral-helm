@@ -46,7 +46,8 @@ public enum MacToolCapabilities {
         browserTabSurface: any BrowserTabSurface = DefaultBrowserTabSurface(),
         urlOpenRegistry: SessionURLOpenRegistry = SessionURLOpenRegistry(),
         currentModeProvider: @escaping @Sendable () -> String? = { nil },
-        layoutDisplay: @escaping @Sendable () -> WindowDisplay? = { nil }
+        layoutDisplay: @escaping @Sendable () -> WindowDisplay? = { nil },
+        reservedStrips: @escaping @Sendable () -> [ReservedStrip] = { [] }
     ) -> Composition {
         let systemStatus = MacSystemStatusCapability()
         let secretStore = KeychainSecretCapability()
@@ -73,7 +74,7 @@ public enum MacToolCapabilities {
                 systemStatus: systemStatus,
                 networkSpeedTest: MacNetworkSpeedTestCapability(),
                 workspaceWindows: MacWorkspaceWindowsCapability(),
-                window: AXWindowCapability(layoutDisplay: layoutDisplay),
+                window: AXWindowCapability(layoutDisplay: layoutDisplay, reservedStrips: reservedStrips),
                 appDiscovery: MacAppDiscoveryCapability(),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,

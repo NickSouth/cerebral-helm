@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import CerebralBridge
 import CerebralCore
 import CerebralMacAdapters
@@ -23,6 +24,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// arrange (NIC-142). Populated with the settings reader + live topology during
     /// init/observation; read at arrange time.
     private let layoutDisplayContext = LayoutDisplayContext()
+    /// The reserved bottom-bar strips (NIC-142), pushed by the coordinator and read by
+    /// the layout arrange so windows land above the bar. Thread-safe: the coordinator
+    /// writes on main, the arrange reads off-main.
+    private let reservedStripsBox = ReservedStripsBox()
     /// Streams live system metrics to the dashboard (NIC-81b). Shares the status
     /// capability actor with the `system.status.read` tool.
     private let statusPublisher: SystemStatusPublisher
@@ -92,11 +97,13 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // context is populated with the settings reader + live topology below/after
         // init, and read at arrange time (a much later async call).
         let layoutDisplayContext = self.layoutDisplayContext
+        let reservedStripsBox = self.reservedStripsBox
         let composition = MacToolCapabilities.make(
             referenceStore: referenceStore,
             urlOpenRegistry: urlOpenRegistry,
             currentModeProvider: { modeStateStore.flatMap { try? $0.loadActiveModeID() } },
-            layoutDisplay: { layoutDisplayContext.resolve() }
+            layoutDisplay: { layoutDisplayContext.resolve() },
+            reservedStrips: { reservedStripsBox.current() }
         )
         let capabilities = composition.capabilities
         toolCapabilities = capabilities
@@ -170,6 +177,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
             url: composition.capabilities.url,
             // Reads visible windows' frames for live layout capture (NIC-142).
             window: composition.capabilities.window,
+            // Arranges a layout URL window that opens in the default browser (a
+            // profiled URL always targets Chrome) — resolved live so it tracks the
+            // user's default-browser choice (NIC-142).
+            defaultBrowserBundleID: { Self.resolveDefaultBrowserBundleID() },
             emitEventJSON: { relay.emit($0) }
         )
         // Live app-install detection (NIC-150): the same re-mint + reference-reload
@@ -268,6 +279,31 @@ final class AppBridgeRuntime: @unchecked Sendable {
         guard let settingsStore, let settings = try? settingsStore.load() else { return nil }
         return settings.layoutDisplayID
     }
+
+    /// Push the current reserved bottom-bar strips (NIC-142) so the layout arrange keeps
+    /// windows above the bar. Wired by `AppDelegate` to the coordinator's strip changes.
+    func setReservedStrips(_ strips: [ReservedStrip]) {
+        reservedStripsBox.set(strips)
+    }
+
+    /// The bundle id of the user's default web browser (NIC-142), so a layout URL that
+    /// opens there can be arranged like an app. nil when it can't be resolved.
+    private static func resolveDefaultBrowserBundleID() -> String? {
+        guard
+            let probe = URL(string: "https://example.com"),
+            let appURL = NSWorkspace.shared.urlForApplication(toOpen: probe)
+        else { return nil }
+        return Bundle(url: appURL)?.bundleIdentifier
+    }
+}
+
+/// Thread-safe holder for the reserved bottom-bar strips (NIC-142): the coordinator
+/// writes on main, the layout arrange reads off-main.
+private final class ReservedStripsBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var strips: [ReservedStrip] = []
+    func set(_ strips: [ReservedStrip]) { lock.lock(); self.strips = strips; lock.unlock() }
+    func current() -> [ReservedStrip] { lock.lock(); defer { lock.unlock() }; return strips }
 }
 
 /// Thread-safe holder that resolves the "Layout display" setting to a `WindowDisplay`

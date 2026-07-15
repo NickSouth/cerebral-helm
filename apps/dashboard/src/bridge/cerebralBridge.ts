@@ -288,7 +288,7 @@ export interface AddLayoutTargetResult {
   readonly accepted: boolean;
 }
 
-/** The 8 named window frames (mirrors `window-arrange-input` / the layout schema). */
+/** The named window frames (mirrors `window-arrange-input` / the layout schema). */
 export type LayoutFrame =
   | "full"
   | "left-half"
@@ -297,6 +297,8 @@ export type LayoutFrame =
   | "bottom-half"
   | "left-two-thirds"
   | "right-third"
+  | "left-third"
+  | "right-two-thirds"
   | "centered";
 export interface LayoutWindowSpec {
   readonly ref: string;

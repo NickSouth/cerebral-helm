@@ -826,9 +826,11 @@ export enum Frame {
     Centered = "centered",
     Full = "full",
     LeftHalf = "left-half",
+    LeftThird = "left-third",
     LeftTwoThirds = "left-two-thirds",
     RightHalf = "right-half",
     RightThird = "right-third",
+    RightTwoThirds = "right-two-thirds",
     TopHalf = "top-half",
 }
 

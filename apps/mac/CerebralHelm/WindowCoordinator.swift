@@ -82,6 +82,10 @@ final class WindowCoordinator: @unchecked Sendable {
     /// Reads the persisted "Layout display" id (NIC-142); wired by `AppDelegate`. nil /
     /// the sentinel / unknown / disconnected all degrade to the main display.
     var layoutDisplayIDProvider: (() -> String?)?
+
+    /// Notified whenever the reserved bottom-bar strips change (NIC-142); wired by
+    /// `AppDelegate` to feed the layout arrange so windows land above the bar.
+    var onReservedStripsChanged: (([ReservedStrip]) -> Void)?
     /// The last non-null `layout.session.changed` JSON, replayed to the (possibly
     /// changed) layout-display surface when the setting or topology changes so the
     /// hotswap pill follows the chosen monitor (NIC-142). nil once the layout closes.
@@ -257,6 +261,7 @@ final class WindowCoordinator: @unchecked Sendable {
             // Its bar is gone with the display — drop the reserved strip so the
             // window-snap observer stops honoring a bar that no longer exists (NIC-144).
             reservedStrips[ObjectIdentifier(window)] = nil
+            onReservedStripsChanged?(Array(reservedStrips.values))
             // Every reconcile path hops to main first (deliverBridgeEvent /
             // handleDisplayTopologyChange / script-message handlers), but the
             // compiler cannot see that through the closure chain — assert it.
@@ -701,6 +706,7 @@ final class WindowCoordinator: @unchecked Sendable {
         reservedStrips[ObjectIdentifier(source.window)] = ReservedStrip.from(
             barFrame: barFrame, screenFrame: screen.frame
         )
+        onReservedStripsChanged?(Array(reservedStrips.values))
     }
 
     /// NIC-138: choose the durable-knowledge root folder through a native directory
