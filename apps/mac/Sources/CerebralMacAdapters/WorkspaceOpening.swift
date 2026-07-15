@@ -24,6 +24,16 @@ public protocol WorkspaceOpening: Sendable {
     func openApplication(at url: URL, arguments: [String]) async throws
     /// Opens `url` with its default handler.
     func openURL(_ url: URL) async throws
+    /// The bundle id of the default web browser (the app that handles `https`), or
+    /// `nil` when it can't be resolved. Lets the URL adapter route a plain URL into a
+    /// per-mode Chrome window only when Chrome is actually the default (NIC-143 follow-up).
+    func defaultBrowserBundleID() -> String?
+}
+
+public extension WorkspaceOpening {
+    /// Default: unknown default browser — a fake without a browser degrades to the plain
+    /// open path.
+    func defaultBrowserBundleID() -> String? { nil }
 }
 
 /// The live `NSWorkspace`-backed implementation the app composes.
@@ -36,6 +46,12 @@ public struct SystemWorkspace: WorkspaceOpening {
 
     public func isApplicationRunning(bundleIdentifier bundleID: String) -> Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
+    }
+
+    public func defaultBrowserBundleID() -> String? {
+        guard let https = URL(string: "https://example.com"),
+              let appURL = NSWorkspace.shared.urlForApplication(toOpen: https) else { return nil }
+        return Bundle(url: appURL)?.bundleIdentifier
     }
 
     public func openApplication(at url: URL) async throws {

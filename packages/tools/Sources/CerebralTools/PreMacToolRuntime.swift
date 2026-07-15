@@ -25,6 +25,7 @@ public enum PreMacToolRuntime {
         modeStateStore: any ModeStateStore = InMemoryModeStateStore(),
         modeSessionLog: any ModeSessionLog = InMemoryModeSessionLog(),
         modeWorkspaceStore: any ModeWorkspaceStore = InMemoryModeWorkspaceStore(),
+        modeWindowStateStore: any ModeWindowStateStore = InMemoryModeWindowStateStore(),
         settingsStore: (any SettingsStore)? = nil,
         appTargets: [String: String] = [:]
     ) throws -> ToolRegistry {
@@ -48,7 +49,9 @@ public enum PreMacToolRuntime {
                 settings: settingsStore,
                 workspaceStore: modeWorkspaceStore,
                 windows: capabilities.workspaceWindows,
-                windowFrames: capabilities.window
+                windowFrames: capabilities.window,
+                appWindows: capabilities.appWindows,
+                windowStates: modeWindowStateStore
             ),
         ]
 

@@ -23,6 +23,7 @@ private final class FakeWorkspace: WorkspaceOpening, @unchecked Sendable {
     let installed: [String: URL]
     let running: Set<String>
     let failsToOpen: Bool
+    let defaultBrowser: String?
 
     /// An app launched with arguments (the Chrome-with-profile path, NIC-151) — used
     /// for both app references and profiled URLs (the URL is passed as an argument).
@@ -36,15 +37,18 @@ private final class FakeWorkspace: WorkspaceOpening, @unchecked Sendable {
     private var openedURLs: [URL] = []
     private var appLaunches: [AppLaunch] = []
 
-    init(installed: [String: URL] = [:], running: Set<String> = [], failsToOpen: Bool = false) {
+    init(installed: [String: URL] = [:], running: Set<String> = [], failsToOpen: Bool = false, defaultBrowser: String? = nil) {
         self.installed = installed
         self.running = running
         self.failsToOpen = failsToOpen
+        self.defaultBrowser = defaultBrowser
     }
 
     func installedApplicationURL(forBundleIdentifier bundleID: String) -> URL? {
         installed[bundleID]
     }
+
+    func defaultBrowserBundleID() -> String? { defaultBrowser }
 
     func isApplicationRunning(bundleIdentifier bundleID: String) -> Bool {
         running.contains(bundleID)
@@ -377,6 +381,42 @@ func profileURLBypassesGlobalSurfacer() async throws {
     #expect(fake.launchedApps == [
         FakeWorkspace.AppLaunch(appURL: chromeURL, arguments: ["--profile-directory=Profile 1", "https://mail.google.com"])
     ])
+}
+
+@Test("a plain URL opens in the active mode's own Chrome window when Chrome is the default (NIC-143 follow-up)")
+func plainURLOpensPerModeChromeWindow() async throws {
+    let fake = FakeWorkspace(installed: ["com.google.Chrome": chromeURL], defaultBrowser: "com.google.Chrome")
+    let scripting = FakeChromeScripting()
+    let launcher = ChromeProfileLauncher(
+        workspace: fake, scripting: scripting, settle: { scripting.setWindows([7], front: 7) }
+    )
+    let capability = NSWorkspaceURLCapability(
+        urlsProvider: { ["yt": ReferenceEntry(id: "yt", label: "YouTube", target: "https://youtube.com")] },
+        workspace: fake, currentModeProvider: { "entertainment" }, chromeLauncher: launcher
+    )
+    let result = try await capability.open(urlID: "yt")
+
+    #expect(result.opened)
+    // Routed through the launcher into a new, mode-scoped Chrome window — never the plain
+    // default-handler open.
+    #expect(fake.launchedApps == [FakeWorkspace.AppLaunch(appURL: chromeURL, arguments: ["--new-window", "https://youtube.com"])])
+    #expect(fake.urlOpens.isEmpty)
+}
+
+@Test("a plain URL uses the default handler when Chrome is NOT the default browser")
+func plainURLUsesDefaultHandlerWhenNotChrome() async throws {
+    let fake = FakeWorkspace(installed: ["com.google.Chrome": chromeURL], defaultBrowser: "com.apple.Safari")
+    let scripting = FakeChromeScripting()
+    let launcher = ChromeProfileLauncher(workspace: fake, scripting: scripting, settle: {})
+    let capability = NSWorkspaceURLCapability(
+        urlsProvider: { ["yt": ReferenceEntry(id: "yt", label: "YouTube", target: "https://youtube.com")] },
+        workspace: fake, currentModeProvider: { "entertainment" }, chromeLauncher: launcher
+    )
+    let result = try await capability.open(urlID: "yt")
+
+    #expect(result.opened)
+    #expect(fake.launchedApps.isEmpty)  // the Chrome launcher was not used
+    #expect(fake.urlOpens == [URL(string: "https://youtube.com")!])  // opened with the real default handler
 }
 
 @Test("a profile-bearing URL fails honestly when Chrome is not installed")

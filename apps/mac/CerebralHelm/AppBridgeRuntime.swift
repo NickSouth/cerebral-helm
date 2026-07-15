@@ -179,7 +179,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
             window: composition.capabilities.window,
             // The window navigator's per-window enumeration + actions (NIC-143):
             // list/minimize/surface/close through Accessibility.
-            appWindows: composition.appWindows,
+            appWindows: composition.capabilities.appWindows,
             // Arranges a layout URL window that opens in the default browser (a
             // profiled URL always targets Chrome) — resolved live so it tracks the
             // user's default-browser choice (NIC-142).

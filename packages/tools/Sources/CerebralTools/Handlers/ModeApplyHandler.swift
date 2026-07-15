@@ -27,6 +27,18 @@ public struct ModeApplyHandler: ToolHandler {
     /// untrusted or unavailable, snapshots store no frames and restore degrades
     /// to reactivation-only — surfaced in the action message, never a failure.
     private let windowFrames: any WindowCapability
+    /// Per-window enumeration + minimize/surface for the "each mode is its own laptop"
+    /// state layer (NIC-143 follow-up). Best-effort: an untrusted/absent capability
+    /// simply captures and applies nothing.
+    private let appWindows: any AppWindowsCapability
+    /// Session-only, per-mode remembered window states (open vs minimized). Never
+    /// persisted; layered on top of the durable app-level ``ModeWorkspaceStore``.
+    private let windowStates: any ModeWindowStateStore
+    /// How long to hold the un-minimize (`surface`) of an entered mode's windows so the
+    /// mode-swap wave plays over the cleared dashboard first, then windows return (owner
+    /// sequencing). Matches the web wave duration (600ms); the minimize half stays
+    /// synchronous with the clear. Injectable so tests don't wait.
+    private let surfaceDelay: Duration
     private let configVersion: String
     /// Recorded as the session's activation source (FR-MOD-06). The handler does
     /// not see the command envelope, so the composition supplies the surface
@@ -41,6 +53,9 @@ public struct ModeApplyHandler: ToolHandler {
         workspaceStore: any ModeWorkspaceStore = InMemoryModeWorkspaceStore(),
         windows: any WorkspaceWindowsCapability = MockWorkspaceWindowsCapability(matrix: .none),
         windowFrames: any WindowCapability = MockWindowCapability(matrix: .none),
+        appWindows: any AppWindowsCapability = MockAppWindowsCapability(groups: []),
+        windowStates: any ModeWindowStateStore = InMemoryModeWindowStateStore(),
+        surfaceDelay: Duration = .milliseconds(600),
         configVersion: String = ConfigValidator.schemaVersion,
         sessionSource: String = "command"
     ) {
@@ -51,6 +66,9 @@ public struct ModeApplyHandler: ToolHandler {
         self.workspaceStore = workspaceStore
         self.windows = windows
         self.windowFrames = windowFrames
+        self.appWindows = appWindows
+        self.windowStates = windowStates
+        self.surfaceDelay = surfaceDelay
         self.configVersion = configVersion
         self.sessionSource = sessionSource
     }
@@ -101,6 +119,14 @@ public struct ModeApplyHandler: ToolHandler {
 
         var actions: [Action] = []
 
+        // "Each mode is its own laptop" (NIC-143 follow-up): remember the outgoing mode's
+        // per-window open/minimized state before anything hides, so it can be re-applied
+        // on return. Best-effort and silent — a refinement of the app-level store/restore
+        // below, never its own action or a failure.
+        if let previous = previousModeID {
+            await captureWindowStates(modeID: previous)
+        }
+
         if let previous = previousModeID {
             do {
                 let visible = try await windows.visibleApplicationBundleIDs()
@@ -143,7 +169,94 @@ public struct ModeApplyHandler: ToolHandler {
             ))
         }
 
+        // Re-apply the incoming mode's remembered per-window state, after its apps are
+        // un-hidden — minimize the windows that were minimized in this mode, surface the
+        // ones that were open. Best-effort and silent.
+        await applyWindowStates(modeID: modeID)
+
         return actions
+    }
+
+    // MARK: - Per-window state ("each mode is its own laptop")
+
+    /// One reconcile step: bring a window to its remembered state.
+    public enum WindowReconcile: Equatable, Sendable {
+        case minimize(String)
+        case surface(String)
+    }
+
+    /// The minimal set of minimize/surface actions to bring the desktop to the state the
+    /// entered mode should show. Iterates the *live* windows: a window that **belongs** to
+    /// the mode (present in its snapshot, matched by stable id or bundle + non-empty title
+    /// after a relaunch) takes its remembered minimized state; a window that does **not**
+    /// belong is minimized — it was never opened or surfaced in this mode, so "each mode is
+    /// its own laptop" keeps it off this mode's desktop. A window already in the wanted state
+    /// yields no action; a closed/quit window is simply absent (not reopened, out of scope).
+    /// Pure and exposed for tests.
+    public static func reconcile(remembered: [ModeWindowState], current: [ModeWindowState]) -> [WindowReconcile] {
+        let rememberedByID = Dictionary(remembered.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
+        var actions: [WindowReconcile] = []
+        for live in current {
+            let belongs = rememberedByID[live.windowID]
+                ?? remembered.first { $0.bundleID == live.bundleID && !$0.title.isEmpty && $0.title == live.title }
+            // Belongs → its remembered state; doesn't belong → minimized (not this mode's window).
+            let wantMinimized = belongs?.minimized ?? true
+            guard live.minimized != wantMinimized else { continue }
+            actions.append(wantMinimized ? .minimize(live.windowID) : .surface(live.windowID))
+        }
+        return actions
+    }
+
+    /// Snapshot every currently-open window's state for a mode (before its apps hide).
+    private func captureWindowStates(modeID: String) async {
+        guard let states = try? await listWindowStates() else { return }
+        windowStates.save(modeID: modeID, windows: states)
+    }
+
+    /// Re-apply a mode's remembered window states against the live windows, sequenced
+    /// around the mode-swap animation (owner sequencing): minimize now — part of clearing
+    /// the outgoing layout before the wave — and hold the un-minimize (`surface`) until the
+    /// wave has played over the cleared dashboard, so windows return after it rather than
+    /// during it. The deferred surface re-checks the active mode, so a rapid re-switch
+    /// within the delay never surfaces a stale mode's windows.
+    private func applyWindowStates(modeID: String) async {
+        // No snapshot (a never-visited mode) still reconciles: with nothing remembered,
+        // every open window is "not this mode's" and gets minimized — a clean desktop.
+        let remembered = windowStates.load(modeID: modeID) ?? []
+        guard let current = try? await listWindowStates() else { return }
+        let actions = Self.reconcile(remembered: remembered, current: current)
+
+        var surfaces: [String] = []
+        for action in actions {
+            switch action {
+            case let .minimize(id): _ = try? await appWindows.minimize(windowID: id)
+            case let .surface(id): surfaces.append(id)
+            }
+        }
+        guard !surfaces.isEmpty else { return }
+
+        // Capture only Sendable values (never `self`) for the detached, fire-and-forget
+        // restore — the mode switch's response returns immediately; windows come back after.
+        let capability = appWindows
+        let stateStore = self.stateStore
+        let delay = surfaceDelay
+        let target = modeID
+        Task {
+            try? await Task.sleep(for: delay)
+            guard (try? stateStore.loadActiveModeID()) == target else { return }  // switched again — stale
+            for id in surfaces {
+                _ = try? await capability.surface(windowID: id)
+            }
+        }
+    }
+
+    /// Flatten the per-app window inventory into per-window states.
+    private func listWindowStates() async throws -> [ModeWindowState] {
+        try await appWindows.listWindows().flatMap { group in
+            group.windows.map {
+                ModeWindowState(windowID: $0.id, bundleID: group.bundleID, title: $0.title, minimized: $0.minimized)
+            }
+        }
     }
 
     /// Reads each visible application's main-window frame for the snapshot.

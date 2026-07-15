@@ -28,10 +28,6 @@ public enum MacToolCapabilities {
         /// (NIC-151). Like `favicon`, `BridgeSession` drives it directly off
         /// `listChromeProfiles` — not a gated tool.
         public let chromeProfiles: MacChromeProfileDiscoveryCapability
-        /// The window navigator's per-window enumeration + actions (NIC-143). Carried
-        /// here like `favicon`/`chromeProfiles` because no tool handler consumes it —
-        /// `BridgeSession` drives it directly off listWindows/minimize/surface/close.
-        public let appWindows: MacAppWindowsCapability
     }
 
     /// `referenceStore` is the shared, reloadable catalog (NIC-146): the app/url
@@ -64,7 +60,7 @@ public enum MacToolCapabilities {
             capabilities: ToolCapabilities(
                 app: NSWorkspaceAppCapability(
                     appsProvider: { referenceStore.current.apps }, workspace: workspace,
-                    chromeLauncher: chromeLauncher
+                    chromeLauncher: chromeLauncher, currentModeProvider: currentModeProvider
                 ),
                 url: NSWorkspaceURLCapability(
                     urlsProvider: { referenceStore.current.urls },
@@ -81,6 +77,7 @@ public enum MacToolCapabilities {
                 window: AXWindowCapability(layoutDisplay: layoutDisplay, reservedStrips: reservedStrips),
                 appDiscovery: MacAppDiscoveryCapability(),
                 applicationLifecycle: MacApplicationLifecycleCapability(),
+                appWindows: MacAppWindowsCapability(),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,
                     CapabilityMatrix.Capability.urlOpen,
@@ -96,8 +93,7 @@ public enum MacToolCapabilities {
             systemStatus: systemStatus,
             secretStore: secretStore,
             favicon: favicon,
-            chromeProfiles: chromeProfiles,
-            appWindows: MacAppWindowsCapability()
+            chromeProfiles: chromeProfiles
         )
     }
 }
