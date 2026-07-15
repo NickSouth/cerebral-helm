@@ -736,9 +736,16 @@ export interface CerebralHelmModeConfig {
     greeting?:        Greeting;
     id:               string;
     label:            string;
-    layoutId?:        string;
-    newsProfile?:     NewsProfile;
-    projectHints?:    string[];
+    /**
+     * The mode's authored window layout (NIC-142). `windows` are static app/URL placements; the
+     * optional `quickToggle` is the single dynamic slot whose one visible window swaps between
+     * N targets from the bottom bar. Frames reuse the window.arrange named vocabulary — never
+     * arbitrary coordinates. The whole layout opens on the chosen `display`.
+     */
+    layout?:       Layout;
+    layoutId?:     string;
+    newsProfile?:  NewsProfile;
+    projectHints?: string[];
     /**
      * Exactly 8 ordered quick-action slots forming the binding 4+4 ambient grid (slots 0-3
      * render as compact bars, 4-7 as boxes; the shared shell owns that geometry). Each slot is
@@ -762,6 +769,55 @@ export interface Greeting {
     directive?: string;
     fallback:   string;
     persona:    string;
+}
+
+/**
+ * The mode's authored window layout (NIC-142). `windows` are static app/URL placements; the
+ * optional `quickToggle` is the single dynamic slot whose one visible window swaps between
+ * N targets from the bottom bar. Frames reuse the window.arrange named vocabulary — never
+ * arbitrary coordinates. The whole layout opens on the chosen `display`.
+ */
+export interface Layout {
+    display:      Display;
+    quickToggle?: QuickToggle;
+    windows:      Window[];
+}
+
+export enum Display {
+    Primary = "primary",
+    Secondary = "secondary",
+}
+
+export interface QuickToggle {
+    frame:   Frame;
+    targets: Target[];
+}
+
+export enum Frame {
+    BottomHalf = "bottom-half",
+    Centered = "centered",
+    Full = "full",
+    LeftHalf = "left-half",
+    LeftTwoThirds = "left-two-thirds",
+    RightHalf = "right-half",
+    RightThird = "right-third",
+    TopHalf = "top-half",
+}
+
+export interface Target {
+    kind: Kind;
+    ref:  string;
+}
+
+export enum Kind {
+    App = "app",
+    URL = "url",
+}
+
+export interface Window {
+    frame: Frame;
+    kind:  Kind;
+    ref:   string;
 }
 
 export enum NewsProfile {
@@ -1302,17 +1358,6 @@ export interface CerebralHelmWindowArrangeInput {
 export interface Arrangement {
     appId: string;
     frame: Frame;
-}
-
-export enum Frame {
-    BottomHalf = "bottom-half",
-    Centered = "centered",
-    Full = "full",
-    LeftHalf = "left-half",
-    LeftTwoThirds = "left-two-thirds",
-    RightHalf = "right-half",
-    RightThird = "right-third",
-    TopHalf = "top-half",
 }
 
 /**

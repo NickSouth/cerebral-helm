@@ -65,6 +65,93 @@ func greetingMissingFallbackRejected() throws {
     #expect(errors.contains { $0.field == "/greeting/fallback" })
 }
 
+// MARK: - Authored layout (NIC-142)
+
+private func developerModeWithLayout(_ layoutJSON: String) -> Data {
+    """
+    {
+      "id": "developer",
+      "label": "Developer",
+      "theme": { "accentPrimary": "developer.primary", "accentSecondary": "developer.secondary" },
+      "quickApps": ["vscode"],
+      "quickActions": ["open-developer-layout","open-workspace","run-tests","search-notes","git-status","open-terminal","review-pull-requests","capture-note"],
+      "widgets": { "left": "project-git-status", "right": "repositories" },
+      "layout": \(layoutJSON)
+    }
+    """.data(using: .utf8)!
+}
+
+@Test("the shipped developer mode carries an authored layout with a quick-toggle slot")
+func shippedDeveloperLayoutPresent() {
+    let configDirectory = repositoryRoot().appendingPathComponent("config", isDirectory: true)
+    guard case let .valid(validated) = ConfigValidator.validate(configDirectory: configDirectory),
+          let developer = validated.modes.first(where: { $0.id == "developer" })
+    else {
+        Issue.record("developer mode did not validate")
+        return
+    }
+    #expect(developer.layout != nil)
+    #expect(developer.layout?.windows.isEmpty == false)
+    #expect(developer.layout?.quickToggle?.targets.isEmpty == false)
+}
+
+@Test("a well-formed layout with a quick-toggle slot validates")
+func validLayoutAccepted() {
+    let data = developerModeWithLayout(#"""
+    { "display": "primary",
+      "windows": [ { "ref": "claude-desktop", "kind": "app", "frame": "right-third" } ],
+      "quickToggle": { "frame": "left-two-thirds", "targets": [ { "ref": "vscode", "kind": "app" }, { "ref": "github", "kind": "url" } ] } }
+    """#)
+    let errors = ConfigValidator.modeDocumentErrors(file: "modes/developer.json", data: data)
+    #expect(errors.isEmpty, "unexpected: \(errors.map { "\($0.field): \($0.message)" })")
+}
+
+@Test("a layout window with a frame outside the named vocabulary is rejected")
+func layoutInvalidFrameRejected() throws {
+    let data = try fixtureData("invalid/config/modes/layout-invalid-frame.json")
+    let errors = ConfigValidator.modeDocumentErrors(file: "modes/layout-invalid-frame.json", data: data)
+    #expect(errors.contains { $0.field.contains("frame") || $0.message.lowercased().contains("frame") })
+}
+
+@Test("a layout with no windows is rejected")
+func layoutEmptyWindowsRejected() {
+    let data = developerModeWithLayout(#"{ "display": "primary", "windows": [] }"#)
+    let errors = ConfigValidator.modeDocumentErrors(file: "modes/developer.json", data: data)
+    #expect(errors.contains { $0.field == "/layout/windows" })
+}
+
+@Test("a layout with more than eight windows is rejected")
+func layoutTooManyWindowsRejected() {
+    let windows = (0..<9)
+        .map { #"{ "ref": "app-\#($0)", "kind": "app", "frame": "full" }"# }
+        .joined(separator: ",")
+    let data = developerModeWithLayout(#"{ "display": "primary", "windows": [\#(windows)] }"#)
+    let errors = ConfigValidator.modeDocumentErrors(file: "modes/developer.json", data: data)
+    #expect(errors.contains { $0.field == "/layout/windows" && $0.message.contains("at most 8") })
+}
+
+@Test("a quick-toggle slot with no targets is rejected")
+func layoutEmptyTargetsRejected() {
+    let data = developerModeWithLayout(#"""
+    { "display": "primary",
+      "windows": [ { "ref": "vscode", "kind": "app", "frame": "left-two-thirds" } ],
+      "quickToggle": { "frame": "left-two-thirds", "targets": [] } }
+    """#)
+    let errors = ConfigValidator.modeDocumentErrors(file: "modes/developer.json", data: data)
+    #expect(errors.contains { $0.field == "/layout/quickToggle/targets" })
+}
+
+@Test("a quick-toggle slot with duplicate targets is rejected")
+func layoutDuplicateTargetsRejected() {
+    let data = developerModeWithLayout(#"""
+    { "display": "primary",
+      "windows": [ { "ref": "vscode", "kind": "app", "frame": "left-two-thirds" } ],
+      "quickToggle": { "frame": "left-two-thirds", "targets": [ { "ref": "github", "kind": "url" }, { "ref": "github", "kind": "url" } ] } }
+    """#)
+    let errors = ConfigValidator.modeDocumentErrors(file: "modes/developer.json", data: data)
+    #expect(errors.contains { $0.field == "/layout/quickToggle/targets" && $0.message.contains("duplicate") })
+}
+
 // MARK: - Canonical error shape (matches valid/config/validation-error/mode-label-type.json)
 
 @Test("a non-string mode label produces the /label string error shape")

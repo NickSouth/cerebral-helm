@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { postShellControl } from "./shellControl";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useSettings } from "../state/SettingsProvider";
 import { useAppearance } from "../state/AppearanceProvider";
@@ -75,10 +76,13 @@ const HEIMLICH_STATE_DOT: Readonly<Record<string, string>> = {
 };
 
 /**
- * The centered mode control in the bottom bar (NIC-77): shows the active mode and opens an
- * upward menu of all four modes. Selecting a mode switches it and — like the right-rail switcher —
- * emits the mode wave, here originating from the bottom-middle control instead of the top-right.
- * Mode switching is paused while the dashboard is read-only, matching the rail switcher.
+ * The centered mode control in the bottom bar (NIC-77): shows the active mode and opens a
+ * menu of all four modes. In the native shell the menu is a transparent, top-most window
+ * that layers ABOVE open apps (NIC-144) — the dashboard is a strict never-lift backdrop,
+ * so an in-backdrop menu could be covered. Clicking the trigger posts `openModeMenu` with
+ * the control's anchor rect; in a plain browser (no native channel) it falls back to the
+ * in-webview upward menu, which also emits the bottom-origin mode wave. Mode switching is
+ * paused while the dashboard is read-only, matching the rail switcher.
  */
 function BottomBarModeMenu() {
   const { mode, modes } = useDashboardState();
@@ -124,6 +128,23 @@ function BottomBarModeMenu() {
     void bridge.applyMode({ modeId });
   }
 
+  function toggleMenu(): void {
+    if (readOnly) {
+      return;
+    }
+    // Prefer the native top-most dropdown so the menu layers above open windows; pass the
+    // trigger's viewport rect so the shell drops it right above the control. Only when no
+    // native channel exists (a plain browser) do we fall back to the in-webview menu.
+    const rect = triggerRef.current?.getBoundingClientRect();
+    const anchor = rect
+      ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+      : undefined;
+    if (postShellControl("openModeMenu", anchor ? { anchor } : {})) {
+      return;
+    }
+    setOpen((value) => !value);
+  }
+
   return (
     <div className="bottom-bar__mode" ref={containerRef}>
       {open ? (
@@ -161,7 +182,7 @@ function BottomBarModeMenu() {
         title={
           readOnly ? "Mode switching is paused while the dashboard is read-only" : "Switch mode"
         }
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggleMenu}
       >
         {mode}
       </button>
@@ -183,6 +204,35 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
   const { assistantName } = useAppearance();
   const { heimlich, weather } = state;
   const battery = state.regions.systemHealth.battery;
+  const barRef = useRef<HTMLElement>(null);
+
+  // Report the bar's on-screen rect to the native shell (NIC-144): the window-snap
+  // observer needs the bar's live geometry to keep other apps' windows above it. Post
+  // on mount and whenever the bar's box or the viewport changes; `postShellControl`
+  // no-ops in a plain browser, and ResizeObserver is feature-detected for jsdom.
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) {
+      return;
+    }
+    const report = (): void => {
+      const rect = el.getBoundingClientRect();
+      postShellControl("reportBottomBarRect", {
+        rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+      });
+    };
+    report();
+    window.addEventListener("resize", report);
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(report);
+      observer.observe(el);
+    }
+    return () => {
+      window.removeEventListener("resize", report);
+      observer?.disconnect();
+    };
+  }, []);
 
   const weatherLive =
     weather !== undefined && (weather.state === "ready" || weather.state === "stale");
@@ -190,7 +240,7 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
     (battery.state === "ready" || battery.state === "stale") && typeof battery.percent === "number";
 
   return (
-    <footer className="bottom-bar shell-bottombar" aria-label="Status bar">
+    <footer className="bottom-bar shell-bottombar" aria-label="Status bar" ref={barRef}>
       <div className="bottom-bar__group bottom-bar__group--left">
         <span className="bottom-bar__identity">
           <span className="bottom-bar__avatar" aria-hidden="true">

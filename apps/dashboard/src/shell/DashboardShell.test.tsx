@@ -284,6 +284,52 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     expect(bar.getByText("Weather · Unavailable")).toBeInTheDocument();
     expect(bar.getByText("Battery · Unavailable")).toBeInTheDocument();
   });
+
+  it("opens the mode menu as a native top-most dropdown when the channel exists (NIC-144)", () => {
+    const posted: Array<Record<string, unknown>> = [];
+    (window as unknown as { webkit?: unknown }).webkit = {
+      messageHandlers: { shellControl: { postMessage: (m: unknown) => posted.push(m as Record<string, unknown>) } }
+    };
+    try {
+      renderShell();
+      // The trigger's accessible name is the active mode it shows (Executive).
+      fireEvent.click(statusBar().getByRole("button", { name: "Executive" }));
+      // The native shell owns the dropdown (layers above windows) — post the open action
+      // with the trigger's anchor, and do NOT render the in-webview menu.
+      expect(posted).toContainEqual(expect.objectContaining({ action: "openModeMenu" }));
+      expect(screen.queryByRole("menu", { name: "Switch mode" })).toBeNull();
+    } finally {
+      delete (window as unknown as { webkit?: unknown }).webkit;
+    }
+  });
+
+  it("falls back to the in-webview mode menu in a plain browser (no native channel)", () => {
+    renderShell();
+    fireEvent.click(statusBar().getByRole("button", { name: "Executive" }));
+    // No shellControl channel → the upward menu renders in-page as before.
+    expect(screen.getByRole("menu", { name: "Switch mode" })).toBeInTheDocument();
+  });
+
+  it("reports its on-screen rect to the native shell for window-snap awareness (NIC-144)", () => {
+    const posted: Array<Record<string, unknown>> = [];
+    (window as unknown as { webkit?: unknown }).webkit = {
+      messageHandlers: { shellControl: { postMessage: (m: unknown) => posted.push(m as Record<string, unknown>) } }
+    };
+    try {
+      renderShell();
+      const report = posted.find((m) => m.action === "reportBottomBarRect");
+      // The bar posts a rect payload the coordinator converts to a reserved strip.
+      expect(report).toBeDefined();
+      expect(report?.rect).toMatchObject({
+        x: expect.any(Number),
+        y: expect.any(Number),
+        width: expect.any(Number),
+        height: expect.any(Number)
+      });
+    } finally {
+      delete (window as unknown as { webkit?: unknown }).webkit;
+    }
+  });
 });
 
 describe("DashboardShell confirmation surface (D5 / NIC-62)", () => {

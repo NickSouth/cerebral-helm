@@ -795,6 +795,51 @@
   color: var(--ch-accent-primary);
 }
 
+/* The mode-swap dropdown surface (NIC-144): the transparent, top-most native window that
+   layers above open apps. It fills its window and pins the menu to the bottom so the menu
+   grows UP from just above the bar's trigger. */
+.mode-menu-surface {
+  /* Fixed to the window (not 100vh in flow) so the surrounding .app-root min-height +
+     body margin can't push the document past the small window and spawn a scrollbar. */
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: var(--ch-space-2);
+  background: transparent;
+  overflow: hidden;
+}
+
+/* Reuse the bar menu's look, but drop its absolute anchoring (it lives in a window now)
+   and give it a grow-up + fade entrance from its bottom edge. */
+.mode-menu-surface__menu {
+  position: static;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  width: 100%;
+  transform-origin: bottom center;
+  animation: mode-menu-intro var(--ch-motion-medium, 160ms) var(--ch-ease-standard, ease-out);
+}
+
+@keyframes mode-menu-intro {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Honor reduced motion — the dropdown still appears, just without the grow/slide. */
+:root[data-reduced-motion] .mode-menu-surface__menu,
+.app-root[data-reduced-motion] .mode-menu-surface__menu {
+  animation: none;
+}
+
 /* Distinct degraded metric treatments (state is carried by text + color, never color alone). */
 .bottom-bar__metric--stale {
   color: var(--ch-status-warning);

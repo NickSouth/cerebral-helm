@@ -93,6 +93,9 @@
     "layoutId": {
       "$ref": "#/$defs/layoutId"
     },
+    "layout": {
+      "$ref": "#/$defs/layout"
+    },
     "extensions": {
       "$ref": "#/$defs/extensions"
     }
@@ -113,6 +116,97 @@
     "layoutId": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*$"
+    },
+    "layout": {
+      "description": "The mode's authored window layout (NIC-142). `windows` are static app/URL placements; the optional `quickToggle` is the single dynamic slot whose one visible window swaps between N targets from the bottom bar. Frames reuse the window.arrange named vocabulary — never arbitrary coordinates. The whole layout opens on the chosen `display`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["display", "windows"],
+      "properties": {
+        "display": {
+          "$ref": "#/$defs/displayTarget"
+        },
+        "windows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/layoutWindow"
+          }
+        },
+        "quickToggle": {
+          "$ref": "#/$defs/quickToggle"
+        }
+      }
+    },
+    "layoutWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "kind", "frame"],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/configId"
+        },
+        "kind": {
+          "$ref": "#/$defs/refKind"
+        },
+        "frame": {
+          "$ref": "#/$defs/frame"
+        }
+      }
+    },
+    "quickToggle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frame", "targets"],
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/frame"
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/layoutTarget"
+          }
+        }
+      }
+    },
+    "layoutTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "kind"],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/configId"
+        },
+        "kind": {
+          "$ref": "#/$defs/refKind"
+        }
+      }
+    },
+    "refKind": {
+      "type": "string",
+      "enum": ["app", "url"]
+    },
+    "displayTarget": {
+      "type": "string",
+      "enum": ["primary", "secondary"]
+    },
+    "frame": {
+      "type": "string",
+      "enum": [
+        "full",
+        "left-half",
+        "right-half",
+        "top-half",
+        "bottom-half",
+        "left-two-thirds",
+        "right-third",
+        "centered"
+      ]
     },
     "extensions": {
       "type": "object",
