@@ -115,6 +115,9 @@ export interface SettingsSnapshot {
     readonly windowsStoredByMode: boolean;
     /** `system-primary` sentinel when unset. */
     readonly mainDisplayId: string;
+    /** The display layout mode opens on (and whose bottom bar shows the hotswap pill).
+     *  `system-primary` sentinel when unset (NIC-142). */
+    readonly layoutDisplayId: string;
   };
   /** Per-mode accent overrides keyed by design-token name (e.g. `executive.primary`) →
    *  `#rrggbb`. Sparse: a key is present only when customized; the client fills palette

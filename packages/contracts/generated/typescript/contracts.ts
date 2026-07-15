@@ -564,6 +564,12 @@ export interface SettingsSnapshotKnowledge {
 
 export interface SettingsSnapshotWorkspace {
     /**
+     * The stable display id layout mode opens on and whose bottom bar shows the hotswap pill
+     * (NIC-142). Resolves to the `system-primary` sentinel when unset; a stale or disconnected
+     * id degrades to the main display, then system primary, at the shell.
+     */
+    layoutDisplayId: string;
+    /**
      * The stable display id the main dashboard backdrop is hosted on. Resolves to the
      * `system-primary` sentinel when unset; a stale or disconnected id also degrades to system
      * primary at the shell.
@@ -896,6 +902,7 @@ export interface Knowledge {
 }
 
 export interface Workspace {
+    layoutDisplayId?:     string;
     mainDisplayId?:       string;
     windowsStoredByMode?: boolean;
 }

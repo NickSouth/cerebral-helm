@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useBridge } from "../../state/BridgeProvider";
 import type { LayoutFrame, LayoutSpec } from "../../bridge/cerebralBridge";
 import { humanizeId } from "../labels";
@@ -6,20 +6,6 @@ import { LayoutCanvas, type CanvasItem } from "./LayoutCanvas";
 import { ReferencePicker, type ReferenceKind } from "../ReferencePicker";
 import { useResolvedAppIcons } from "../useResolvedAppIcons";
 import { AppGlyph } from "../AppGlyph";
-
-/** A labelled control row (a local copy of the settings Field so this editor can host
- *  in its own native window without pulling the whole settings panel module). */
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <div className="settings-field">
-      <div className="settings-field__text">
-        <span className="settings-field__label">{label}</span>
-        {hint ? <span className="settings-field__hint">{hint}</span> : null}
-      </div>
-      <div className="settings-field__control">{children}</div>
-    </div>
-  );
-}
 
 /** A static window being authored: a reference placed at a named frame. */
 interface EditorWindow {
@@ -67,7 +53,6 @@ export function LayoutEditor({
   // Resolve each hotswap target's icon the same way the bottom-bar pill does, so the
   // editor chips are icon-first and Chrome-profile aware (NIC-142).
   const resolveIcon = useResolvedAppIcons(hotswap?.targets.map((target) => target.ref) ?? []);
-  const [display, setDisplay] = useState<"primary" | "secondary">("primary");
   const [picker, setPicker] = useState<"window" | "hotswap" | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -161,7 +146,10 @@ export function LayoutEditor({
         return;
       }
     }
-    const layout: LayoutSpec = { display, windows, quickToggle };
+    // Which physical monitor a layout opens on is now the global "Layout display"
+    // setting (NIC-142), not a per-mode choice — `display` is a vestigial contract
+    // field the arrange path no longer reads. Send a stable default.
+    const layout: LayoutSpec = { display: "primary", windows, quickToggle };
     const result = await bridge.updateLayout({ modeId, layout });
     setStatus(result.accepted ? "Layout saved." : (result.errors[0] ?? "Save failed."));
   };
@@ -186,17 +174,6 @@ export function LayoutEditor({
   const controls =
     statics !== null ? (
       <>
-        <Field label="Opens on" hint="Which display the layout opens on.">
-          <select
-            className="settings-select"
-            value={display}
-            aria-label={`${label} layout display`}
-            onChange={(event) => setDisplay(event.target.value as "primary" | "secondary")}
-          >
-            <option value="primary">Primary</option>
-            <option value="secondary">Secondary</option>
-          </select>
-        </Field>
         <p className="settings-note">
           Drag each window to move it or its corner to resize; it snaps to the nearest frame. The
           accent rectangle is the hotswap slot.

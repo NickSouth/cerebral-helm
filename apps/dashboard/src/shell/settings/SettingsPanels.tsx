@@ -204,6 +204,9 @@ function GeneralPanelBody() {
   const [mainDisplayId, setMainDisplayId] = useState(
     () => snapshot?.workspace.mainDisplayId ?? SYSTEM_PRIMARY
   );
+  const [layoutDisplayId, setLayoutDisplayId] = useState(
+    () => snapshot?.workspace.layoutDisplayId ?? SYSTEM_PRIMARY
+  );
   const [preset, setPreset] = useState(
     () => (window as HotkeyWindow).__cerebralHotkey?.preset ?? "option-space"
   );
@@ -219,6 +222,15 @@ function GeneralPanelBody() {
     // live (the shell re-hosts backdrops without waiting for a restart).
     void updateSettings({ workspace: { mainDisplayId: nextId } });
     postShellControl("setMainDisplay", { id: nextId });
+  }
+
+  function onLayoutDisplayChange(nextId: string) {
+    setLayoutDisplayId(nextId);
+    // Durable via the validated settings path; the shellControl post applies it
+    // live (the shell re-targets layout opens + moves the hotswap pill without a
+    // restart, NIC-142).
+    void updateSettings({ workspace: { layoutDisplayId: nextId } });
+    postShellControl("setLayoutDisplay", { id: nextId });
   }
 
   function onReducedMotionToggle(next: boolean) {
@@ -248,6 +260,25 @@ function GeneralPanelBody() {
             onChange={(event) => onMainDisplayChange(event.target.value)}
           >
             <option value={SYSTEM_PRIMARY}>System primary</option>
+            {selectableDisplays.map((display) => (
+              <option key={display.id} value={display.id}>
+                {display.name}
+                {display.primary ? " (primary)" : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field
+          label="Layout display"
+          hint="Which display layout mode opens on — and the only one whose bottom bar shows the layout hotswap. Displays without a stable identity fall back to the main display."
+        >
+          <select
+            className="settings-select"
+            value={layoutDisplayId}
+            aria-label="Layout display"
+            onChange={(event) => onLayoutDisplayChange(event.target.value)}
+          >
+            <option value={SYSTEM_PRIMARY}>Same as main display</option>
             {selectableDisplays.map((display) => (
               <option key={display.id} value={display.id}>
                 {display.name}

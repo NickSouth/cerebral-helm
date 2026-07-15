@@ -73,6 +73,10 @@
             "mainDisplayId": {
               "type": "string",
               "minLength": 1
+            },
+            "layoutDisplayId": {
+              "type": "string",
+              "minLength": 1
             }
           }
         },

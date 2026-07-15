@@ -75,6 +75,18 @@ final class WindowCoordinator: @unchecked Sendable {
     /// degrade to the system primary display.
     var mainDisplayIDProvider: (() -> String?)?
 
+    /// A live "Layout display" override from the settings surface (`setLayoutDisplay`,
+    /// NIC-142), applied immediately; the durable value arrives via the settings patch
+    /// and is read through `layoutDisplayIDProvider`.
+    private var liveLayoutDisplayID: String?
+    /// Reads the persisted "Layout display" id (NIC-142); wired by `AppDelegate`. nil /
+    /// the sentinel / unknown / disconnected all degrade to the main display.
+    var layoutDisplayIDProvider: (() -> String?)?
+    /// The last non-null `layout.session.changed` JSON, replayed to the (possibly
+    /// changed) layout-display surface when the setting or topology changes so the
+    /// hotswap pill follows the chosen monitor (NIC-142). nil once the layout closes.
+    private var lastLayoutSessionJSON: String?
+
     /// The login-item seam (NIC-89): the Startup panel toggles through it, and
     /// the OS's resulting status flows straight back — never a stored flag.
     var loginItem: (any LoginItemManaging) = SMAppServiceLoginItem()
@@ -158,6 +170,14 @@ final class WindowCoordinator: @unchecked Sendable {
         // created (or finishing load) after this event can be brought current.
         if json.contains("\"display.topology.changed\"") {
             lastTopologyJSON = json
+        }
+        // The layout hotswap pill shows on the layout-display monitor only (NIC-142):
+        // deliver the session to that surface and a null session to every other
+        // bottom-bar surface. Handled here so no other surface ever sees it.
+        if json.contains("\"layout.session.changed\"") {
+            lastLayoutSessionJSON = json.contains("\"session\":null") ? nil : json
+            fanOutLayoutSession()
+            return
         }
         dashboard?.deliverBridgeEvent(json)
         for secondary in secondaries.values {
@@ -246,6 +266,10 @@ final class WindowCoordinator: @unchecked Sendable {
         }
         secondaries = kept
         publishBackdropVisibility()
+        // A display appeared/disappeared: re-route the hotswap pill so it stays on the
+        // layout display (or moves to the main backdrop if the layout display went
+        // away), and clear it from any new companion (NIC-142).
+        fanOutLayoutSession()
     }
 
     /// The display the main backdrop (and palette focus) belongs on:
@@ -262,6 +286,53 @@ final class WindowCoordinator: @unchecked Sendable {
         }
         return topology.displays.first(where: \.primary) ?? topology.displays.first
     }
+
+    /// The display layout mode opens on and whose bottom bar shows the hotswap pill
+    /// (NIC-142): the live override else the persisted setting, when it names a
+    /// still-connected stable-identity display; the sentinel / unset / unknown /
+    /// disconnected all degrade to the main display.
+    private func layoutDescriptor(
+        in topology: BridgeEventFactory.DisplayTopologyPayload
+    ) -> BridgeEventFactory.DisplayDescriptor? {
+        let requested = liveLayoutDisplayID ?? layoutDisplayIDProvider?()
+        if let requested, requested != "system-primary",
+           let match = topology.displays.first(where: { $0.id == requested && $0.stableIdentity }) {
+            return match
+        }
+        return mainDescriptor(in: topology)
+    }
+
+    /// The bottom-bar surface on the layout display — the main backdrop when the
+    /// layout display is the main display, else the companion on that display (nil
+    /// when it has no live surface, e.g. a transient reconcile).
+    private func layoutDisplaySurface() -> DashboardWindowController? {
+        guard let topology = lastTopology, let layout = layoutDescriptor(in: topology) else {
+            return dashboard
+        }
+        if let main = mainDescriptor(in: topology), main.id == layout.id {
+            return dashboard
+        }
+        return secondaries[layout.id]
+    }
+
+    /// Deliver the current layout session only to the layout-display surface; every
+    /// other bottom-bar surface gets a null session so its hotswap pill clears (NIC-142).
+    /// Re-run when the setting or topology changes so the pill follows the monitor.
+    private func fanOutLayoutSession() {
+        let target = layoutDisplaySurface()
+        let session = lastLayoutSessionJSON ?? Self.nullLayoutSessionJSON
+        if let dashboard {
+            dashboard.deliverBridgeEvent(dashboard === target ? session : Self.nullLayoutSessionJSON)
+        }
+        for secondary in secondaries.values {
+            secondary.deliverBridgeEvent(secondary === target ? session : Self.nullLayoutSessionJSON)
+        }
+    }
+
+    /// A layout-session-ended event, delivered to non-layout-display surfaces so their
+    /// hotswap pill never appears (NIC-142). The web reducer folds `payload.session`.
+    private static let nullLayoutSessionJSON =
+        #"{"schemaVersion":"1.0.0","type":"layout.session.changed","eventId":"brevt_layoutdisplaynull00","timestamp":"1970-01-01T00:00:00.000Z","payload":{"session":null}}"#
 
     /// Resolve a topology descriptor to its live `NSScreen` by frame — both sides
     /// were read from the same screen list, so frames match exactly; a race with
@@ -595,6 +666,14 @@ final class WindowCoordinator: @unchecked Sendable {
             if let topology = lastTopology {
                 reconcileBackdrops(topology)
             }
+        case "setLayoutDisplay":
+            // Live re-target (NIC-142): the durable value already went through the
+            // validated settings patch; this moves the hotswap pill to the chosen
+            // monitor's bottom bar without a restart. (The layout arrange reads the
+            // persisted value at the next open.)
+            guard let id = body["id"] as? String else { return }
+            liveLayoutDisplayID = id
+            fanOutLayoutSession()
         case "pickKnowledgeRoot":
             presentKnowledgeRootPicker()
         case "reportBottomBarRect":

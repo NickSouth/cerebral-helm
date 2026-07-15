@@ -2546,6 +2546,10 @@ public extension SettingsSnapshotKnowledge {
 
 // MARK: - SettingsSnapshotWorkspace
 public struct SettingsSnapshotWorkspace: Codable {
+    /// The stable display id layout mode opens on and whose bottom bar shows the hotswap pill
+    /// (NIC-142). Resolves to the `system-primary` sentinel when unset; a stale or disconnected
+    /// id degrades to the main display, then system primary, at the shell.
+    public let layoutDisplayID: String
     /// The stable display id the main dashboard backdrop is hosted on. Resolves to the
     /// `system-primary` sentinel when unset; a stale or disconnected id also degrades to system
     /// primary at the shell.
@@ -2555,11 +2559,13 @@ public struct SettingsSnapshotWorkspace: Codable {
     public let windowsStoredByMode: Bool
 
     public enum CodingKeys: String, CodingKey {
+        case layoutDisplayID = "layoutDisplayId"
         case mainDisplayID = "mainDisplayId"
         case windowsStoredByMode
     }
 
-    public init(mainDisplayID: String, windowsStoredByMode: Bool) {
+    public init(layoutDisplayID: String, mainDisplayID: String, windowsStoredByMode: Bool) {
+        self.layoutDisplayID = layoutDisplayID
         self.mainDisplayID = mainDisplayID
         self.windowsStoredByMode = windowsStoredByMode
     }
@@ -2584,10 +2590,12 @@ public extension SettingsSnapshotWorkspace {
     }
 
     func with(
+        layoutDisplayID: String? = nil,
         mainDisplayID: String? = nil,
         windowsStoredByMode: Bool? = nil
     ) -> SettingsSnapshotWorkspace {
         return SettingsSnapshotWorkspace(
+            layoutDisplayID: layoutDisplayID ?? self.layoutDisplayID,
             mainDisplayID: mainDisplayID ?? self.mainDisplayID,
             windowsStoredByMode: windowsStoredByMode ?? self.windowsStoredByMode
         )
@@ -4273,15 +4281,17 @@ public extension Knowledge {
 
 // MARK: - Workspace
 public struct Workspace: Codable {
-    public let mainDisplayID: String?
+    public let layoutDisplayID, mainDisplayID: String?
     public let windowsStoredByMode: Bool?
 
     public enum CodingKeys: String, CodingKey {
+        case layoutDisplayID = "layoutDisplayId"
         case mainDisplayID = "mainDisplayId"
         case windowsStoredByMode
     }
 
-    public init(mainDisplayID: String?, windowsStoredByMode: Bool?) {
+    public init(layoutDisplayID: String?, mainDisplayID: String?, windowsStoredByMode: Bool?) {
+        self.layoutDisplayID = layoutDisplayID
         self.mainDisplayID = mainDisplayID
         self.windowsStoredByMode = windowsStoredByMode
     }
@@ -4306,10 +4316,12 @@ public extension Workspace {
     }
 
     func with(
+        layoutDisplayID: String?? = nil,
         mainDisplayID: String?? = nil,
         windowsStoredByMode: Bool?? = nil
     ) -> Workspace {
         return Workspace(
+            layoutDisplayID: layoutDisplayID ?? self.layoutDisplayID,
             mainDisplayID: mainDisplayID ?? self.mainDisplayID,
             windowsStoredByMode: windowsStoredByMode ?? self.windowsStoredByMode
         )

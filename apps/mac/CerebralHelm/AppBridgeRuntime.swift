@@ -19,6 +19,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
     let session: BridgeSession
 
     private let relay = EventRelay()
+    /// Resolves the "Layout display" setting to a `WindowDisplay` for the layout
+    /// arrange (NIC-142). Populated with the settings reader + live topology during
+    /// init/observation; read at arrange time.
+    private let layoutDisplayContext = LayoutDisplayContext()
     /// Streams live system metrics to the dashboard (NIC-81b). Shares the status
     /// capability actor with the `system.status.read` tool.
     private let statusPublisher: SystemStatusPublisher
@@ -84,10 +88,15 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // CH opened this session.
         let modeStateStore = try? makeModeStateStore(paths)
         let urlOpenRegistry = SessionURLOpenRegistry()
+        // The layout arrange targets the "Layout display" setting (NIC-142). The
+        // context is populated with the settings reader + live topology below/after
+        // init, and read at arrange time (a much later async call).
+        let layoutDisplayContext = self.layoutDisplayContext
         let composition = MacToolCapabilities.make(
             referenceStore: referenceStore,
             urlOpenRegistry: urlOpenRegistry,
-            currentModeProvider: { modeStateStore.flatMap { try? $0.loadActiveModeID() } }
+            currentModeProvider: { modeStateStore.flatMap { try? $0.loadActiveModeID() } },
+            layoutDisplay: { layoutDisplayContext.resolve() }
         )
         let capabilities = composition.capabilities
         toolCapabilities = capabilities
@@ -121,6 +130,13 @@ final class AppBridgeRuntime: @unchecked Sendable {
             Self.log.error("Settings store failed to open; settings changes will not persist.")
         }
         self.settingsStore = settingsStore
+        // Feed the layout-display resolver its persisted ids (captured directly, not
+        // through `self`, so no not-yet-initialized capture) — the layout arrange
+        // reads it live at open time (NIC-142).
+        layoutDisplayContext.settingsReader = {
+            let stored = try? settingsStore?.load()
+            return (layout: stored?.layoutDisplayID, main: stored?.mainDisplayID)
+        }
         session = BridgeSession(
             runtime: runtime,
             configDirectory: paths.configDirectory,
@@ -234,8 +250,47 @@ final class AppBridgeRuntime: @unchecked Sendable {
     func startDisplayObservation(
         onChange: @escaping (BridgeEventFactory.DisplayTopologyPayload) -> Void
     ) {
-        displayObserver.onTopologyChange = onChange
+        let context = layoutDisplayContext
+        displayObserver.onTopologyChange = { topology in
+            // Keep the layout-display resolver's view of the topology current so the
+            // next layout open targets the right screen (NIC-142).
+            context.setDisplays(topology.displays.map {
+                LayoutDisplayResolver.Display(id: $0.id, primary: $0.primary, stableIdentity: $0.stableIdentity)
+            })
+            onChange(topology)
+        }
         displayObserver.start()
+    }
+
+    /// The persisted "Layout display" id (NIC-142) — nil when never set. Resolution +
+    /// degradation is the coordinator's / resolver's job (mirrors `storedMainDisplayID`).
+    func storedLayoutDisplayID() -> String? {
+        guard let settingsStore, let settings = try? settingsStore.load() else { return nil }
+        return settings.layoutDisplayID
+    }
+}
+
+/// Thread-safe holder that resolves the "Layout display" setting to a `WindowDisplay`
+/// for the layout arrange (NIC-142): the live topology plus a reader of the persisted
+/// layout/main display ids, combined through `LayoutDisplayResolver`.
+private final class LayoutDisplayContext: @unchecked Sendable {
+    private let lock = NSLock()
+    private var displays: [LayoutDisplayResolver.Display] = []
+    /// Reads the persisted (layoutDisplayId, mainDisplayId); set once the store opens.
+    var settingsReader: (@Sendable () -> (layout: String?, main: String?))?
+
+    func setDisplays(_ displays: [LayoutDisplayResolver.Display]) {
+        lock.lock(); self.displays = displays; lock.unlock()
+    }
+
+    /// The display a layout arrange should target, or nil when no reader is wired yet
+    /// (arrange then keeps its baked display).
+    func resolve() -> WindowDisplay? {
+        guard let ids = settingsReader?() else { return nil }
+        lock.lock(); let displays = self.displays; lock.unlock()
+        return LayoutDisplayResolver.resolve(
+            layoutDisplayID: ids.layout, mainDisplayID: ids.main, displays: displays
+        )
     }
 }
 

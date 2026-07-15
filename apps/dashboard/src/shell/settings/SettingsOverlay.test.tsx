@@ -189,7 +189,7 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
         defaultModeId: "executive",
         appearance: { reducedMotion: true, assistantName: "Heimlich" },
         knowledge: { rootReference: null },
-        workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary" },
+        workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
         modeColors: {}
       });
     const store = createBridgeStore(bridge, loadBootstrapState());
@@ -346,7 +346,7 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
             confirmAllActions: false,
             appearance: { reducedMotion: false, assistantName: "Cerebra" },
             knowledge: { rootReference: null },
-            workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary" },
+            workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
             modeColors: { "executive.primary": "#ff2d55" }
           }
         }

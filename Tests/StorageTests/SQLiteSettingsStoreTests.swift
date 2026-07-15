@@ -79,6 +79,23 @@ func mainDisplayIDRoundTrips() throws {
     #expect(loaded.defaultModeID == "school")
 }
 
+@Test("the layout-display id round-trips and merges like every field (NIC-142)")
+func layoutDisplayIDRoundTrips() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(layoutDisplayID: "37D8832A-2D66-02CA-B9F7-8F30A301B230"))
+    #expect(try store.load().layoutDisplayID == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+
+    // Unrelated patches preserve it; a later patch replaces it; it is independent
+    // of the main-display id (both can hold different displays at once).
+    try store.apply(SettingsChanges(mainDisplayID: "system-primary"))
+    var loaded = try store.load()
+    #expect(loaded.layoutDisplayID == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+    #expect(loaded.mainDisplayID == "system-primary")
+    try store.apply(SettingsChanges(layoutDisplayID: "system-primary"))
+    loaded = try store.load()
+    #expect(loaded.layoutDisplayID == "system-primary")
+}
+
 @Test("the assistant name round-trips and merges like every field (NIC-137)")
 func assistantNameRoundTrips() throws {
     let store = try makeStore()

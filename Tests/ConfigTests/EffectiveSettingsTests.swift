@@ -21,6 +21,7 @@ func storedValuesWin() {
         knowledgeRootReference: "primary-vault",
         windowsStoredByMode: true,
         mainDisplayID: "37D8832A-2D66-02CA-B9F7-8F30A301B230",
+        layoutDisplayID: "cgid-secondary-4k",
         modeColorsJSON: ##"{"executive.primary":"#ffd166","developer.secondary":"#7fc4dc"}"##
     )
 
@@ -35,6 +36,7 @@ func storedValuesWin() {
     #expect(snapshot.knowledge.rootReference == "primary-vault")
     #expect(snapshot.workspace.windowsStoredByMode == true)
     #expect(snapshot.workspace.mainDisplayID == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+    #expect(snapshot.workspace.layoutDisplayID == "cgid-secondary-4k")
     #expect(snapshot.schemaVersion == "1.0.0")
 }
 
@@ -51,6 +53,7 @@ func unsetResolvesToDefaults() {
     #expect(snapshot.knowledge.rootReference == nil)          // meaningful "no root chosen"
     #expect(snapshot.workspace.windowsStoredByMode == false)
     #expect(snapshot.workspace.mainDisplayID == "system-primary")
+    #expect(snapshot.workspace.layoutDisplayID == "system-primary")  // unset → same as main
 }
 
 @Test("the effective knowledge root re-points to an override path, else the default (NIC-138)")

@@ -58,6 +58,7 @@ public enum EffectiveSettings {
             modeColors: decodeModeColors(stored.modeColorsJSON),
             schemaVersion: schemaVersion,
             workspace: SettingsSnapshotWorkspace(
+                layoutDisplayID: stored.layoutDisplayID ?? systemPrimaryDisplayID,
                 mainDisplayID: stored.mainDisplayID ?? systemPrimaryDisplayID,
                 windowsStoredByMode: stored.windowsStoredByMode ?? false
             )

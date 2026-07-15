@@ -72,7 +72,11 @@ function mergeSettingsChanges(
 ): SettingsSnapshot {
   const appearance = changes.appearance as { reducedMotion?: unknown; assistantName?: unknown } | undefined;
   const knowledge = changes.knowledge as { rootReference?: unknown } | undefined;
-  const workspace = changes.workspace as { windowsStoredByMode?: unknown; mainDisplayId?: unknown } | undefined;
+  const workspace = changes.workspace as {
+    windowsStoredByMode?: unknown;
+    mainDisplayId?: unknown;
+    layoutDisplayId?: unknown;
+  } | undefined;
   return {
     schemaVersion: prev.schemaVersion,
     defaultModeId: typeof changes.defaultModeId === "string" ? changes.defaultModeId : prev.defaultModeId,
@@ -94,7 +98,11 @@ function mergeSettingsChanges(
           ? workspace.windowsStoredByMode
           : prev.workspace.windowsStoredByMode,
       mainDisplayId:
-        typeof workspace?.mainDisplayId === "string" ? workspace.mainDisplayId : prev.workspace.mainDisplayId
+        typeof workspace?.mainDisplayId === "string" ? workspace.mainDisplayId : prev.workspace.mainDisplayId,
+      layoutDisplayId:
+        typeof workspace?.layoutDisplayId === "string"
+          ? workspace.layoutDisplayId
+          : prev.workspace.layoutDisplayId
     },
     modeColors:
       changes.modeColors && typeof changes.modeColors === "object"
@@ -217,7 +225,7 @@ export function createMockCerebralBridge(
     confirmAllActions: false,
     appearance: { reducedMotion: false, assistantName: "Heimlich" },
     knowledge: { rootReference: "knowledge-root" },
-    workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" },
+    workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
     modeColors: {}
   };
   let settingsEventSeq = 0;

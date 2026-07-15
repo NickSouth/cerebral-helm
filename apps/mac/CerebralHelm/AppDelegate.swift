@@ -114,6 +114,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.mainDisplayIDProvider = { [weak bridgeRuntime] in
             bridgeRuntime?.storedMainDisplayID()
         }
+        // The persisted "Layout display" choice (NIC-142), read through the runtime
+        // until a settings-read bridge operation exists.
+        coordinator.layoutDisplayIDProvider = { [weak bridgeRuntime] in
+            bridgeRuntime?.storedLayoutDisplayID()
+        }
         bridgeRuntime.startDisplayObservation { [weak self] topology in
             self?.coordinator.handleDisplayTopologyChange(topology)
         }

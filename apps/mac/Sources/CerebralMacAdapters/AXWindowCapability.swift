@@ -114,9 +114,18 @@ public struct SystemAXWindows: AXWindowSurface {
 /// `unsupported` partial.
 public struct AXWindowCapability: WindowCapability {
     private let surface: any AXWindowSurface
+    /// Resolves the display a *layout* arrange targets from the "Layout display"
+    /// setting (NIC-142). `window.arrange` is used only by the synthesized layout
+    /// workflow, so when this returns a display it overrides the workflow's baked
+    /// (now vestigial) primary/secondary; `nil` keeps the requested display.
+    private let layoutDisplay: @Sendable () -> WindowDisplay?
 
-    public init(surface: any AXWindowSurface = SystemAXWindows()) {
+    public init(
+        surface: any AXWindowSurface = SystemAXWindows(),
+        layoutDisplay: @escaping @Sendable () -> WindowDisplay? = { nil }
+    ) {
         self.surface = surface
+        self.layoutDisplay = layoutDisplay
     }
 
     public func inspect() async throws -> [WindowInfo] {
@@ -126,10 +135,13 @@ public struct AXWindowCapability: WindowCapability {
 
     public func arrange(bundleID: String, frame: WindowFrame, display: WindowDisplay) async throws -> WindowArrangeOutcome {
         guard surface.isProcessTrusted else { throw NativeCapabilityError.permissionDenied }
+        // The "Layout display" setting governs where a layout opens (NIC-142); it
+        // overrides the workflow's baked display when set.
+        let target = layoutDisplay() ?? display
         // Target the requested display, degrading to the primary when the
         // secondary is absent (stranded-window pattern) so a layout authored for a
         // now-disconnected display still arranges rather than silently failing.
-        guard let visible = surface.visibleFrame(for: display) ?? surface.visibleFrame(for: .primary) else {
+        guard let visible = surface.visibleFrame(for: target) ?? surface.visibleFrame(for: .primary) else {
             return .unsupported("No display is available to arrange on.")
         }
         return apply(Self.resolve(frame, in: visible), bundleID: bundleID)
