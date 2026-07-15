@@ -88,6 +88,26 @@ public enum BridgeEventFactory {
         )
     }
 
+    /// Announces a mode's collapse-all state (NIC-143): `collapsed` is true when the
+    /// mode currently holds a hidden "collapsed windows" bucket, so the bottom-bar
+    /// collapse/expand control shows the right affordance. Session-only, per-mode
+    /// state — emitted on toggle and on every mode switch (the entered mode's state).
+    public static func windowCollapseChangedEvent(
+        modeId: String, collapsed: Bool, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Payload: Encodable {
+            let modeId: String
+            let collapsed: Bool
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Payload(modeId: modeId, collapsed: collapsed)),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .modeWindowcollapseChanged
+        )
+    }
+
     /// A `settings.changed` event (live cross-webview sync): the durable settings were
     /// updated through `updateSettings`, so every surface — the dashboard and the
     /// separate native settings window — reflects the new assistant name, mode colors,

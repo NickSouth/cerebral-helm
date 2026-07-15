@@ -75,6 +75,14 @@ if (surface === "palette") {
       </React.StrictMode>
     );
   });
+} else if (surface === "windownavigator") {
+  void import("./app/WindowNavigatorApp").then(({ WindowNavigatorApp }) => {
+    root.render(
+      <React.StrictMode>
+        <WindowNavigatorApp />
+      </React.StrictMode>
+    );
+  });
 } else {
   void import("./app/AppRoot").then(({ AppRoot }) => {
     root.render(

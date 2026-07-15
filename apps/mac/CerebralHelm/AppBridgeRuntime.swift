@@ -177,6 +177,9 @@ final class AppBridgeRuntime: @unchecked Sendable {
             url: composition.capabilities.url,
             // Reads visible windows' frames for live layout capture (NIC-142).
             window: composition.capabilities.window,
+            // The window navigator's per-window enumeration + actions (NIC-143):
+            // list/minimize/surface/close through Accessibility.
+            appWindows: composition.appWindows,
             // Arranges a layout URL window that opens in the default browser (a
             // profiled URL always targets Chrome) — resolved live so it tracks the
             // user's default-browser choice (NIC-142).

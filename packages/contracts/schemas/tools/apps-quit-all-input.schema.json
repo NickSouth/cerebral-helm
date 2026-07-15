@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/apps-quit-all-input.schema.json",
+  "title": "CerebralHelm Apps Quit All Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {}
+}

@@ -17,6 +17,7 @@ import { WeatherGlyph } from "./WeatherGlyph";
 import { HealthGlyph } from "./HealthGlyph";
 import { HeimlichAvatar } from "./HeimlichAvatar";
 import { ModeGlyph } from "./ModeGlyph";
+import { WindowNavigator } from "./WindowNavigator";
 
 /** Format the wall clock for display. Masked in visual snapshots (see shell.spec.ts) so the
  *  live value never makes the deterministic baseline flake. */
@@ -45,6 +46,177 @@ function SettingsGlyph() {
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
+  );
+}
+
+/** Collapse/expand-all glyph (NIC-143): a tray with a down arrow while windows are
+ *  shown (press to stow them) and an up arrow while collapsed (press to bring them
+ *  back) — the "container" the user tucks their windows into. */
+function CollapseGlyph({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {collapsed ? (
+        <>
+          <path d="M12 13V4" />
+          <path d="M8 8l4-4 4 4" />
+        </>
+      ) : (
+        <>
+          <path d="M12 4v9" />
+          <path d="M8 9l4 4 4-4" />
+        </>
+      )}
+      <path d="M4 20h16" />
+    </svg>
+  );
+}
+
+/** Close-all-windows glyph (NIC-143): stacked windows with an ×. */
+function CloseAllGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M8 5h11a1 1 0 0 1 1 1v9" />
+      <rect x="4" y="9" width="12" height="10" rx="1.5" />
+      <path d="M8 12.5l4 4M12 12.5l-4 4" />
+    </svg>
+  );
+}
+
+/** Window-navigator glyph (NIC-143): a 2×2 grid of windows, the app-switcher mark. */
+function WindowNavigatorGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect x="4" y="4" width="7" height="7" rx="1.4" />
+      <rect x="13" y="4" width="7" height="7" rx="1.4" />
+      <rect x="4" y="13" width="7" height="7" rx="1.4" />
+      <rect x="13" y="13" width="7" height="7" rx="1.4" />
+    </svg>
+  );
+}
+
+/**
+ * The window-management section on the right of the bottom bar (NIC-143), shown whenever
+ * layout mode is not open. Three icon-first controls: collapse/expand all of the current
+ * mode's windows (the only one wired in this increment), close-all (all modes), and the
+ * window navigator. The latter two are honest "coming soon" placeholders until their own
+ * increments land. Collapse toggles the current mode's session bucket through the bridge;
+ * its icon reflects that mode's live collapsed state.
+ */
+function WindowManagementSection() {
+  const state = useDashboardState();
+  const bridge = useBridge();
+  const { readOnly } = useUiPosture();
+  const [navigatorOpen, setNavigatorOpen] = useState(false);
+
+  const currentModeId = state.modes.find((modeView) => modeView.label === state.mode)?.id;
+  const collapsed = currentModeId ? (state.windowCollapse?.[currentModeId] ?? false) : false;
+
+  const onOpenNavigator = (): void => {
+    if (readOnly) {
+      return;
+    }
+    // Prefer the native top-most window so the navigator layers above open windows
+    // (the backdrop never lifts). In a plain browser there is no native channel, so
+    // fall back to the in-dashboard overlay.
+    if (!postShellControl("openWindowNavigator")) {
+      setNavigatorOpen(true);
+    }
+  };
+
+  const onToggleCollapse = (): void => {
+    if (!currentModeId || readOnly) {
+      return;
+    }
+    void bridge.toggleModeCollapse({ modeId: currentModeId });
+  };
+
+  const onCloseAll = (): void => {
+    if (readOnly) {
+      return;
+    }
+    // Destructive: the command bus gates this on a confirmation before anything quits.
+    void bridge.closeAllWindows();
+  };
+
+  return (
+    <span className="bottom-bar__winmgmt" role="group" aria-label="Window management">
+      <button
+        type="button"
+        className="bottom-bar__control bottom-bar__control--icon"
+        aria-label={collapsed ? "Expand all windows" : "Collapse all windows"}
+        aria-pressed={collapsed}
+        title={
+          readOnly
+            ? "Window controls are paused while the dashboard is read-only"
+            : collapsed
+              ? "Bring the collapsed windows back"
+              : "Hide all windows in this mode"
+        }
+        disabled={readOnly || !currentModeId}
+        onClick={onToggleCollapse}
+      >
+        <CollapseGlyph collapsed={collapsed} />
+      </button>
+      <button
+        type="button"
+        className="bottom-bar__control bottom-bar__control--icon"
+        aria-label="Close all windows"
+        title={
+          readOnly
+            ? "Window controls are paused while the dashboard is read-only"
+            : "Close all windows (quits every app — asks first)"
+        }
+        disabled={readOnly}
+        onClick={onCloseAll}
+      >
+        <CloseAllGlyph />
+      </button>
+      <button
+        type="button"
+        className="bottom-bar__control bottom-bar__control--icon"
+        aria-label="Open window navigator"
+        aria-expanded={navigatorOpen}
+        title={
+          readOnly
+            ? "Window controls are paused while the dashboard is read-only"
+            : "Browse open windows"
+        }
+        disabled={readOnly}
+        onClick={onOpenNavigator}
+      >
+        <WindowNavigatorGlyph />
+      </button>
+      {navigatorOpen ? (
+        <WindowNavigator variant="overlay" onClose={() => setNavigatorOpen(false)} />
+      ) : null}
+    </span>
   );
 }
 
@@ -404,6 +576,15 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
       </div>
 
       <div className="bottom-bar__group bottom-bar__group--right">
+        {/* Window management (NIC-143), shown only while layout mode is closed — the
+            layout pill (left group) and this section never appear together. */}
+        {state.layoutSession ? null : (
+          <>
+            <WindowManagementSection />
+            <Divider />
+          </>
+        )}
+
         <span
           className="bottom-bar__item bottom-bar__wifi"
           role="img"

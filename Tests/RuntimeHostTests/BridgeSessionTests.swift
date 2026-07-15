@@ -1639,3 +1639,186 @@ func addUrlReferenceWarmsFavicon() async throws {
     await waitUntil { cache.icon(forTarget: "https://news.ycombinator.com") != nil }
     #expect(cache.icon(forTarget: "https://news.ycombinator.com") == iconBytes)
 }
+
+// MARK: - Collapse / expand all (NIC-143)
+
+/// Records hide/unhide and serves a mutable visible-app set, so a test can exercise
+/// the collapse-all bucket end to end (hiding removes from visible, un-hiding adds
+/// back — mirroring `NSRunningApplication` app-level hide).
+private final class CollapseWorkspaceWindows: WorkspaceWindowsCapability, @unchecked Sendable {
+    private var visible: [String]
+    private(set) var hidden: [String] = []
+    private(set) var unhidden: [String] = []
+
+    init(visible: [String]) { self.visible = visible }
+
+    func visibleApplicationBundleIDs() async throws -> [String] { visible }
+    func hideApplications(bundleIDs: [String]) async throws -> [String] {
+        hidden.append(contentsOf: bundleIDs)
+        visible.removeAll { bundleIDs.contains($0) }
+        return bundleIDs
+    }
+    func unhideApplications(bundleIDs: [String]) async throws -> [String] {
+        unhidden.append(contentsOf: bundleIDs)
+        visible.append(contentsOf: bundleIDs)
+        return bundleIDs
+    }
+}
+
+private struct ToggleModeCollapseResult: Decodable { let collapsed: Bool }
+
+private func windowCollapseEvents(_ emitted: EmittedEvents) -> [[String: Any]] {
+    emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.windowcollapse.changed" }
+}
+
+@Test("toggleModeCollapse hides the visible apps into the mode bucket, then un-hides exactly them")
+func toggleModeCollapseRoundTrips() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = CollapseWorkspaceWindows(visible: ["com.apple.Safari", "com.microsoft.VSCode"])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // Collapse: the two visible apps are hidden and the state flips to collapsed.
+    let first = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    #expect(try decode(first, as: ToggleModeCollapseResult.self).collapsed)
+    #expect(windows.hidden == ["com.apple.Safari", "com.microsoft.VSCode"])
+    let firstEvent = windowCollapseEvents(emitted).last?["payload"] as? [String: Any]
+    #expect(firstEvent?["modeId"] as? String == "executive")
+    #expect(firstEvent?["collapsed"] as? Bool == true)
+
+    // Expand: exactly the bucket is un-hidden and the state flips back.
+    let second = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    #expect(try !decode(second, as: ToggleModeCollapseResult.self).collapsed)
+    #expect(windows.unhidden == ["com.apple.Safari", "com.microsoft.VSCode"])
+    #expect((windowCollapseEvents(emitted).last?["payload"] as? [String: Any])?["collapsed"] as? Bool == false)
+}
+
+@Test("collapsing with nothing visible is a no-op that stays expanded and emits nothing")
+func toggleModeCollapseEmptyIsNoOp() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = CollapseWorkspaceWindows(visible: [])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+    let response = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    #expect(try !decode(response, as: ToggleModeCollapseResult.self).collapsed)
+    #expect(windows.hidden.isEmpty)
+    #expect(windowCollapseEvents(emitted).isEmpty)
+}
+
+@Test("a mode switch re-applies the entered mode's collapse bucket (bucket wins over restore)")
+func modeSwitchReappliesCollapseBucket() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = CollapseWorkspaceWindows(visible: ["com.apple.Safari"])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+    // Collapse executive: Safari is now hidden and bucketed.
+    _ = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    // Simulate "Windows Stored by Mode" restore un-hiding Safari, then switch into
+    // executive: the collapse bucket must re-hide it.
+    _ = try await windows.unhideApplications(bundleIDs: ["com.apple.Safari"])
+    let hiddenBefore = windows.hidden.count
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"executive"}"#))
+
+    #expect(windows.hidden.count > hiddenBefore)
+    #expect((windowCollapseEvents(emitted).last?["payload"] as? [String: Any])?["collapsed"] as? Bool == true)
+}
+
+// MARK: - Close all windows (NIC-143)
+
+@Test("closeAllWindows routes through the command bus and gates on a destructive confirmation")
+func closeAllWindowsGatesOnConfirmation() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    // apps.quitall is macOS-only, so the runtime must be composed in the macOS phase
+    // for the tool to resolve; `.mocks()` gives the (empty) lifecycle capability.
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+    let response = await session.execute(operationRequest(.closeAllWindows, "{}"))
+    #expect(response.status == .ok)
+
+    // A destructive tool never runs on the first call: the policy engine raises a
+    // confirmation disclosure naming the quit tool, which the user must approve.
+    let confirmations = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "confirmation.changed" }
+    let disclosure = (confirmations.last?["payload"] as? [String: Any])?["confirmation"] as? [String: Any]
+    #expect((disclosure?["tool"] as? [String: Any])?["id"] as? String == "apps.quitall")
+    #expect(disclosure?["risk"] as? String == "destructive")
+}
+
+// MARK: - Window navigator (NIC-143)
+
+private struct WindowInventoryResult: Decodable {
+    struct Group: Decodable { let bundleId: String; let appName: String; let windows: [Window] }
+    struct Window: Decodable { let id: String; let title: String; let minimized: Bool }
+    let apps: [Group]
+}
+private struct WindowActionResult: Decodable { let ok: Bool }
+
+@Test("listWindows returns the app-grouped inventory from the capability (NIC-143)")
+func listWindowsReturnsInventory() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        appWindows: MockAppWindowsCapability()
+    )
+    let response = await session.execute(operationRequest(.listWindows, "{}"))
+    let inventory = try decode(response, as: WindowInventoryResult.self)
+    #expect(inventory.apps.map(\.bundleId) == ["com.google.Chrome", "com.microsoft.VSCode"])
+    #expect(inventory.apps.first?.windows.map(\.id) == ["1001", "1002"])
+    #expect(inventory.apps.first?.windows.last?.minimized == true)
+}
+
+@Test("window actions report whether they took effect, and no-op honestly without the capability")
+func windowActionsReportEffect() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let windows = MockAppWindowsCapability()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        appWindows: windows
+    )
+    // A known id is acted on.
+    let minimize = await session.execute(operationRequest(.minimizeWindow, #"{"windowId":"1001"}"#))
+    #expect(try decode(minimize, as: WindowActionResult.self).ok)
+    #expect(windows.minimized == ["1001"])
+    // Close routes to the capability too.
+    _ = await session.execute(operationRequest(.closeWindow, #"{"windowId":"2001"}"#))
+    #expect(windows.closed == ["2001"])
+    // An unknown id is a false result, never an error.
+    let surface = await session.execute(operationRequest(.surfaceWindow, #"{"windowId":"9999"}"#))
+    #expect(try !decode(surface, as: WindowActionResult.self).ok)
+
+    // Without the capability (pre-Mac), the list is empty and actions no-op with ok:false.
+    let bare = BridgeSession(runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory)
+    #expect(try decode(await bare.execute(operationRequest(.listWindows, "{}")), as: WindowInventoryResult.self).apps.isEmpty)
+    #expect(try !decode(
+        await bare.execute(operationRequest(.minimizeWindow, #"{"windowId":"1001"}"#)),
+        as: WindowActionResult.self
+    ).ok)
+}

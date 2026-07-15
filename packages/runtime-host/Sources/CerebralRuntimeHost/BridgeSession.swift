@@ -86,6 +86,14 @@ public final class BridgeSession: @unchecked Sendable {
     /// Reads visible windows' frames for live layout capture (NIC-142) — the AX
     /// geometry capability. Optional: absent pre-Mac, so capture degrades honestly.
     private let window: (any WindowCapability)?
+
+    /// Enumerates and acts on individual open windows for the window navigator
+    /// (NIC-143): list, minimize, surface, close. Direct-capability like the layout
+    /// ops — navigator actions are authorized as benign local view changes, never a
+    /// per-press confirmation. Optional: absent pre-Mac/tests, so the navigator
+    /// degrades to an honest empty inventory and no-op actions. The live AX adapter
+    /// lands in a later increment.
+    private let appWindows: (any AppWindowsCapability)?
     /// Resolves the default browser's bundle id (NIC-142) so a layout URL window that
     /// opens in the default browser (no Chrome profile) can be arranged like an app.
     /// A URL with a Chrome profile always targets `com.google.Chrome`.
@@ -97,6 +105,12 @@ public final class BridgeSession: @unchecked Sendable {
     /// `layout.session.changed` state.
     private let layoutLock = NSLock()
     private var activeLayoutSession: LayoutSession?
+
+    /// The session-only, per-mode collapse-all buckets (NIC-143). In-memory and not
+    /// persisted — a relaunch starts every mode expanded. Owned wholly by the bridge:
+    /// the toggle op fills/empties it, and a mode switch re-applies the entered mode's
+    /// bucket after any "Windows Stored by Mode" restore (the bucket wins).
+    private let collapseStore = ModeCollapseStore()
 
     public init(
         runtime: CommandRuntime,
@@ -111,6 +125,7 @@ public final class BridgeSession: @unchecked Sendable {
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
         window: (any WindowCapability)? = nil,
+        appWindows: (any AppWindowsCapability)? = nil,
         defaultBrowserBundleID: (@Sendable () -> String?)? = nil,
         emitEventJSON: @escaping @Sendable (String) -> Void = { _ in }
     ) {
@@ -125,6 +140,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.app = app
         self.url = url
         self.window = window
+        self.appWindows = appWindows
         self.defaultBrowserBundleID = defaultBrowserBundleID
         self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
@@ -215,6 +231,18 @@ public final class BridgeSession: @unchecked Sendable {
             return await captureLayout(request)
         case .addLayoutTarget:
             return await addLayoutTarget(request)
+        case .toggleModeCollapse:
+            return await toggleModeCollapse(request)
+        case .closeAllWindows:
+            return await closeAllWindows(request)
+        case .listWindows:
+            return await listWindows(request)
+        case .minimizeWindow:
+            return await windowAction(request) { try await $0.minimize(windowID: $1) }
+        case .surfaceWindow:
+            return await windowAction(request) { try await $0.surface(windowID: $1) }
+        case .closeWindow:
+            return await windowAction(request) { try await $0.close(windowID: $1) }
         default:
             // captureNote (confirmation-gated local_write returning a synchronous
             // noteId) and subscribe follow later.
@@ -236,14 +264,14 @@ public final class BridgeSession: @unchecked Sendable {
         let source = input.source.flatMap(CommandSource.init(rawValue:)) ?? .dashboard
         let outcome = await runtime.submit(input.rawInput, source: source)
         registerAwaitingConfirmation(outcome)
-        emitConfigChangedIfModeApplied(outcome)
+        await emitConfigChangedIfModeApplied(outcome)
         return ok(request, payload: receipt(for: outcome))
     }
 
     /// A raw `mode <id>` command (palette, CLI-over-bridge) that succeeded also
     /// re-themes the dashboard, exactly like the `applyMode` operation — one
     /// switch, one visible result, regardless of which surface asked.
-    private func emitConfigChangedIfModeApplied(_ outcome: CommandRuntimeOutcome) {
+    private func emitConfigChangedIfModeApplied(_ outcome: CommandRuntimeOutcome) async {
         guard
             case let .completed(_, status, result) = outcome,
             status == .succeeded,
@@ -258,6 +286,7 @@ public final class BridgeSession: @unchecked Sendable {
         emit(BridgeEventFactory.configChangedEvent(
             snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
+        await reapplyCollapseBucket(enteredModeID: decoded.modeID)
     }
 
     private func applyMode(
@@ -281,7 +310,130 @@ public final class BridgeSession: @unchecked Sendable {
         emit(BridgeEventFactory.configChangedEvent(
             snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
+        await reapplyCollapseBucket(enteredModeID: input.modeId)
         return ok(request, payload: ApplyModeResult(modeId: input.modeId, status: "ok"))
+    }
+
+    // MARK: - Collapse / expand all (NIC-143)
+
+    /// Toggles the collapse-all state of a mode: on collapse, captures the currently
+    /// visible applications and hides them into the mode's session-only bucket; on
+    /// expand, un-hides exactly that bucket and clears it. Uses the same permission-free
+    /// app-level hide/unhide as "Windows Stored by Mode" (owner decision: hide, not
+    /// Dock-minimize) and never re-confirms — it is a benign local view change. Collapsing
+    /// an empty desktop is a no-op (nothing to hide, so the mode stays expanded). Emits
+    /// `mode.windowcollapse.changed` so the bottom-bar icon reflects the new state.
+    private func toggleModeCollapse(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: ToggleModeCollapseInput = decodePayload(request), !input.modeId.isEmpty else {
+            return invalidInput(request, "toggleModeCollapse requires a modeId.")
+        }
+        // Without the app-level window capability (pre-Mac, tests) we cannot hide or
+        // return windows, so the collapse state cannot change — report it honestly.
+        guard let windows = workspaceWindows else {
+            return ok(request, payload: ToggleModeCollapseResult(
+                collapsed: collapseStore.isCollapsed(modeID: input.modeId)
+            ))
+        }
+
+        let collapsed: Bool
+        if collapseStore.isCollapsed(modeID: input.modeId) {
+            // Expand: un-hide only the apps this mode collapsed (windows opened since
+            // are left as-is), then clear the bucket.
+            let bucket = collapseStore.expand(modeID: input.modeId)
+            if !bucket.isEmpty {
+                _ = try? await windows.unhideApplications(bundleIDs: bucket)
+            }
+            collapsed = false
+        } else {
+            // Collapse: capture the currently visible apps (the capability already
+            // excludes the host app) and hide them. Nothing visible ⇒ no-op.
+            let visible = (try? await windows.visibleApplicationBundleIDs()) ?? []
+            guard !visible.isEmpty else {
+                return ok(request, payload: ToggleModeCollapseResult(collapsed: false))
+            }
+            _ = try? await windows.hideApplications(bundleIDs: visible)
+            collapseStore.collapse(modeID: input.modeId, bundleIDs: visible)
+            collapsed = true
+        }
+        emit(BridgeEventFactory.windowCollapseChangedEvent(
+            modeId: input.modeId, collapsed: collapsed,
+            id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+        return ok(request, payload: ToggleModeCollapseResult(collapsed: collapsed))
+    }
+
+    /// Close all windows across every mode (NIC-143): quits every open regular
+    /// application (except CerebralHelm). Routes through the command bus like any
+    /// destructive tool — `apps.quitall` is `destructive`, so the policy engine gates
+    /// it on a confirmation. This mirrors `submitCommand`: register the awaiting
+    /// confirmation (pushing the disclosure) and return an accepting receipt; the quit
+    /// happens only after the user approves through the normal confirmation flow.
+    private func closeAllWindows(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let outcome = await runtime.submit("quit-all", source: .dashboard)
+        registerAwaitingConfirmation(outcome)
+        return ok(request, payload: receipt(for: outcome))
+    }
+
+    // MARK: - Window navigator (NIC-143)
+
+    /// The window-navigator inventory: every open window grouped by application. A
+    /// direct-capability read, no confirmation. Degrades to an honest empty list when
+    /// the capability is absent (pre-Mac / before the live AX adapter lands).
+    private func listWindows(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let groups = (try? await appWindows?.listWindows()) ?? []
+        let apps = groups.map { group in
+            WindowGroupDTO(
+                bundleId: group.bundleID,
+                appName: group.appName,
+                appIconPng: group.appIconPNGBase64,
+                windows: group.windows.map { WindowDTO(id: $0.id, title: $0.title, minimized: $0.minimized) }
+            )
+        }
+        return ok(request, payload: WindowInventory(apps: apps))
+    }
+
+    /// Shared body for the minimize/surface/close window actions (NIC-143): resolve the
+    /// window id and run the action, reporting whether it took effect. A benign local
+    /// view change (surface/minimize) or the equivalent of the window's own close button
+    /// — direct-capability, no per-press confirmation. No-op `ok: false` when the
+    /// capability is absent or the id is unknown.
+    private func windowAction(
+        _ request: CerebralHelmBridgeOperationRequest,
+        _ act: @escaping (any AppWindowsCapability, String) async throws -> Bool
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: WindowRefInput = decodePayload(request), !input.windowId.isEmpty else {
+            return invalidInput(request, "a window action requires a windowId.")
+        }
+        guard let capability = appWindows else {
+            return ok(request, payload: WindowActionResult(ok: false))
+        }
+        let affected = (try? await act(capability, input.windowId)) ?? false
+        return ok(request, payload: WindowActionResult(ok: affected))
+    }
+
+    /// After a mode switch, re-apply the entered mode's collapse bucket (NIC-143):
+    /// "Windows Stored by Mode" restore-on-enter may have un-hidden apps the user had
+    /// collapsed, so re-hide anything still in that mode's bucket — the collapse bucket
+    /// is authoritative for its mode (owner: "a window state by mode, like open/closed").
+    /// Always (re)announces the entered mode's collapse state so the bottom-bar icon is
+    /// correct for the mode now shown, even when nothing needed re-hiding.
+    private func reapplyCollapseBucket(enteredModeID: String) async {
+        let collapsed = collapseStore.isCollapsed(modeID: enteredModeID)
+        if collapsed,
+           let bucket = collapseStore.bucket(modeID: enteredModeID), !bucket.isEmpty,
+           let windows = workspaceWindows {
+            _ = try? await windows.hideApplications(bundleIDs: bucket)
+        }
+        emit(BridgeEventFactory.windowCollapseChangedEvent(
+            modeId: enteredModeID, collapsed: collapsed,
+            id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
     }
 
     // MARK: - Layout session (NIC-142)
@@ -1496,6 +1648,32 @@ public final class BridgeSession: @unchecked Sendable {
     }
     private struct AddLayoutTargetResult: Encodable {
         let accepted: Bool
+    }
+    private struct ToggleModeCollapseInput: Decodable {
+        let modeId: String
+    }
+    private struct ToggleModeCollapseResult: Encodable {
+        let collapsed: Bool
+    }
+    private struct WindowRefInput: Decodable {
+        let windowId: String
+    }
+    private struct WindowActionResult: Encodable {
+        let ok: Bool
+    }
+    private struct WindowDTO: Encodable {
+        let id: String
+        let title: String
+        let minimized: Bool
+    }
+    private struct WindowGroupDTO: Encodable {
+        let bundleId: String
+        let appName: String
+        let appIconPng: String?
+        let windows: [WindowDTO]
+    }
+    private struct WindowInventory: Encodable {
+        let apps: [WindowGroupDTO]
     }
     private struct UpdateLayoutInput: Decodable {
         let modeId: String

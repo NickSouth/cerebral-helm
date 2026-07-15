@@ -371,6 +371,71 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     expect(screen.getByRole("menu", { name: "Switch mode" })).toBeInTheDocument();
   });
 
+  it("collapses/expands the current mode's windows and flips the icon affordance (NIC-143)", async () => {
+    renderShell(); // Executive
+    const bar = statusBar();
+    // Starts expanded: the control offers to collapse, and is not pressed.
+    const collapse = bar.getByRole("button", { name: "Collapse all windows" });
+    expect(collapse).toHaveAttribute("aria-pressed", "false");
+    // Close-all and the window navigator are both live (NIC-143 inc 2 + inc 5).
+    expect(bar.getByRole("button", { name: "Close all windows" })).toBeEnabled();
+    expect(bar.getByRole("button", { name: "Open window navigator" })).toBeEnabled();
+
+    fireEvent.click(collapse);
+    // The mock flips the mode's collapse state and broadcasts it; the icon becomes an
+    // "expand" affordance and reads as pressed.
+    const expand = await bar.findByRole("button", { name: "Expand all windows" });
+    expect(expand).toHaveAttribute("aria-pressed", "true");
+
+    // Toggling back returns to the collapse affordance.
+    fireEvent.click(expand);
+    await waitFor(() =>
+      expect(bar.getByRole("button", { name: "Collapse all windows" })).toHaveAttribute(
+        "aria-pressed",
+        "false"
+      )
+    );
+  });
+
+  it("raises a destructive confirmation when Close all windows is pressed (NIC-143)", async () => {
+    renderShell();
+    const bar = statusBar();
+    fireEvent.click(bar.getByRole("button", { name: "Close all windows" }));
+    // The command is gated: a policy-owned confirmation appears before anything quits.
+    const dialog = await screen.findByRole("dialog", { name: "Confirm action" });
+    expect(
+      within(dialog).getByText("Quit every open application across all modes.")
+    ).toBeInTheDocument();
+    // Cancelling dismisses it without quitting anything.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Confirm action" })).toBeNull()
+    );
+  });
+
+  it("opens the window navigator overlay in a plain browser (no native channel) (NIC-143)", async () => {
+    renderShell();
+    fireEvent.click(statusBar().getByRole("button", { name: "Open window navigator" }));
+    // With no shellControl channel the navigator renders as an in-dashboard overlay,
+    // listing the mock's open windows.
+    const nav = await screen.findByRole("dialog", { name: "Open windows" });
+    expect(within(nav).getByText("Inbox — Gmail")).toBeInTheDocument();
+    // Closing dismisses it.
+    fireEvent.click(within(nav).getByRole("button", { name: "Close window navigator" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Open windows" })).toBeNull());
+  });
+
+  it("hides the window-management section while layout mode is open (NIC-143/142)", () => {
+    renderShellWithState((base) => ({
+      ...base,
+      layoutSession: { modeId: "developer", windows: [], quickToggle: null }
+    }));
+    const bar = statusBar();
+    // Layout pill and the window-management cluster never co-exist.
+    expect(bar.queryByRole("button", { name: "Collapse all windows" })).toBeNull();
+    expect(bar.queryByRole("button", { name: "Close layout mode" })).toBeInTheDocument();
+  });
+
   it("reports its on-screen rect to the native shell for window-snap awareness (NIC-144)", () => {
     const posted: Array<Record<string, unknown>> = [];
     (window as unknown as { webkit?: unknown }).webkit = {

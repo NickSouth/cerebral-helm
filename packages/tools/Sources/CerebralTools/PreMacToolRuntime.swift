@@ -36,6 +36,7 @@ public enum PreMacToolRuntime {
             "system.status.read": SystemStatusReadHandler(capability: capabilities.systemStatus),
             "network.speed.test": NetworkSpeedTestHandler(capability: capabilities.networkSpeedTest),
             "apps.list": AppsListHandler(capability: capabilities.appDiscovery),
+            "apps.quitall": AppsQuitAllHandler(capability: capabilities.applicationLifecycle),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
@@ -112,6 +113,7 @@ public enum PreMacToolRuntime {
         case "system.status.read": _ = try CerebralHelmSystemStatusReadInput(data: data)
         case "network.speed.test": _ = try CerebralHelmNetworkSpeedTestInput(data: data)
         case "apps.list": _ = try CerebralHelmAppsListInput(data: data)
+        case "apps.quitall": _ = try CerebralHelmAppsQuitAllInput(data: data)
         default: break
         }
     }

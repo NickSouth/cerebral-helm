@@ -93,6 +93,11 @@ export type DashboardState = DashboardBootstrapState & {
   /** The active layout session (NIC-142), folded from `layout.session.changed`.
    *  Drives the bottom-bar layout section; null/absent when no layout is open. */
   readonly layoutSession?: LayoutSession | null;
+  /** Per-mode collapse-all state (NIC-143), keyed by mode id → collapsed, folded from
+   *  `mode.windowcollapse.changed`. Session-only and sparse: a mode is absent until its
+   *  first toggle, and every mode starts expanded. Drives the bottom-bar
+   *  collapse/expand icon for the current mode. */
+  readonly windowCollapse?: Readonly<Record<string, boolean>>;
 };
 
 /**

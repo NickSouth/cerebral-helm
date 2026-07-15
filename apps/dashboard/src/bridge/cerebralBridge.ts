@@ -19,7 +19,8 @@ export type BridgeEventType =
   | "bridge.capability.changed"
   | "workflow.action.progress"
   | "display.topology.changed"
-  | "layout.session.changed";
+  | "layout.session.changed"
+  | "mode.windowcollapse.changed";
 
 export interface BridgeEvent {
   readonly eventId: string;
@@ -288,6 +289,47 @@ export interface AddLayoutTargetResult {
   readonly accepted: boolean;
 }
 
+// --- Window management: collapse / expand all (NIC-143) ---
+
+export interface ToggleModeCollapseInput {
+  readonly modeId: string;
+}
+/** The mode's collapse-all state after the toggle: `collapsed` true when its windows
+ *  are now hidden in the session bucket, false when they have been returned. */
+export interface ToggleModeCollapseResult {
+  readonly collapsed: boolean;
+}
+
+// --- Window navigator (NIC-143) ---
+
+/** One open window in the navigator inventory. `id` is opaque (the stringified
+ *  CGWindowID on macOS) — pass it back to act on the window, never parse it. */
+export interface NavigatorWindow {
+  readonly id: string;
+  readonly title: string;
+  readonly minimized: boolean;
+}
+/** One application's open windows, grouped for the navigator's app-stacked cards. */
+export interface NavigatorWindowGroup {
+  readonly bundleId: string;
+  readonly appName: string;
+  /** The app's icon as a base64 PNG for the card mark; absent when unavailable
+   *  (the card falls back to a category glyph). */
+  readonly appIconPng?: string;
+  readonly windows: readonly NavigatorWindow[];
+}
+/** Every open window on screen, grouped by application (NIC-143). */
+export interface WindowInventory {
+  readonly apps: readonly NavigatorWindowGroup[];
+}
+export interface WindowRefInput {
+  readonly windowId: string;
+}
+/** Whether a minimize/surface/close action found its window and took effect. */
+export interface WindowActionResult {
+  readonly ok: boolean;
+}
+
 /** The named window frames (mirrors `window-arrange-input` / the layout schema). */
 export type LayoutFrame =
   | "full"
@@ -434,6 +476,28 @@ export interface CerebralBridge {
   /** Propose a layout from the currently-arranged windows (NIC-142 live capture),
    *  each visible configured app snapped to a named frame. macOS-only. */
   captureLayout(): Promise<CaptureLayoutResult>;
+  /** Collapse or expand all of the current mode's windows (NIC-143): the first call
+   *  hides the visible apps into the mode's session-only bucket, the next returns
+   *  exactly them. Uses the same app-level hide as "Windows Stored by Mode"; not
+   *  confirmation-gated. The bottom-bar icon also updates from a
+   *  `mode.windowcollapse.changed` event (emitted here and on every mode switch). */
+  toggleModeCollapse(input: ToggleModeCollapseInput): Promise<ToggleModeCollapseResult>;
+  /** Close all windows across every mode (NIC-143): quit every open application
+   *  except CerebralHelm. Destructive — routes through the command bus, so the
+   *  policy engine gates it on a confirmation (delivered via `confirmation.changed`);
+   *  the returned receipt only acknowledges the command was accepted for review. */
+  closeAllWindows(): Promise<CommandReceipt>;
+  /** List every open window, grouped by application, for the window navigator
+   *  (NIC-143). Direct read — no confirmation; an honest empty inventory when the
+   *  host cannot enumerate windows. */
+  listWindows(): Promise<WindowInventory>;
+  /** Minimize a single window to the Dock (NIC-143). Non-gated. */
+  minimizeWindow(input: WindowRefInput): Promise<WindowActionResult>;
+  /** Bring a single window to the front, un-minimizing if needed (NIC-143). Non-gated. */
+  surfaceWindow(input: WindowRefInput): Promise<WindowActionResult>;
+  /** Close a single window — the equivalent of its own close button (NIC-143).
+   *  Classified `local_write`, so it runs without a per-press confirmation. */
+  closeWindow(input: WindowRefInput): Promise<WindowActionResult>;
   /** Subscribe to the bridge event stream; returns an unsubscribe handle. */
   subscribe(listener: BridgeEventListener): Unsubscribe;
 }

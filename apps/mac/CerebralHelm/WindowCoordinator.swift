@@ -41,6 +41,7 @@ final class WindowCoordinator: @unchecked Sendable {
     /// The per-mode layout editor window (NIC-142): built fresh on each open (it is
     /// mode-specific), torn down on close. `nil` while closed.
     private var layoutEditor: LayoutEditorWindowController?
+    private var windowNavigator: WindowNavigatorWindowController?
     /// One additional backdrop per connected non-main display (NIC-120b), keyed by
     /// the display's topology id. Created/removed by `reconcileBackdrops` on every
     /// topology change; each binds the SAME shared session (no second runtime).
@@ -191,6 +192,7 @@ final class WindowCoordinator: @unchecked Sendable {
         moreApps?.deliverBridgeEvent(json)
         layoutPin?.deliverBridgeEvent(json)
         layoutEditor?.deliverBridgeEvent(json)
+        windowNavigator?.deliverBridgeEvent(json)
         if json.contains("\"config.changed\"") {
             palette?.deliverBridgeEvent(json)
             // Keep the open dropdown's active-mode highlight and theme current if the mode
@@ -470,6 +472,29 @@ final class WindowCoordinator: @unchecked Sendable {
         moreApps = nil
     }
 
+    /// Open the window navigator (NIC-143): a top-most floating window listing every
+    /// open window for quick surface/minimize/close. Built fresh each open (any existing
+    /// one is replaced) so its inventory is current, and placed toward the right edge.
+    func openWindowNavigator() {
+        guard let session, let dashboardRoot else { return }
+        windowNavigator?.close()
+        let controller = WindowNavigatorWindowController(dashboardRoot: dashboardRoot, session: session)
+        controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        windowNavigator = controller
+        if let screen = dashboard?.window.screen ?? mainScreen() ?? NSScreen.main {
+            controller.positionOnRight(of: screen)
+        }
+        controller.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Close and release the navigator — the × control, Escape, or an accepted surface
+    /// all post `closeWindowNavigator` (dismiss-on-surface, NIC-143).
+    func closeWindowNavigator() {
+        windowNavigator?.close()
+        windowNavigator = nil
+    }
+
     /// Open the transparent mode-swap dropdown above the bottom bar's mode control
     /// (NIC-144). Built fresh each open (any existing one is replaced) so its active-mode
     /// highlight is current — a transient menu, not a warm panel. `anchor` is the mode
@@ -642,6 +667,10 @@ final class WindowCoordinator: @unchecked Sendable {
             openMoreApps(anchor: body["anchor"] as? [String: Any])
         case "closeMoreApps":
             closeMoreApps()
+        case "openWindowNavigator":
+            openWindowNavigator()
+        case "closeWindowNavigator":
+            closeWindowNavigator()
         case "openModeMenu":
             openModeMenu(anchor: body["anchor"] as? [String: Any], from: source)
         case "closeModeMenu":

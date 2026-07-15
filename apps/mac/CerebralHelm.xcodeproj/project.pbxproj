@@ -34,6 +34,7 @@
 		CE000000000000000000004B /* ModeMenuWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000004A /* ModeMenuWindowController.swift */; };
 		CE000000000000000000004D /* LayoutPinWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000004C /* LayoutPinWindowController.swift */; };
 		CE000000000000000000004F /* LayoutEditorWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000004E /* LayoutEditorWindowController.swift */; };
+		CE0000000000000000000051 /* WindowNavigatorWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000050 /* WindowNavigatorWindowController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -60,6 +61,7 @@
 		CE000000000000000000004A /* ModeMenuWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeMenuWindowController.swift; sourceTree = "<group>"; };
 		CE000000000000000000004C /* LayoutPinWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutPinWindowController.swift; sourceTree = "<group>"; };
 		CE000000000000000000004E /* LayoutEditorWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutEditorWindowController.swift; sourceTree = "<group>"; };
+		CE0000000000000000000050 /* WindowNavigatorWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowNavigatorWindowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -120,6 +122,7 @@
 				CE000000000000000000004A /* ModeMenuWindowController.swift */,
 				CE000000000000000000004C /* LayoutPinWindowController.swift */,
 				CE000000000000000000004E /* LayoutEditorWindowController.swift */,
+				CE0000000000000000000050 /* WindowNavigatorWindowController.swift */,
 			);
 			path = CerebralHelm;
 			sourceTree = "<group>";
@@ -225,6 +228,7 @@
 				CE000000000000000000004B /* ModeMenuWindowController.swift in Sources */,
 				CE000000000000000000004D /* LayoutPinWindowController.swift in Sources */,
 				CE000000000000000000004F /* LayoutEditorWindowController.swift in Sources */,
+				CE0000000000000000000051 /* WindowNavigatorWindowController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

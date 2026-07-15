@@ -343,6 +343,7 @@ export enum CerebralHelmBridgeEventType {
     DisplayTopologyChanged = "display.topology.changed",
     LayoutSessionChanged = "layout.session.changed",
     ModeQuickappsChanged = "mode.quickapps.changed",
+    ModeWindowcollapseChanged = "mode.windowcollapse.changed",
     SettingsChanged = "settings.changed",
     SystemStatusChanged = "system.status.changed",
     WorkflowActionProgress = "workflow.action.progress",
@@ -438,7 +439,9 @@ export enum Operation {
     ApplyMode = "applyMode",
     CaptureLayout = "captureLayout",
     CaptureNote = "captureNote",
+    CloseAllWindows = "closeAllWindows",
     CloseLayout = "closeLayout",
+    CloseWindow = "closeWindow",
     DecideConfirmation = "decideConfirmation",
     GetBootstrapState = "getBootstrapState",
     GetRecentActivity = "getRecentActivity",
@@ -446,13 +449,17 @@ export enum Operation {
     ListApps = "listApps",
     ListChromeProfiles = "listChromeProfiles",
     ListUrls = "listUrls",
+    ListWindows = "listWindows",
+    MinimizeWindow = "minimizeWindow",
     OpenLayout = "openLayout",
     PinLayoutWindow = "pinLayoutWindow",
     RunSpeedTest = "runSpeedTest",
     SearchNotes = "searchNotes",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",
+    SurfaceWindow = "surfaceWindow",
     ToggleLayout = "toggleLayout",
+    ToggleModeCollapse = "toggleModeCollapse",
     UpdateLayout = "updateLayout",
     UpdateQuickApps = "updateQuickApps",
     UpdateSettings = "updateSettings",
@@ -997,6 +1004,19 @@ export interface App {
     bundleId: string;
     iconPng?: string;
     name:     string;
+}
+
+export interface CerebralHelmAppsQuitAllInput {
+}
+
+export interface CerebralHelmAppsQuitAllOutput {
+    bundleIds: string[];
+    status:    CerebralHelmAppsQuitAllOutputStatus;
+}
+
+export enum CerebralHelmAppsQuitAllOutputStatus {
+    None = "none",
+    Quit = "quit",
 }
 
 export interface CerebralHelmConfirmationDisclosure {

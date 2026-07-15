@@ -39,6 +39,40 @@ describe("reduceDashboardState", () => {
     expect(reduceDashboardState(base, lifecycleEvent("idle"))).toBe(base);
   });
 
+  it("folds mode.windowcollapse.changed into a per-mode collapse map (NIC-143)", () => {
+    const base = loadBootstrapState();
+    const collapse = (modeId: string, collapsed: boolean): BridgeEvent => ({
+      eventId: `brevt_collapse_${modeId}_${collapsed}`,
+      type: "mode.windowcollapse.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-15T16:00:00.000Z",
+      payload: { modeId, collapsed }
+    });
+
+    const collapsed = reduceDashboardState(base, collapse("executive", true));
+    expect(collapsed.windowCollapse?.executive).toBe(true);
+    // Other modes are untouched (sparse map).
+    expect(collapsed.windowCollapse?.developer).toBeUndefined();
+
+    // A second mode's state is merged, not replaced.
+    const both = reduceDashboardState(collapsed, collapse("developer", true));
+    expect(both.windowCollapse).toEqual({ executive: true, developer: true });
+
+    // Expanding flips the entry back.
+    const expanded = reduceDashboardState(both, collapse("executive", false));
+    expect(expanded.windowCollapse).toEqual({ executive: false, developer: true });
+
+    // A redundant event (same value) returns the same reference — no re-render.
+    expect(reduceDashboardState(expanded, collapse("developer", true))).toBe(expanded);
+    // A malformed payload is ignored.
+    expect(
+      reduceDashboardState(base, {
+        ...collapse("executive", true),
+        payload: { modeId: "executive" }
+      })
+    ).toBe(base);
+  });
+
   it("folds a quick-apps rewrite into the matching mode (NIC-149)", () => {
     const base = loadBootstrapState();
     const target = base.modes.find((mode) => mode.quickApps.length > 0) ?? base.modes[0];

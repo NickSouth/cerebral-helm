@@ -18,6 +18,9 @@ import type {
   OpenLayoutResult,
   PinLayoutWindowResult,
   AddLayoutTargetResult,
+  ToggleModeCollapseResult,
+  WindowInventory,
+  WindowActionResult,
   ToggleLayoutResult,
   UpdateLayoutResult,
   RecentActivity,
@@ -66,7 +69,8 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "bridge.capability.changed",
   "workflow.action.progress",
   "display.topology.changed",
-  "layout.session.changed"
+  "layout.session.changed",
+  "mode.windowcollapse.changed"
 ]);
 
 /** True when running inside the native shell (the message handler is registered). */
@@ -299,6 +303,24 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     updateLayout(input) {
       return operation<UpdateLayoutResult>("updateLayout", { ...input });
+    },
+    toggleModeCollapse(input) {
+      return operation<ToggleModeCollapseResult>("toggleModeCollapse", { ...input });
+    },
+    closeAllWindows() {
+      return operation<CommandReceipt>("closeAllWindows", {});
+    },
+    listWindows() {
+      return operation<WindowInventory>("listWindows", {});
+    },
+    minimizeWindow(input) {
+      return operation<WindowActionResult>("minimizeWindow", { ...input });
+    },
+    surfaceWindow(input) {
+      return operation<WindowActionResult>("surfaceWindow", { ...input });
+    },
+    closeWindow(input) {
+      return operation<WindowActionResult>("closeWindow", { ...input });
     },
     captureLayout() {
       return operation<CaptureLayoutResult>("captureLayout", {});

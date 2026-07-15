@@ -176,6 +176,37 @@ public struct AppsListHandler: ToolHandler {
     }
 }
 
+// MARK: - apps.quitall
+
+/// Quits every regular running application across all modes (NIC-143), excluding the
+/// host — a destructive, confirmation-gated bulk action. The target list is discovered
+/// at execution time (after the user approves the disclosure), then each app is asked to
+/// quit gracefully. An empty desktop yields `status: none` with no ids.
+public struct AppsQuitAllHandler: ToolHandler {
+    public let toolID = "apps.quitall"
+    private let capability: any ApplicationLifecycleCapability
+
+    public init(capability: any ApplicationLifecycleCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        do { _ = try CerebralHelmAppsQuitAllInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("apps.quitall input does not match its contract.")
+        }
+        do {
+            let running = try await capability.regularRunningApplicationBundleIDs()
+            guard !running.isEmpty else {
+                return try CerebralHelmAppsQuitAllOutput(bundleIDS: [], status: .none).jsonData()
+            }
+            let quit = try await capability.quitApplications(bundleIDs: running)
+            return try CerebralHelmAppsQuitAllOutput(
+                bundleIDS: quit, status: quit.isEmpty ? .none : .quit
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 // MARK: - note.capture
 
 public struct NoteCaptureHandler: ToolHandler {

@@ -217,6 +217,40 @@ export function createMockCerebralBridge(
   // The active layout session (NIC-142), held mutably so toggleLayout can swap the
   // dynamic slot and re-broadcast, mirroring the real bridge.
   let activeLayout: LayoutSession | null = null;
+  // Session-only per-mode collapse-all state (NIC-143), so a browser preview can flip
+  // the bottom-bar collapse/expand icon; the real bridge hides/returns the windows.
+  const collapsedModes = new Set<string>();
+  // A mutable window inventory for the navigator (NIC-143), so a browser preview can
+  // minimize/surface/close and see the change on the next listWindows; the real bridge
+  // enumerates and acts on live windows via Accessibility.
+  const windowGroups: {
+    bundleId: string;
+    appName: string;
+    windows: { id: string; title: string; minimized: boolean }[];
+  }[] = [
+    {
+      bundleId: "com.google.Chrome",
+      appName: "Google Chrome",
+      windows: [
+        { id: "1001", title: "Inbox — Gmail", minimized: false },
+        { id: "1002", title: "CerebralHelm · GitHub", minimized: true }
+      ]
+    },
+    {
+      bundleId: "com.microsoft.VSCode",
+      appName: "Visual Studio Code",
+      windows: [{ id: "2001", title: "BridgeSession.swift — cerebral-helm", minimized: false }]
+    }
+  ];
+  const findWindow = (id: string) => {
+    for (const group of windowGroups) {
+      const window = group.windows.find((candidate) => candidate.id === id);
+      if (window) {
+        return { group, window };
+      }
+    }
+    return null;
+  };
   // Representative persisted settings, held mutably so updateSettings visibly persists +
   // broadcasts a settings.changed event (mirrors the real bridge; NIC-141/137).
   let settingsSnapshot: SettingsSnapshot = {
@@ -604,6 +638,85 @@ export function createMockCerebralBridge(
     updateLayout() {
       // The settings editor's Save; the mock accepts a well-formed layout (NIC-142).
       return Promise.resolve({ accepted: true, errors: [] });
+    },
+    toggleModeCollapse(input) {
+      // Flip the mode's collapse-all state and broadcast it, so a browser preview shows
+      // the icon change (NIC-143). The real bridge hides/returns the actual windows.
+      const collapsed = !collapsedModes.has(input.modeId);
+      if (collapsed) {
+        collapsedModes.add(input.modeId);
+      } else {
+        collapsedModes.delete(input.modeId);
+      }
+      emit({
+        eventId: "brevt_mock_collapse01",
+        type: "mode.windowcollapse.changed",
+        schemaVersion: "1.0.0",
+        timestamp: new Date().toISOString(),
+        payload: { modeId: input.modeId, collapsed }
+      });
+      return Promise.resolve({ collapsed });
+    },
+    closeAllWindows() {
+      // Destructive, confirmation-gated (NIC-143): the real bridge routes this through
+      // the command bus + policy engine. The mock surfaces a representative destructive
+      // disclosure so a browser preview shows the confirmation the user must approve —
+      // approve/cancel flow through the same `decideConfirmation` path.
+      const base = (confirmationBridgeEvent.payload as { confirmation: Record<string, unknown> })
+        .confirmation;
+      emit({
+        eventId: "brevt_mock_quitall0001",
+        type: "confirmation.changed",
+        schemaVersion: "1.0.0",
+        timestamp: new Date().toISOString(),
+        payload: {
+          confirmation: {
+            ...base,
+            id: "conf_quitall00000000000000001",
+            actionSummary: "Quit every open application across all modes.",
+            risk: "destructive",
+            reversibility: "not_reversible",
+            policyReason: "Risk class 'destructive' requires confirmation.",
+            destination: null,
+            arguments: [],
+            tool: {
+              id: "apps.quitall",
+              version: "1.0.0",
+              purpose: "Quit every open application across all modes; graceful terminate."
+            }
+          }
+        }
+      });
+      return Promise.resolve({ commandId: "cmd_quitall00000000000000001", accepted: true });
+    },
+    listWindows() {
+      return Promise.resolve({
+        apps: windowGroups.map((group) => ({
+          ...group,
+          windows: group.windows.map((window) => ({ ...window }))
+        }))
+      });
+    },
+    minimizeWindow(input) {
+      const found = findWindow(input.windowId);
+      if (found) {
+        found.window.minimized = true;
+      }
+      return Promise.resolve({ ok: found !== null });
+    },
+    surfaceWindow(input) {
+      const found = findWindow(input.windowId);
+      if (found) {
+        found.window.minimized = false;
+      }
+      return Promise.resolve({ ok: found !== null });
+    },
+    closeWindow(input) {
+      const found = findWindow(input.windowId);
+      if (found) {
+        found.group.windows = found.group.windows.filter((window) => window.id !== input.windowId);
+      }
+      return Promise.resolve({ ok: found !== null });
     },
     captureLayout() {
       // A representative capture for browser previews of the authoring editor — the
