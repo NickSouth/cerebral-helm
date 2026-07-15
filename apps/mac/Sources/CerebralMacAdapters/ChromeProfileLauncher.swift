@@ -260,9 +260,13 @@ public struct SystemChromeWindowScripting: ChromeWindowScripting {
 
     public func focusWindow(id: Int) -> Bool {
         guard chromeRunning else { return false }
+        // Un-minimize before raising: a window sitting in the Dock ignores `set index to 1`
+        // + `activate`, so surfacing a minimized mode window (a quick-app URL press) would
+        // silently do nothing (NIC-143 follow-up regression fix).
         let source = """
         tell application id "\(Self.chromeBundleID)"
             set _w to (first window whose id is \(id))
+            set minimized of _w to false
             set index of _w to 1
             activate
             return true
@@ -315,10 +319,14 @@ public struct SystemChromeWindowScripting: ChromeWindowScripting {
 
     public func focusTab(windowID id: Int, tabIndex: Int) -> Bool {
         guard chromeRunning else { return false }
+        // Un-minimize before raising (see `focusWindow`) so surfacing an existing tab in a
+        // minimized mode window actually brings it forward.
         let source = """
         tell application id "\(Self.chromeBundleID)"
-            set active tab index of (first window whose id is \(id)) to \(tabIndex)
-            set index of (first window whose id is \(id)) to 1
+            set _w to (first window whose id is \(id))
+            set active tab index of _w to \(tabIndex)
+            set minimized of _w to false
+            set index of _w to 1
             activate
             return true
         end tell
