@@ -7,6 +7,8 @@ import { useBridge } from "../state/BridgeProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import type { LayoutSession } from "../state/dashboardState";
 import type { DiscoveredApp } from "../bridge/cerebralBridge";
+import { AppGlyph } from "./AppGlyph";
+import { useResolvedAppIcons, type ResolvedIcon } from "./useResolvedAppIcons";
 import { armModeWave } from "./modeWave";
 import { heimlichStateLabel } from "./labels";
 import { BatteryGlyph } from "./BatteryGlyph";
@@ -200,18 +202,47 @@ function BottomBarModeMenu() {
  * keeps only the ambient glanceable status. Weather and battery are mocked pre-Mac; Settings is
  * honest-disabled until its surface lands.
  */
+/** One hotswap tile in the layout pill: a squircle-masked OS icon / favicon (with a
+ *  Chrome-profile badge), or an honest category glyph while discovery loads. Shape
+ *  and resolution match a Quick Apps tile exactly (NIC-142). */
+function HotswapTileFace({ icon }: { icon: ResolvedIcon }) {
+  return (
+    <span className="bottom-bar__layout-tile-icon" aria-hidden="true">
+      {icon.iconPng ? (
+        <img
+          className="bottom-bar__layout-tile-img"
+          src={`data:image/png;base64,${icon.iconPng}`}
+          alt=""
+        />
+      ) : (
+        <AppGlyph category={icon.fallbackCategory} />
+      )}
+      {icon.profileAvatarPng ? (
+        <img
+          className="bottom-bar__layout-tile-badge"
+          src={`data:image/png;base64,${icon.profileAvatarPng}`}
+          alt=""
+          aria-hidden="true"
+        />
+      ) : null}
+    </span>
+  );
+}
+
 /**
- * The layout-mode section (NIC-142): while a layout is active it shows the layout's
- * static windows plus the single dynamic quick-toggle slot, and a control to exit
- * layout mode (which hides the windows). Sits in the left group, between weather and
- * the centered mode control. Pressing a quick-toggle target swaps the dynamic slot to
- * it (hides the shown one, surfaces the pressed one) — no confirmation, authorized
- * when the layout opened.
+ * The layout-mode section (NIC-142): while a layout is active it renders as a single
+ * accent pill of the mode's hotswap (quick-toggle) targets — each an app icon / URL
+ * favicon (Chrome-profile aware), the active one ringed — followed by a "+" to pin
+ * another and a close "×". Static (non-hotswap) windows are not shown; the pill just
+ * reads as its own grouped control between weather and the centered mode. Pressing a
+ * target swaps the dynamic slot to it (hides the shown one, surfaces the pressed one)
+ * — no confirmation, authorized when the layout opened.
  */
 function LayoutBar({ session }: { session: LayoutSession }) {
   const bridge = useBridge();
   const toggle = session.quickToggle;
   const [picker, setPicker] = useState<readonly DiscoveredApp[] | null>(null);
+  const resolve = useResolvedAppIcons(toggle?.targets.map((target) => target.ref) ?? []);
 
   const openPicker = async (): Promise<void> => {
     const result = await bridge.listApps();
@@ -228,75 +259,70 @@ function LayoutBar({ session }: { session: LayoutSession }) {
 
   return (
     <div className="bottom-bar__layout" aria-label="Layout windows">
-      <span className="bottom-bar__layout-label">Layout</span>
-      <ul className="bottom-bar__layout-windows">
-        {session.windows.map((window) => (
-          <li key={window.ref} className="bottom-bar__layout-window" title={window.label}>
-            {window.label}
-          </li>
-        ))}
-      </ul>
-      {toggle ? (
-        <div className="bottom-bar__layout-toggle" role="group" aria-label="Quick-toggle window">
-          {toggle.targets.map((target) => {
+      {toggle
+        ? toggle.targets.map((target) => {
             const active = target.ref === toggle.activeRef;
+            const icon = resolve(target.ref, target.label);
             return (
               <button
                 key={target.ref}
                 type="button"
-                className="bottom-bar__layout-target"
+                className="bottom-bar__layout-tile"
                 data-active={active ? "true" : undefined}
                 aria-pressed={active}
-                title={target.label}
+                aria-label={icon.label}
+                title={icon.label}
                 onClick={() => {
                   void bridge.toggleLayout({ ref: target.ref });
                 }}
               >
-                {target.label}
+                <HotswapTileFace icon={icon} />
               </button>
             );
-          })}
-          <span className="bottom-bar__layout-add-wrap">
-            <button
-              type="button"
-              className="bottom-bar__layout-add"
-              aria-label="Pin a window"
-              aria-expanded={picker !== null}
-              onClick={() => {
-                if (picker !== null) {
-                  setPicker(null);
-                } else {
-                  void openPicker();
-                }
-              }}
-            >
-              +
-            </button>
-            {picker !== null ? (
-              <ul className="bottom-bar__layout-picker" role="menu" aria-label="Pin a window">
-                {picker.length === 0 ? (
-                  <li className="bottom-bar__layout-picker-empty">No pinnable apps</li>
-                ) : (
-                  picker.map((app) => (
-                    <li key={app.referenceId}>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="bottom-bar__layout-picker-item"
-                        onClick={() => {
-                          pin(app.referenceId as string);
-                        }}
-                      >
-                        {app.name}
-                      </button>
-                    </li>
-                  ))
-                )}
-              </ul>
-            ) : null}
-          </span>
-        </div>
+          })
+        : null}
+      {toggle ? (
+        <span className="bottom-bar__layout-add-wrap">
+          <button
+            type="button"
+            className="bottom-bar__layout-add"
+            aria-label="Pin a window"
+            aria-expanded={picker !== null}
+            onClick={() => {
+              if (picker !== null) {
+                setPicker(null);
+              } else {
+                void openPicker();
+              }
+            }}
+          >
+            <span aria-hidden="true">+</span>
+          </button>
+          {picker !== null ? (
+            <ul className="bottom-bar__layout-picker" role="menu" aria-label="Pin a window">
+              {picker.length === 0 ? (
+                <li className="bottom-bar__layout-picker-empty">No pinnable apps</li>
+              ) : (
+                picker.map((app) => (
+                  <li key={app.referenceId}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="bottom-bar__layout-picker-item"
+                      onClick={() => {
+                        pin(app.referenceId as string);
+                      }}
+                    >
+                      {app.name}
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          ) : null}
+        </span>
       ) : null}
+      <span className="bottom-bar__layout-sep" aria-hidden="true" />
       <button
         type="button"
         className="bottom-bar__layout-close"
@@ -305,7 +331,7 @@ function LayoutBar({ session }: { session: LayoutSession }) {
           void bridge.closeLayout();
         }}
       >
-        ×
+        <span aria-hidden="true">×</span>
       </button>
     </div>
   );

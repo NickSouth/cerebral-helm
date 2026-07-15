@@ -84,12 +84,13 @@ describe("DashboardShell structure", () => {
     // No layout section until a layout is opened.
     expect(within(bar).queryByLabelText("Layout windows")).toBeNull();
 
-    // Entering layout mode surfaces the static window plus the quick-toggle targets.
+    // Entering layout mode surfaces the hotswap (quick-toggle) targets as icon tiles.
+    // Static (non-hotswap) windows are not shown in the pill (NIC-142).
     await act(async () => {
       await bridge.openLayout({ modeId: "developer" });
     });
     const section = within(bar).getByLabelText("Layout windows");
-    expect(within(section).getByText("Claude")).toBeInTheDocument();
+    expect(within(section).queryByText("Claude")).toBeNull();
     const vscode = within(section).getByRole("button", { name: "Visual Studio Code" });
     const github = within(section).getByRole("button", { name: "GitHub" });
     // VS Code is the initially-shown target.

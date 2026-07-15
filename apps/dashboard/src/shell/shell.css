@@ -707,95 +707,114 @@
   white-space: nowrap;
 }
 
-/* Layout-mode section (NIC-142): current windows + a close-layout control. */
+/* Layout-mode section (NIC-142): a single accent pill of hotswap (quick-toggle)
+   targets rendered as app icons, a "+" to pin another, and a plain close "×".
+   Static (non-hotswap) windows are not shown; the pill grows with its contents. */
 .bottom-bar__layout {
   display: flex;
   align-items: center;
-  gap: var(--ch-space-2);
+  gap: 0.4rem;
   min-width: 0;
+  padding: 0.25rem 0.45rem;
+  border: 0.5px solid color-mix(in srgb, var(--ch-accent-primary) 32%, transparent);
+  border-radius: var(--ch-radius-pill);
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
 }
 
-.bottom-bar__layout-label {
-  color: var(--ch-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: var(--ch-font-size-xs);
-}
-
-.bottom-bar__layout-windows {
-  display: flex;
+/* One hotswap tile: an Apple-style rounded-square icon; the active one gets an
+   accent ring. macOS OS icons already ship squircle-shaped with transparent
+   corners, so the <img> is drawn as-is (a small radius only softens the box). */
+.bottom-bar__layout-tile {
+  display: inline-flex;
   align-items: center;
-  gap: var(--ch-space-2);
-  margin: 0;
+  justify-content: center;
   padding: 0;
-  list-style: none;
-  min-width: 0;
-}
-
-.bottom-bar__layout-window {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 9rem;
-  padding: var(--ch-space-1) var(--ch-space-2);
-  border: 1px solid var(--ch-panel-border);
-  border-radius: var(--ch-radius-pill);
-  color: var(--ch-text-primary);
-}
-
-/* The single dynamic slot: pressable targets, the shown one accented. */
-.bottom-bar__layout-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--ch-space-1);
-  min-width: 0;
-}
-
-.bottom-bar__layout-target {
-  font: inherit;
-  font-size: var(--ch-font-size-sm);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 9rem;
-  color: var(--ch-text-muted);
+  border: none;
   background: transparent;
-  border: 1px solid var(--ch-panel-border);
-  border-radius: var(--ch-radius-pill);
-  padding: var(--ch-space-1) var(--ch-space-2);
   cursor: pointer;
+  line-height: 0;
 }
 
-.bottom-bar__layout-target:hover,
-.bottom-bar__layout-target:focus-visible {
-  color: var(--ch-text-primary);
+.bottom-bar__layout-tile-icon {
+  position: relative;
+  display: inline-flex;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 22%;
+  color: var(--ch-accent-secondary);
 }
 
-.bottom-bar__layout-target[data-active="true"] {
-  color: var(--ch-accent-primary);
-  border-color: var(--ch-accent-primary);
+.bottom-bar__layout-tile-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 22%;
+  object-fit: cover;
 }
 
-/* "+" pin control and its popover of pinnable apps. */
+.bottom-bar__layout-tile-icon .app-glyph {
+  width: 100%;
+  height: 100%;
+  padding: 3px;
+  border-radius: 22%;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--ch-accent-primary) 16%, transparent);
+}
+
+/* The Chrome-profile avatar badge (NIC-151), bottom-left, mirroring Quick Apps. */
+.bottom-bar__layout-tile-badge {
+  position: absolute;
+  bottom: -2px;
+  left: -3px;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 1.5px var(--ch-surface-base);
+}
+
+.bottom-bar__layout-tile:hover .bottom-bar__layout-tile-icon,
+.bottom-bar__layout-tile:focus-visible .bottom-bar__layout-tile-icon {
+  opacity: 0.85;
+}
+
+.bottom-bar__layout-tile[data-active="true"] .bottom-bar__layout-tile-icon {
+  box-shadow: 0 0 0 1.5px var(--ch-accent-primary);
+}
+
+/* "+" pin control (sits with the tiles) and its popover of pinnable apps. */
 .bottom-bar__layout-add-wrap {
   position: relative;
   display: inline-flex;
 }
 
 .bottom-bar__layout-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
   font: inherit;
+  font-size: 1.15rem;
   line-height: 1;
   color: var(--ch-text-muted);
   background: transparent;
-  border: 1px solid var(--ch-panel-border);
-  border-radius: var(--ch-radius-pill);
-  padding: var(--ch-space-1) var(--ch-space-2);
+  border: none;
+  border-radius: 50%;
   cursor: pointer;
 }
 
 .bottom-bar__layout-add:hover,
 .bottom-bar__layout-add:focus-visible {
   color: var(--ch-text-primary);
+  background: color-mix(in srgb, var(--ch-text-primary) 12%, transparent);
+}
+
+/* Hairline between the hotswap group and the close control. */
+.bottom-bar__layout-sep {
+  width: 0.5px;
+  height: 1.1rem;
+  background: color-mix(in srgb, var(--ch-accent-primary) 30%, transparent);
+  flex: none;
 }
 
 .bottom-bar__layout-picker {
@@ -840,21 +859,25 @@
   white-space: nowrap;
 }
 
+/* Close layout mode: a plain red "×", no box — brightens on hover/focus. */
 .bottom-bar__layout-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
   font: inherit;
+  font-size: 1.1rem;
   line-height: 1;
-  color: var(--ch-text-muted);
+  color: var(--ch-status-error);
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--ch-radius-sm);
-  padding: 0 var(--ch-space-2);
+  border: none;
   cursor: pointer;
 }
 
 .bottom-bar__layout-close:hover,
 .bottom-bar__layout-close:focus-visible {
-  color: var(--ch-text-primary);
-  border-color: var(--ch-panel-border);
+  color: color-mix(in srgb, var(--ch-status-error) 65%, white);
 }
 
 /* Mode accent (home dashboard only) — themed via data-mode, never inlined per mode. The center
