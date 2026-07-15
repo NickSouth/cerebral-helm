@@ -5,6 +5,8 @@ import { useSettings } from "../state/SettingsProvider";
 import { useAppearance } from "../state/AppearanceProvider";
 import { useBridge } from "../state/BridgeProvider";
 import { useUiPosture } from "../state/useUiPosture";
+import type { LayoutSession } from "../state/dashboardState";
+import type { DiscoveredApp } from "../bridge/cerebralBridge";
 import { armModeWave } from "./modeWave";
 import { heimlichStateLabel } from "./labels";
 import { BatteryGlyph } from "./BatteryGlyph";
@@ -198,6 +200,117 @@ function BottomBarModeMenu() {
  * keeps only the ambient glanceable status. Weather and battery are mocked pre-Mac; Settings is
  * honest-disabled until its surface lands.
  */
+/**
+ * The layout-mode section (NIC-142): while a layout is active it shows the layout's
+ * static windows plus the single dynamic quick-toggle slot, and a control to exit
+ * layout mode (which hides the windows). Sits in the left group, between weather and
+ * the centered mode control. Pressing a quick-toggle target swaps the dynamic slot to
+ * it (hides the shown one, surfaces the pressed one) — no confirmation, authorized
+ * when the layout opened.
+ */
+function LayoutBar({ session }: { session: LayoutSession }) {
+  const bridge = useBridge();
+  const toggle = session.quickToggle;
+  const [picker, setPicker] = useState<readonly DiscoveredApp[] | null>(null);
+
+  const openPicker = async (): Promise<void> => {
+    const result = await bridge.listApps();
+    const pinned = new Set(toggle?.targets.map((target) => target.ref) ?? []);
+    // Only reference-backed apps are pinnable, and never one already in the slot.
+    setPicker(
+      result.apps.filter((app) => app.referenceId && !pinned.has(app.referenceId))
+    );
+  };
+  const pin = (ref: string): void => {
+    void bridge.pinLayoutWindow({ modeId: session.modeId, ref });
+    setPicker(null);
+  };
+
+  return (
+    <div className="bottom-bar__layout" aria-label="Layout windows">
+      <span className="bottom-bar__layout-label">Layout</span>
+      <ul className="bottom-bar__layout-windows">
+        {session.windows.map((window) => (
+          <li key={window.ref} className="bottom-bar__layout-window" title={window.label}>
+            {window.label}
+          </li>
+        ))}
+      </ul>
+      {toggle ? (
+        <div className="bottom-bar__layout-toggle" role="group" aria-label="Quick-toggle window">
+          {toggle.targets.map((target) => {
+            const active = target.ref === toggle.activeRef;
+            return (
+              <button
+                key={target.ref}
+                type="button"
+                className="bottom-bar__layout-target"
+                data-active={active ? "true" : undefined}
+                aria-pressed={active}
+                title={target.label}
+                onClick={() => {
+                  void bridge.toggleLayout({ ref: target.ref });
+                }}
+              >
+                {target.label}
+              </button>
+            );
+          })}
+          <span className="bottom-bar__layout-add-wrap">
+            <button
+              type="button"
+              className="bottom-bar__layout-add"
+              aria-label="Pin a window"
+              aria-expanded={picker !== null}
+              onClick={() => {
+                if (picker !== null) {
+                  setPicker(null);
+                } else {
+                  void openPicker();
+                }
+              }}
+            >
+              +
+            </button>
+            {picker !== null ? (
+              <ul className="bottom-bar__layout-picker" role="menu" aria-label="Pin a window">
+                {picker.length === 0 ? (
+                  <li className="bottom-bar__layout-picker-empty">No pinnable apps</li>
+                ) : (
+                  picker.map((app) => (
+                    <li key={app.referenceId}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="bottom-bar__layout-picker-item"
+                        onClick={() => {
+                          pin(app.referenceId as string);
+                        }}
+                      >
+                        {app.name}
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
+      <button
+        type="button"
+        className="bottom-bar__layout-close"
+        aria-label="Close layout mode"
+        onClick={() => {
+          void bridge.closeLayout();
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
   const state = useDashboardState();
   const { openSettings } = useSettings();
@@ -278,6 +391,13 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
             Weather · Unavailable
           </span>
         )}
+
+        {state.layoutSession ? (
+          <>
+            <Divider />
+            <LayoutBar session={state.layoutSession} />
+          </>
+        ) : null}
       </div>
 
       <div className="bottom-bar__group bottom-bar__group--center">

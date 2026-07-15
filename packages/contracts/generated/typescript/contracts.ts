@@ -341,6 +341,7 @@ export enum CerebralHelmBridgeEventType {
     ConfigChanged = "config.changed",
     ConfirmationChanged = "confirmation.changed",
     DisplayTopologyChanged = "display.topology.changed",
+    LayoutSessionChanged = "layout.session.changed",
     ModeQuickappsChanged = "mode.quickapps.changed",
     SettingsChanged = "settings.changed",
     SystemStatusChanged = "system.status.changed",
@@ -434,7 +435,9 @@ export enum Operation {
     AddChromeProfileReference = "addChromeProfileReference",
     AddURLReference = "addUrlReference",
     ApplyMode = "applyMode",
+    CaptureLayout = "captureLayout",
     CaptureNote = "captureNote",
+    CloseLayout = "closeLayout",
     DecideConfirmation = "decideConfirmation",
     GetBootstrapState = "getBootstrapState",
     GetRecentActivity = "getRecentActivity",
@@ -442,10 +445,14 @@ export enum Operation {
     ListApps = "listApps",
     ListChromeProfiles = "listChromeProfiles",
     ListUrls = "listUrls",
+    OpenLayout = "openLayout",
+    PinLayoutWindow = "pinLayoutWindow",
     RunSpeedTest = "runSpeedTest",
     SearchNotes = "searchNotes",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",
+    ToggleLayout = "toggleLayout",
+    UpdateLayout = "updateLayout",
     UpdateQuickApps = "updateQuickApps",
     UpdateSettings = "updateSettings",
 }
@@ -724,8 +731,16 @@ export interface CerebralHelmConfigValidationError {
  * state root, never in the shipped config.
  */
 export interface CerebralHelmModeOverride {
-    extensions?:   { [key: string]: any };
-    id:            string;
+    extensions?: { [key: string]: any };
+    id:          string;
+    /**
+     * The mode's authored window layout (NIC-142), replacing the shipped layout. Its structure
+     * matches the mode config's `layout` (mode.schema.json `$defs/layout`); it is carried
+     * opaquely here — validated structurally in the config validator by decoding it into the
+     * same Layout type — so the generated override type stays a flat document and the layout's
+     * named types are defined once, on the mode config.
+     */
+    layout?:       { [key: string]: any };
     quickApps?:    string[];
     schemaVersion: string;
 }
@@ -783,6 +798,12 @@ export interface Layout {
     windows:      Window[];
 }
 
+/**
+ * Which display the whole arrangement targets (NIC-142 layout mode). Absent or 'primary'
+ * targets the primary display; 'secondary' targets the first non-primary display, degrading
+ * to primary when none is attached. Frames resolve against the chosen display's visible
+ * area.
+ */
 export enum Display {
     Primary = "primary",
     Secondary = "secondary",
@@ -1353,6 +1374,13 @@ export interface CerebralHelmURLOpenOutput {
  */
 export interface CerebralHelmWindowArrangeInput {
     arrangement: Arrangement[];
+    /**
+     * Which display the whole arrangement targets (NIC-142 layout mode). Absent or 'primary'
+     * targets the primary display; 'secondary' targets the first non-primary display, degrading
+     * to primary when none is attached. Frames resolve against the chosen display's visible
+     * area.
+     */
+    display?: Display;
 }
 
 export interface Arrangement {

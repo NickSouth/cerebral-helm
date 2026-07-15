@@ -106,6 +106,32 @@ public enum BridgeEventFactory {
         )
     }
 
+    /// A `layout.session.changed` event (NIC-142): the active layout session was
+    /// started, changed, or ended. Carries the session snapshot, or `null` when no
+    /// layout is active (closed or ended by a mode switch). The bottom-bar layout
+    /// section renders from this — it is the only source of the active-layout state.
+    static func layoutSessionChangedEvent(
+        session: LayoutSessionSnapshot?, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Wrapper: Encodable {
+            let session: LayoutSessionSnapshot?
+            enum CodingKeys: String, CodingKey { case session }
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                // Encode an explicit null when ended, so the dashboard distinguishes
+                // "no active layout" from a payload that merely omitted the key.
+                try container.encode(session, forKey: .session)
+            }
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Wrapper(session: session)),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .layoutSessionChanged
+        )
+    }
+
     /// One channel of the `system.status.changed` metrics payload (NIC-81b).
     /// `sampledAt` timestamps the sample that produced the value, so stale data
     /// stays timestamped downstream (MAC-ADAPTER-3 AC).

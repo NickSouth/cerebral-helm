@@ -62,7 +62,7 @@ public enum ConfigValidator {
         "id", "label", "status", "summary", "allowedKnowledgeRoots", "allowedToolIds", "extensions"
     ]
     static let overrideKeys: Set<String> = [
-        "schemaVersion", "id", "quickApps", "extensions"
+        "schemaVersion", "id", "quickApps", "layout", "extensions"
     ]
 
     // MARK: - Directory orchestration
@@ -421,6 +421,22 @@ public enum ConfigValidator {
                     expected: "unique entries",
                     message: "Override quick apps contain duplicates.",
                     remediation: "Remove duplicate quick app ids."
+                ))
+            }
+        }
+        // The override carries its layout opaquely (so the generated override type
+        // stays flat); validate it structurally by decoding into the same typed
+        // `Layout` the mode config uses (NIC-142).
+        if let rawLayout = override.layout {
+            if let layout = Layout.from(raw: rawLayout) {
+                errors += structuralLayoutErrors(layout, file: file)
+            } else {
+                errors.append(makeError(
+                    file: file,
+                    field: "/layout",
+                    expected: "a valid layout",
+                    message: "Layout override does not match the layout schema.",
+                    remediation: "Provide a layout with a display, 1-8 windows, and valid frames."
                 ))
             }
         }

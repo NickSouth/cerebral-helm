@@ -310,6 +310,316 @@ func recentActivityEmptyEnvelope() async throws {
 // MARK: - Confirmation flow
 
 /// Thread-safe collector for emitted bridge-event JSON strings.
+// MARK: - Layout session (NIC-142)
+
+private struct CloseLayoutResult: Decodable { let closed: Bool }
+private struct ToggleLayoutResult: Decodable { let accepted: Bool }
+private struct PinLayoutWindowResult: Decodable { let accepted: Bool }
+private struct UpdateLayoutResult: Decodable { let accepted: Bool }
+private struct CaptureLayoutResult: Decodable {
+    struct Window: Decodable { let ref: String; let kind: String; let frame: String }
+    let windows: [Window]
+}
+
+private func activeToggleTargets(_ emitted: EmittedEvents) -> [String] {
+    let last = layoutSessionEvents(emitted).last?["payload"] as? [String: Any]
+    let toggle = (last?["session"] as? [String: Any])?["quickToggle"] as? [String: Any]
+    let targets = toggle?["targets"] as? [[String: Any]] ?? []
+    return targets.compactMap { $0["ref"] as? String }
+}
+
+/// Records the bundle ids hidden through the workspace-windows capability so a test
+/// can assert which app windows `closeLayout` hid.
+private final class RecordingWorkspaceWindows: WorkspaceWindowsCapability, @unchecked Sendable {
+    private(set) var hidden: [String] = []
+    func visibleApplicationBundleIDs() async throws -> [String] { [] }
+    func hideApplications(bundleIDs: [String]) async throws -> [String] {
+        hidden.append(contentsOf: bundleIDs)
+        return bundleIDs
+    }
+    func unhideApplications(bundleIDs: [String]) async throws -> [String] { bundleIDs }
+}
+
+private func layoutSessionEvents(_ emitted: EmittedEvents) -> [[String: Any]] {
+    emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "layout.session.changed" }
+}
+
+@Test("openLayout starts a session from the mode's authored layout and emits it")
+func openLayoutEmitsSession() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    #expect(response.status == .ok)
+
+    let events = layoutSessionEvents(emitted)
+    #expect(events.count >= 1)
+    let sess = (events.first?["payload"] as? [String: Any])?["session"] as? [String: Any]
+    #expect(sess?["modeId"] as? String == "developer")
+    let windows = sess?["windows"] as? [[String: Any]]
+    #expect(windows?.contains { $0["ref"] as? String == "claude-desktop" } == true)
+    let toggle = sess?["quickToggle"] as? [String: Any]
+    #expect(toggle?["activeRef"] as? String == "vscode")
+}
+
+@Test("openLayout for a mode with no authored layout is an honest error")
+func openLayoutNoLayoutErrors() async throws {
+    let session = try makeSession()
+    // Executive ships no layout (NIC-142 — Executive has no layout mode).
+    let response = await session.execute(operationRequest(.openLayout, #"{"modeId":"executive"}"#))
+    #expect(response.status == .error)
+    #expect(response.error?.code == "no_layout")
+}
+
+@Test("closeLayout hides the session's app windows and ends the session")
+func closeLayoutHidesAndEnds() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = RecordingWorkspaceWindows()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let close = await session.execute(operationRequest(.closeLayout, "{}"))
+    #expect(try decode(close, as: CloseLayoutResult.self).closed)
+
+    // The developer layout's app windows (Claude, VS Code) were hidden.
+    #expect(!windows.hidden.isEmpty)
+    // The final layout event ends the session (session: null).
+    let events = layoutSessionEvents(emitted)
+    #expect((events.last?["payload"] as? [String: Any])?["session"] is NSNull)
+}
+
+@Test("closeLayout with no active session is a no-op that reports not-closed")
+func closeLayoutNoSessionIsNoOp() async throws {
+    let session = try makeSession()
+    let close = await session.execute(operationRequest(.closeLayout, "{}"))
+    #expect(try !decode(close, as: CloseLayoutResult.self).closed)
+}
+
+@Test("a mode switch ends an active layout session (NIC-142)")
+func modeSwitchEndsLayoutSession() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"school"}"#))
+
+    // The switch emitted a session-ending (null) layout event.
+    let events = layoutSessionEvents(emitted)
+    #expect(events.contains { ($0["payload"] as? [String: Any])?["session"] is NSNull })
+}
+
+@Test("toggleLayout swaps the dynamic slot, hides the previous app, and emits the new active")
+func toggleLayoutSwapsSlot() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = RecordingWorkspaceWindows()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        app: MockAppCapability(),
+        url: MockURLCapability(),
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // Developer's slot starts on vscode (app); toggle to github (url).
+    let toggle = await session.execute(operationRequest(.toggleLayout, #"{"ref":"github"}"#))
+    #expect(try decode(toggle, as: ToggleLayoutResult.self).accepted)
+
+    // The previously-shown app (VS Code) was hidden.
+    #expect(!windows.hidden.isEmpty)
+    // The layout event now shows github as the active toggle target.
+    let last = layoutSessionEvents(emitted).last?["payload"] as? [String: Any]
+    let toggleState = (last?["session"] as? [String: Any])?["quickToggle"] as? [String: Any]
+    #expect(toggleState?["activeRef"] as? String == "github")
+}
+
+@Test("toggling to the already-shown target is an accepted no-op (no re-emit)")
+func toggleLayoutSameTargetNoOp() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        app: MockAppCapability(),
+        url: MockURLCapability(),
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let before = layoutSessionEvents(emitted).count
+    // vscode is already the active target.
+    let toggle = await session.execute(operationRequest(.toggleLayout, #"{"ref":"vscode"}"#))
+    #expect(try decode(toggle, as: ToggleLayoutResult.self).accepted)
+    #expect(layoutSessionEvents(emitted).count == before)  // no new layout event
+}
+
+@Test("toggleLayout with no active session is not accepted")
+func toggleLayoutNoSession() async throws {
+    let session = try makeSession()
+    let toggle = await session.execute(operationRequest(.toggleLayout, #"{"ref":"github"}"#))
+    #expect(try !decode(toggle, as: ToggleLayoutResult.self).accepted)
+}
+
+@Test("pinLayoutWindow adds a toggle target, refreshes the session, and persists to the next open (NIC-142)")
+func pinLayoutWindowPersistsAndRefreshes() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // Terminal is a configured app reference; pin it as a new toggle target.
+    let pin = await session.execute(operationRequest(.pinLayoutWindow, #"{"modeId":"developer","ref":"terminal"}"#))
+    #expect(try decode(pin, as: PinLayoutWindowResult.self).accepted)
+    // The active session picked up the new target immediately.
+    #expect(activeToggleTargets(emitted).contains("terminal"))
+
+    // A fresh session's open reads the override-merged layout — the pin persisted.
+    let reopened = EmittedEvents()
+    let session2 = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { reopened.emit($0) }
+    )
+    _ = await session2.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    #expect(activeToggleTargets(reopened).contains("terminal"))
+}
+
+@Test("updateLayout writes a full authored layout and persists it to the next open (NIC-142)")
+func updateLayoutPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let payload = #"""
+    {"modeId":"developer","layout":{"display":"secondary",
+      "windows":[{"ref":"vscode","kind":"app","frame":"left-half"}],
+      "quickToggle":{"frame":"right-half","targets":[{"ref":"claude-desktop","kind":"app"}]}}}
+    """#
+    let response = await session.execute(operationRequest(.updateLayout, payload))
+    #expect(try decode(response, as: UpdateLayoutResult.self).accepted)
+
+    // A fresh open reads the override-merged layout — the authored layout persisted.
+    let reopened = EmittedEvents()
+    let session2 = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { reopened.emit($0) }
+    )
+    _ = await session2.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    #expect(activeToggleTargets(reopened) == ["claude-desktop"])
+}
+
+@Test("updateLayout rejects a layout referencing an unknown app")
+func updateLayoutUnknownRef() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+    let payload = #"{"modeId":"developer","layout":{"display":"primary","windows":[{"ref":"ghost-app","kind":"app","frame":"full"}]}}"#
+    let response = await session.execute(operationRequest(.updateLayout, payload))
+    #expect(try !decode(response, as: UpdateLayoutResult.self).accepted)
+}
+
+@Test("captureLayout proposes named frames snapped from the visible windows (NIC-142)")
+func captureLayoutProposes() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let visible = WindowRect(x: 0, y: 0, width: 1200, height: 800)
+    let windowCap = MockWindowCapability(
+        capturedFrames: ["com.microsoft.VSCode": WindowRect(x: 0, y: 0, width: 800, height: 800)],
+        visibleDisplayFrame: visible
+    )
+    let workspaceWindows = MockWorkspaceWindowsCapability(visibleBundleIDs: ["com.microsoft.VSCode"])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: workspaceWindows,
+        window: windowCap
+    )
+
+    let response = await session.execute(operationRequest(.captureLayout, "{}"))
+    let windows = try decode(response, as: CaptureLayoutResult.self).windows
+    #expect(windows.contains { $0.ref == "vscode" && $0.frame == "left-two-thirds" })
+}
+
+@Test("captureLayout without the AX capability degrades honestly")
+func captureLayoutUnavailable() async throws {
+    let session = try makeSession()  // no window capability
+    let response = await session.execute(operationRequest(.captureLayout, "{}"))
+    #expect(response.status == .error)
+    #expect(response.error?.code == "capture_unavailable")
+}
+
+@Test("pinLayoutWindow rejects an unknown reference")
+func pinLayoutWindowUnknownRef() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let pin = await session.execute(operationRequest(.pinLayoutWindow, #"{"modeId":"developer","ref":"not-a-real-ref"}"#))
+    #expect(try !decode(pin, as: PinLayoutWindowResult.self).accepted)
+}
+
+@Test("pinLayoutWindow preserves a mode's existing quick-apps override")
+func pinLayoutWindowPreservesQuickApps() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+    // First pin a quick app, then a layout window not already in the slot; the
+    // layout write must keep the quick-apps override.
+    _ = await session.execute(operationRequest(.updateQuickApps, #"{"modeId":"developer","quickApps":["vscode"]}"#))
+    _ = await session.execute(operationRequest(.pinLayoutWindow, #"{"modeId":"developer","ref":"terminal"}"#))
+
+    let override = try CerebralHelmModeOverride(
+        data: Data(contentsOf: paths.overridesDirectory.appendingPathComponent("developer.json"))
+    )
+    #expect(override.quickApps == ["vscode"])
+    #expect(override.layout != nil)
+}
+
 private final class EmittedEvents: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [String] = []

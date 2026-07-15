@@ -9,10 +9,16 @@ import type {
   BridgeEventType,
   CaptureNoteResult,
   CerebralBridge,
+  CloseLayoutResult,
   CommandReceipt,
   DecideConfirmationResult,
+  CaptureLayoutResult,
   ListAppsResult,
   ListUrlsResult,
+  OpenLayoutResult,
+  PinLayoutWindowResult,
+  ToggleLayoutResult,
+  UpdateLayoutResult,
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
@@ -58,7 +64,8 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "settings.changed",
   "bridge.capability.changed",
   "workflow.action.progress",
-  "display.topology.changed"
+  "display.topology.changed",
+  "layout.session.changed"
 ]);
 
 /** True when running inside the native shell (the message handler is registered). */
@@ -273,6 +280,24 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     runSpeedTest() {
       return operation<SpeedTestResult>("runSpeedTest", {});
+    },
+    openLayout(input) {
+      return operation<OpenLayoutResult>("openLayout", { ...input });
+    },
+    closeLayout() {
+      return operation<CloseLayoutResult>("closeLayout", {});
+    },
+    toggleLayout(input) {
+      return operation<ToggleLayoutResult>("toggleLayout", { ...input });
+    },
+    pinLayoutWindow(input) {
+      return operation<PinLayoutWindowResult>("pinLayoutWindow", { ...input });
+    },
+    updateLayout(input) {
+      return operation<UpdateLayoutResult>("updateLayout", { ...input });
+    },
+    captureLayout() {
+      return operation<CaptureLayoutResult>("captureLayout", {});
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);

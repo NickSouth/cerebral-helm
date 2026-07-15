@@ -18,7 +18,8 @@ export type BridgeEventType =
   | "settings.changed"
   | "bridge.capability.changed"
   | "workflow.action.progress"
-  | "display.topology.changed";
+  | "display.topology.changed"
+  | "layout.session.changed";
 
 export interface BridgeEvent {
   readonly eventId: string;
@@ -226,6 +227,96 @@ export interface AddChromeProfileResult {
   readonly errors: readonly string[];
 }
 
+// --- Layout mode (NIC-142) ---
+
+/** One window in an active layout session: an app or URL reference the layout put on
+ *  screen, addressed by its configured reference id. `label` is the reference's human
+ *  name, for the bottom-bar chip. */
+export interface LayoutSessionWindow {
+  readonly ref: string;
+  readonly kind: "app" | "url";
+  readonly label: string;
+}
+/** The single dynamic quick-toggle slot: `activeRef` is the target currently shown;
+ *  `targets` are the windows the slot can swap between (the swap itself lands in a
+ *  later increment). */
+export interface LayoutSessionToggle {
+  readonly activeRef: string;
+  readonly targets: readonly LayoutSessionWindow[];
+}
+/** The active layout session (NIC-142), delivered by `layout.session.changed`. The
+ *  bottom-bar layout section renders from this; it is null when no layout is active. */
+export interface LayoutSession {
+  readonly modeId: string;
+  readonly windows: readonly LayoutSessionWindow[];
+  readonly quickToggle: LayoutSessionToggle | null;
+}
+export interface OpenLayoutInput {
+  readonly modeId: string;
+}
+export interface OpenLayoutResult {
+  readonly accepted: boolean;
+  readonly modeId: string;
+}
+export interface CloseLayoutResult {
+  readonly closed: boolean;
+}
+export interface ToggleLayoutInput {
+  readonly ref: string;
+}
+export interface ToggleLayoutResult {
+  readonly accepted: boolean;
+}
+export interface PinLayoutWindowInput {
+  readonly modeId: string;
+  readonly ref: string;
+}
+export interface PinLayoutWindowResult {
+  readonly accepted: boolean;
+  readonly errors: readonly string[];
+}
+
+/** The 8 named window frames (mirrors `window-arrange-input` / the layout schema). */
+export type LayoutFrame =
+  | "full"
+  | "left-half"
+  | "right-half"
+  | "top-half"
+  | "bottom-half"
+  | "left-two-thirds"
+  | "right-third"
+  | "centered";
+export interface LayoutWindowSpec {
+  readonly ref: string;
+  readonly kind: "app" | "url";
+  readonly frame: LayoutFrame;
+}
+export interface LayoutSpec {
+  readonly display: "primary" | "secondary";
+  readonly windows: readonly LayoutWindowSpec[];
+  readonly quickToggle?: {
+    readonly frame: LayoutFrame;
+    readonly targets: readonly { readonly ref: string; readonly kind: "app" | "url" }[];
+  };
+}
+export interface UpdateLayoutInput {
+  readonly modeId: string;
+  readonly layout: LayoutSpec;
+}
+export interface UpdateLayoutResult {
+  readonly accepted: boolean;
+  readonly errors: readonly string[];
+}
+/** One window proposed by live capture: a configured app snapped to a named frame. */
+export interface CapturedWindow {
+  readonly ref: string;
+  readonly kind: "app" | "url";
+  readonly frame: LayoutFrame;
+}
+export interface CaptureLayoutResult {
+  readonly windows: readonly CapturedWindow[];
+}
+
 // --- FR-OBS-04 read surface (shape from get-recent-activity-response fixture) ---
 
 export interface ActivityCommand {
@@ -304,6 +395,27 @@ export interface CerebralBridge {
   /** Run an on-demand internet speed test (NIC-135). Resolves when the ~30s
    *  measurement completes; read-only, so it never gates on confirmation. */
   runSpeedTest(): Promise<SpeedTestResult>;
+  /** Enter layout mode for a mode (NIC-142): start the bottom-bar layout session
+   *  from the mode's authored layout and open its windows. The session arrives via
+   *  a `layout.session.changed` event, not this result. */
+  openLayout(input: OpenLayoutInput): Promise<OpenLayoutResult>;
+  /** Exit layout mode: hide the layout's windows and clear the session (a null
+   *  `layout.session.changed` follows). */
+  closeLayout(): Promise<CloseLayoutResult>;
+  /** Swap the layout's dynamic quick-toggle slot to a target (NIC-142): hides the
+   *  previously-shown window and surfaces the pressed one. The updated session
+   *  arrives via `layout.session.changed`. No confirmation — authorized at open. */
+  toggleLayout(input: ToggleLayoutInput): Promise<ToggleLayoutResult>;
+  /** Pin an app/URL reference as a new quick-toggle target on a mode's layout
+   *  (NIC-142), persisted through the validated override path. The updated session
+   *  arrives via `layout.session.changed`. */
+  pinLayoutWindow(input: PinLayoutWindowInput): Promise<PinLayoutWindowResult>;
+  /** Save a full authored layout for a mode (NIC-142 authoring), persisted through
+   *  the validated override path. */
+  updateLayout(input: UpdateLayoutInput): Promise<UpdateLayoutResult>;
+  /** Propose a layout from the currently-arranged windows (NIC-142 live capture),
+   *  each visible configured app snapped to a named frame. macOS-only. */
+  captureLayout(): Promise<CaptureLayoutResult>;
   /** Subscribe to the bridge event stream; returns an unsubscribe handle. */
   subscribe(listener: BridgeEventListener): Unsubscribe;
 }

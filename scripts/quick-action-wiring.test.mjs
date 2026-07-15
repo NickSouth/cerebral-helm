@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveRepositoryRoot } from "./workspace-roots.mjs";
-import { readQuickActionWiring, validateQuickActionWiring } from "./validate-config.mjs";
+import { readLayoutBackedWorkflowIds, readQuickActionWiring, validateQuickActionWiring } from "./validate-config.mjs";
 
 const repositoryRoot = resolveRepositoryRoot();
 
@@ -12,10 +12,16 @@ function readJson(filePath) {
 }
 
 function registeredWorkflowIds() {
-  const workflowsDir = path.join(repositoryRoot, "config", "workflows");
+  const configRoot = path.join(repositoryRoot, "config");
+  const workflowsDir = path.join(configRoot, "workflows");
   const ids = new Set();
   for (const file of fs.readdirSync(workflowsDir).filter((name) => name.endsWith(".json"))) {
     ids.add(readJson(path.join(workflowsDir, file)).id);
+  }
+  // Layout-backed actions (open-<mode>-layout) are synthesized from a mode's
+  // authored layout, not a static workflow file — resolve them the same way.
+  for (const id of readLayoutBackedWorkflowIds(configRoot)) {
+    ids.add(id);
   }
   return ids;
 }

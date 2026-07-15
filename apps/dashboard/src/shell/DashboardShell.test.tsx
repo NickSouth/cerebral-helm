@@ -78,6 +78,65 @@ describe("DashboardShell structure", () => {
     expect(screen.getByRole("contentinfo", { name: "Status bar" })).toBeInTheDocument();
   });
 
+  it("shows the layout section, swaps the quick-toggle slot, and closes on the X (NIC-142)", async () => {
+    const { bridge } = renderShell();
+    const bar = screen.getByRole("contentinfo", { name: "Status bar" });
+    // No layout section until a layout is opened.
+    expect(within(bar).queryByLabelText("Layout windows")).toBeNull();
+
+    // Entering layout mode surfaces the static window plus the quick-toggle targets.
+    await act(async () => {
+      await bridge.openLayout({ modeId: "developer" });
+    });
+    const section = within(bar).getByLabelText("Layout windows");
+    expect(within(section).getByText("Claude")).toBeInTheDocument();
+    const vscode = within(section).getByRole("button", { name: "Visual Studio Code" });
+    const github = within(section).getByRole("button", { name: "GitHub" });
+    // VS Code is the initially-shown target.
+    expect(vscode).toHaveAttribute("aria-pressed", "true");
+    expect(github).toHaveAttribute("aria-pressed", "false");
+
+    // Pressing GitHub swaps the dynamic slot to it.
+    fireEvent.click(github);
+    await waitFor(() => {
+      expect(within(section).getByRole("button", { name: "GitHub" })).toHaveAttribute(
+        "aria-pressed",
+        "true"
+      );
+    });
+    expect(within(section).getByRole("button", { name: "Visual Studio Code" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+
+    // The close control exits layout mode and clears the section.
+    fireEvent.click(within(section).getByRole("button", { name: "Close layout mode" }));
+    await waitFor(() => {
+      expect(within(bar).queryByLabelText("Layout windows")).toBeNull();
+    });
+  });
+
+  it("pins a window to the quick-toggle slot via the + control (NIC-142)", async () => {
+    const { bridge } = renderShell();
+    const bar = screen.getByRole("contentinfo", { name: "Status bar" });
+    await act(async () => {
+      await bridge.openLayout({ modeId: "developer" });
+    });
+    const section = within(bar).getByLabelText("Layout windows");
+    // Terminal is not a toggle target yet.
+    expect(within(section).queryByRole("button", { name: "Terminal" })).toBeNull();
+
+    // Open the picker and pin Terminal.
+    fireEvent.click(within(section).getByRole("button", { name: "Pin a window" }));
+    const menu = await within(section).findByRole("menu", { name: "Pin a window" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Terminal" }));
+
+    // Terminal is now a pressable quick-toggle target.
+    await waitFor(() => {
+      expect(within(section).getByRole("button", { name: "Terminal" })).toBeInTheDocument();
+    });
+  });
+
   it("boots Executive (the default mode) with exactly one mode control selected", () => {
     renderShell();
     const options = within(screen.getByRole("group", { name: "Mode" })).getAllByRole("button");

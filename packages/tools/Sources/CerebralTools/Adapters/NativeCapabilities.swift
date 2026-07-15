@@ -236,8 +236,8 @@ public protocol WorkspaceWindowsCapability: Sendable {
 
 /// The named-frame vocabulary for window arrangement (NIC-88). Raw values match
 /// the `window-arrange-input` contract enum; frames are resolved against the
-/// primary display's visible area by the platform adapter — callers never supply
-/// coordinates.
+/// target ``WindowDisplay``'s visible area by the platform adapter — callers never
+/// supply coordinates.
 public enum WindowFrame: String, Sendable, CaseIterable {
     case full
     case leftHalf = "left-half"
@@ -258,13 +258,23 @@ public enum WindowArrangeOutcome: Equatable, Sendable {
     case unsupported(String)
 }
 
+/// Which display an arrangement targets (NIC-142 layout mode). Mirrors the
+/// `window-arrange-input` contract's `display` enum; the platform adapter resolves
+/// each named frame against the chosen display's visible area, degrading
+/// `secondary` to the primary display when no second display is attached.
+public enum WindowDisplay: String, Sendable, CaseIterable {
+    case primary
+    case secondary
+}
+
 public protocol WindowCapability: Sendable {
     func inspect() async throws -> [WindowInfo]
 
-    /// Move/resize the application's main window into a named frame. Throws
-    /// `NativeCapabilityError.permissionDenied` when the Accessibility permission
-    /// is not granted (FR-SAF-07 — a capability error, never a prompt loop).
-    func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome
+    /// Move/resize the application's main window into a named frame on the chosen
+    /// display. Throws `NativeCapabilityError.permissionDenied` when the
+    /// Accessibility permission is not granted (FR-SAF-07 — a capability error,
+    /// never a prompt loop).
+    func arrange(bundleID: String, frame: WindowFrame, display: WindowDisplay) async throws -> WindowArrangeOutcome
 
     /// Read the application's main window frame for a workspace snapshot
     /// ("Windows Stored by Mode" geometry, NIC-85). `nil` when the application
@@ -275,6 +285,20 @@ public protocol WindowCapability: Sendable {
     /// Reapply a stored main-window frame. Same outcome vocabulary as `arrange`;
     /// throws `permissionDenied` when Accessibility is not granted.
     func restoreFrame(bundleID: String, rect: WindowRect) async throws -> WindowArrangeOutcome
+
+    /// The primary display's visible area (NIC-142 live capture), in the same
+    /// coordinate space `captureFrame` reports, so a captured window rect can be
+    /// snapped to a named frame. `nil` when no display is attached; throws
+    /// `permissionDenied` when Accessibility is not granted.
+    func visibleFrame() async throws -> WindowRect?
+}
+
+public extension WindowCapability {
+    /// Arrange on the primary display — the default target when a caller does not
+    /// specify a display (preserves the pre-NIC-142 single-display signature).
+    func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome {
+        try await arrange(bundleID: bundleID, frame: frame, display: .primary)
+    }
 }
 
 public struct WindowInfo: Equatable, Sendable {

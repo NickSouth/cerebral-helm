@@ -152,6 +152,37 @@ func layoutDuplicateTargetsRejected() {
     #expect(errors.contains { $0.field == "/layout/quickToggle/targets" && $0.message.contains("duplicate") })
 }
 
+@Test("an override carrying a valid layout validates (NIC-142)")
+func overrideLayoutAccepted() {
+    let data = Data(#"""
+    { "schemaVersion": "1.0.0", "id": "developer",
+      "layout": { "display": "primary",
+        "windows": [ { "ref": "claude-desktop", "kind": "app", "frame": "right-third" } ],
+        "quickToggle": { "frame": "left-two-thirds", "targets": [ { "ref": "vscode", "kind": "app" } ] } } }
+    """#.utf8)
+    #expect(ConfigValidator.overrideDocumentErrors(file: "overrides/developer.json", data: data).isEmpty)
+}
+
+@Test("an override with a structurally invalid layout is rejected")
+func overrideLayoutStructurallyInvalidRejected() {
+    let data = Data(#"""
+    { "schemaVersion": "1.0.0", "id": "developer",
+      "layout": { "display": "primary", "windows": [] } }
+    """#.utf8)
+    let errors = ConfigValidator.overrideDocumentErrors(file: "overrides/developer.json", data: data)
+    #expect(errors.contains { $0.field == "/layout/windows" })
+}
+
+@Test("an override whose layout does not match the schema is rejected")
+func overrideLayoutMalformedRejected() {
+    let data = Data(#"""
+    { "schemaVersion": "1.0.0", "id": "developer",
+      "layout": { "display": "primary", "windows": [ { "ref": "vscode", "kind": "app", "frame": "left-quarter" } ] } }
+    """#.utf8)
+    let errors = ConfigValidator.overrideDocumentErrors(file: "overrides/developer.json", data: data)
+    #expect(errors.contains { $0.field == "/layout" || $0.field.contains("layout") })
+}
+
 // MARK: - Canonical error shape (matches valid/config/validation-error/mode-label-type.json)
 
 @Test("a non-string mode label produces the /label string error shape")

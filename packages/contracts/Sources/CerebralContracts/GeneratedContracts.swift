@@ -1682,6 +1682,7 @@ public enum CerebralHelmBridgeEventType: String, Codable {
     case configChanged = "config.changed"
     case confirmationChanged = "confirmation.changed"
     case displayTopologyChanged = "display.topology.changed"
+    case layoutSessionChanged = "layout.session.changed"
     case modeQuickappsChanged = "mode.quickapps.changed"
     case settingsChanged = "settings.changed"
     case systemStatusChanged = "system.status.changed"
@@ -2143,7 +2144,9 @@ public enum Operation: String, Codable {
     case addChromeProfileReference = "addChromeProfileReference"
     case addURLReference = "addUrlReference"
     case applyMode = "applyMode"
+    case captureLayout = "captureLayout"
     case captureNote = "captureNote"
+    case closeLayout = "closeLayout"
     case decideConfirmation = "decideConfirmation"
     case getBootstrapState = "getBootstrapState"
     case getRecentActivity = "getRecentActivity"
@@ -2151,10 +2154,14 @@ public enum Operation: String, Codable {
     case listApps = "listApps"
     case listChromeProfiles = "listChromeProfiles"
     case listUrls = "listUrls"
+    case openLayout = "openLayout"
+    case pinLayoutWindow = "pinLayoutWindow"
     case runSpeedTest = "runSpeedTest"
     case searchNotes = "searchNotes"
     case submitCommand = "submitCommand"
     case subscribe = "subscribe"
+    case toggleLayout = "toggleLayout"
+    case updateLayout = "updateLayout"
     case updateQuickApps = "updateQuickApps"
     case updateSettings = "updateSettings"
 }
@@ -3366,12 +3373,19 @@ public extension CerebralHelmConfigValidationError {
 public struct CerebralHelmModeOverride: Codable {
     public let extensions: [String: JSONAny]?
     public let id: String
+    /// The mode's authored window layout (NIC-142), replacing the shipped layout. Its structure
+    /// matches the mode config's `layout` (mode.schema.json `$defs/layout`); it is carried
+    /// opaquely here — validated structurally in the config validator by decoding it into the
+    /// same Layout type — so the generated override type stays a flat document and the layout's
+    /// named types are defined once, on the mode config.
+    public let layout: [String: JSONAny]?
     public let quickApps: [String]?
     public let schemaVersion: String
 
-    public init(extensions: [String: JSONAny]?, id: String, quickApps: [String]?, schemaVersion: String) {
+    public init(extensions: [String: JSONAny]?, id: String, layout: [String: JSONAny]?, quickApps: [String]?, schemaVersion: String) {
         self.extensions = extensions
         self.id = id
+        self.layout = layout
         self.quickApps = quickApps
         self.schemaVersion = schemaVersion
     }
@@ -3398,12 +3412,14 @@ public extension CerebralHelmModeOverride {
     func with(
         extensions: [String: JSONAny]?? = nil,
         id: String? = nil,
+        layout: [String: JSONAny]?? = nil,
         quickApps: [String]?? = nil,
         schemaVersion: String? = nil
     ) -> CerebralHelmModeOverride {
         return CerebralHelmModeOverride(
             extensions: extensions ?? self.extensions,
             id: id ?? self.id,
+            layout: layout ?? self.layout,
             quickApps: quickApps ?? self.quickApps,
             schemaVersion: schemaVersion ?? self.schemaVersion
         )
@@ -3650,6 +3666,10 @@ public extension Layout {
     }
 }
 
+/// Which display the whole arrangement targets (NIC-142 layout mode). Absent or 'primary'
+/// targets the primary display; 'secondary' targets the first non-primary display, degrading
+/// to primary when none is attached. Frames resolve against the chosen display's visible
+/// area.
 public enum Display: String, Codable {
     case primary = "primary"
     case secondary = "secondary"
@@ -7047,9 +7067,15 @@ public extension CerebralHelmURLOpenOutput {
 // MARK: - CerebralHelmWindowArrangeInput
 public struct CerebralHelmWindowArrangeInput: Codable {
     public let arrangement: [Arrangement]
+    /// Which display the whole arrangement targets (NIC-142 layout mode). Absent or 'primary'
+    /// targets the primary display; 'secondary' targets the first non-primary display, degrading
+    /// to primary when none is attached. Frames resolve against the chosen display's visible
+    /// area.
+    public let display: Display?
 
-    public init(arrangement: [Arrangement]) {
+    public init(arrangement: [Arrangement], display: Display?) {
         self.arrangement = arrangement
+        self.display = display
     }
 }
 
@@ -7072,10 +7098,12 @@ public extension CerebralHelmWindowArrangeInput {
     }
 
     func with(
-        arrangement: [Arrangement]? = nil
+        arrangement: [Arrangement]? = nil,
+        display: Display?? = nil
     ) -> CerebralHelmWindowArrangeInput {
         return CerebralHelmWindowArrangeInput(
-            arrangement: arrangement ?? self.arrangement
+            arrangement: arrangement ?? self.arrangement,
+            display: display ?? self.display
         )
     }
 

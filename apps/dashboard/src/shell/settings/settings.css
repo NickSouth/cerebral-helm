@@ -411,6 +411,38 @@
   flex: none;
 }
 
+/* Per-mode layout authoring editor (NIC-142). */
+.settings-layout-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-3) 0;
+  border-top: 1px solid var(--ch-panel-border);
+}
+
+.settings-layout-editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+}
+
+.settings-layout-editor__windows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.settings-layout-editor__window {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  color: var(--ch-text-primary);
+}
+
 .settings-button {
   font: inherit;
   font-size: var(--ch-font-size-base);

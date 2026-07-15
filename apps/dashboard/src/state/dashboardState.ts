@@ -3,6 +3,9 @@ import type {
   DashboardBootstrapState,
   DashboardMode
 } from "../bridge/types";
+import type { LayoutSession } from "../bridge/cerebralBridge";
+
+export type { LayoutSession };
 
 export type { DashboardMode };
 
@@ -87,6 +90,9 @@ export type DashboardState = DashboardBootstrapState & {
   readonly activeWorkflowRun?: WorkflowRunProgress | null;
   readonly capabilities?: Readonly<Record<string, CapabilityAvailability>>;
   readonly displayTopology?: DisplayTopology | null;
+  /** The active layout session (NIC-142), folded from `layout.session.changed`.
+   *  Drives the bottom-bar layout section; null/absent when no layout is open. */
+  readonly layoutSession?: LayoutSession | null;
 };
 
 /**

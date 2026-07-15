@@ -5,6 +5,7 @@ import type {
   BridgeEventListener,
   CerebralBridge,
   ChromeProfile,
+  LayoutSession,
   RecentActivity,
   SettingsSnapshot,
   Unsubscribe,
@@ -169,11 +170,45 @@ function mintUrlReference(
   };
 }
 
+/** The layout a mode opens in browser previews / tests (NIC-142). Mirrors the
+ *  shipped `config/modes/developer.json` layout — Developer is the only mode that
+ *  ships an authored layout, so every other mode honestly has none. */
+function mockLayoutSession(modeId: string): LayoutSession | null {
+  if (modeId !== "developer") {
+    return null;
+  }
+  return {
+    modeId,
+    windows: [{ ref: "claude-desktop", kind: "app", label: "Claude" }],
+    quickToggle: {
+      activeRef: "vscode",
+      targets: [
+        { ref: "vscode", kind: "app", label: "Visual Studio Code" },
+        { ref: "github", kind: "url", label: "GitHub" }
+      ]
+    }
+  };
+}
+
+/** Reference-id → display label for mock pins (mirrors the mock's listApps names). */
+function mockRefLabel(ref: string): string {
+  const labels: Record<string, string> = {
+    terminal: "Terminal",
+    vscode: "Visual Studio Code",
+    "claude-desktop": "Claude",
+    github: "GitHub"
+  };
+  return labels[ref] ?? ref;
+}
+
 export function createMockCerebralBridge(
   options: { bootstrapKey?: string } = {}
 ): MockCerebralBridge {
   const bootstrapKey = options.bootstrapKey ?? DEFAULT_BOOTSTRAP_KEY;
   const listeners = new Set<BridgeEventListener>();
+  // The active layout session (NIC-142), held mutably so toggleLayout can swap the
+  // dynamic slot and re-broadcast, mirroring the real bridge.
+  let activeLayout: LayoutSession | null = null;
   // Representative persisted settings, held mutably so updateSettings visibly persists +
   // broadcasts a settings.changed event (mirrors the real bridge; NIC-141/137).
   let settingsSnapshot: SettingsSnapshot = {
@@ -456,6 +491,94 @@ export function createMockCerebralBridge(
           () => resolve({ status: "ok", downloadMbps: 243.7, uploadMbps: 17.9, testedAt: new Date().toISOString() }),
           2600
         );
+      });
+    },
+    openLayout(input) {
+      // Mirror the bridge (NIC-142): a mode with an authored layout starts a
+      // session delivered as a layout.session.changed event; a mode without one is
+      // an honest rejection. Only Developer ships a layout in the mock fixtures.
+      const session = mockLayoutSession(input.modeId);
+      if (!session) {
+        return Promise.resolve({ accepted: false, modeId: input.modeId });
+      }
+      activeLayout = session;
+      emit({
+        eventId: "brevt_mock_layout_open01",
+        type: "layout.session.changed",
+        schemaVersion: "1.0.0",
+        timestamp: new Date().toISOString(),
+        payload: { session }
+      });
+      return Promise.resolve({ accepted: true, modeId: input.modeId });
+    },
+    closeLayout() {
+      activeLayout = null;
+      emit({
+        eventId: "brevt_mock_layout_close1",
+        type: "layout.session.changed",
+        schemaVersion: "1.0.0",
+        timestamp: new Date().toISOString(),
+        payload: { session: null }
+      });
+      return Promise.resolve({ closed: true });
+    },
+    toggleLayout(input) {
+      // Swap the dynamic slot to the pressed target and re-broadcast (NIC-142). An
+      // unknown target — or no active layout — is an honest rejection.
+      const toggle = activeLayout?.quickToggle;
+      if (!activeLayout || !toggle || !toggle.targets.some((target) => target.ref === input.ref)) {
+        return Promise.resolve({ accepted: false });
+      }
+      activeLayout = {
+        ...activeLayout,
+        quickToggle: { ...toggle, activeRef: input.ref }
+      };
+      emit({
+        eventId: "brevt_mock_layout_toggle",
+        type: "layout.session.changed",
+        schemaVersion: "1.0.0",
+        timestamp: new Date().toISOString(),
+        payload: { session: activeLayout }
+      });
+      return Promise.resolve({ accepted: true });
+    },
+    pinLayoutWindow(input) {
+      // Append the reference as a new quick-toggle target and re-broadcast (NIC-142),
+      // mirroring the bridge's validated override write.
+      const toggle = activeLayout?.quickToggle;
+      if (!activeLayout || !toggle) {
+        return Promise.resolve({ accepted: false, errors: ["This layout has no dynamic slot."] });
+      }
+      if (!toggle.targets.some((target) => target.ref === input.ref)) {
+        activeLayout = {
+          ...activeLayout,
+          quickToggle: {
+            ...toggle,
+            targets: [...toggle.targets, { ref: input.ref, kind: "app", label: mockRefLabel(input.ref) }]
+          }
+        };
+        emit({
+          eventId: "brevt_mock_layout_pin01",
+          type: "layout.session.changed",
+          schemaVersion: "1.0.0",
+          timestamp: new Date().toISOString(),
+          payload: { session: activeLayout }
+        });
+      }
+      return Promise.resolve({ accepted: true, errors: [] });
+    },
+    updateLayout() {
+      // The settings editor's Save; the mock accepts a well-formed layout (NIC-142).
+      return Promise.resolve({ accepted: true, errors: [] });
+    },
+    captureLayout() {
+      // A representative capture for browser previews of the authoring editor — the
+      // real bridge snaps the currently-arranged windows to named frames.
+      return Promise.resolve({
+        windows: [
+          { ref: "vscode", kind: "app", frame: "left-two-thirds" },
+          { ref: "claude-desktop", kind: "app", frame: "right-third" }
+        ]
       });
     },
     subscribe(listener): Unsubscribe {

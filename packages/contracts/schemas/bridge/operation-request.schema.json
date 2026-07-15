@@ -37,7 +37,13 @@
         "addUrlReference",
         "listUrls",
         "listChromeProfiles",
-        "addChromeProfileReference"
+        "addChromeProfileReference",
+        "openLayout",
+        "closeLayout",
+        "toggleLayout",
+        "pinLayoutWindow",
+        "updateLayout",
+        "captureLayout"
       ]
     },
     "payload": {

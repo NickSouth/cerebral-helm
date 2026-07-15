@@ -13,9 +13,11 @@ import CerebralTools
 public protocol AXWindowSurface: Sendable {
     /// Whether this process is trusted for Accessibility control (no prompting).
     var isProcessTrusted: Bool { get }
-    /// The primary display's visible area in Accessibility (top-left) coordinates,
-    /// or `nil` when no display is attached.
-    var primaryVisibleFrame: CGRect? { get }
+    /// The chosen display's visible area in Accessibility (top-left) coordinates.
+    /// `nil` when that display is not attached (e.g. `secondary` with a single
+    /// display) or no display is attached at all — the caller decides how to
+    /// degrade.
+    func visibleFrame(for display: WindowDisplay) -> CGRect?
     /// Process ids of running applications with the bundle id.
     func runningProcessIDs(bundleID: String) -> [pid_t]
     /// Set the application's main window frame. `false` when the application
@@ -31,11 +33,26 @@ public struct SystemAXWindows: AXWindowSurface {
 
     public var isProcessTrusted: Bool { AXIsProcessTrusted() }
 
-    public var primaryVisibleFrame: CGRect? {
-        // The primary screen is the first in `screens` (origin of the global
-        // AppKit space). Convert its bottom-left visibleFrame to AX top-left.
-        guard let primary = NSScreen.screens.first else { return nil }
-        let visible = primary.visibleFrame
+    public func visibleFrame(for display: WindowDisplay) -> CGRect? {
+        // The primary screen is the first in `screens` — the origin of both the
+        // global AppKit space (bottom-left, y up) and the Accessibility space
+        // (top-left, y down). "secondary" is the first non-primary screen.
+        let screens = NSScreen.screens
+        guard let primary = screens.first else { return nil }
+        let target: NSScreen?
+        switch display {
+        case .primary:
+            target = primary
+        case .secondary:
+            target = screens.count > 1 ? screens[1] : nil
+        }
+        guard let screen = target else { return nil }
+
+        // Convert the chosen screen's global bottom-left visibleFrame to the
+        // Accessibility top-left space: x is shared across both spaces; y flips
+        // about the primary display's height, so a secondary screen offset above
+        // or beside the primary lands at the correct AX origin.
+        let visible = screen.visibleFrame
         let topLeftY = primary.frame.height - visible.maxY
         return CGRect(x: visible.minX, y: topLeftY, width: visible.width, height: visible.height)
     }
@@ -107,9 +124,12 @@ public struct AXWindowCapability: WindowCapability {
         return []
     }
 
-    public func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome {
+    public func arrange(bundleID: String, frame: WindowFrame, display: WindowDisplay) async throws -> WindowArrangeOutcome {
         guard surface.isProcessTrusted else { throw NativeCapabilityError.permissionDenied }
-        guard let visible = surface.primaryVisibleFrame else {
+        // Target the requested display, degrading to the primary when the
+        // secondary is absent (stranded-window pattern) so a layout authored for a
+        // now-disconnected display still arranges rather than silently failing.
+        guard let visible = surface.visibleFrame(for: display) ?? surface.visibleFrame(for: .primary) else {
             return .unsupported("No display is available to arrange on.")
         }
         return apply(Self.resolve(frame, in: visible), bundleID: bundleID)
@@ -136,6 +156,12 @@ public struct AXWindowCapability: WindowCapability {
         )
     }
 
+    public func visibleFrame() async throws -> WindowRect? {
+        guard surface.isProcessTrusted else { throw NativeCapabilityError.permissionDenied }
+        guard let visible = surface.visibleFrame(for: .primary) else { return nil }
+        return WindowRect(x: visible.minX, y: visible.minY, width: visible.width, height: visible.height)
+    }
+
     private func apply(_ target: CGRect, bundleID: String) -> WindowArrangeOutcome {
         let pids = surface.runningProcessIDs(bundleID: bundleID)
         guard !pids.isEmpty else { return .notRunning }
@@ -146,31 +172,14 @@ public struct AXWindowCapability: WindowCapability {
     }
 
     /// Deterministic named-frame geometry within the visible area (AX top-left
-    /// coordinates). Exposed for tests.
+    /// coordinates), delegating to the portable ``WindowFrameGeometry`` — the single
+    /// source shared with the layout-capture snap path (NIC-142). Exposed for tests.
     public static func resolve(_ frame: WindowFrame, in visible: CGRect) -> CGRect {
-        let width = visible.width
-        let height = visible.height
-        switch frame {
-        case .full:
-            return visible
-        case .leftHalf:
-            return CGRect(x: visible.minX, y: visible.minY, width: width / 2, height: height)
-        case .rightHalf:
-            return CGRect(x: visible.minX + width / 2, y: visible.minY, width: width / 2, height: height)
-        case .topHalf:
-            return CGRect(x: visible.minX, y: visible.minY, width: width, height: height / 2)
-        case .bottomHalf:
-            return CGRect(x: visible.minX, y: visible.minY + height / 2, width: width, height: height / 2)
-        case .leftTwoThirds:
-            return CGRect(x: visible.minX, y: visible.minY, width: width * 2 / 3, height: height)
-        case .rightThird:
-            return CGRect(x: visible.minX + width * 2 / 3, y: visible.minY, width: width / 3, height: height)
-        case .centered:
-            return CGRect(
-                x: visible.minX + width / 8, y: visible.minY + height / 8,
-                width: width * 3 / 4, height: height * 3 / 4
-            )
-        }
+        let rect = WindowFrameGeometry.resolve(
+            frame,
+            in: WindowRect(x: visible.minX, y: visible.minY, width: visible.width, height: visible.height)
+        )
+        return CGRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
     }
 }
 #endif

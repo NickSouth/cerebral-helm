@@ -132,6 +132,29 @@ export function validateModeQuickApps(document, relativePath, registeredAppIds, 
   }
 }
 
+// A mode that carries an authored `layout` (NIC-142) provides its
+// `open-<modeId>-layout` workflow by synthesis (WorkflowCatalogLoader), not as a
+// static config/workflows/*.json file. Mirror that id-derivation here so the
+// quick-action wiring gate resolves a layout-backed action the same way the Swift
+// runtime does — without duplicating the step synthesis (only the id rule).
+export function readLayoutBackedWorkflowIds(configRoot) {
+  const modesDir = path.join(configRoot, "modes");
+  const ids = new Set();
+
+  if (!fs.existsSync(modesDir)) {
+    return ids;
+  }
+
+  for (const file of fs.readdirSync(modesDir).filter((name) => name.endsWith(".json"))) {
+    const mode = readJson(path.join(modesDir, file));
+    if (mode.layout && typeof mode.id === "string") {
+      ids.add(`open-${mode.id}-layout`);
+    }
+  }
+
+  return ids;
+}
+
 // The quick-action wiring manifest is the registry of which quick actions are LIVE (wired to
 // a runtime target) versus placeholders. It lives with the UI that dispatches the slots. The
 // gate "follows the wiring": an action id absent from the manifest is an allowed placeholder,
@@ -383,8 +406,11 @@ export function validateRepositoryConfig() {
   assert(new Set(workflowIds).size === workflowIds.length, `workflows: workflow ids must be unique across files.`, errors);
 
   // Every wired quick action must resolve to a real workflow id or a declared handler
-  // (ex-NIC-113). Placeholders (ids not in the manifest) are unaffected.
-  validateQuickActionWiring(readQuickActionWiring(repositoryRoot), new Set(workflowIds), errors);
+  // (ex-NIC-113). Workflow ids come from static files OR from a mode's authored
+  // layout (synthesized `open-<mode>-layout`). Placeholders (ids not in the
+  // manifest) are unaffected.
+  const resolvableWorkflowIds = new Set([...workflowIds, ...readLayoutBackedWorkflowIds(configRoot)]);
+  validateQuickActionWiring(readQuickActionWiring(repositoryRoot), resolvableWorkflowIds, errors);
 
   const modeIds = new Set(modeFiles.map((filePath) => readJson(filePath).id));
   const agentIds = new Set(agentFiles.map((filePath) => readJson(filePath).id));

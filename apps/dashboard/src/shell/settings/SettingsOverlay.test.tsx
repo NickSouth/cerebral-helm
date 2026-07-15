@@ -139,6 +139,22 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(within(dialog).getByLabelText("Windows Stored by Mode")).toBeChecked();
   });
 
+  it("captures and saves a mode layout in the Modes panel (NIC-142)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Modes" }));
+
+    // Capture the first non-Executive mode's currently-arranged windows.
+    const captureButtons = await within(dialog).findAllByRole("button", { name: "Capture current windows" });
+    fireEvent.click(captureButtons[0]);
+    // The captured windows become dynamic-slot options and a Save appears.
+    const save = await within(dialog).findByRole("button", { name: "Save layout" });
+    expect(within(dialog).getAllByRole("radio").length).toBeGreaterThanOrEqual(2);
+
+    fireEvent.click(save);
+    await within(dialog).findByText("Layout saved.");
+  });
+
   it("seeds the Knowledge root from the persisted settings snapshot (NIC-141)", async () => {
     renderApp();
     const dialog = openSettings();

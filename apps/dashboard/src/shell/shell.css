@@ -707,6 +707,156 @@
   white-space: nowrap;
 }
 
+/* Layout-mode section (NIC-142): current windows + a close-layout control. */
+.bottom-bar__layout {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  min-width: 0;
+}
+
+.bottom-bar__layout-label {
+  color: var(--ch-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: var(--ch-font-size-xs);
+}
+
+.bottom-bar__layout-windows {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.bottom-bar__layout-window {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 9rem;
+  padding: var(--ch-space-1) var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-pill);
+  color: var(--ch-text-primary);
+}
+
+/* The single dynamic slot: pressable targets, the shown one accented. */
+.bottom-bar__layout-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-1);
+  min-width: 0;
+}
+
+.bottom-bar__layout-target {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 9rem;
+  color: var(--ch-text-muted);
+  background: transparent;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-pill);
+  padding: var(--ch-space-1) var(--ch-space-2);
+  cursor: pointer;
+}
+
+.bottom-bar__layout-target:hover,
+.bottom-bar__layout-target:focus-visible {
+  color: var(--ch-text-primary);
+}
+
+.bottom-bar__layout-target[data-active="true"] {
+  color: var(--ch-accent-primary);
+  border-color: var(--ch-accent-primary);
+}
+
+/* "+" pin control and its popover of pinnable apps. */
+.bottom-bar__layout-add-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.bottom-bar__layout-add {
+  font: inherit;
+  line-height: 1;
+  color: var(--ch-text-muted);
+  background: transparent;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-pill);
+  padding: var(--ch-space-1) var(--ch-space-2);
+  cursor: pointer;
+}
+
+.bottom-bar__layout-add:hover,
+.bottom-bar__layout-add:focus-visible {
+  color: var(--ch-text-primary);
+}
+
+.bottom-bar__layout-picker {
+  position: absolute;
+  bottom: calc(100% + var(--ch-space-2));
+  left: 0;
+  z-index: 20;
+  min-width: 10rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--ch-space-1);
+  list-style: none;
+  background: var(--ch-surface-raised);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  box-shadow: var(--ch-shadow-raised, 0 8px 24px rgb(0 0 0 / 0.35));
+}
+
+.bottom-bar__layout-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--ch-text-primary);
+  background: transparent;
+  border: none;
+  border-radius: var(--ch-radius-sm);
+  padding: var(--ch-space-1) var(--ch-space-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bottom-bar__layout-picker-item:hover,
+.bottom-bar__layout-picker-item:focus-visible {
+  background: var(--ch-surface-sunken, rgb(255 255 255 / 0.06));
+}
+
+.bottom-bar__layout-picker-empty {
+  padding: var(--ch-space-1) var(--ch-space-2);
+  color: var(--ch-text-muted);
+  white-space: nowrap;
+}
+
+.bottom-bar__layout-close {
+  font: inherit;
+  line-height: 1;
+  color: var(--ch-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--ch-radius-sm);
+  padding: 0 var(--ch-space-2);
+  cursor: pointer;
+}
+
+.bottom-bar__layout-close:hover,
+.bottom-bar__layout-close:focus-visible {
+  color: var(--ch-text-primary);
+  border-color: var(--ch-panel-border);
+}
+
 /* Mode accent (home dashboard only) — themed via data-mode, never inlined per mode. The center
    control is now an upward menu (NIC-77): the container anchors the popup, the trigger shows the
    active mode in the accent color. */

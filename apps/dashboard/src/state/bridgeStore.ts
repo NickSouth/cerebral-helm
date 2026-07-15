@@ -11,6 +11,7 @@ import type {
   DashboardState,
   DashboardStore,
   DisplayTopology,
+  LayoutSession,
   WorkflowRunProgress
 } from "./dashboardState";
 
@@ -264,6 +265,16 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
           primaryDisplayId: payload.primaryDisplayId ?? null
         }
       };
+    }
+    case "layout.session.changed": {
+      // A layout was opened, changed, or ended (NIC-142). Runtime-only state — the
+      // bottom-bar layout section renders from it. A null payload ends the session.
+      const session = (event.payload as { session?: LayoutSession | null }).session ?? null;
+      const current = state.layoutSession ?? null;
+      if (session === current) {
+        return state;
+      }
+      return { ...state, layoutSession: session };
     }
     case "system.status.changed": {
       const payload = event.payload as { category?: string; state?: Record<string, unknown> };

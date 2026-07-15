@@ -144,6 +144,16 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // Enumerates Chrome profiles for the profile dropdown + avatar badges
             // (NIC-151), driven off listChromeProfiles.
             chromeProfiles: composition.chromeProfiles,
+            // Hides a layout's app windows on closeLayout (NIC-142) — the same
+            // permission-free primitive "Windows Stored by Mode" uses.
+            workspaceWindows: composition.capabilities.workspaceWindows,
+            // Surfaces a quick-toggle target on toggleLayout (NIC-142). The URL
+            // capability is the shared instance, so toggling to a URL reuses the
+            // runtime's tab-surfacing registry (NIC-145).
+            app: composition.capabilities.app,
+            url: composition.capabilities.url,
+            // Reads visible windows' frames for live layout capture (NIC-142).
+            window: composition.capabilities.window,
             emitEventJSON: { relay.emit($0) }
         )
         // Live app-install detection (NIC-150): the same re-mint + reference-reload
