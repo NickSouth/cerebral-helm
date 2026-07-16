@@ -9,10 +9,20 @@ import type {
   BridgeEventType,
   CaptureNoteResult,
   CerebralBridge,
+  CloseLayoutResult,
   CommandReceipt,
   DecideConfirmationResult,
+  CaptureLayoutResult,
   ListAppsResult,
   ListUrlsResult,
+  OpenLayoutResult,
+  PinLayoutWindowResult,
+  AddLayoutTargetResult,
+  ToggleModeCollapseResult,
+  WindowInventory,
+  WindowActionResult,
+  ToggleLayoutResult,
+  UpdateLayoutResult,
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
@@ -58,7 +68,9 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "settings.changed",
   "bridge.capability.changed",
   "workflow.action.progress",
-  "display.topology.changed"
+  "display.topology.changed",
+  "layout.session.changed",
+  "mode.windowcollapse.changed"
 ]);
 
 /** True when running inside the native shell (the message handler is registered). */
@@ -273,6 +285,45 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     runSpeedTest() {
       return operation<SpeedTestResult>("runSpeedTest", {});
+    },
+    openLayout(input) {
+      return operation<OpenLayoutResult>("openLayout", { ...input });
+    },
+    closeLayout() {
+      return operation<CloseLayoutResult>("closeLayout", {});
+    },
+    toggleLayout(input) {
+      return operation<ToggleLayoutResult>("toggleLayout", { ...input });
+    },
+    pinLayoutWindow(input) {
+      return operation<PinLayoutWindowResult>("pinLayoutWindow", { ...input });
+    },
+    addLayoutTarget(input) {
+      return operation<AddLayoutTargetResult>("addLayoutTarget", { ...input });
+    },
+    updateLayout(input) {
+      return operation<UpdateLayoutResult>("updateLayout", { ...input });
+    },
+    toggleModeCollapse(input) {
+      return operation<ToggleModeCollapseResult>("toggleModeCollapse", { ...input });
+    },
+    closeAllWindows() {
+      return operation<CommandReceipt>("closeAllWindows", {});
+    },
+    listWindows() {
+      return operation<WindowInventory>("listWindows", {});
+    },
+    minimizeWindow(input) {
+      return operation<WindowActionResult>("minimizeWindow", { ...input });
+    },
+    surfaceWindow(input) {
+      return operation<WindowActionResult>("surfaceWindow", { ...input });
+    },
+    closeWindow(input) {
+      return operation<WindowActionResult>("closeWindow", { ...input });
+    },
+    captureLayout() {
+      return operation<CaptureLayoutResult>("captureLayout", {});
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);

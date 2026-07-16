@@ -28,7 +28,7 @@ private func invalidDescriptorsDirectory() -> URL {
 private let mvpToolIDs: Set<String> = [
     "app.open", "url.open", "hook.run", "note.capture",
     "note.search", "mode.apply", "system.status.read", "window.arrange",
-    "apps.list", "network.speed.test",
+    "apps.list", "network.speed.test", "apps.quitall",
 ]
 
 private struct StubHandler: ToolHandler {
@@ -157,5 +157,5 @@ func shippedOverlaysAreConsistent() throws {
     #expect(registry.tool("hook.run")?.isAvailable(in: .macOS) == true)
     #expect(registry.tool("network.speed.test")?.availableInPreMac == false)
     #expect(registry.tool("network.speed.test")?.availableOnMacOS == true)
-    #expect(registry.toolIDs.count == 10)
+    #expect(registry.toolIDs.count == 11)
 }

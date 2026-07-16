@@ -26,6 +26,10 @@ public struct StoredSettings: Equatable, Sendable {
     /// id, or one no longer connected all degrade to the system primary display;
     /// the shell never errors on a stale value.
     public var mainDisplayID: String?
+    /// The stable display id layout mode opens on and whose bottom bar shows the
+    /// hotswap pill (NIC-142). `nil`, an unknown, or a disconnected id degrades to
+    /// the main display, then the system primary; the shell never errors on it.
+    public var layoutDisplayID: String?
     /// The raw JSON of the patch's `modeColors` map (token name → `#rrggbb`),
     /// preserved verbatim. `nil`/absent = no per-mode color overrides, so every
     /// mode uses its shipped palette (NIC-137).
@@ -44,6 +48,7 @@ public struct StoredSettings: Equatable, Sendable {
         knowledgeRootReference: String? = nil,
         windowsStoredByMode: Bool? = nil,
         mainDisplayID: String? = nil,
+        layoutDisplayID: String? = nil,
         modeColorsJSON: String? = nil,
         extensionsJSON: String? = nil
     ) {
@@ -56,6 +61,7 @@ public struct StoredSettings: Equatable, Sendable {
         self.knowledgeRootReference = knowledgeRootReference
         self.windowsStoredByMode = windowsStoredByMode
         self.mainDisplayID = mainDisplayID
+        self.layoutDisplayID = layoutDisplayID
         self.modeColorsJSON = modeColorsJSON
         self.extensionsJSON = extensionsJSON
     }
@@ -75,6 +81,8 @@ public struct SettingsChanges: Equatable, Sendable {
     public var knowledgeRootReference: String?
     public var windowsStoredByMode: Bool?
     public var mainDisplayID: String?
+    /// The stable display id layout mode opens on (NIC-142). See `StoredSettings`.
+    public var layoutDisplayID: String?
     /// When present, replaces the stored `modeColors` map wholesale (token name → hex).
     public var modeColorsJSON: String?
     /// When present, replaces the stored `extensions` object wholesale.
@@ -90,6 +98,7 @@ public struct SettingsChanges: Equatable, Sendable {
         knowledgeRootReference: String? = nil,
         windowsStoredByMode: Bool? = nil,
         mainDisplayID: String? = nil,
+        layoutDisplayID: String? = nil,
         modeColorsJSON: String? = nil,
         extensionsJSON: String? = nil
     ) {
@@ -102,6 +111,7 @@ public struct SettingsChanges: Equatable, Sendable {
         self.knowledgeRootReference = knowledgeRootReference
         self.windowsStoredByMode = windowsStoredByMode
         self.mainDisplayID = mainDisplayID
+        self.layoutDisplayID = layoutDisplayID
         self.modeColorsJSON = modeColorsJSON
         self.extensionsJSON = extensionsJSON
     }
@@ -126,6 +136,7 @@ public struct SettingsChanges: Equatable, Sendable {
         if let workspace = changes["workspace"] as? [String: Any] {
             windowsStoredByMode = workspace["windowsStoredByMode"] as? Bool
             mainDisplayID = workspace["mainDisplayId"] as? String
+            layoutDisplayID = workspace["layoutDisplayId"] as? String
         }
         if let modeColors = changes["modeColors"] as? [String: Any],
            let data = try? JSONSerialization.data(withJSONObject: modeColors, options: [.sortedKeys]) {
@@ -142,8 +153,8 @@ public struct SettingsChanges: Equatable, Sendable {
         defaultModeID == nil && confirmAllActions == nil && appearanceDensity == nil
             && appearanceReducedMotion == nil && appearanceAssistantName == nil
             && commandPaletteHotkey == nil && knowledgeRootReference == nil
-            && windowsStoredByMode == nil && mainDisplayID == nil && modeColorsJSON == nil
-            && extensionsJSON == nil
+            && windowsStoredByMode == nil && mainDisplayID == nil && layoutDisplayID == nil
+            && modeColorsJSON == nil && extensionsJSON == nil
     }
 }
 

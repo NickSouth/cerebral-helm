@@ -139,6 +139,33 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(within(dialog).getByLabelText("Windows Stored by Mode")).toBeChecked();
   });
 
+  it("captures and saves a mode layout in the Modes panel (NIC-142)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Modes" }));
+
+    // Open the first non-Executive mode's layout editor. There is no native channel in
+    // jsdom, so "Edit layout" falls back to the inline editor (NIC-142 increment 4).
+    const editButtons = await within(dialog).findAllByRole("button", { name: /^Edit .+ layout$/ });
+    fireEvent.click(editButtons[0]);
+
+    // Capture the mode's currently-arranged windows (seeds the canvas + hotswap slot).
+    const capture = await within(dialog).findByRole("button", { name: "Capture current windows" });
+    fireEvent.click(capture);
+    const save = await within(dialog).findByRole("button", { name: "Save layout" });
+
+    // Add a second hotswap target via the Quick Apps-style picker (NIC-142 increment 6).
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Add hotswap target" }));
+    const picker = await within(dialog).findByRole("dialog", { name: "Add a hotswap target" });
+    fireEvent.click(await within(picker).findByRole("button", { name: "Add Terminal" }));
+    // The target becomes a removable chip in the hotswap list.
+    await within(dialog).findByRole("button", { name: "Remove hotswap Terminal" });
+    fireEvent.click(within(picker).getByRole("button", { name: "Close pin menu" }));
+
+    fireEvent.click(save);
+    await within(dialog).findByText("Layout saved.");
+  });
+
   it("seeds the Knowledge root from the persisted settings snapshot (NIC-141)", async () => {
     renderApp();
     const dialog = openSettings();
@@ -162,7 +189,7 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
         defaultModeId: "executive",
         appearance: { reducedMotion: true, assistantName: "Heimlich" },
         knowledge: { rootReference: null },
-        workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary" },
+        workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
         modeColors: {}
       });
     const store = createBridgeStore(bridge, loadBootstrapState());
@@ -319,7 +346,7 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
             confirmAllActions: false,
             appearance: { reducedMotion: false, assistantName: "Cerebra" },
             knowledge: { rootReference: null },
-            workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary" },
+            workspace: { windowsStoredByMode: false, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
             modeColors: { "executive.primary": "#ff2d55" }
           }
         }

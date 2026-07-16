@@ -19,6 +19,10 @@ public struct ToolCapabilities: Sendable {
     public let workspaceWindows: any WorkspaceWindowsCapability
     public let window: any WindowCapability
     public let appDiscovery: any AppDiscoveryCapability
+    public let applicationLifecycle: any ApplicationLifecycleCapability
+    /// Per-window enumeration + minimize/surface/close for the window navigator and the
+    /// per-mode window-state layer (NIC-143). Empty mock by default (pre-Mac/tests).
+    public let appWindows: any AppWindowsCapability
     /// Stable capability IDs (``CapabilityMatrix/Capability/appOpen`` etc.) bound
     /// to honest native implementations in this bundle. Empty for the mock bundle.
     public let nativeCapabilityIDs: Set<String>
@@ -32,6 +36,8 @@ public struct ToolCapabilities: Sendable {
         workspaceWindows: any WorkspaceWindowsCapability = MockWorkspaceWindowsCapability(matrix: .none),
         window: any WindowCapability = MockWindowCapability(matrix: .none),
         appDiscovery: any AppDiscoveryCapability = MockAppDiscoveryCapability(matrix: .none),
+        applicationLifecycle: any ApplicationLifecycleCapability = MockApplicationLifecycleCapability(matrix: .none),
+        appWindows: any AppWindowsCapability = MockAppWindowsCapability(groups: []),
         nativeCapabilityIDs: Set<String> = []
     ) {
         self.app = app
@@ -42,6 +48,8 @@ public struct ToolCapabilities: Sendable {
         self.workspaceWindows = workspaceWindows
         self.window = window
         self.appDiscovery = appDiscovery
+        self.applicationLifecycle = applicationLifecycle
+        self.appWindows = appWindows
         self.nativeCapabilityIDs = nativeCapabilityIDs
     }
 
@@ -56,7 +64,9 @@ public struct ToolCapabilities: Sendable {
             networkSpeedTest: MockNetworkSpeedTestCapability(matrix: matrix),
             workspaceWindows: MockWorkspaceWindowsCapability(matrix: matrix),
             window: MockWindowCapability(matrix: matrix),
-            appDiscovery: MockAppDiscoveryCapability(matrix: matrix)
+            appDiscovery: MockAppDiscoveryCapability(matrix: matrix),
+            applicationLifecycle: MockApplicationLifecycleCapability(matrix: matrix),
+            appWindows: MockAppWindowsCapability(groups: [])
         )
     }
 }

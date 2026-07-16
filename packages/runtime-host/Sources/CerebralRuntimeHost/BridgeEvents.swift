@@ -88,6 +88,26 @@ public enum BridgeEventFactory {
         )
     }
 
+    /// Announces a mode's collapse-all state (NIC-143): `collapsed` is true when the
+    /// mode currently holds a hidden "collapsed windows" bucket, so the bottom-bar
+    /// collapse/expand control shows the right affordance. Session-only, per-mode
+    /// state — emitted on toggle and on every mode switch (the entered mode's state).
+    public static func windowCollapseChangedEvent(
+        modeId: String, collapsed: Bool, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Payload: Encodable {
+            let modeId: String
+            let collapsed: Bool
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Payload(modeId: modeId, collapsed: collapsed)),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .modeWindowcollapseChanged
+        )
+    }
+
     /// A `settings.changed` event (live cross-webview sync): the durable settings were
     /// updated through `updateSettings`, so every surface — the dashboard and the
     /// separate native settings window — reflects the new assistant name, mode colors,
@@ -103,6 +123,32 @@ public enum BridgeEventFactory {
             schemaVersion: "1.0.0",
             timestamp: timestamp,
             type: .settingsChanged
+        )
+    }
+
+    /// A `layout.session.changed` event (NIC-142): the active layout session was
+    /// started, changed, or ended. Carries the session snapshot, or `null` when no
+    /// layout is active (closed or ended by a mode switch). The bottom-bar layout
+    /// section renders from this — it is the only source of the active-layout state.
+    static func layoutSessionChangedEvent(
+        session: LayoutSessionSnapshot?, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Wrapper: Encodable {
+            let session: LayoutSessionSnapshot?
+            enum CodingKeys: String, CodingKey { case session }
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                // Encode an explicit null when ended, so the dashboard distinguishes
+                // "no active layout" from a payload that merely omitted the key.
+                try container.encode(session, forKey: .session)
+            }
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Wrapper(session: session)),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .layoutSessionChanged
         )
     }
 

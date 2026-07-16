@@ -32,6 +32,7 @@ public struct SQLiteSettingsStore: SettingsStore {
             knowledgeRootReference: row.text("knowledge_root_reference"),
             windowsStoredByMode: row.integer("windows_stored_by_mode").map { $0 != 0 },
             mainDisplayID: row.text("main_display_id"),
+            layoutDisplayID: row.text("layout_display_id"),
             modeColorsJSON: row.text("mode_colors"),
             extensionsJSON: row.text("extensions")
         )
@@ -43,8 +44,8 @@ public struct SQLiteSettingsStore: SettingsStore {
             INSERT INTO settings (
                 id, default_mode_id, confirm_all_actions, appearance_density, appearance_reduced_motion,
                 appearance_assistant_name, hotkey_command_palette, knowledge_root_reference,
-                windows_stored_by_mode, main_display_id, mode_colors, extensions, updated_at
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                windows_stored_by_mode, main_display_id, layout_display_id, mode_colors, extensions, updated_at
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 default_mode_id           = COALESCE(excluded.default_mode_id, default_mode_id),
                 confirm_all_actions       = COALESCE(excluded.confirm_all_actions, confirm_all_actions),
@@ -55,6 +56,7 @@ public struct SQLiteSettingsStore: SettingsStore {
                 knowledge_root_reference  = COALESCE(excluded.knowledge_root_reference, knowledge_root_reference),
                 windows_stored_by_mode    = COALESCE(excluded.windows_stored_by_mode, windows_stored_by_mode),
                 main_display_id           = COALESCE(excluded.main_display_id, main_display_id),
+                layout_display_id         = COALESCE(excluded.layout_display_id, layout_display_id),
                 mode_colors               = COALESCE(excluded.mode_colors, mode_colors),
                 extensions                = COALESCE(excluded.extensions, extensions),
                 updated_at                = excluded.updated_at;
@@ -69,6 +71,7 @@ public struct SQLiteSettingsStore: SettingsStore {
                 .textOrNull(changes.knowledgeRootReference),
                 changes.windowsStoredByMode.map { SQLiteValue.integer($0 ? 1 : 0) } ?? .null,
                 .textOrNull(changes.mainDisplayID),
+                .textOrNull(changes.layoutDisplayID),
                 .textOrNull(changes.modeColorsJSON),
                 .textOrNull(changes.extensionsJSON),
                 .timestamp(clock.now()),

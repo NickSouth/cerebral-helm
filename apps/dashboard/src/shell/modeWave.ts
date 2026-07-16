@@ -37,6 +37,19 @@ function consumeOrigin(): { x: number; y: number } | null {
   return origin && Date.now() - origin.armedAt <= ORIGIN_TTL_MS ? origin : null;
 }
 
+/**
+ * Where the ring emanates from when no click origin was armed — bottom-center, the home
+ * of the bottom-bar mode control. On macOS the bottom-bar mode switch opens a *separate*
+ * native dropdown window, so its selection can't arm the wave in this (main dashboard)
+ * context; falling back here keeps that switch animated instead of a silent re-theme.
+ */
+function fallbackOrigin(): { x: number; y: number } | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return { x: window.innerWidth / 2, y: window.innerHeight };
+}
+
 /** Either the OS preference or the app-level override (NIC-63) stills the wave entirely. */
 function motionStilled(): boolean {
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
@@ -74,7 +87,9 @@ function spawnWaveRing(x: number, y: number, radius: number): void {
 }
 
 function runModeWave(notify: () => void): void {
-  const origin = consumeOrigin();
+  // A click-armed origin (rail / in-webview bottom bar) wins; otherwise emanate from the
+  // bottom-bar mode control's home, so a native-dropdown switch still waves (NIC-143 follow-up).
+  const origin = consumeOrigin() ?? fallbackOrigin();
   // Commit the mode change live so the whole UI — the WebGL stream included — keeps rendering and
   // the tokens cross-fade to the new palette. The ring is the only added flourish, spawned after
   // the commit so it already wears the target mode's accent.

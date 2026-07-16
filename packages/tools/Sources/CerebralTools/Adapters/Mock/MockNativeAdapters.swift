@@ -164,19 +164,23 @@ public struct MockWindowCapability: WindowCapability {
     public var arrangeOutcomes: [String: WindowArrangeOutcome]
     /// Simulated readable main-window frames by bundle id (geometry capture).
     public var capturedFrames: [String: WindowRect]
+    /// The primary display's simulated visible area (NIC-142 live capture).
+    public var visibleDisplayFrame: WindowRect?
 
     public init(
         matrix: CapabilityMatrix = .allAvailable,
         fault: MockFault = .none,
         windows: [WindowInfo] = [],
         arrangeOutcomes: [String: WindowArrangeOutcome] = [:],
-        capturedFrames: [String: WindowRect] = [:]
+        capturedFrames: [String: WindowRect] = [:],
+        visibleDisplayFrame: WindowRect? = nil
     ) {
         self.matrix = matrix
         self.fault = fault
         self.windows = windows
         self.arrangeOutcomes = arrangeOutcomes
         self.capturedFrames = capturedFrames
+        self.visibleDisplayFrame = visibleDisplayFrame
     }
 
     public func inspect() async throws -> [WindowInfo] {
@@ -184,7 +188,7 @@ public struct MockWindowCapability: WindowCapability {
         return windows
     }
 
-    public func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome {
+    public func arrange(bundleID: String, frame: WindowFrame, display: WindowDisplay) async throws -> WindowArrangeOutcome {
         try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault, subject: bundleID)
         return arrangeOutcomes[bundleID] ?? .notRunning
     }
@@ -192,6 +196,11 @@ public struct MockWindowCapability: WindowCapability {
     public func captureFrame(bundleID: String) async throws -> WindowRect? {
         try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault, subject: bundleID)
         return capturedFrames[bundleID]
+    }
+
+    public func visibleFrame() async throws -> WindowRect? {
+        try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault)
+        return visibleDisplayFrame
     }
 
     public func restoreFrame(bundleID: String, rect: WindowRect) async throws -> WindowArrangeOutcome {

@@ -310,6 +310,366 @@ func recentActivityEmptyEnvelope() async throws {
 // MARK: - Confirmation flow
 
 /// Thread-safe collector for emitted bridge-event JSON strings.
+// MARK: - Layout session (NIC-142)
+
+private struct CloseLayoutResult: Decodable { let closed: Bool }
+private struct ToggleLayoutResult: Decodable { let accepted: Bool }
+private struct PinLayoutWindowResult: Decodable { let accepted: Bool }
+private struct AddLayoutTargetResult: Decodable { let accepted: Bool }
+private struct UpdateLayoutResult: Decodable { let accepted: Bool }
+private struct CaptureLayoutResult: Decodable {
+    struct Window: Decodable { let ref: String; let kind: String; let frame: String }
+    let windows: [Window]
+}
+
+private func activeToggleTargets(_ emitted: EmittedEvents) -> [String] {
+    let last = layoutSessionEvents(emitted).last?["payload"] as? [String: Any]
+    let toggle = (last?["session"] as? [String: Any])?["quickToggle"] as? [String: Any]
+    let targets = toggle?["targets"] as? [[String: Any]] ?? []
+    return targets.compactMap { $0["ref"] as? String }
+}
+
+/// Records the bundle ids hidden through the workspace-windows capability so a test
+/// can assert which app windows `closeLayout` hid.
+private final class RecordingWorkspaceWindows: WorkspaceWindowsCapability, @unchecked Sendable {
+    private(set) var hidden: [String] = []
+    func visibleApplicationBundleIDs() async throws -> [String] { [] }
+    func hideApplications(bundleIDs: [String]) async throws -> [String] {
+        hidden.append(contentsOf: bundleIDs)
+        return bundleIDs
+    }
+    func unhideApplications(bundleIDs: [String]) async throws -> [String] { bundleIDs }
+}
+
+private func layoutSessionEvents(_ emitted: EmittedEvents) -> [[String: Any]] {
+    emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "layout.session.changed" }
+}
+
+@Test("openLayout starts a session from the mode's authored layout and emits it")
+func openLayoutEmitsSession() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    #expect(response.status == .ok)
+
+    let events = layoutSessionEvents(emitted)
+    #expect(events.count >= 1)
+    let sess = (events.first?["payload"] as? [String: Any])?["session"] as? [String: Any]
+    #expect(sess?["modeId"] as? String == "developer")
+    let windows = sess?["windows"] as? [[String: Any]]
+    #expect(windows?.contains { $0["ref"] as? String == "claude-desktop" } == true)
+    let toggle = sess?["quickToggle"] as? [String: Any]
+    #expect(toggle?["activeRef"] as? String == "vscode")
+}
+
+@Test("openLayout for a mode with no authored layout is an honest error")
+func openLayoutNoLayoutErrors() async throws {
+    let session = try makeSession()
+    // Executive ships no layout (NIC-142 — Executive has no layout mode).
+    let response = await session.execute(operationRequest(.openLayout, #"{"modeId":"executive"}"#))
+    #expect(response.status == .error)
+    #expect(response.error?.code == "no_layout")
+}
+
+@Test("closeLayout hides the session's app windows and ends the session")
+func closeLayoutHidesAndEnds() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = RecordingWorkspaceWindows()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let close = await session.execute(operationRequest(.closeLayout, "{}"))
+    #expect(try decode(close, as: CloseLayoutResult.self).closed)
+
+    // The developer layout's app windows (Claude, VS Code) were hidden.
+    #expect(!windows.hidden.isEmpty)
+    // The final layout event ends the session (session: null).
+    let events = layoutSessionEvents(emitted)
+    #expect((events.last?["payload"] as? [String: Any])?["session"] is NSNull)
+}
+
+@Test("closeLayout with no active session is a no-op that reports not-closed")
+func closeLayoutNoSessionIsNoOp() async throws {
+    let session = try makeSession()
+    let close = await session.execute(operationRequest(.closeLayout, "{}"))
+    #expect(try !decode(close, as: CloseLayoutResult.self).closed)
+}
+
+@Test("a mode switch ends an active layout session (NIC-142)")
+func modeSwitchEndsLayoutSession() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"school"}"#))
+
+    // The switch emitted a session-ending (null) layout event.
+    let events = layoutSessionEvents(emitted)
+    #expect(events.contains { ($0["payload"] as? [String: Any])?["session"] is NSNull })
+}
+
+@Test("toggleLayout swaps the dynamic slot, hides the previous app, and emits the new active")
+func toggleLayoutSwapsSlot() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = RecordingWorkspaceWindows()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        app: MockAppCapability(),
+        url: MockURLCapability(),
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // Developer's slot starts on vscode (app); toggle to github (url).
+    let toggle = await session.execute(operationRequest(.toggleLayout, #"{"ref":"github"}"#))
+    #expect(try decode(toggle, as: ToggleLayoutResult.self).accepted)
+
+    // The previously-shown app (VS Code) was hidden.
+    #expect(!windows.hidden.isEmpty)
+    // The layout event now shows github as the active toggle target.
+    let last = layoutSessionEvents(emitted).last?["payload"] as? [String: Any]
+    let toggleState = (last?["session"] as? [String: Any])?["quickToggle"] as? [String: Any]
+    #expect(toggleState?["activeRef"] as? String == "github")
+}
+
+@Test("toggling to the already-shown target is an accepted no-op (no re-emit)")
+func toggleLayoutSameTargetNoOp() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        app: MockAppCapability(),
+        url: MockURLCapability(),
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let before = layoutSessionEvents(emitted).count
+    // vscode is already the active target.
+    let toggle = await session.execute(operationRequest(.toggleLayout, #"{"ref":"vscode"}"#))
+    #expect(try decode(toggle, as: ToggleLayoutResult.self).accepted)
+    #expect(layoutSessionEvents(emitted).count == before)  // no new layout event
+}
+
+@Test("toggleLayout with no active session is not accepted")
+func toggleLayoutNoSession() async throws {
+    let session = try makeSession()
+    let toggle = await session.execute(operationRequest(.toggleLayout, #"{"ref":"github"}"#))
+    #expect(try !decode(toggle, as: ToggleLayoutResult.self).accepted)
+}
+
+@Test("pinLayoutWindow adds a toggle target, refreshes the session, and persists to the next open (NIC-142)")
+func pinLayoutWindowPersistsAndRefreshes() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // Terminal is a configured app reference; pin it as a new toggle target.
+    let pin = await session.execute(operationRequest(.pinLayoutWindow, #"{"modeId":"developer","ref":"terminal"}"#))
+    #expect(try decode(pin, as: PinLayoutWindowResult.self).accepted)
+    // The active session picked up the new target immediately.
+    #expect(activeToggleTargets(emitted).contains("terminal"))
+
+    // A fresh session's open reads the override-merged layout — the pin persisted.
+    let reopened = EmittedEvents()
+    let session2 = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { reopened.emit($0) }
+    )
+    _ = await session2.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    #expect(activeToggleTargets(reopened).contains("terminal"))
+}
+
+@Test("updateLayout writes a full authored layout and persists it to the next open (NIC-142)")
+func updateLayoutPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let payload = #"""
+    {"modeId":"developer","layout":{"display":"secondary",
+      "windows":[{"ref":"vscode","kind":"app","frame":"left-half"}],
+      "quickToggle":{"frame":"right-half","targets":[{"ref":"claude-desktop","kind":"app"}]}}}
+    """#
+    let response = await session.execute(operationRequest(.updateLayout, payload))
+    #expect(try decode(response, as: UpdateLayoutResult.self).accepted)
+
+    // A fresh open reads the override-merged layout — the authored layout persisted.
+    let reopened = EmittedEvents()
+    let session2 = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { reopened.emit($0) }
+    )
+    _ = await session2.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    #expect(activeToggleTargets(reopened) == ["claude-desktop"])
+}
+
+@Test("updateLayout rejects a layout referencing an unknown app")
+func updateLayoutUnknownRef() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+    let payload = #"{"modeId":"developer","layout":{"display":"primary","windows":[{"ref":"ghost-app","kind":"app","frame":"full"}]}}"#
+    let response = await session.execute(operationRequest(.updateLayout, payload))
+    #expect(try !decode(response, as: UpdateLayoutResult.self).accepted)
+}
+
+@Test("captureLayout proposes named frames snapped from the visible windows (NIC-142)")
+func captureLayoutProposes() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let visible = WindowRect(x: 0, y: 0, width: 1200, height: 800)
+    let windowCap = MockWindowCapability(
+        capturedFrames: ["com.microsoft.VSCode": WindowRect(x: 0, y: 0, width: 800, height: 800)],
+        visibleDisplayFrame: visible
+    )
+    let workspaceWindows = MockWorkspaceWindowsCapability(visibleBundleIDs: ["com.microsoft.VSCode"])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: workspaceWindows,
+        window: windowCap
+    )
+
+    let response = await session.execute(operationRequest(.captureLayout, "{}"))
+    let windows = try decode(response, as: CaptureLayoutResult.self).windows
+    #expect(windows.contains { $0.ref == "vscode" && $0.frame == "left-two-thirds" })
+}
+
+@Test("captureLayout without the AX capability degrades honestly")
+func captureLayoutUnavailable() async throws {
+    let session = try makeSession()  // no window capability
+    let response = await session.execute(operationRequest(.captureLayout, "{}"))
+    #expect(response.status == .error)
+    #expect(response.error?.code == "capture_unavailable")
+}
+
+@Test("pinLayoutWindow rejects an unknown reference")
+func pinLayoutWindowUnknownRef() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let pin = await session.execute(operationRequest(.pinLayoutWindow, #"{"modeId":"developer","ref":"not-a-real-ref"}"#))
+    #expect(try !decode(pin, as: PinLayoutWindowResult.self).accepted)
+}
+
+@Test("pinLayoutWindow preserves a mode's existing quick-apps override")
+func pinLayoutWindowPreservesQuickApps() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+    // First pin a quick app, then a layout window not already in the slot; the
+    // layout write must keep the quick-apps override.
+    _ = await session.execute(operationRequest(.updateQuickApps, #"{"modeId":"developer","quickApps":["vscode"]}"#))
+    _ = await session.execute(operationRequest(.pinLayoutWindow, #"{"modeId":"developer","ref":"terminal"}"#))
+
+    let override = try CerebralHelmModeOverride(
+        data: Data(contentsOf: paths.overridesDirectory.appendingPathComponent("developer.json"))
+    )
+    #expect(override.quickApps == ["vscode"])
+    #expect(override.layout != nil)
+}
+
+@Test("addLayoutTarget adds a session-only toggle target, emits it, and does NOT persist (NIC-142)")
+func addLayoutTargetSessionOnly() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // Terminal is a configured app reference and not already a toggle target.
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"terminal"}"#))
+    #expect(try decode(add, as: AddLayoutTargetResult.self).accepted)
+    #expect(activeToggleTargets(emitted).contains("terminal"))
+
+    // Session-only: nothing was written to the mode override (contrast pinLayoutWindow).
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: paths.overridesDirectory.appendingPathComponent("developer.json").path
+        )
+    )
+}
+
+@Test("addLayoutTarget is idempotent for a ref already in the slot")
+func addLayoutTargetIdempotent() async throws {
+    let session = try makeSession()
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // vscode is the developer layout's initial toggle target.
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"vscode"}"#))
+    #expect(try decode(add, as: AddLayoutTargetResult.self).accepted)
+}
+
+@Test("addLayoutTarget with no active session is not accepted")
+func addLayoutTargetNoSession() async throws {
+    let session = try makeSession()
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"terminal"}"#))
+    #expect(try !decode(add, as: AddLayoutTargetResult.self).accepted)
+}
+
+@Test("addLayoutTarget rejects an unknown reference")
+func addLayoutTargetUnknownRef() async throws {
+    let session = try makeSession()
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"not-a-real-ref"}"#))
+    #expect(try !decode(add, as: AddLayoutTargetResult.self).accepted)
+}
+
 private final class EmittedEvents: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [String] = []
@@ -1278,4 +1638,187 @@ func addUrlReferenceWarmsFavicon() async throws {
     let cache = FaviconCache(directory: paths.faviconCacheDirectory)
     await waitUntil { cache.icon(forTarget: "https://news.ycombinator.com") != nil }
     #expect(cache.icon(forTarget: "https://news.ycombinator.com") == iconBytes)
+}
+
+// MARK: - Collapse / expand all (NIC-143)
+
+/// Records hide/unhide and serves a mutable visible-app set, so a test can exercise
+/// the collapse-all bucket end to end (hiding removes from visible, un-hiding adds
+/// back — mirroring `NSRunningApplication` app-level hide).
+private final class CollapseWorkspaceWindows: WorkspaceWindowsCapability, @unchecked Sendable {
+    private var visible: [String]
+    private(set) var hidden: [String] = []
+    private(set) var unhidden: [String] = []
+
+    init(visible: [String]) { self.visible = visible }
+
+    func visibleApplicationBundleIDs() async throws -> [String] { visible }
+    func hideApplications(bundleIDs: [String]) async throws -> [String] {
+        hidden.append(contentsOf: bundleIDs)
+        visible.removeAll { bundleIDs.contains($0) }
+        return bundleIDs
+    }
+    func unhideApplications(bundleIDs: [String]) async throws -> [String] {
+        unhidden.append(contentsOf: bundleIDs)
+        visible.append(contentsOf: bundleIDs)
+        return bundleIDs
+    }
+}
+
+private struct ToggleModeCollapseResult: Decodable { let collapsed: Bool }
+
+private func windowCollapseEvents(_ emitted: EmittedEvents) -> [[String: Any]] {
+    emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.windowcollapse.changed" }
+}
+
+@Test("toggleModeCollapse hides the visible apps into the mode bucket, then un-hides exactly them")
+func toggleModeCollapseRoundTrips() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = CollapseWorkspaceWindows(visible: ["com.apple.Safari", "com.microsoft.VSCode"])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // Collapse: the two visible apps are hidden and the state flips to collapsed.
+    let first = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    #expect(try decode(first, as: ToggleModeCollapseResult.self).collapsed)
+    #expect(windows.hidden == ["com.apple.Safari", "com.microsoft.VSCode"])
+    let firstEvent = windowCollapseEvents(emitted).last?["payload"] as? [String: Any]
+    #expect(firstEvent?["modeId"] as? String == "executive")
+    #expect(firstEvent?["collapsed"] as? Bool == true)
+
+    // Expand: exactly the bucket is un-hidden and the state flips back.
+    let second = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    #expect(try !decode(second, as: ToggleModeCollapseResult.self).collapsed)
+    #expect(windows.unhidden == ["com.apple.Safari", "com.microsoft.VSCode"])
+    #expect((windowCollapseEvents(emitted).last?["payload"] as? [String: Any])?["collapsed"] as? Bool == false)
+}
+
+@Test("collapsing with nothing visible is a no-op that stays expanded and emits nothing")
+func toggleModeCollapseEmptyIsNoOp() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = CollapseWorkspaceWindows(visible: [])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+    let response = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    #expect(try !decode(response, as: ToggleModeCollapseResult.self).collapsed)
+    #expect(windows.hidden.isEmpty)
+    #expect(windowCollapseEvents(emitted).isEmpty)
+}
+
+@Test("a mode switch re-applies the entered mode's collapse bucket (bucket wins over restore)")
+func modeSwitchReappliesCollapseBucket() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = CollapseWorkspaceWindows(visible: ["com.apple.Safari"])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+    // Collapse executive: Safari is now hidden and bucketed.
+    _ = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    // Simulate "Windows Stored by Mode" restore un-hiding Safari, then switch into
+    // executive: the collapse bucket must re-hide it.
+    _ = try await windows.unhideApplications(bundleIDs: ["com.apple.Safari"])
+    let hiddenBefore = windows.hidden.count
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"executive"}"#))
+
+    #expect(windows.hidden.count > hiddenBefore)
+    #expect((windowCollapseEvents(emitted).last?["payload"] as? [String: Any])?["collapsed"] as? Bool == true)
+}
+
+// MARK: - Close all windows (NIC-143)
+
+@Test("closeAllWindows routes through the command bus and gates on a destructive confirmation")
+func closeAllWindowsGatesOnConfirmation() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    // apps.quitall is macOS-only, so the runtime must be composed in the macOS phase
+    // for the tool to resolve; `.mocks()` gives the (empty) lifecycle capability.
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+    let response = await session.execute(operationRequest(.closeAllWindows, "{}"))
+    #expect(response.status == .ok)
+
+    // A destructive tool never runs on the first call: the policy engine raises a
+    // confirmation disclosure naming the quit tool, which the user must approve.
+    let confirmations = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "confirmation.changed" }
+    let disclosure = (confirmations.last?["payload"] as? [String: Any])?["confirmation"] as? [String: Any]
+    #expect((disclosure?["tool"] as? [String: Any])?["id"] as? String == "apps.quitall")
+    #expect(disclosure?["risk"] as? String == "destructive")
+}
+
+// MARK: - Window navigator (NIC-143)
+
+private struct WindowInventoryResult: Decodable {
+    struct Group: Decodable { let bundleId: String; let appName: String; let windows: [Window] }
+    struct Window: Decodable { let id: String; let title: String; let minimized: Bool }
+    let apps: [Group]
+}
+private struct WindowActionResult: Decodable { let ok: Bool }
+
+@Test("listWindows returns the app-grouped inventory from the capability (NIC-143)")
+func listWindowsReturnsInventory() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        appWindows: MockAppWindowsCapability()
+    )
+    let response = await session.execute(operationRequest(.listWindows, "{}"))
+    let inventory = try decode(response, as: WindowInventoryResult.self)
+    #expect(inventory.apps.map(\.bundleId) == ["com.google.Chrome", "com.microsoft.VSCode"])
+    #expect(inventory.apps.first?.windows.map(\.id) == ["1001", "1002"])
+    #expect(inventory.apps.first?.windows.last?.minimized == true)
+}
+
+@Test("window actions report whether they took effect, and no-op honestly without the capability")
+func windowActionsReportEffect() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let windows = MockAppWindowsCapability()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        appWindows: windows
+    )
+    // A known id is acted on.
+    let minimize = await session.execute(operationRequest(.minimizeWindow, #"{"windowId":"1001"}"#))
+    #expect(try decode(minimize, as: WindowActionResult.self).ok)
+    #expect(windows.minimized == ["1001"])
+    // Close routes to the capability too.
+    _ = await session.execute(operationRequest(.closeWindow, #"{"windowId":"2001"}"#))
+    #expect(windows.closed == ["2001"])
+    // An unknown id is a false result, never an error.
+    let surface = await session.execute(operationRequest(.surfaceWindow, #"{"windowId":"9999"}"#))
+    #expect(try !decode(surface, as: WindowActionResult.self).ok)
+
+    // Without the capability (pre-Mac), the list is empty and actions no-op with ok:false.
+    let bare = BridgeSession(runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory)
+    #expect(try decode(await bare.execute(operationRequest(.listWindows, "{}")), as: WindowInventoryResult.self).apps.isEmpty)
+    #expect(try !decode(
+        await bare.execute(operationRequest(.minimizeWindow, #"{"windowId":"1001"}"#)),
+        as: WindowActionResult.self
+    ).ok)
 }

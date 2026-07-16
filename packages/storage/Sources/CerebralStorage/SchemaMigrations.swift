@@ -18,6 +18,7 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0007_assistant_name", sql: assistantNameSQL),
         SchemaMigration(id: "0008_mode_colors", sql: modeColorsSQL),
         SchemaMigration(id: "0009_confirm_all_actions", sql: confirmAllActionsSQL),
+        SchemaMigration(id: "0010_layout_display", sql: layoutDisplaySQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -223,5 +224,13 @@ public enum SchemaMigrations {
     /// action to require confirmation; NULL/0 = descriptor policy governs.
     public static let confirmAllActionsSQL = """
     ALTER TABLE settings ADD COLUMN confirm_all_actions INTEGER;
+    """
+
+    /// Migration 0010: the "Layout display" setting (NIC-142). The settings
+    /// singleton gains the stable display id layout mode opens on (and whose bottom
+    /// bar shows the hotswap pill); NULL or a disconnected/unknown id degrades to
+    /// the main display, then the system primary — the shell never errors on it.
+    public static let layoutDisplaySQL = """
+    ALTER TABLE settings ADD COLUMN layout_display_id TEXT;
     """
 }

@@ -78,6 +78,67 @@ describe("DashboardShell structure", () => {
     expect(screen.getByRole("contentinfo", { name: "Status bar" })).toBeInTheDocument();
   });
 
+  it("shows the layout section, swaps the quick-toggle slot, and closes on the X (NIC-142)", async () => {
+    const { bridge } = renderShell();
+    const bar = screen.getByRole("contentinfo", { name: "Status bar" });
+    // No layout section until a layout is opened.
+    expect(within(bar).queryByLabelText("Layout windows")).toBeNull();
+
+    // Entering layout mode surfaces the hotswap (quick-toggle) targets as icon tiles.
+    // Static (non-hotswap) windows are not shown in the pill (NIC-142).
+    await act(async () => {
+      await bridge.openLayout({ modeId: "developer" });
+    });
+    const section = within(bar).getByLabelText("Layout windows");
+    expect(within(section).queryByText("Claude")).toBeNull();
+    const vscode = within(section).getByRole("button", { name: "Visual Studio Code" });
+    const github = within(section).getByRole("button", { name: "GitHub" });
+    // VS Code is the initially-shown target.
+    expect(vscode).toHaveAttribute("aria-pressed", "true");
+    expect(github).toHaveAttribute("aria-pressed", "false");
+
+    // Pressing GitHub swaps the dynamic slot to it.
+    fireEvent.click(github);
+    await waitFor(() => {
+      expect(within(section).getByRole("button", { name: "GitHub" })).toHaveAttribute(
+        "aria-pressed",
+        "true"
+      );
+    });
+    expect(within(section).getByRole("button", { name: "Visual Studio Code" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+
+    // The close control exits layout mode and clears the section.
+    fireEvent.click(within(section).getByRole("button", { name: "Close layout mode" }));
+    await waitFor(() => {
+      expect(within(bar).queryByLabelText("Layout windows")).toBeNull();
+    });
+  });
+
+  it("adds a session-only window via the + control's pin picker (NIC-142)", async () => {
+    const { bridge } = renderShell();
+    const bar = screen.getByRole("contentinfo", { name: "Status bar" });
+    await act(async () => {
+      await bridge.openLayout({ modeId: "developer" });
+    });
+    const section = within(bar).getByLabelText("Layout windows");
+    // Terminal is not a toggle target yet.
+    expect(within(section).queryByRole("button", { name: "Terminal" })).toBeNull();
+
+    // No native channel in jsdom, so the "+" falls back to the in-webview picker
+    // overlay; add Terminal from it (session-only add).
+    fireEvent.click(within(section).getByRole("button", { name: "Pin a window" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a layout window" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Add Terminal" }));
+
+    // Terminal is now a pressable quick-toggle target.
+    await waitFor(() => {
+      expect(within(section).getByRole("button", { name: "Terminal" })).toBeInTheDocument();
+    });
+  });
+
   it("boots Executive (the default mode) with exactly one mode control selected", () => {
     renderShell();
     const options = within(screen.getByRole("group", { name: "Mode" })).getAllByRole("button");
@@ -283,6 +344,117 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     const bar = statusBar();
     expect(bar.getByText("Weather · Unavailable")).toBeInTheDocument();
     expect(bar.getByText("Battery · Unavailable")).toBeInTheDocument();
+  });
+
+  it("opens the mode menu as a native top-most dropdown when the channel exists (NIC-144)", () => {
+    const posted: Array<Record<string, unknown>> = [];
+    (window as unknown as { webkit?: unknown }).webkit = {
+      messageHandlers: { shellControl: { postMessage: (m: unknown) => posted.push(m as Record<string, unknown>) } }
+    };
+    try {
+      renderShell();
+      // The trigger's accessible name is the active mode it shows (Executive).
+      fireEvent.click(statusBar().getByRole("button", { name: "Executive" }));
+      // The native shell owns the dropdown (layers above windows) — post the open action
+      // with the trigger's anchor, and do NOT render the in-webview menu.
+      expect(posted).toContainEqual(expect.objectContaining({ action: "openModeMenu" }));
+      expect(screen.queryByRole("menu", { name: "Switch mode" })).toBeNull();
+    } finally {
+      delete (window as unknown as { webkit?: unknown }).webkit;
+    }
+  });
+
+  it("falls back to the in-webview mode menu in a plain browser (no native channel)", () => {
+    renderShell();
+    fireEvent.click(statusBar().getByRole("button", { name: "Executive" }));
+    // No shellControl channel → the upward menu renders in-page as before.
+    expect(screen.getByRole("menu", { name: "Switch mode" })).toBeInTheDocument();
+  });
+
+  it("collapses/expands the current mode's windows and flips the icon affordance (NIC-143)", async () => {
+    renderShell(); // Executive
+    const bar = statusBar();
+    // Starts expanded: the control offers to collapse, and is not pressed.
+    const collapse = bar.getByRole("button", { name: "Collapse all windows" });
+    expect(collapse).toHaveAttribute("aria-pressed", "false");
+    // Close-all and the window navigator are both live (NIC-143 inc 2 + inc 5).
+    expect(bar.getByRole("button", { name: "Close all windows" })).toBeEnabled();
+    expect(bar.getByRole("button", { name: "Open window navigator" })).toBeEnabled();
+
+    fireEvent.click(collapse);
+    // The mock flips the mode's collapse state and broadcasts it; the icon becomes an
+    // "expand" affordance and reads as pressed.
+    const expand = await bar.findByRole("button", { name: "Expand all windows" });
+    expect(expand).toHaveAttribute("aria-pressed", "true");
+
+    // Toggling back returns to the collapse affordance.
+    fireEvent.click(expand);
+    await waitFor(() =>
+      expect(bar.getByRole("button", { name: "Collapse all windows" })).toHaveAttribute(
+        "aria-pressed",
+        "false"
+      )
+    );
+  });
+
+  it("raises a destructive confirmation when Close all windows is pressed (NIC-143)", async () => {
+    renderShell();
+    const bar = statusBar();
+    fireEvent.click(bar.getByRole("button", { name: "Close all windows" }));
+    // The command is gated: a policy-owned confirmation appears before anything quits.
+    const dialog = await screen.findByRole("dialog", { name: "Confirm action" });
+    expect(
+      within(dialog).getByText("Quit every open application across all modes.")
+    ).toBeInTheDocument();
+    // Cancelling dismisses it without quitting anything.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Confirm action" })).toBeNull()
+    );
+  });
+
+  it("opens the window navigator overlay in a plain browser (no native channel) (NIC-143)", async () => {
+    renderShell();
+    fireEvent.click(statusBar().getByRole("button", { name: "Open window navigator" }));
+    // With no shellControl channel the navigator renders as an in-dashboard overlay,
+    // listing the mock's open windows.
+    const nav = await screen.findByRole("dialog", { name: "Open windows" });
+    expect(within(nav).getByText("Inbox — Gmail")).toBeInTheDocument();
+    // Closing dismisses it.
+    fireEvent.click(within(nav).getByRole("button", { name: "Close window navigator" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Open windows" })).toBeNull());
+  });
+
+  it("hides the window-management section while layout mode is open (NIC-143/142)", () => {
+    renderShellWithState((base) => ({
+      ...base,
+      layoutSession: { modeId: "developer", windows: [], quickToggle: null }
+    }));
+    const bar = statusBar();
+    // Layout pill and the window-management cluster never co-exist.
+    expect(bar.queryByRole("button", { name: "Collapse all windows" })).toBeNull();
+    expect(bar.queryByRole("button", { name: "Close layout mode" })).toBeInTheDocument();
+  });
+
+  it("reports its on-screen rect to the native shell for window-snap awareness (NIC-144)", () => {
+    const posted: Array<Record<string, unknown>> = [];
+    (window as unknown as { webkit?: unknown }).webkit = {
+      messageHandlers: { shellControl: { postMessage: (m: unknown) => posted.push(m as Record<string, unknown>) } }
+    };
+    try {
+      renderShell();
+      const report = posted.find((m) => m.action === "reportBottomBarRect");
+      // The bar posts a rect payload the coordinator converts to a reserved strip.
+      expect(report).toBeDefined();
+      expect(report?.rect).toMatchObject({
+        x: expect.any(Number),
+        y: expect.any(Number),
+        width: expect.any(Number),
+        height: expect.any(Number)
+      });
+    } finally {
+      delete (window as unknown as { webkit?: unknown }).webkit;
+    }
   });
 });
 

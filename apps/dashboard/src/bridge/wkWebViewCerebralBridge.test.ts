@@ -122,7 +122,7 @@ describe("wkWebViewCerebralBridge", () => {
       confirmAllActions: true,
       appearance: { reducedMotion: true, assistantName: "Aria" },
       knowledge: { rootReference: null },
-      workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" },
+      workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
       modeColors: { "executive.primary": "#ffd166" }
     };
     reply({

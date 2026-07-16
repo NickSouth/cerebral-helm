@@ -269,3 +269,143 @@ func modeApplyReportsPersistenceFailure() async throws {
         }
     }
 }
+
+// MARK: - Per-window state ("each mode is its own laptop", NIC-143 follow-up)
+
+private func win(_ id: String, _ bundle: String, _ title: String, minimized: Bool) -> ModeWindowState {
+    ModeWindowState(windowID: id, bundleID: bundle, title: title, minimized: minimized)
+}
+
+@Test("reconcile brings each window to its remembered state, minimally")
+func reconcileMatchesRememberedState() {
+    let remembered = [
+        win("1", "com.apple.Safari", "Inbox", minimized: false),   // want open
+        win("2", "com.apple.Safari", "Docs", minimized: true),     // want minimized
+        win("3", "com.apple.Notes", "Note", minimized: false),     // already correct
+    ]
+    let current = [
+        win("1", "com.apple.Safari", "Inbox", minimized: true),    // minimized → surface
+        win("2", "com.apple.Safari", "Docs", minimized: false),    // open → minimize
+        win("3", "com.apple.Notes", "Note", minimized: false),     // matches → no-op
+    ]
+    #expect(ModeApplyHandler.reconcile(remembered: remembered, current: current) == [.surface("1"), .minimize("2")])
+}
+
+@Test("reconcile skips gone windows and matches a relaunched app by bundle + title")
+func reconcileHandlesMissingAndRelaunch() {
+    let remembered = [
+        win("100", "com.apple.Safari", "Inbox", minimized: false),  // id changed after relaunch
+        win("200", "com.apple.Mail", "Mailbox", minimized: false),  // window gone entirely
+    ]
+    let current = [win("999", "com.apple.Safari", "Inbox", minimized: true)]  // new id, same bundle+title
+    #expect(ModeApplyHandler.reconcile(remembered: remembered, current: current) == [.surface("999")])
+}
+
+@Test("a window not in the mode's snapshot is minimized (doesn't belong to this mode)")
+func reconcileMinimizesNonBelonging() {
+    let remembered = [win("1", "com.apple.Safari", "Inbox", minimized: false)]  // this mode: Safari/Inbox open
+    let current = [
+        win("1", "com.apple.Safari", "Inbox", minimized: false),   // belongs, open → no-op
+        win("2", "com.apple.Notes", "Scratch", minimized: false),  // opened in another mode → minimize
+        win("3", "com.apple.Music", "Playlist", minimized: true),  // not here, already minimized → no-op
+    ]
+    #expect(ModeApplyHandler.reconcile(remembered: remembered, current: current) == [.minimize("2")])
+}
+
+@Test("an empty title never matches the snapshot, so an unknown open window is minimized")
+func reconcileEmptyTitleIsNonBelonging() {
+    let remembered = [win("1", "com.apple.Safari", "", minimized: false)]
+    let current = [win("2", "com.apple.Safari", "", minimized: false)]  // empty title, different id → doesn't belong
+    #expect(ModeApplyHandler.reconcile(remembered: remembered, current: current) == [.minimize("2")])
+}
+
+@Test("with no snapshot (a never-visited mode) every open window is minimized — a clean desktop")
+func reconcileEmptyRememberedMinimizesAll() {
+    let current = [
+        win("1", "com.apple.Safari", "Inbox", minimized: false),
+        win("2", "com.apple.Notes", "Scratch", minimized: true),  // already minimized → no-op
+    ]
+    #expect(ModeApplyHandler.reconcile(remembered: [], current: current) == [.minimize("1")])
+}
+
+/// A stateful ``AppWindowsCapability`` fake: `listWindows` reflects live state and
+/// minimize/surface mutate it, so a mode round-trip can be asserted end to end.
+private final class StatefulAppWindows: AppWindowsCapability, @unchecked Sendable {
+    struct W { var id: String; var bundle: String; var title: String; var minimized: Bool }
+    var windows: [W]
+    private(set) var minimizeCalls: [String] = []
+    private(set) var surfaceCalls: [String] = []
+    init(_ windows: [W]) { self.windows = windows }
+
+    func listWindows() async throws -> [AppWindowGroup] {
+        Dictionary(grouping: windows, by: { $0.bundle }).map { bundle, ws in
+            AppWindowGroup(bundleID: bundle, appName: bundle, windows: ws.map {
+                AppWindowInfo(id: $0.id, title: $0.title, minimized: $0.minimized)
+            })
+        }
+    }
+    func minimize(windowID: String) async throws -> Bool {
+        minimizeCalls.append(windowID)
+        guard let index = windows.firstIndex(where: { $0.id == windowID }) else { return false }
+        windows[index].minimized = true
+        return true
+    }
+    func surface(windowID: String) async throws -> Bool {
+        surfaceCalls.append(windowID)
+        guard let index = windows.firstIndex(where: { $0.id == windowID }) else { return false }
+        windows[index].minimized = false
+        return true
+    }
+    func close(windowID: String) async throws -> Bool { false }
+    func minimized(_ id: String) -> Bool? { windows.first { $0.id == id }?.minimized }
+}
+
+/// Poll until a condition holds (the deferred surface runs on a detached task).
+private func waitUntil(_ condition: @Sendable () -> Bool) async {
+    for _ in 0..<400 where !condition() {
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+}
+
+@Test("each mode is its own laptop: a window's minimized state is remembered per mode (NIC-143 follow-up)")
+func perModeWindowStateRoundTrips() async throws {
+    let stateStore = InMemoryModeStateStore()
+    let appWindows = StatefulAppWindows([
+        .init(id: "1", bundle: "com.google.Chrome", title: "GitHub", minimized: false),
+    ])
+    let windowStates = InMemoryModeWindowStateStore()
+    func apply(_ mode: String) async throws {
+        let handler = ModeApplyHandler(
+            modeIDs: ["executive", "developer"],
+            coordinator: ModeSessionCoordinator(stateStore: stateStore, sessionLog: InMemoryModeSessionLog()),
+            stateStore: stateStore,
+            settings: FixedSettings(stored: StoredSettings(windowsStoredByMode: true)),
+            windows: MockWorkspaceWindowsCapability(matrix: .allAvailable),
+            appWindows: appWindows,
+            windowStates: windowStates,
+            // Near-zero so the deferred un-minimize runs promptly in the test; production
+            // holds it for the mode-swap wave (600ms).
+            surfaceDelay: .milliseconds(1)
+        )
+        _ = try await handler.execute(input: Data(#"{"modeId":"\#(mode)"}"#.utf8))
+    }
+
+    // Land in executive; minimize the window there, then switch to developer.
+    try await apply("executive")
+    appWindows.windows[0].minimized = true
+    try await apply("developer")
+    // Open it in developer, then switch back to executive.
+    appWindows.windows[0].minimized = false
+    try await apply("executive")
+    // Executive remembered it minimized → it is minimized again on return (minimize is
+    // synchronous, part of the clear).
+    #expect(appWindows.minimized("1") == true)
+    #expect(appWindows.minimizeCalls.contains("1"))
+
+    // Back to developer → it opens again (developer remembered it open). The un-minimize is
+    // deferred past the mode-swap wave, so wait for the detached restore.
+    try await apply("developer")
+    await waitUntil { appWindows.minimized("1") == false }
+    #expect(appWindows.minimized("1") == false)
+    #expect(appWindows.surfaceCalls.contains("1"))
+}

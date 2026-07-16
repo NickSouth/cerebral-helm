@@ -18,6 +18,9 @@ public enum CommandIntent: Equatable, Sendable {
     /// List installed applications, read-only (NIC-119 discovery — feeds the
     /// More Apps picker; never launches anything).
     case listApps
+    /// Quit every open regular application across all modes (NIC-143) — a single
+    /// destructive, confirmation-gated `apps.quitall` tool call.
+    case quitAllApps
 }
 
 /// The outcome of parsing one line of direct input.

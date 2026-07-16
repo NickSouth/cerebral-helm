@@ -32,6 +32,7 @@ public struct DirectCommandParser: Sendable {
         "run <action>",
         "apps",
         "speedtest",
+        "quit-all",
     ]
 
     public init(references: CommandReferences) {
@@ -71,6 +72,10 @@ public struct DirectCommandParser: Sendable {
         case "speedtest":
             // Argument-free by design: one on-demand internet capacity read (NIC-135).
             return .parsed(.runSpeedTest)
+        case "quit-all":
+            // Argument-free by design: quit every open app across all modes (NIC-143).
+            // Destructive — the command bus gates it on a confirmation.
+            return .parsed(.quitAllApps)
         default:
             return .unrecognized(UnrecognizedInput(reason: .unknownVerb(verb), suggestions: Self.supportedPatterns))
         }

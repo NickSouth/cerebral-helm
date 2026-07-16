@@ -38,7 +38,20 @@ const bridgeOperations = new Set([
   "addUrlReference",
   "listUrls",
   "listChromeProfiles",
-  "addChromeProfileReference"
+  "addChromeProfileReference",
+  "openLayout",
+  "closeLayout",
+  "toggleLayout",
+  "pinLayoutWindow",
+  "updateLayout",
+  "captureLayout",
+  "addLayoutTarget",
+  "toggleModeCollapse",
+  "closeAllWindows",
+  "listWindows",
+  "minimizeWindow",
+  "surfaceWindow",
+  "closeWindow"
 ]);
 
 function readJson(filePath) {

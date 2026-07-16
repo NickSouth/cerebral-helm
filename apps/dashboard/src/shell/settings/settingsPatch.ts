@@ -17,7 +17,11 @@ export interface SettingsPatchChanges {
   };
   readonly hotkeys?: { readonly commandPalette?: string };
   readonly knowledge?: { readonly rootReference?: string };
-  readonly workspace?: { readonly windowsStoredByMode?: boolean; readonly mainDisplayId?: string };
+  readonly workspace?: {
+    readonly windowsStoredByMode?: boolean;
+    readonly mainDisplayId?: string;
+    readonly layoutDisplayId?: string;
+  };
   /** Per-mode accent overrides keyed by design-token name → `#rrggbb`. */
   readonly modeColors?: Readonly<Record<string, string>>;
   readonly extensions?: Readonly<Record<string, unknown>>;
@@ -132,6 +136,13 @@ export function validateSettingsChanges(changes: unknown): PatchValidation {
       (typeof workspace.mainDisplayId !== "string" || workspace.mainDisplayId.length === 0)
     ) {
       errors.push("workspace.mainDisplayId must be a non-empty string");
+    }
+    if (
+      isPlainObject(workspace) &&
+      "layoutDisplayId" in workspace &&
+      (typeof workspace.layoutDisplayId !== "string" || workspace.layoutDisplayId.length === 0)
+    ) {
+      errors.push("workspace.layoutDisplayId must be a non-empty string");
     }
   }
 

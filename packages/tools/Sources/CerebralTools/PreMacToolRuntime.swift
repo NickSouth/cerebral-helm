@@ -25,6 +25,7 @@ public enum PreMacToolRuntime {
         modeStateStore: any ModeStateStore = InMemoryModeStateStore(),
         modeSessionLog: any ModeSessionLog = InMemoryModeSessionLog(),
         modeWorkspaceStore: any ModeWorkspaceStore = InMemoryModeWorkspaceStore(),
+        modeWindowStateStore: any ModeWindowStateStore = InMemoryModeWindowStateStore(),
         settingsStore: (any SettingsStore)? = nil,
         appTargets: [String: String] = [:]
     ) throws -> ToolRegistry {
@@ -36,6 +37,7 @@ public enum PreMacToolRuntime {
             "system.status.read": SystemStatusReadHandler(capability: capabilities.systemStatus),
             "network.speed.test": NetworkSpeedTestHandler(capability: capabilities.networkSpeedTest),
             "apps.list": AppsListHandler(capability: capabilities.appDiscovery),
+            "apps.quitall": AppsQuitAllHandler(capability: capabilities.applicationLifecycle),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
@@ -47,7 +49,9 @@ public enum PreMacToolRuntime {
                 settings: settingsStore,
                 workspaceStore: modeWorkspaceStore,
                 windows: capabilities.workspaceWindows,
-                windowFrames: capabilities.window
+                windowFrames: capabilities.window,
+                appWindows: capabilities.appWindows,
+                windowStates: modeWindowStateStore
             ),
         ]
 
@@ -112,6 +116,7 @@ public enum PreMacToolRuntime {
         case "system.status.read": _ = try CerebralHelmSystemStatusReadInput(data: data)
         case "network.speed.test": _ = try CerebralHelmNetworkSpeedTestInput(data: data)
         case "apps.list": _ = try CerebralHelmAppsListInput(data: data)
+        case "apps.quitall": _ = try CerebralHelmAppsQuitAllInput(data: data)
         default: break
         }
     }

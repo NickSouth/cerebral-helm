@@ -39,6 +39,40 @@ describe("reduceDashboardState", () => {
     expect(reduceDashboardState(base, lifecycleEvent("idle"))).toBe(base);
   });
 
+  it("folds mode.windowcollapse.changed into a per-mode collapse map (NIC-143)", () => {
+    const base = loadBootstrapState();
+    const collapse = (modeId: string, collapsed: boolean): BridgeEvent => ({
+      eventId: `brevt_collapse_${modeId}_${collapsed}`,
+      type: "mode.windowcollapse.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-15T16:00:00.000Z",
+      payload: { modeId, collapsed }
+    });
+
+    const collapsed = reduceDashboardState(base, collapse("executive", true));
+    expect(collapsed.windowCollapse?.executive).toBe(true);
+    // Other modes are untouched (sparse map).
+    expect(collapsed.windowCollapse?.developer).toBeUndefined();
+
+    // A second mode's state is merged, not replaced.
+    const both = reduceDashboardState(collapsed, collapse("developer", true));
+    expect(both.windowCollapse).toEqual({ executive: true, developer: true });
+
+    // Expanding flips the entry back.
+    const expanded = reduceDashboardState(both, collapse("executive", false));
+    expect(expanded.windowCollapse).toEqual({ executive: false, developer: true });
+
+    // A redundant event (same value) returns the same reference — no re-render.
+    expect(reduceDashboardState(expanded, collapse("developer", true))).toBe(expanded);
+    // A malformed payload is ignored.
+    expect(
+      reduceDashboardState(base, {
+        ...collapse("executive", true),
+        payload: { modeId: "executive" }
+      })
+    ).toBe(base);
+  });
+
   it("folds a quick-apps rewrite into the matching mode (NIC-149)", () => {
     const base = loadBootstrapState();
     const target = base.modes.find((mode) => mode.quickApps.length > 0) ?? base.modes[0];
@@ -124,6 +158,39 @@ describe("reduceDashboardState", () => {
 
     // A malformed payload never fabricates a topology.
     expect(reduceDashboardState(base, { ...event, payload: {} })).toBe(base);
+  });
+
+  it("folds a layout session in and back out on close (NIC-142)", () => {
+    const base = loadBootstrapState();
+    const open: BridgeEvent = {
+      eventId: "brevt_layoutopen01",
+      type: "layout.session.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-14T16:00:00.000Z",
+      payload: {
+        session: {
+          modeId: "developer",
+          windows: [{ ref: "claude-desktop", kind: "app", label: "Claude" }],
+          quickToggle: {
+            activeRef: "vscode",
+            targets: [{ ref: "vscode", kind: "app", label: "Visual Studio Code" }]
+          }
+        }
+      }
+    };
+    const opened = reduceDashboardState(base, open);
+    expect(opened.layoutSession?.modeId).toBe("developer");
+    expect(opened.layoutSession?.quickToggle?.activeRef).toBe("vscode");
+
+    // A null session ends layout mode.
+    const closed = reduceDashboardState(opened, {
+      ...open,
+      eventId: "brevt_layoutclose1",
+      payload: { session: null }
+    });
+    expect(closed.layoutSession).toBeNull();
+    // Closing again is a no-op (same reference — no needless re-render).
+    expect(reduceDashboardState(closed, { ...open, payload: { session: null } })).toBe(closed);
   });
 
   it("folds workflow action progress in and clears it on the terminal lifecycle status (NIC-85)", () => {

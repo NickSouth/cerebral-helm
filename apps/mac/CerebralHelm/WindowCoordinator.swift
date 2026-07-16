@@ -30,6 +30,18 @@ final class WindowCoordinator: @unchecked Sendable {
     /// The floating More Apps launcher window (NIC-148): built fresh on each open so
     /// the app list is current, and torn down on close. `nil` while closed.
     private var moreApps: MoreAppsWindowController?
+    /// The transparent, top-most mode-swap dropdown (NIC-144): built fresh on each open,
+    /// positioned above the bottom bar's mode control, dismissed on select / Escape /
+    /// click-away. `nil` while closed.
+    private var modeMenu: ModeMenuWindowController?
+    /// The transparent, top-most layout hotswap "+" pin window (NIC-142): built fresh
+    /// on each open, positioned above the bottom bar's "+", dismissed on × / Escape /
+    /// click-away. `nil` while closed.
+    private var layoutPin: LayoutPinWindowController?
+    /// The per-mode layout editor window (NIC-142): built fresh on each open (it is
+    /// mode-specific), torn down on close. `nil` while closed.
+    private var layoutEditor: LayoutEditorWindowController?
+    private var windowNavigator: WindowNavigatorWindowController?
     /// One additional backdrop per connected non-main display (NIC-120b), keyed by
     /// the display's topology id. Created/removed by `reconcileBackdrops` on every
     /// topology change; each binds the SAME shared session (no second runtime).
@@ -39,6 +51,12 @@ final class WindowCoordinator: @unchecked Sendable {
     /// One occlusion observer per backdrop window, keyed by window identity —
     /// the status publisher pauses only when EVERY backdrop is invisible.
     private var occlusionObservers: [ObjectIdentifier: NSObjectProtocol] = [:]
+    /// The reserved bottom-bar strip per backdrop window (NIC-144 inc 1), keyed by
+    /// window identity. The dashboard reports its bar's on-screen rect over the
+    /// shellControl channel; the coordinator converts it to an AppKit screen rect and
+    /// caches the strip here. No consumer yet — the window-snap observer (inc 2) will
+    /// read these to keep foreign windows above the bar.
+    private var reservedStrips: [ObjectIdentifier: ReservedStrip] = [:]
     /// The shared bridge session — the confirmation panel submits its
     /// approve/cancel decision through the same versioned operation the
     /// dashboard uses (`decideConfirmation`), never a side channel.
@@ -58,6 +76,22 @@ final class WindowCoordinator: @unchecked Sendable {
     /// degrade to the system primary display.
     var mainDisplayIDProvider: (() -> String?)?
 
+    /// A live "Layout display" override from the settings surface (`setLayoutDisplay`,
+    /// NIC-142), applied immediately; the durable value arrives via the settings patch
+    /// and is read through `layoutDisplayIDProvider`.
+    private var liveLayoutDisplayID: String?
+    /// Reads the persisted "Layout display" id (NIC-142); wired by `AppDelegate`. nil /
+    /// the sentinel / unknown / disconnected all degrade to the main display.
+    var layoutDisplayIDProvider: (() -> String?)?
+
+    /// Notified whenever the reserved bottom-bar strips change (NIC-142); wired by
+    /// `AppDelegate` to feed the layout arrange so windows land above the bar.
+    var onReservedStripsChanged: (([ReservedStrip]) -> Void)?
+    /// The last non-null `layout.session.changed` JSON, replayed to the (possibly
+    /// changed) layout-display surface when the setting or topology changes so the
+    /// hotswap pill follows the chosen monitor (NIC-142). nil once the layout closes.
+    private var lastLayoutSessionJSON: String?
+
     /// The login-item seam (NIC-89): the Startup panel toggles through it, and
     /// the OS's resulting status flows straight back — never a stored flag.
     var loginItem: (any LoginItemManaging) = SMAppServiceLoginItem()
@@ -75,7 +109,9 @@ final class WindowCoordinator: @unchecked Sendable {
         let dashboard = DashboardWindowController(dashboardRoot: dashboardRoot, paths: paths, session: session)
         // Increment 4: web → native shell actions (e.g. rebinding the palette hotkey from
         // the settings "Hotkeys" panel).
-        dashboard.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        dashboard.onShellControl = { [weak self, weak dashboard] body in
+            self?.handleShellControl(body, from: dashboard)
+        }
         // Runtime-only state that predates the web bridge is replayed once the
         // handshake proves the page can receive it (the initial topology event
         // always beats the webview's dynamic surface import).
@@ -107,6 +143,13 @@ final class WindowCoordinator: @unchecked Sendable {
         controller.show()
     }
 
+    /// The reserved bottom-bar strips currently known (NIC-144), one per reporting
+    /// backdrop. The window-snap observer reads these on every settle to keep foreign
+    /// windows above the bar; an empty result (no report yet) means no correction.
+    func currentReservedStrips() -> [ReservedStrip] {
+        Array(reservedStrips.values)
+    }
+
     /// Route a shared-session event to the dashboard webview. Mode changes
     /// (`config.changed`) are additionally forwarded to the palette so it re-themes to the
     /// active mode (Increment 3); everything else is dashboard-only.
@@ -133,14 +176,28 @@ final class WindowCoordinator: @unchecked Sendable {
         if json.contains("\"display.topology.changed\"") {
             lastTopologyJSON = json
         }
+        // The layout hotswap pill shows on the layout-display monitor only (NIC-142):
+        // deliver the session to that surface and a null session to every other
+        // bottom-bar surface. Handled here so no other surface ever sees it.
+        if json.contains("\"layout.session.changed\"") {
+            lastLayoutSessionJSON = json.contains("\"session\":null") ? nil : json
+            fanOutLayoutSession()
+            return
+        }
         dashboard?.deliverBridgeEvent(json)
         for secondary in secondaries.values {
             secondary.deliverBridgeEvent(json)
         }
         settings?.deliverBridgeEvent(json)
         moreApps?.deliverBridgeEvent(json)
+        layoutPin?.deliverBridgeEvent(json)
+        layoutEditor?.deliverBridgeEvent(json)
+        windowNavigator?.deliverBridgeEvent(json)
         if json.contains("\"config.changed\"") {
             palette?.deliverBridgeEvent(json)
+            // Keep the open dropdown's active-mode highlight and theme current if the mode
+            // changes from elsewhere while it's open (NIC-144).
+            modeMenu?.deliverBridgeEvent(json)
         }
     }
 
@@ -189,7 +246,9 @@ final class WindowCoordinator: @unchecked Sendable {
             let secondary = DashboardWindowController(
                 dashboardRoot: dashboardRoot, paths: paths, session: session, screen: target, surface: .companion
             )
-            secondary.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+            secondary.onShellControl = { [weak self, weak secondary] body in
+                self?.handleShellControl(body, from: secondary)
+            }
             secondary.onBridgeReady = { [weak self, weak secondary] in
                 guard let json = self?.lastTopologyJSON else { return }
                 secondary?.deliverBridgeEvent(json)
@@ -201,6 +260,10 @@ final class WindowCoordinator: @unchecked Sendable {
         for (id, controller) in secondaries where kept[id] == nil {
             let window = controller.window
             stopObservingOcclusion(of: window)
+            // Its bar is gone with the display — drop the reserved strip so the
+            // window-snap observer stops honoring a bar that no longer exists (NIC-144).
+            reservedStrips[ObjectIdentifier(window)] = nil
+            onReservedStripsChanged?(Array(reservedStrips.values))
             // Every reconcile path hops to main first (deliverBridgeEvent /
             // handleDisplayTopologyChange / script-message handlers), but the
             // compiler cannot see that through the closure chain — assert it.
@@ -210,6 +273,10 @@ final class WindowCoordinator: @unchecked Sendable {
         }
         secondaries = kept
         publishBackdropVisibility()
+        // A display appeared/disappeared: re-route the hotswap pill so it stays on the
+        // layout display (or moves to the main backdrop if the layout display went
+        // away), and clear it from any new companion (NIC-142).
+        fanOutLayoutSession()
     }
 
     /// The display the main backdrop (and palette focus) belongs on:
@@ -226,6 +293,53 @@ final class WindowCoordinator: @unchecked Sendable {
         }
         return topology.displays.first(where: \.primary) ?? topology.displays.first
     }
+
+    /// The display layout mode opens on and whose bottom bar shows the hotswap pill
+    /// (NIC-142): the live override else the persisted setting, when it names a
+    /// still-connected stable-identity display; the sentinel / unset / unknown /
+    /// disconnected all degrade to the main display.
+    private func layoutDescriptor(
+        in topology: BridgeEventFactory.DisplayTopologyPayload
+    ) -> BridgeEventFactory.DisplayDescriptor? {
+        let requested = liveLayoutDisplayID ?? layoutDisplayIDProvider?()
+        if let requested, requested != "system-primary",
+           let match = topology.displays.first(where: { $0.id == requested && $0.stableIdentity }) {
+            return match
+        }
+        return mainDescriptor(in: topology)
+    }
+
+    /// The bottom-bar surface on the layout display — the main backdrop when the
+    /// layout display is the main display, else the companion on that display (nil
+    /// when it has no live surface, e.g. a transient reconcile).
+    private func layoutDisplaySurface() -> DashboardWindowController? {
+        guard let topology = lastTopology, let layout = layoutDescriptor(in: topology) else {
+            return dashboard
+        }
+        if let main = mainDescriptor(in: topology), main.id == layout.id {
+            return dashboard
+        }
+        return secondaries[layout.id]
+    }
+
+    /// Deliver the current layout session only to the layout-display surface; every
+    /// other bottom-bar surface gets a null session so its hotswap pill clears (NIC-142).
+    /// Re-run when the setting or topology changes so the pill follows the monitor.
+    private func fanOutLayoutSession() {
+        let target = layoutDisplaySurface()
+        let session = lastLayoutSessionJSON ?? Self.nullLayoutSessionJSON
+        if let dashboard {
+            dashboard.deliverBridgeEvent(dashboard === target ? session : Self.nullLayoutSessionJSON)
+        }
+        for secondary in secondaries.values {
+            secondary.deliverBridgeEvent(secondary === target ? session : Self.nullLayoutSessionJSON)
+        }
+    }
+
+    /// A layout-session-ended event, delivered to non-layout-display surfaces so their
+    /// hotswap pill never appears (NIC-142). The web reducer folds `payload.session`.
+    private static let nullLayoutSessionJSON =
+        #"{"schemaVersion":"1.0.0","type":"layout.session.changed","eventId":"brevt_layoutdisplaynull00","timestamp":"1970-01-01T00:00:00.000Z","payload":{"session":null}}"#
 
     /// Resolve a topology descriptor to its live `NSScreen` by frame — both sides
     /// were read from the same screen list, so frames match exactly; a race with
@@ -358,6 +472,112 @@ final class WindowCoordinator: @unchecked Sendable {
         moreApps = nil
     }
 
+    /// Open the window navigator (NIC-143): a top-most floating window listing every
+    /// open window for quick surface/minimize/close. Built fresh each open (any existing
+    /// one is replaced) so its inventory is current, and placed toward the right edge.
+    func openWindowNavigator() {
+        guard let session, let dashboardRoot else { return }
+        windowNavigator?.close()
+        let controller = WindowNavigatorWindowController(dashboardRoot: dashboardRoot, session: session)
+        controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        windowNavigator = controller
+        if let screen = dashboard?.window.screen ?? mainScreen() ?? NSScreen.main {
+            controller.positionOnRight(of: screen)
+        }
+        controller.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Close and release the navigator — the × control, Escape, or an accepted surface
+    /// all post `closeWindowNavigator` (dismiss-on-surface, NIC-143).
+    func closeWindowNavigator() {
+        windowNavigator?.close()
+        windowNavigator = nil
+    }
+
+    /// Open the transparent mode-swap dropdown above the bottom bar's mode control
+    /// (NIC-144). Built fresh each open (any existing one is replaced) so its active-mode
+    /// highlight is current — a transient menu, not a warm panel. `anchor` is the mode
+    /// trigger's rect in the reporting webview's viewport; the backdrop fills the screen
+    /// frame, so it converts through that window and the dropdown drops directly above the
+    /// control. Absent anchor degrades to a bottom-center open. No-op in recovery.
+    func openModeMenu(anchor: [String: Any]? = nil, from source: DashboardWindowController? = nil) {
+        guard let session, let dashboardRoot else { return }
+        modeMenu?.close()
+        let controller = ModeMenuWindowController(dashboardRoot: dashboardRoot, session: session)
+        controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        modeMenu = controller
+        let anchorWindow = source?.window ?? dashboard?.window
+        let screen = anchorWindow?.screen ?? mainScreen() ?? NSScreen.main
+        if let anchor, let anchorWindow,
+           let anchorRect = Self.anchorScreenRect(anchor, in: anchorWindow), let screen {
+            controller.positionAbove(anchorRect, on: screen)
+        } else if let screen {
+            controller.positionBottomCenter(on: screen)
+        }
+        controller.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Close and release the mode dropdown — a selection, Escape, or click-away all post
+    /// `closeModeMenu` (or the window resigning key routes here).
+    func closeModeMenu() {
+        modeMenu?.close()
+        modeMenu = nil
+    }
+
+    /// Open the transparent, top-most layout hotswap "+" pin window above the bottom
+    /// bar's "+" (NIC-142). Built fresh each open (any existing one is replaced) so its
+    /// app discovery is current — a transient picker, not a warm panel. `anchor` is the
+    /// "+" button's rect in the reporting webview's viewport; the backdrop fills the
+    /// screen frame, so it converts through that window and the picker drops directly
+    /// above the "+". Absent anchor degrades to a bottom-left open. No-op in recovery.
+    func openLayoutPin(anchor: [String: Any]? = nil, from source: DashboardWindowController? = nil) {
+        guard let session, let dashboardRoot else { return }
+        layoutPin?.close()
+        let controller = LayoutPinWindowController(dashboardRoot: dashboardRoot, session: session)
+        controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        layoutPin = controller
+        let anchorWindow = source?.window ?? dashboard?.window
+        let screen = anchorWindow?.screen ?? mainScreen() ?? NSScreen.main
+        if let anchor, let anchorWindow,
+           let anchorRect = Self.anchorScreenRect(anchor, in: anchorWindow), let screen {
+            controller.positionAbove(anchorRect, on: screen)
+        } else if let screen {
+            controller.positionBottomLeft(on: screen)
+        }
+        controller.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Close and release the layout-pin window — the ×, Escape, or click-away all post
+    /// `closeLayoutPin` (or the window resigning key routes here).
+    func closeLayoutPin() {
+        layoutPin?.close()
+        layoutPin = nil
+    }
+
+    /// Open the per-mode layout editor window (NIC-142). Built fresh each open (any open
+    /// one is replaced) so it edits the requested mode. Centered, frameless, top-most.
+    /// No-op in recovery or without a mode id.
+    func openLayoutEditor(modeID: String) {
+        guard let session, let dashboardRoot, !modeID.isEmpty else { return }
+        layoutEditor?.close()
+        let controller = LayoutEditorWindowController(
+            dashboardRoot: dashboardRoot, session: session, modeID: modeID
+        )
+        controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        layoutEditor = controller
+        controller.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Close and release the layout editor window — its × posts `closeLayoutEditor`.
+    func closeLayoutEditor() {
+        layoutEditor?.close()
+        layoutEditor = nil
+    }
+
     /// Dismiss the palette (already done by its control channel), bring the dashboard forward,
     /// and dispatch the submitted text through the dashboard's command bus. The Heimlich chat
     /// was removed (NIC-124): a command's result surfaces in the dashboard status line, and an
@@ -433,7 +653,7 @@ final class WindowCoordinator: @unchecked Sendable {
     /// More Apps tile posts `openMoreApps`; its ×, Escape, or an accepted launch
     /// post `closeMoreApps`). Window control is a Mac-only concern kept off the
     /// portable bridge.
-    private func handleShellControl(_ body: [String: Any]) {
+    private func handleShellControl(_ body: [String: Any], from source: DashboardWindowController? = nil) {
         switch body["action"] as? String {
         case "setPaletteShortcut":
             guard let presetID = body["preset"] as? String,
@@ -447,6 +667,23 @@ final class WindowCoordinator: @unchecked Sendable {
             openMoreApps(anchor: body["anchor"] as? [String: Any])
         case "closeMoreApps":
             closeMoreApps()
+        case "openWindowNavigator":
+            openWindowNavigator()
+        case "closeWindowNavigator":
+            closeWindowNavigator()
+        case "openModeMenu":
+            openModeMenu(anchor: body["anchor"] as? [String: Any], from: source)
+        case "closeModeMenu":
+            closeModeMenu()
+        case "openLayoutPin":
+            openLayoutPin(anchor: body["anchor"] as? [String: Any], from: source)
+        case "closeLayoutPin":
+            closeLayoutPin()
+        case "openLayoutEditor":
+            guard let modeID = body["modeId"] as? String else { return }
+            openLayoutEditor(modeID: modeID)
+        case "closeLayoutEditor":
+            closeLayoutEditor()
         case "setLoginItem":
             // Launch-at-login toggle (NIC-89): register/unregister via the
             // SMAppService seam and push the OS's resulting status back to the
@@ -463,11 +700,42 @@ final class WindowCoordinator: @unchecked Sendable {
             if let topology = lastTopology {
                 reconcileBackdrops(topology)
             }
+        case "setLayoutDisplay":
+            // Live re-target (NIC-142): the durable value already went through the
+            // validated settings patch; this moves the hotswap pill to the chosen
+            // monitor's bottom bar without a restart. (The layout arrange reads the
+            // persisted value at the next open.)
+            guard let id = body["id"] as? String else { return }
+            liveLayoutDisplayID = id
+            fanOutLayoutSession()
         case "pickKnowledgeRoot":
             presentKnowledgeRootPicker()
+        case "reportBottomBarRect":
+            updateReservedStrip(body, from: source)
         default:
             return
         }
+    }
+
+    /// NIC-144 inc 1: the dashboard reports its bottom bar's on-screen rect (web CSS
+    /// viewport px, from `getBoundingClientRect`) on layout and on resize. Convert it
+    /// to an AppKit screen rect against the reporting backdrop's window — the borderless
+    /// backdrop fills the screen frame, so `anchorScreenRect` maps the viewport straight
+    /// to screen coordinates — and cache the reserved strip (the bar's band plus a
+    /// symmetric gap above it). A re-fit to another display re-sizes the webview, which
+    /// fires a web resize and re-reports, so a moved backdrop self-heals. Only the main
+    /// dashboard reports a source today; companion secondaries follow in inc 3.
+    private func updateReservedStrip(_ body: [String: Any], from source: DashboardWindowController?) {
+        guard
+            let source,
+            let rect = body["rect"] as? [String: Any],
+            let barFrame = Self.anchorScreenRect(rect, in: source.window),
+            let screen = source.window.screen
+        else { return }
+        reservedStrips[ObjectIdentifier(source.window)] = ReservedStrip.from(
+            barFrame: barFrame, screenFrame: screen.frame
+        )
+        onReservedStripsChanged?(Array(reservedStrips.values))
     }
 
     /// NIC-138: choose the durable-knowledge root folder through a native directory

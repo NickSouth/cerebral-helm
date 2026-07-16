@@ -7,6 +7,11 @@
   "additionalProperties": false,
   "required": ["arrangement"],
   "properties": {
+    "display": {
+      "description": "Which display the whole arrangement targets (NIC-142 layout mode). Absent or 'primary' targets the primary display; 'secondary' targets the first non-primary display, degrading to primary when none is attached. Frames resolve against the chosen display's visible area.",
+      "type": "string",
+      "enum": ["primary", "secondary"]
+    },
     "arrangement": {
       "type": "array",
       "minItems": 1,
@@ -31,6 +36,8 @@
               "bottom-half",
               "left-two-thirds",
               "right-third",
+              "left-third",
+              "right-two-thirds",
               "centered"
             ]
           }

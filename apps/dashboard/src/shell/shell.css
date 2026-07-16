@@ -707,6 +707,140 @@
   white-space: nowrap;
 }
 
+/* Layout-mode section (NIC-142): a single accent pill of hotswap (quick-toggle)
+   targets rendered as app icons, a "+" to pin another, and a plain close "×".
+   Static (non-hotswap) windows are not shown; the pill grows with its contents. */
+.bottom-bar__layout {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.25rem 0.45rem;
+  border: 0.5px solid color-mix(in srgb, var(--ch-accent-primary) 32%, transparent);
+  border-radius: var(--ch-radius-pill);
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
+}
+
+/* One hotswap tile: an Apple-style rounded-square icon; the active one gets an
+   accent ring. macOS OS icons already ship squircle-shaped with transparent
+   corners, so the <img> is drawn as-is (a small radius only softens the box). */
+.bottom-bar__layout-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.bottom-bar__layout-tile-icon {
+  position: relative;
+  display: inline-flex;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 22%;
+  color: var(--ch-accent-secondary);
+}
+
+.bottom-bar__layout-tile-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 22%;
+  object-fit: cover;
+}
+
+.bottom-bar__layout-tile-icon .app-glyph {
+  width: 100%;
+  height: 100%;
+  padding: 3px;
+  border-radius: 22%;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--ch-accent-primary) 16%, transparent);
+}
+
+/* The Chrome-profile avatar badge (NIC-151), bottom-left, mirroring Quick Apps. */
+.bottom-bar__layout-tile-badge {
+  position: absolute;
+  bottom: -2px;
+  left: -3px;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 1.5px var(--ch-surface-base);
+}
+
+.bottom-bar__layout-tile:hover .bottom-bar__layout-tile-icon,
+.bottom-bar__layout-tile:focus-visible .bottom-bar__layout-tile-icon {
+  opacity: 0.85;
+}
+
+.bottom-bar__layout-tile[data-active="true"] .bottom-bar__layout-tile-icon {
+  box-shadow: 0 0 0 1.5px var(--ch-accent-primary);
+}
+
+/* "+" pin control (sits with the tiles) and its popover of pinnable apps. */
+.bottom-bar__layout-add-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.bottom-bar__layout-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  font: inherit;
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--ch-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.bottom-bar__layout-add:hover,
+.bottom-bar__layout-add:focus-visible {
+  color: var(--ch-text-primary);
+  background: color-mix(in srgb, var(--ch-text-primary) 12%, transparent);
+}
+
+/* Hairline between the hotswap group and the close control. */
+.bottom-bar__layout-sep {
+  width: 0.5px;
+  height: 1.1rem;
+  background: color-mix(in srgb, var(--ch-accent-primary) 30%, transparent);
+  flex: none;
+}
+
+/* The "+" opens the native layout-pin window (`?surface=layoutpin`); in a plain
+   browser it falls back to the in-webview LayoutPinPicker overlay (pin-pop styling). */
+
+/* Close layout mode: a plain red "×", no box — brightens on hover/focus. */
+.bottom-bar__layout-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--ch-status-error);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.bottom-bar__layout-close:hover,
+.bottom-bar__layout-close:focus-visible {
+  color: color-mix(in srgb, var(--ch-status-error) 65%, white);
+}
+
 /* Mode accent (home dashboard only) — themed via data-mode, never inlined per mode. The center
    control is now an upward menu (NIC-77): the container anchors the popup, the trigger shows the
    active mode in the accent color. */
@@ -795,6 +929,51 @@
   color: var(--ch-accent-primary);
 }
 
+/* The mode-swap dropdown surface (NIC-144): the transparent, top-most native window that
+   layers above open apps. It fills its window and pins the menu to the bottom so the menu
+   grows UP from just above the bar's trigger. */
+.mode-menu-surface {
+  /* Fixed to the window (not 100vh in flow) so the surrounding .app-root min-height +
+     body margin can't push the document past the small window and spawn a scrollbar. */
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: var(--ch-space-2);
+  background: transparent;
+  overflow: hidden;
+}
+
+/* Reuse the bar menu's look, but drop its absolute anchoring (it lives in a window now)
+   and give it a grow-up + fade entrance from its bottom edge. */
+.mode-menu-surface__menu {
+  position: static;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  width: 100%;
+  transform-origin: bottom center;
+  animation: mode-menu-intro var(--ch-motion-medium, 160ms) var(--ch-ease-standard, ease-out);
+}
+
+@keyframes mode-menu-intro {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Honor reduced motion — the dropdown still appears, just without the grow/slide. */
+:root[data-reduced-motion] .mode-menu-surface__menu,
+.app-root[data-reduced-motion] .mode-menu-surface__menu {
+  animation: none;
+}
+
 /* Distinct degraded metric treatments (state is carried by text + color, never color alone). */
 .bottom-bar__metric--stale {
   color: var(--ch-status-warning);
@@ -837,6 +1016,22 @@
 .bottom-bar__control--icon svg {
   width: 1.55rem;
   height: 1.55rem;
+}
+
+.bottom-bar__control--icon:disabled {
+  opacity: 0.38;
+}
+
+/* Window management (NIC-143): the collapse/close-all/navigator icon cluster. */
+.bottom-bar__winmgmt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-1);
+}
+
+/* Collapsed state reads as "on" — the accent marks that this mode's windows are stowed. */
+.bottom-bar__winmgmt .bottom-bar__control--icon[aria-pressed="true"]:not(:disabled) {
+  color: var(--ch-accent-primary);
 }
 
 /* Weather (accent icon + temperature), Wi-Fi (accent-secondary icon), battery (tinted fill icon). */
@@ -2235,6 +2430,36 @@
   outline: none;
 }
 
+/* The layout hotswap "+" picker (NIC-142) reuses the pin-pop styling in two variants
+   (like the More Apps picker). `--centered` is the in-webview overlay fallback;
+   `--standalone` fills its own top-most native window (`?surface=layoutpin`). */
+.pin-pop--centered {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* The standalone card fills its transparent borderless window but keeps the floating
+   rounded card look (bg + border + shadow from the base rule) — the window itself is
+   clear (like the mode-swap dropdown), so it reads as the same floating pin card. */
+.pin-pop--standalone {
+  position: static;
+  transform: none;
+  width: 100%;
+  height: calc(100vh - 20px);
+  max-height: none;
+}
+
+/* Transparent wrapper for the standalone layout-pin window; the padding leaves room
+   for the card's CSS shadow (the window draws no shadow of its own). */
+.pin-pop-window {
+  width: 100%;
+  min-height: 100vh;
+  padding: 10px;
+  box-sizing: border-box;
+  background: transparent;
+}
+
 .pin-pop__wedge {
   position: absolute;
   top: -7px;
@@ -2465,4 +2690,241 @@
 
 .quick-app__unpin:hover {
   color: var(--ch-text-primary);
+}
+
+/* ─── Window navigator (NIC-143) ─────────────────────────────────────────────
+   An app-grouped, iPhone-switcher-style list of open windows. Rendered standalone
+   inside its own native floating window, or as a right-pinned overlay in a plain
+   browser preview. */
+.win-nav-window {
+  height: 100vh;
+  display: flex;
+}
+
+.win-nav__scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.28);
+  z-index: 40;
+}
+
+.win-nav {
+  display: flex;
+  flex-direction: column;
+  background: var(--ch-surface-panel);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-lg);
+  color: var(--ch-text-primary);
+  overflow: hidden;
+}
+
+/* Overlay variant: a tall panel pinned to the right, clear of the bottom bar. */
+.win-nav__scrim + .win-nav {
+  position: fixed;
+  top: 4vh;
+  right: 1.25rem;
+  bottom: calc(var(--ch-bottombar-height, 3.5rem) + 1rem);
+  width: min(360px, 92vw);
+  z-index: 41;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+/* Standalone variant fills its native window. */
+.win-nav-window .win-nav {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+}
+
+.win-nav__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ch-space-3) var(--ch-space-4);
+  border-bottom: 1px solid var(--ch-panel-border);
+}
+
+.win-nav__title {
+  font-size: var(--ch-font-size-sm);
+  margin: 0;
+}
+
+.win-nav__close,
+.win-nav__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  cursor: pointer;
+  border-radius: var(--ch-radius-sm);
+  padding: var(--ch-space-1);
+}
+
+.win-nav__close svg,
+.win-nav__icon-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.win-nav__close:hover,
+.win-nav__icon-btn:hover {
+  color: var(--ch-text-primary);
+}
+
+.win-nav__icon-btn--close:hover {
+  color: #e5484d;
+}
+
+.win-nav__scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--ch-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  /* Fade the bottom edge — the flowy switcher feel. */
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent);
+}
+
+.win-nav__empty {
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+  text-align: center;
+  padding: var(--ch-space-6) 0;
+}
+
+.win-nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.win-nav__group-header,
+.win-nav__stack-toggle {
+  border: 0;
+  cursor: pointer;
+}
+
+.win-nav__group-header {
+  background: transparent;
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-label);
+  text-align: left;
+  padding: 0 var(--ch-space-1);
+}
+
+.win-nav__card {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  background: color-mix(in srgb, var(--ch-surface-panel) 70%, transparent);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  padding: var(--ch-space-2);
+}
+
+.win-nav__card[data-minimized="true"] {
+  opacity: 0.6;
+}
+
+.win-nav__card-open {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  padding: 0;
+}
+
+.win-nav__card-icon {
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ch-text-muted);
+}
+
+.win-nav__card-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.win-nav__card-icon svg {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.win-nav__card-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.win-nav__card-title {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.win-nav__card-sub {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.win-nav__card-actions {
+  display: inline-flex;
+  gap: var(--ch-space-1);
+  flex: 0 0 auto;
+}
+
+/* Collapsed multi-window app: a depth edge behind the front card + a count badge. */
+.win-nav__stack {
+  position: relative;
+  padding-top: 6px;
+}
+
+.win-nav__stack::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 0;
+  height: 12px;
+  background: color-mix(in srgb, var(--ch-surface-panel) 55%, transparent);
+  border: 1px solid var(--ch-panel-border);
+  border-bottom: 0;
+  border-radius: var(--ch-radius-md) var(--ch-radius-md) 0 0;
+}
+
+.win-nav__stack-toggle {
+  position: absolute;
+  top: 1px;
+  right: 12px;
+  z-index: 2;
+  background: var(--ch-accent-primary);
+  color: #000;
+  border-radius: var(--ch-radius-pill);
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.35rem;
+  font-size: 0.68rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }

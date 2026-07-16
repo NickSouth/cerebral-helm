@@ -28,5 +28,19 @@
     "directive": "Greet by time of day.",
     "fallback": "Good day, Nick."
   },
-  "layoutId": "executive.default"
+  "layoutId": "executive.default",
+  "layout": {
+    "display": "secondary",
+    "windows": [
+      { "ref": "chrome", "kind": "app", "frame": "left-half" },
+      { "ref": "gmail", "kind": "app", "frame": "right-half" }
+    ],
+    "quickToggle": {
+      "frame": "left-half",
+      "targets": [
+        { "ref": "chrome", "kind": "app" },
+        { "ref": "calendar", "kind": "url" }
+      ]
+    }
+  }
 }

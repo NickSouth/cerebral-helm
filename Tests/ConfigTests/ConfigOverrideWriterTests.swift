@@ -21,7 +21,7 @@ private func makeWorkspace() throws -> WorkspacePaths {
 private func override(
     _ modeID: String, quickApps: [String]?
 ) -> CerebralHelmModeOverride {
-    CerebralHelmModeOverride(extensions: nil, id: modeID, quickApps: quickApps, schemaVersion: "1.0.0")
+    CerebralHelmModeOverride(extensions: nil, id: modeID, layout: nil, quickApps: quickApps, schemaVersion: "1.0.0")
 }
 
 private func overrideFile(_ paths: WorkspacePaths, _ modeID: String) -> URL {

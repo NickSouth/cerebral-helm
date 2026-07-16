@@ -91,3 +91,31 @@ func appsListUnavailableIsStructured() async throws {
         _ = try await handler.execute(input: Data("{}".utf8))
     }
 }
+
+@Test("apps.quitall quits the running apps and reports them (NIC-143)")
+func appsQuitAllQuitsRunning() async throws {
+    let handler = AppsQuitAllHandler(capability: MockApplicationLifecycleCapability(
+        runningBundleIDs: ["com.apple.Safari", "com.microsoft.VSCode"]
+    ))
+    let output = try await handler.execute(input: Data("{}".utf8))
+    let decoded = try CerebralHelmAppsQuitAllOutput(data: output)
+    #expect(decoded.status == .quit)
+    #expect(decoded.bundleIDS == ["com.apple.Safari", "com.microsoft.VSCode"])
+}
+
+@Test("apps.quitall on an empty desktop reports 'none' with no ids (NIC-143)")
+func appsQuitAllEmptyIsNone() async throws {
+    let handler = AppsQuitAllHandler(capability: MockApplicationLifecycleCapability(runningBundleIDs: []))
+    let output = try await handler.execute(input: Data("{}".utf8))
+    let decoded = try CerebralHelmAppsQuitAllOutput(data: output)
+    #expect(decoded.status == .none)
+    #expect(decoded.bundleIDS.isEmpty)
+}
+
+@Test("apps.quitall with the capability unavailable is a structured unavailable, never a mock success")
+func appsQuitAllUnavailableIsStructured() async throws {
+    let handler = AppsQuitAllHandler(capability: MockApplicationLifecycleCapability(matrix: .none))
+    await #expect(throws: ToolHandlerError.self) {
+        _ = try await handler.execute(input: Data("{}".utf8))
+    }
+}

@@ -232,12 +232,94 @@ public protocol WorkspaceWindowsCapability: Sendable {
     func unhideApplications(bundleIDs: [String]) async throws -> [String]
 }
 
+// MARK: - application lifecycle
+
+/// Enumerate and quit running applications — the "close all windows" capability
+/// (NIC-143). Distinct from ``WorkspaceWindowsCapability`` (which only hides): this
+/// terminates apps, so its one tool is destructive and confirmation-gated.
+///
+/// The quit is a *graceful* request (owner decision, 2026-07-15): the app receives a
+/// normal terminate and may run its own save/quit path — never a forced kill that
+/// discards unsaved work. Best-effort throughout: a not-running id is simply absent
+/// from a result, never an error, and the host application is never a target.
+public protocol ApplicationLifecycleCapability: Sendable {
+    /// Bundle ids of regular running applications — including hidden ones (unlike
+    /// ``WorkspaceWindowsCapability/visibleApplicationBundleIDs()``) — excluding the
+    /// host app. This is the quit-all target set: everything the user could quit,
+    /// across every mode.
+    func regularRunningApplicationBundleIDs() async throws -> [String]
+
+    /// Requests a graceful quit of each application; returns the ids actually asked
+    /// to terminate (an id no longer running is simply absent).
+    func quitApplications(bundleIDs: [String]) async throws -> [String]
+}
+
+// MARK: - application windows (window navigator)
+
+/// One open window in the window-navigator inventory (NIC-143).
+public struct AppWindowInfo: Equatable, Sendable {
+    /// Opaque, stable window identifier — the stringified `CGWindowID` on macOS
+    /// (owner decision). Callers pass it back to minimize/surface/close a window;
+    /// it is never parsed by the UI.
+    public let id: String
+    /// The window's title (from Accessibility, so it needs no Screen Recording
+    /// permission). May be empty when a window exposes none.
+    public let title: String
+    /// Whether the window is currently minimized (in the Dock).
+    public let minimized: Bool
+
+    public init(id: String, title: String, minimized: Bool) {
+        self.id = id
+        self.title = title
+        self.minimized = minimized
+    }
+}
+
+/// One application's open windows, grouped for the navigator's app-stacked cards
+/// (NIC-143). `windows` preserves front-to-back order.
+public struct AppWindowGroup: Equatable, Sendable {
+    public let bundleID: String
+    public let appName: String
+    /// The application's icon as a base64 PNG, for the card mark; `nil` when it cannot
+    /// be rendered (the UI falls back to a category glyph).
+    public let appIconPNGBase64: String?
+    public let windows: [AppWindowInfo]
+
+    public init(bundleID: String, appName: String, appIconPNGBase64: String? = nil, windows: [AppWindowInfo]) {
+        self.bundleID = bundleID
+        self.appName = appName
+        self.appIconPNGBase64 = appIconPNGBase64
+        self.windows = windows
+    }
+}
+
+/// Enumerate and act on individual open windows — the window-navigator capability
+/// (NIC-143). Distinct from ``WorkspaceWindowsCapability`` (whole-app hide) and
+/// ``WindowCapability`` (main-window arrange): this addresses *each* window by a stable
+/// id, so the navigator can surface, minimize, or close one window of a multi-window
+/// app. Enumeration and minimize/surface use Accessibility (already granted for
+/// arrangement); closing a single window is a `local_write`-equivalent — the same
+/// as pressing the window's own close button — so navigator actions run without a
+/// per-press confirmation, like the layout ops. Best-effort: an unknown id is simply
+/// a `false` result, never an error.
+public protocol AppWindowsCapability: Sendable {
+    /// Every open window on screen, grouped by application (NIC-143).
+    func listWindows() async throws -> [AppWindowGroup]
+    /// Minimize the window to the Dock; returns whether it was found and minimized.
+    func minimize(windowID: String) async throws -> Bool
+    /// Bring the window to the front (un-minimizing/activating as needed); returns
+    /// whether it was found and surfaced.
+    func surface(windowID: String) async throws -> Bool
+    /// Close the window (its own close button); returns whether it was found and closed.
+    func close(windowID: String) async throws -> Bool
+}
+
 // MARK: - window
 
 /// The named-frame vocabulary for window arrangement (NIC-88). Raw values match
 /// the `window-arrange-input` contract enum; frames are resolved against the
-/// primary display's visible area by the platform adapter — callers never supply
-/// coordinates.
+/// target ``WindowDisplay``'s visible area by the platform adapter — callers never
+/// supply coordinates.
 public enum WindowFrame: String, Sendable, CaseIterable {
     case full
     case leftHalf = "left-half"
@@ -246,6 +328,8 @@ public enum WindowFrame: String, Sendable, CaseIterable {
     case bottomHalf = "bottom-half"
     case leftTwoThirds = "left-two-thirds"
     case rightThird = "right-third"
+    case leftThird = "left-third"
+    case rightTwoThirds = "right-two-thirds"
     case centered
 }
 
@@ -258,13 +342,23 @@ public enum WindowArrangeOutcome: Equatable, Sendable {
     case unsupported(String)
 }
 
+/// Which display an arrangement targets (NIC-142 layout mode). Mirrors the
+/// `window-arrange-input` contract's `display` enum; the platform adapter resolves
+/// each named frame against the chosen display's visible area, degrading
+/// `secondary` to the primary display when no second display is attached.
+public enum WindowDisplay: String, Sendable, CaseIterable {
+    case primary
+    case secondary
+}
+
 public protocol WindowCapability: Sendable {
     func inspect() async throws -> [WindowInfo]
 
-    /// Move/resize the application's main window into a named frame. Throws
-    /// `NativeCapabilityError.permissionDenied` when the Accessibility permission
-    /// is not granted (FR-SAF-07 — a capability error, never a prompt loop).
-    func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome
+    /// Move/resize the application's main window into a named frame on the chosen
+    /// display. Throws `NativeCapabilityError.permissionDenied` when the
+    /// Accessibility permission is not granted (FR-SAF-07 — a capability error,
+    /// never a prompt loop).
+    func arrange(bundleID: String, frame: WindowFrame, display: WindowDisplay) async throws -> WindowArrangeOutcome
 
     /// Read the application's main window frame for a workspace snapshot
     /// ("Windows Stored by Mode" geometry, NIC-85). `nil` when the application
@@ -275,6 +369,20 @@ public protocol WindowCapability: Sendable {
     /// Reapply a stored main-window frame. Same outcome vocabulary as `arrange`;
     /// throws `permissionDenied` when Accessibility is not granted.
     func restoreFrame(bundleID: String, rect: WindowRect) async throws -> WindowArrangeOutcome
+
+    /// The primary display's visible area (NIC-142 live capture), in the same
+    /// coordinate space `captureFrame` reports, so a captured window rect can be
+    /// snapped to a named frame. `nil` when no display is attached; throws
+    /// `permissionDenied` when Accessibility is not granted.
+    func visibleFrame() async throws -> WindowRect?
+}
+
+public extension WindowCapability {
+    /// Arrange on the primary display — the default target when a caller does not
+    /// specify a display (preserves the pre-NIC-142 single-display signature).
+    func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome {
+        try await arrange(bundleID: bundleID, frame: frame, display: .primary)
+    }
 }
 
 public struct WindowInfo: Equatable, Sendable {

@@ -31,5 +31,18 @@
     "cerebralhelm",
     "active-pull-request"
   ],
-  "layoutId": "developer.default"
+  "layoutId": "developer.default",
+  "layout": {
+    "display": "primary",
+    "windows": [
+      { "ref": "claude-desktop", "kind": "app", "frame": "right-third" }
+    ],
+    "quickToggle": {
+      "frame": "left-two-thirds",
+      "targets": [
+        { "ref": "vscode", "kind": "app" },
+        { "ref": "github", "kind": "url" }
+      ]
+    }
+  }
 }

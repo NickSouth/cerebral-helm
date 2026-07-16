@@ -22,6 +22,18 @@ private final class DashboardBackdropWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 }
 
+/// A dashboard web view that actuates a click even when the backdrop isn't the active
+/// window (NIC-142). The backdrop never rises above other apps, so while a layout app is
+/// focused a click on the dashboard normally takes two — one to activate CerebralHelm,
+/// one to press the control. Accepting the first mouse delivers that click straight to
+/// the web content, so the whole dashboard (bottom-bar hotswap, quick apps, mode
+/// control) responds on a single click. The click still activates CerebralHelm as a side
+/// effect, but the backdrop stays at its permanent sub-normal level, so the focused
+/// layout windows are not raised over.
+private final class FirstMouseWebView: WKWebView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     static let controlHandlerName = "shellControl"
 
@@ -122,7 +134,7 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
             forMainFrameOnly: true
         ))
 
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView = FirstMouseWebView(frame: .zero, configuration: configuration)
 
         // The desktop backdrop (NIC-120a): borderless and sized to the primary
         // screen, on all Spaces, stationary through Mission Control transitions.

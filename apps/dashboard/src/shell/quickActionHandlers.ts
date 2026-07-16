@@ -63,12 +63,44 @@ function runWorkflow(workflowId: string, { bridge, announce }: QuickActionDeps):
 }
 
 /**
+ * Enter layout mode for a mode (NIC-142). A mode's `open-<mode>-layout` action does
+ * two things at once — open + arrange the layout's windows AND activate the bottom-bar
+ * layout section — so it goes through the dedicated `openLayout` op (which starts the
+ * session and runs the open workflow) rather than a bare `run <workflow>`.
+ */
+function openLayout(modeId: string, { bridge, announce }: QuickActionDeps): void {
+  void bridge
+    .openLayout({ modeId })
+    .then((result) => {
+      if (!result.accepted) {
+        announce(`${modeId} has no layout to open.`, "error");
+      }
+    })
+    .catch(() => {
+      announce(`Opening the ${modeId} layout failed — the bridge did not accept it.`, "error");
+    });
+}
+
+/** Matches a mode's layout-open action id, capturing the mode id. */
+const LAYOUT_ACTION = /^open-([a-z][a-z0-9-]*)-layout$/;
+
+/**
  * Resolve a quick-action id to its click handler, or `null` if the id is a placeholder. A wired
  * action names exactly one target: a `handler` implemented above, or a `workflow` run through
  * the command bus. A wired handler with no implementation here throws — the wiring gate makes
  * that unreachable in a valid build, so the throw is a developer-error guard, not a runtime path.
  */
 export function resolveQuickAction(actionId: string, deps: QuickActionDeps): (() => void) | null {
+  // A layout-open action enters layout mode through the dedicated openLayout op
+  // (session + windows), not a bare workflow run — even though the manifest wires it
+  // to the same synthesized workflow for the resolution gate.
+  const layoutMatch = LAYOUT_ACTION.exec(actionId);
+  if (layoutMatch) {
+    const modeId = layoutMatch[1];
+    return () => {
+      openLayout(modeId, deps);
+    };
+  }
   const target = WIRED_ACTIONS[actionId];
   if (target?.workflow) {
     const workflowId = target.workflow;

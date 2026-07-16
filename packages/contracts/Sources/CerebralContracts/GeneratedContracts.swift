@@ -25,6 +25,8 @@
 //   let cerebralHelmAppOpenOutput = try CerebralHelmAppOpenOutput(json)
 //   let cerebralHelmAppsListInput = try CerebralHelmAppsListInput(json)
 //   let cerebralHelmAppsListOutput = try CerebralHelmAppsListOutput(json)
+//   let cerebralHelmAppsQuitAllInput = try CerebralHelmAppsQuitAllInput(json)
+//   let cerebralHelmAppsQuitAllOutput = try CerebralHelmAppsQuitAllOutput(json)
 //   let cerebralHelmConfirmationDisclosure = try CerebralHelmConfirmationDisclosure(json)
 //   let cerebralHelmHookRunInput = try CerebralHelmHookRunInput(json)
 //   let cerebralHelmHookRunOutput = try CerebralHelmHookRunOutput(json)
@@ -1682,7 +1684,9 @@ public enum CerebralHelmBridgeEventType: String, Codable {
     case configChanged = "config.changed"
     case confirmationChanged = "confirmation.changed"
     case displayTopologyChanged = "display.topology.changed"
+    case layoutSessionChanged = "layout.session.changed"
     case modeQuickappsChanged = "mode.quickapps.changed"
+    case modeWindowcollapseChanged = "mode.windowcollapse.changed"
     case settingsChanged = "settings.changed"
     case systemStatusChanged = "system.status.changed"
     case workflowActionProgress = "workflow.action.progress"
@@ -2141,9 +2145,14 @@ public extension CerebralHelmBridgeOperationRequest {
 
 public enum Operation: String, Codable {
     case addChromeProfileReference = "addChromeProfileReference"
+    case addLayoutTarget = "addLayoutTarget"
     case addURLReference = "addUrlReference"
     case applyMode = "applyMode"
+    case captureLayout = "captureLayout"
     case captureNote = "captureNote"
+    case closeAllWindows = "closeAllWindows"
+    case closeLayout = "closeLayout"
+    case closeWindow = "closeWindow"
     case decideConfirmation = "decideConfirmation"
     case getBootstrapState = "getBootstrapState"
     case getRecentActivity = "getRecentActivity"
@@ -2151,10 +2160,18 @@ public enum Operation: String, Codable {
     case listApps = "listApps"
     case listChromeProfiles = "listChromeProfiles"
     case listUrls = "listUrls"
+    case listWindows = "listWindows"
+    case minimizeWindow = "minimizeWindow"
+    case openLayout = "openLayout"
+    case pinLayoutWindow = "pinLayoutWindow"
     case runSpeedTest = "runSpeedTest"
     case searchNotes = "searchNotes"
     case submitCommand = "submitCommand"
     case subscribe = "subscribe"
+    case surfaceWindow = "surfaceWindow"
+    case toggleLayout = "toggleLayout"
+    case toggleModeCollapse = "toggleModeCollapse"
+    case updateLayout = "updateLayout"
     case updateQuickApps = "updateQuickApps"
     case updateSettings = "updateSettings"
 }
@@ -2538,6 +2555,10 @@ public extension SettingsSnapshotKnowledge {
 
 // MARK: - SettingsSnapshotWorkspace
 public struct SettingsSnapshotWorkspace: Codable {
+    /// The stable display id layout mode opens on and whose bottom bar shows the hotswap pill
+    /// (NIC-142). Resolves to the `system-primary` sentinel when unset; a stale or disconnected
+    /// id degrades to the main display, then system primary, at the shell.
+    public let layoutDisplayID: String
     /// The stable display id the main dashboard backdrop is hosted on. Resolves to the
     /// `system-primary` sentinel when unset; a stale or disconnected id also degrades to system
     /// primary at the shell.
@@ -2547,11 +2568,13 @@ public struct SettingsSnapshotWorkspace: Codable {
     public let windowsStoredByMode: Bool
 
     public enum CodingKeys: String, CodingKey {
+        case layoutDisplayID = "layoutDisplayId"
         case mainDisplayID = "mainDisplayId"
         case windowsStoredByMode
     }
 
-    public init(mainDisplayID: String, windowsStoredByMode: Bool) {
+    public init(layoutDisplayID: String, mainDisplayID: String, windowsStoredByMode: Bool) {
+        self.layoutDisplayID = layoutDisplayID
         self.mainDisplayID = mainDisplayID
         self.windowsStoredByMode = windowsStoredByMode
     }
@@ -2576,10 +2599,12 @@ public extension SettingsSnapshotWorkspace {
     }
 
     func with(
+        layoutDisplayID: String? = nil,
         mainDisplayID: String? = nil,
         windowsStoredByMode: Bool? = nil
     ) -> SettingsSnapshotWorkspace {
         return SettingsSnapshotWorkspace(
+            layoutDisplayID: layoutDisplayID ?? self.layoutDisplayID,
             mainDisplayID: mainDisplayID ?? self.mainDisplayID,
             windowsStoredByMode: windowsStoredByMode ?? self.windowsStoredByMode
         )
@@ -3366,12 +3391,19 @@ public extension CerebralHelmConfigValidationError {
 public struct CerebralHelmModeOverride: Codable {
     public let extensions: [String: JSONAny]?
     public let id: String
+    /// The mode's authored window layout (NIC-142), replacing the shipped layout. Its structure
+    /// matches the mode config's `layout` (mode.schema.json `$defs/layout`); it is carried
+    /// opaquely here — validated structurally in the config validator by decoding it into the
+    /// same Layout type — so the generated override type stays a flat document and the layout's
+    /// named types are defined once, on the mode config.
+    public let layout: [String: JSONAny]?
     public let quickApps: [String]?
     public let schemaVersion: String
 
-    public init(extensions: [String: JSONAny]?, id: String, quickApps: [String]?, schemaVersion: String) {
+    public init(extensions: [String: JSONAny]?, id: String, layout: [String: JSONAny]?, quickApps: [String]?, schemaVersion: String) {
         self.extensions = extensions
         self.id = id
+        self.layout = layout
         self.quickApps = quickApps
         self.schemaVersion = schemaVersion
     }
@@ -3398,12 +3430,14 @@ public extension CerebralHelmModeOverride {
     func with(
         extensions: [String: JSONAny]?? = nil,
         id: String? = nil,
+        layout: [String: JSONAny]?? = nil,
         quickApps: [String]?? = nil,
         schemaVersion: String? = nil
     ) -> CerebralHelmModeOverride {
         return CerebralHelmModeOverride(
             extensions: extensions ?? self.extensions,
             id: id ?? self.id,
+            layout: layout ?? self.layout,
             quickApps: quickApps ?? self.quickApps,
             schemaVersion: schemaVersion ?? self.schemaVersion
         )
@@ -3429,6 +3463,11 @@ public struct CerebralHelmModeConfig: Codable {
     public let greeting: Greeting?
     public let id: String
     public let label: String
+    /// The mode's authored window layout (NIC-142). `windows` are static app/URL placements; the
+    /// optional `quickToggle` is the single dynamic slot whose one visible window swaps between
+    /// N targets from the bottom bar. Frames reuse the window.arrange named vocabulary — never
+    /// arbitrary coordinates. The whole layout opens on the chosen `display`.
+    public let layout: Layout?
     public let layoutID: String?
     public let newsProfile: NewsProfile?
     public let projectHints: [String]?
@@ -3442,17 +3481,18 @@ public struct CerebralHelmModeConfig: Codable {
     public let widgets: Widgets
 
     public enum CodingKeys: String, CodingKey {
-        case calendarProfile, extensions, greeting, id, label
+        case calendarProfile, extensions, greeting, id, label, layout
         case layoutID = "layoutId"
         case newsProfile, projectHints, quickActions, quickApps, theme, widgets
     }
 
-    public init(calendarProfile: CalendarProfile?, extensions: [String: JSONAny]?, greeting: Greeting?, id: String, label: String, layoutID: String?, newsProfile: NewsProfile?, projectHints: [String]?, quickActions: [String?], quickApps: [String], theme: Theme, widgets: Widgets) {
+    public init(calendarProfile: CalendarProfile?, extensions: [String: JSONAny]?, greeting: Greeting?, id: String, label: String, layout: Layout?, layoutID: String?, newsProfile: NewsProfile?, projectHints: [String]?, quickActions: [String?], quickApps: [String], theme: Theme, widgets: Widgets) {
         self.calendarProfile = calendarProfile
         self.extensions = extensions
         self.greeting = greeting
         self.id = id
         self.label = label
+        self.layout = layout
         self.layoutID = layoutID
         self.newsProfile = newsProfile
         self.projectHints = projectHints
@@ -3487,6 +3527,7 @@ public extension CerebralHelmModeConfig {
         greeting: Greeting?? = nil,
         id: String? = nil,
         label: String? = nil,
+        layout: Layout?? = nil,
         layoutID: String?? = nil,
         newsProfile: NewsProfile?? = nil,
         projectHints: [String]?? = nil,
@@ -3501,6 +3542,7 @@ public extension CerebralHelmModeConfig {
             greeting: greeting ?? self.greeting,
             id: id ?? self.id,
             label: label ?? self.label,
+            layout: layout ?? self.layout,
             layoutID: layoutID ?? self.layoutID,
             newsProfile: newsProfile ?? self.newsProfile,
             projectHints: projectHints ?? self.projectHints,
@@ -3570,6 +3612,253 @@ public extension Greeting {
             directive: directive ?? self.directive,
             fallback: fallback ?? self.fallback,
             persona: persona ?? self.persona
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+/// The mode's authored window layout (NIC-142). `windows` are static app/URL placements; the
+/// optional `quickToggle` is the single dynamic slot whose one visible window swaps between
+/// N targets from the bottom bar. Frames reuse the window.arrange named vocabulary — never
+/// arbitrary coordinates. The whole layout opens on the chosen `display`.
+// MARK: - Layout
+public struct Layout: Codable {
+    public let display: Display
+    public let quickToggle: QuickToggle?
+    public let windows: [Window]
+
+    public init(display: Display, quickToggle: QuickToggle?, windows: [Window]) {
+        self.display = display
+        self.quickToggle = quickToggle
+        self.windows = windows
+    }
+}
+
+// MARK: Layout convenience initializers and mutators
+
+public extension Layout {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(Layout.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        display: Display? = nil,
+        quickToggle: QuickToggle?? = nil,
+        windows: [Window]? = nil
+    ) -> Layout {
+        return Layout(
+            display: display ?? self.display,
+            quickToggle: quickToggle ?? self.quickToggle,
+            windows: windows ?? self.windows
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+/// Which display the whole arrangement targets (NIC-142 layout mode). Absent or 'primary'
+/// targets the primary display; 'secondary' targets the first non-primary display, degrading
+/// to primary when none is attached. Frames resolve against the chosen display's visible
+/// area.
+public enum Display: String, Codable {
+    case primary = "primary"
+    case secondary = "secondary"
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - QuickToggle
+public struct QuickToggle: Codable {
+    public let frame: Frame
+    public let targets: [Target]
+
+    public init(frame: Frame, targets: [Target]) {
+        self.frame = frame
+        self.targets = targets
+    }
+}
+
+// MARK: QuickToggle convenience initializers and mutators
+
+public extension QuickToggle {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(QuickToggle.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        frame: Frame? = nil,
+        targets: [Target]? = nil
+    ) -> QuickToggle {
+        return QuickToggle(
+            frame: frame ?? self.frame,
+            targets: targets ?? self.targets
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+public enum Frame: String, Codable {
+    case bottomHalf = "bottom-half"
+    case centered = "centered"
+    case full = "full"
+    case leftHalf = "left-half"
+    case leftThird = "left-third"
+    case leftTwoThirds = "left-two-thirds"
+    case rightHalf = "right-half"
+    case rightThird = "right-third"
+    case rightTwoThirds = "right-two-thirds"
+    case topHalf = "top-half"
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - Target
+public struct Target: Codable {
+    public let kind: Kind
+    public let ref: String
+
+    public init(kind: Kind, ref: String) {
+        self.kind = kind
+        self.ref = ref
+    }
+}
+
+// MARK: Target convenience initializers and mutators
+
+public extension Target {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(Target.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        kind: Kind? = nil,
+        ref: String? = nil
+    ) -> Target {
+        return Target(
+            kind: kind ?? self.kind,
+            ref: ref ?? self.ref
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+public enum Kind: String, Codable {
+    case app = "app"
+    case url = "url"
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - Window
+public struct Window: Codable {
+    public let frame: Frame
+    public let kind: Kind
+    public let ref: String
+
+    public init(frame: Frame, kind: Kind, ref: String) {
+        self.frame = frame
+        self.kind = kind
+        self.ref = ref
+    }
+}
+
+// MARK: Window convenience initializers and mutators
+
+public extension Window {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(Window.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        frame: Frame? = nil,
+        kind: Kind? = nil,
+        ref: String? = nil
+    ) -> Window {
+        return Window(
+            frame: frame ?? self.frame,
+            kind: kind ?? self.kind,
+            ref: ref ?? self.ref
         )
     }
 
@@ -4003,15 +4292,17 @@ public extension Knowledge {
 
 // MARK: - Workspace
 public struct Workspace: Codable {
-    public let mainDisplayID: String?
+    public let layoutDisplayID, mainDisplayID: String?
     public let windowsStoredByMode: Bool?
 
     public enum CodingKeys: String, CodingKey {
+        case layoutDisplayID = "layoutDisplayId"
         case mainDisplayID = "mainDisplayId"
         case windowsStoredByMode
     }
 
-    public init(mainDisplayID: String?, windowsStoredByMode: Bool?) {
+    public init(layoutDisplayID: String?, mainDisplayID: String?, windowsStoredByMode: Bool?) {
+        self.layoutDisplayID = layoutDisplayID
         self.mainDisplayID = mainDisplayID
         self.windowsStoredByMode = windowsStoredByMode
     }
@@ -4036,10 +4327,12 @@ public extension Workspace {
     }
 
     func with(
+        layoutDisplayID: String?? = nil,
         mainDisplayID: String?? = nil,
         windowsStoredByMode: Bool?? = nil
     ) -> Workspace {
         return Workspace(
+            layoutDisplayID: layoutDisplayID ?? self.layoutDisplayID,
             mainDisplayID: mainDisplayID ?? self.mainDisplayID,
             windowsStoredByMode: windowsStoredByMode ?? self.windowsStoredByMode
         )
@@ -4548,6 +4841,112 @@ public extension App {
     func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
         return String(data: try self.jsonData(), encoding: encoding)
     }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmAppsQuitAllInput
+public struct CerebralHelmAppsQuitAllInput: Codable {
+
+    public init() {
+    }
+}
+
+// MARK: CerebralHelmAppsQuitAllInput convenience initializers and mutators
+
+public extension CerebralHelmAppsQuitAllInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmAppsQuitAllInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+    ) -> CerebralHelmAppsQuitAllInput {
+        return CerebralHelmAppsQuitAllInput(
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmAppsQuitAllOutput
+public struct CerebralHelmAppsQuitAllOutput: Codable {
+    public let bundleIDS: [String]
+    public let status: CerebralHelmAppsQuitAllOutputStatus
+
+    public enum CodingKeys: String, CodingKey {
+        case bundleIDS = "bundleIds"
+        case status
+    }
+
+    public init(bundleIDS: [String], status: CerebralHelmAppsQuitAllOutputStatus) {
+        self.bundleIDS = bundleIDS
+        self.status = status
+    }
+}
+
+// MARK: CerebralHelmAppsQuitAllOutput convenience initializers and mutators
+
+public extension CerebralHelmAppsQuitAllOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmAppsQuitAllOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        bundleIDS: [String]? = nil,
+        status: CerebralHelmAppsQuitAllOutputStatus? = nil
+    ) -> CerebralHelmAppsQuitAllOutput {
+        return CerebralHelmAppsQuitAllOutput(
+            bundleIDS: bundleIDS ?? self.bundleIDS,
+            status: status ?? self.status
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+public enum CerebralHelmAppsQuitAllOutputStatus: String, Codable {
+    case none = "none"
+    case quit = "quit"
 }
 
 // Generated by scripts/generate-contracts.mjs.
@@ -6798,9 +7197,15 @@ public extension CerebralHelmURLOpenOutput {
 // MARK: - CerebralHelmWindowArrangeInput
 public struct CerebralHelmWindowArrangeInput: Codable {
     public let arrangement: [Arrangement]
+    /// Which display the whole arrangement targets (NIC-142 layout mode). Absent or 'primary'
+    /// targets the primary display; 'secondary' targets the first non-primary display, degrading
+    /// to primary when none is attached. Frames resolve against the chosen display's visible
+    /// area.
+    public let display: Display?
 
-    public init(arrangement: [Arrangement]) {
+    public init(arrangement: [Arrangement], display: Display?) {
         self.arrangement = arrangement
+        self.display = display
     }
 }
 
@@ -6823,10 +7228,12 @@ public extension CerebralHelmWindowArrangeInput {
     }
 
     func with(
-        arrangement: [Arrangement]? = nil
+        arrangement: [Arrangement]? = nil,
+        display: Display?? = nil
     ) -> CerebralHelmWindowArrangeInput {
         return CerebralHelmWindowArrangeInput(
-            arrangement: arrangement ?? self.arrangement
+            arrangement: arrangement ?? self.arrangement,
+            display: display ?? self.display
         )
     }
 
@@ -6894,17 +7301,6 @@ public extension Arrangement {
     func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
         return String(data: try self.jsonData(), encoding: encoding)
     }
-}
-
-public enum Frame: String, Codable {
-    case bottomHalf = "bottom-half"
-    case centered = "centered"
-    case full = "full"
-    case leftHalf = "left-half"
-    case leftTwoThirds = "left-two-thirds"
-    case rightHalf = "right-half"
-    case rightThird = "right-third"
-    case topHalf = "top-half"
 }
 
 // Generated by scripts/generate-contracts.mjs.

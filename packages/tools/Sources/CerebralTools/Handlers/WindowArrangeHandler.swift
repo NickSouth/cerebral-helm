@@ -29,9 +29,13 @@ public struct WindowArrangeHandler: ToolHandler {
             throw ToolHandlerError.invalidInput("window.arrange input does not match its contract.")
         }
 
+        // The display targets the whole arrangement (NIC-142 layout mode); an
+        // absent value keeps the pre-existing primary-display behavior.
+        let display: WindowDisplay = decoded.display == .secondary ? .secondary : .primary
+
         var entries: [Entry] = []
         for item in decoded.arrangement {
-            entries.append(try await arrange(item))
+            entries.append(try await arrange(item, display: display))
         }
 
         let allArranged = entries.allSatisfy { $0.status == .arranged }
@@ -41,7 +45,7 @@ public struct WindowArrangeHandler: ToolHandler {
         ).jsonData()
     }
 
-    private func arrange(_ item: Arrangement) async throws -> Entry {
+    private func arrange(_ item: Arrangement, display: WindowDisplay) async throws -> Entry {
         guard let bundleID = appTargets[item.appID] else {
             return entry(item, .unknownApp, "'\(item.appID)' is not a configured app reference.")
         }
@@ -50,7 +54,7 @@ public struct WindowArrangeHandler: ToolHandler {
             return entry(item, .failed, "Unknown frame '\(item.frame.rawValue)'.")
         }
         do {
-            switch try await capability.arrange(bundleID: bundleID, frame: frame) {
+            switch try await capability.arrange(bundleID: bundleID, frame: frame, display: display) {
             case .arranged:
                 return entry(item, .arranged, nil)
             case .notRunning:

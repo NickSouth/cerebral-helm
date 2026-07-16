@@ -43,27 +43,37 @@ public protocol ChromeWindowScripting: Sendable {
     func focusTab(windowID id: Int, tabIndex: Int) -> Bool
 }
 
-/// In-memory profile-directory → Chrome window id map, held for the app's lifetime.
+/// The bucket a Chrome window belongs to (NIC-143 follow-up, "each mode its own Chrome
+/// window"): a window is keyed by BOTH the active mode and the Chrome profile, so a mode's
+/// tabs stay on that mode's window — "Developer + Work" and "Entertainment + Work" get
+/// separate windows, and a profile-less open keys by mode alone. `mode`/`profile` are
+/// `nil` when absent (no active mode / the default profile).
+struct ChromeWindowKey: Hashable, Sendable {
+    let mode: String?
+    let profile: String?
+}
+
+/// In-memory window-bucket → Chrome window id map, held for the app's lifetime.
 /// Thread-safe; mirrors the `PolicyOverridesBox` locking pattern.
 final class ChromeProfileWindowRegistry: @unchecked Sendable {
     private let lock = NSLock()
-    private var windowByProfile: [String: Int] = [:]
+    private var windowByKey: [ChromeWindowKey: Int] = [:]
 
-    func windowID(for profile: String) -> Int? {
+    func windowID(for key: ChromeWindowKey) -> Int? {
         lock.lock(); defer { lock.unlock() }
-        return windowByProfile[profile]
+        return windowByKey[key]
     }
 
-    func record(profile: String, windowID: Int) {
+    func record(key: ChromeWindowKey, windowID: Int) {
         lock.lock(); defer { lock.unlock() }
-        windowByProfile[profile] = windowID
+        windowByKey[key] = windowID
     }
 
     /// Drop any recorded window whose id is no longer live, so a closed window never
-    /// masquerades as an open profile.
+    /// masquerades as an open bucket.
     func prune(liveIDs: Set<Int>) {
         lock.lock(); defer { lock.unlock() }
-        windowByProfile = windowByProfile.filter { liveIDs.contains($0.value) }
+        windowByKey = windowByKey.filter { liveIDs.contains($0.value) }
     }
 }
 
@@ -102,16 +112,25 @@ public final class ChromeProfileLauncher: @unchecked Sendable {
         self.settle = settle
     }
 
-    /// Focus the profile's window (opening `url` as a tab there when given), or launch
-    /// Chrome in that profile and remember the new window. Throws `notFound` when
-    /// Chrome isn't installed.
+    /// Profile-only convenience (mode-agnostic bucket) — kept for callers/tests that
+    /// don't scope by mode.
     @discardableResult
     public func open(profile: String, url: URL?) async throws -> Outcome {
+        try await open(mode: nil, profile: profile, url: url)
+    }
+
+    /// Focus the bucket's window (opening `url` as a tab there when given), or launch
+    /// Chrome for that bucket and remember the new window. The bucket is `(mode, profile)`,
+    /// so each mode keeps its own Chrome window (NIC-143 follow-up); the launch forces a
+    /// distinct window with `--new-window`. Throws `notFound` when Chrome isn't installed.
+    @discardableResult
+    public func open(mode: String?, profile: String?, url: URL?) async throws -> Outcome {
+        let key = ChromeWindowKey(mode: mode, profile: profile)
         // Prune closed windows so a stale recorded id can't match.
         let liveIDs = Set(scripting.openWindowIDs())
         registry.prune(liveIDs: liveIDs)
-        if let windowID = registry.windowID(for: profile), liveIDs.contains(windowID) {
-            // The profile already has a live window — reuse it, never a duplicate.
+        if let windowID = registry.windowID(for: key), liveIDs.contains(windowID) {
+            // The bucket already has a live window — reuse it, never a duplicate.
             guard let url else {
                 // Bare Chrome: just bring the profile window forward.
                 _ = scripting.focusWindow(id: windowID)
@@ -135,20 +154,23 @@ public final class ChromeProfileLauncher: @unchecked Sendable {
             return .openedTab
         }
 
-        // No live window for this profile: launch Chrome in it. The URL (when given)
-        // rides as a command-line argument so Chrome routes it into the profile.
+        // No live window for this bucket: launch a NEW Chrome window for it. `--new-window`
+        // forces a distinct window so a mode never shares another mode's (or the user's
+        // manual) window; the profile flag scopes it, and the URL rides as an argument so
+        // Chrome routes it into the profile.
         guard let chromeURL = workspace.installedApplicationURL(forBundleIdentifier: chromeBundleID) else {
             throw NativeCapabilityError.notFound(
-                "Google Chrome isn't installed, so the '\(profile)' profile can't be opened. Install Chrome, or remove the profile from the reference."
+                "Google Chrome isn't installed, so it can't be opened. Install Chrome, or remove the profile from the reference."
             )
         }
-        var arguments = ["--profile-directory=\(profile)"]
+        var arguments = ["--new-window"]
+        if let profile { arguments.append("--profile-directory=\(profile)") }
         if let url { arguments.append(url.absoluteString) }
         try await workspace.openApplication(at: chromeURL, arguments: arguments)
 
-        // Capture the profile's window so the next open reuses (and surfaces into) it.
+        // Capture the bucket's window so the next open reuses (and surfaces into) it.
         if let window = await capturedProfileWindow(before: liveIDs, url: url) {
-            registry.record(profile: profile, windowID: window)
+            registry.record(key: key, windowID: window)
         }
         return .launched
     }
@@ -238,9 +260,13 @@ public struct SystemChromeWindowScripting: ChromeWindowScripting {
 
     public func focusWindow(id: Int) -> Bool {
         guard chromeRunning else { return false }
+        // Un-minimize before raising: a window sitting in the Dock ignores `set index to 1`
+        // + `activate`, so surfacing a minimized mode window (a quick-app URL press) would
+        // silently do nothing (NIC-143 follow-up regression fix).
         let source = """
         tell application id "\(Self.chromeBundleID)"
             set _w to (first window whose id is \(id))
+            set minimized of _w to false
             set index of _w to 1
             activate
             return true
@@ -293,10 +319,14 @@ public struct SystemChromeWindowScripting: ChromeWindowScripting {
 
     public func focusTab(windowID id: Int, tabIndex: Int) -> Bool {
         guard chromeRunning else { return false }
+        // Un-minimize before raising (see `focusWindow`) so surfacing an existing tab in a
+        // minimized mode window actually brings it forward.
         let source = """
         tell application id "\(Self.chromeBundleID)"
-            set active tab index of (first window whose id is \(id)) to \(tabIndex)
-            set index of (first window whose id is \(id)) to 1
+            set _w to (first window whose id is \(id))
+            set active tab index of _w to \(tabIndex)
+            set minimized of _w to false
+            set index of _w to 1
             activate
             return true
         end tell

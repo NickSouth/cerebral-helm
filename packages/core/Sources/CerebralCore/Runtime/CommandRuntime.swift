@@ -576,6 +576,21 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [],
                 actionSummary: "Measure internet speed."
             )
+        case .quitAllApps:
+            // Quit every open application across all modes (NIC-143). Destructive
+            // and not reversible — quitting an app can lose unsaved work — so the
+            // descriptor's `destructive` risk routes it through a policy-owned
+            // confirmation before anything terminates. Argument-free: the target set
+            // is the running apps, discovered by the handler at execution time.
+            return make(
+                toolID: "apps.quitall",
+                input: Data("{}".utf8),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .notReversible,
+                arguments: [],
+                actionSummary: "Quit every open application across all modes."
+            )
         case .runAction:
             // Workflows resolve through startWorkflow, never through the
             // single-tool path.

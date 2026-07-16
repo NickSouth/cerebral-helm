@@ -76,7 +76,9 @@ public enum SettingsPatchValidator {
 
         if let workspace = changes["workspace"] {
             if let dict = workspace as? [String: Any] {
-                let allowedWorkspaceKeys: Set<String> = ["windowsStoredByMode", "mainDisplayId"]
+                let allowedWorkspaceKeys: Set<String> = [
+                    "windowsStoredByMode", "mainDisplayId", "layoutDisplayId"
+                ]
                 for key in dict.keys where !allowedWorkspaceKeys.contains(key) {
                     errors.append("Unknown workspace setting \"\(key)\".")
                 }
@@ -85,6 +87,9 @@ public enum SettingsPatchValidator {
                 }
                 if let display = dict["mainDisplayId"], !(display is String) || (display as? String)?.isEmpty == true {
                     errors.append("workspace.mainDisplayId must be a non-empty string.")
+                }
+                if let display = dict["layoutDisplayId"], !(display is String) || (display as? String)?.isEmpty == true {
+                    errors.append("workspace.layoutDisplayId must be a non-empty string.")
                 }
             } else {
                 errors.append("workspace must be an object.")

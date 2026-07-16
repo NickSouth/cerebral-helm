@@ -103,7 +103,35 @@ func launcherFirstOpenLaunchesAndRemembers() async throws {
 
     let outcome = try await launcher.open(profile: "Profile 1", url: URL(string: "https://mail.google.com"))
     #expect(outcome == .launched)
-    #expect(workspace.recordedLaunches == [["--profile-directory=Profile 1", "https://mail.google.com"]])
+    // A new window is forced (--new-window) so the bucket never shares another's window.
+    #expect(workspace.recordedLaunches == [["--new-window", "--profile-directory=Profile 1", "https://mail.google.com"]])
+}
+
+@Test("the same profile in different modes gets separate windows (NIC-143 follow-up)")
+func launcherTracksModesIndependently() async throws {
+    let workspace = LauncherWorkspace()
+    let scripting = FakeChromeScripting()
+    let launcher = ChromeProfileLauncher(
+        workspace: workspace, scripting: scripting,
+        settle: {
+            let existing = scripting.openWindowIDs()
+            let next = (existing.max() ?? 10) + 1
+            scripting.setWindows(existing + [next], front: next)
+        }
+    )
+    // Same profile, two modes → two launches, two windows.
+    _ = try await launcher.open(mode: "developer", profile: "Work", url: nil)       // window 11
+    _ = try await launcher.open(mode: "entertainment", profile: "Work", url: nil)   // window 12
+    scripting.resetCalls()
+
+    // Re-opening Work in developer focuses window 11, not entertainment's 12.
+    _ = try await launcher.open(mode: "developer", profile: "Work", url: nil)
+    #expect(scripting.recordedFocusCalls == [11])
+    #expect(workspace.recordedLaunches.count == 2)  // no third launch
+
+    // A profile-less open in a mode is its own bucket too.
+    _ = try await launcher.open(mode: "developer", profile: nil, url: URL(string: "https://youtube.com"))
+    #expect(workspace.recordedLaunches.last == ["--new-window", "https://youtube.com"])
 }
 
 @Test("a second open with the window live but no matching tab opens a tab there — no new launch")

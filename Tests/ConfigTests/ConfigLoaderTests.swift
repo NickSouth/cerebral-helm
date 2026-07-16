@@ -35,7 +35,7 @@ private func developerMode(quickApps: [String]) throws -> CerebralHelmModeConfig
 @Test("a quickApps override survives a change to the shipped default (AC-36.3)")
 func overrideSurvivesDefaultChange() throws {
     let override = CerebralHelmModeOverride(
-        extensions: nil, id: "developer", quickApps: ["vscode", "terminal", "linear"], schemaVersion: "1.0.0"
+        extensions: nil, id: "developer", layout: nil, quickApps: ["vscode", "terminal", "linear"], schemaVersion: "1.0.0"
     )
 
     let merged1 = ConfigLoader.applyOverrides(
@@ -83,7 +83,7 @@ func sessionOverrideWins() throws {
         to: paths, name: "developer.json"
     )
     let session = CerebralHelmModeOverride(
-        extensions: nil, id: "developer", quickApps: ["terminal"], schemaVersion: "1.0.0"
+        extensions: nil, id: "developer", layout: nil, quickApps: ["terminal"], schemaVersion: "1.0.0"
     )
 
     switch ConfigLoader(workspace: paths).load(sessionOverrides: [session]) {

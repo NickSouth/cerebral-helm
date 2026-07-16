@@ -17,9 +17,12 @@ public struct NSWorkspaceAppCapability: AppCapability {
     /// Chrome's bundle id — a profile on a reference targeting Chrome routes through
     /// the profile-window launcher so it focuses (not reopens) the profile's window.
     private static let chromeBundleID = "com.google.Chrome"
-    /// Focuses/reuses a Chrome profile's window (NIC-151). `nil` falls back to a plain
-    /// `--profile-directory` launch (a new window each time).
+    /// Focuses/reuses a Chrome window scoped to `(mode, profile)` (NIC-151 + NIC-143
+    /// follow-up). `nil` falls back to a plain launch.
     private let chromeLauncher: ChromeProfileLauncher?
+    /// The active mode at open time, so a Chrome open targets that mode's window
+    /// (NIC-143 follow-up). `nil` when no mode is active — the plain launch path.
+    private let currentModeProvider: @Sendable () -> String?
 
     /// Static map (tests, and any host with a fixed catalog). The values are bare
     /// bundle-id targets, so every entry is profile-less — the plain launch path.
@@ -31,16 +34,18 @@ public struct NSWorkspaceAppCapability: AppCapability {
     }
 
     /// Live map backed by the shared reference store (NIC-146), so `open <id>` resolves
-    /// a reference minted after startup without a relaunch. `chromeLauncher` routes a
-    /// Chrome-targeted profile reference to the profile-window registry (NIC-151).
+    /// a reference minted after startup without a relaunch. `chromeLauncher` +
+    /// `currentModeProvider` route a Chrome open to the per-(mode,profile) window registry.
     public init(
         appsProvider: @escaping @Sendable () -> [String: ReferenceEntry],
         workspace: any WorkspaceOpening = SystemWorkspace(),
-        chromeLauncher: ChromeProfileLauncher? = nil
+        chromeLauncher: ChromeProfileLauncher? = nil,
+        currentModeProvider: @escaping @Sendable () -> String? = { nil }
     ) {
         self.appsProvider = appsProvider
         self.workspace = workspace
         self.chromeLauncher = chromeLauncher
+        self.currentModeProvider = currentModeProvider
     }
 
     public func open(appID: String) async throws -> AppOpenResult {
@@ -57,13 +62,13 @@ public struct NSWorkspaceAppCapability: AppCapability {
         }
         let alreadyRunning = workspace.isApplicationRunning(bundleIdentifier: bundleID)
 
-        // A Chrome-targeted profile reference (a pinned "Chrome — <profile>") routes
-        // through the launcher, which focuses the profile's existing window instead of
-        // reopening one every launch (NIC-151, Nick's window registry). Bare Chrome:
-        // no URL, so the launcher just focuses (or opens) the profile window.
-        if let profile = entry.profile, bundleID == Self.chromeBundleID, let chromeLauncher {
+        // A Chrome open (a pinned "Chrome — <profile>", or bare Chrome) routes through the
+        // launcher when a mode is active, so it focuses/opens that mode's own Chrome window
+        // — scoped to (mode, profile) — instead of the shared frontmost one (NIC-151 +
+        // NIC-143 follow-up). No URL here, so the launcher just focuses (or opens) it.
+        if bundleID == Self.chromeBundleID, let chromeLauncher, let modeID = currentModeProvider() {
             do {
-                let outcome = try await chromeLauncher.open(profile: profile, url: nil)
+                let outcome = try await chromeLauncher.open(mode: modeID, profile: entry.profile, url: nil)
                 return AppOpenResult(
                     appID: appID, launched: outcome == .launched, alreadyRunning: outcome != .launched
                 )
@@ -171,15 +176,18 @@ public struct NSWorkspaceURLCapability: URLCapability {
             )
         }
 
-        // A profile-bearing reference opens in its Chrome profile (NIC-151). The
-        // launcher does PROFILE-SCOPED surfacing: it focuses a matching tab only in
-        // the profile's own window, or opens/launches there — it never surfaces a tab
-        // in a different profile (Nick's requirement). This deliberately does NOT use
-        // the profile-blind NIC-145 global surfacer below.
+        // The active mode scopes the Chrome window bucket (NIC-143 follow-up) and the
+        // NIC-145 re-open surfacing below.
+        let modeID = currentModeProvider()
+
+        // A profile-bearing reference opens in its Chrome profile (NIC-151), in a window
+        // scoped to (mode, profile) so each mode keeps its own tabs (NIC-143 follow-up).
+        // The launcher does WINDOW-SCOPED surfacing: it focuses a matching tab only in the
+        // bucket's own window, never a tab in a different mode/profile.
         if let profile = entry.profile {
             do {
                 if let chromeLauncher {
-                    let outcome = try await chromeLauncher.open(profile: profile, url: url)
+                    let outcome = try await chromeLauncher.open(mode: modeID, profile: profile, url: url)
                     return URLOpenResult(
                         urlID: urlID, opened: outcome != .surfacedExistingTab, resolvedURL: target,
                         surfaced: outcome == .surfacedExistingTab
@@ -209,12 +217,32 @@ public struct NSWorkspaceURLCapability: URLCapability {
             }
         }
 
-        let modeID = currentModeProvider()
+        // Plain (profile-less) URL that opens in Chrome: give the active mode its own
+        // Chrome window (NIC-143 follow-up), so a URL opened in one mode never lands as a
+        // tab in another mode's window. Only when Chrome is actually the default browser —
+        // otherwise the plain open below handles the real default.
+        if let modeID, let chromeLauncher, workspace.defaultBrowserBundleID() == Self.chromeBundleID {
+            do {
+                let outcome = try await chromeLauncher.open(mode: modeID, profile: nil, url: url)
+                return URLOpenResult(
+                    urlID: urlID, opened: outcome != .surfacedExistingTab, resolvedURL: target,
+                    surfaced: outcome == .surfacedExistingTab
+                )
+            } catch is CancellationError {
+                throw NativeCapabilityError.cancelled
+            } catch let error as NativeCapabilityError {
+                throw error
+            } catch {
+                throw NativeCapabilityError.adapterFailure(
+                    "Opening URL reference '\(urlID)' in Chrome failed: \(error.localizedDescription)"
+                )
+            }
+        }
 
-        // Plain (profile-less) URL: NIC-145 profile-blind surfacing — re-opening in the
-        // same mode focuses the existing tab on the domain (any route/subdomain) rather
-        // than duplicating it. Only for a URL CH itself opened in this mode; any
-        // non-`surfaced` outcome falls through to a fresh open.
+        // Plain (profile-less) URL in a non-Chrome browser: NIC-145 profile-blind surfacing
+        // — re-opening in the same mode focuses the existing tab on the domain (any
+        // route/subdomain) rather than duplicating it. Only for a URL CH itself opened in
+        // this mode; any non-`surfaced` outcome falls through to a fresh open.
         if let modeID, let surface, let registry, registry.contains(modeID: modeID, urlID: urlID) {
             if case .surfaced = await surface.surface(url: url) {
                 return URLOpenResult(urlID: urlID, opened: false, resolvedURL: target, surfaced: true)

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "apps.quitall",
+  "version": "1.0.0",
+  "purpose": "Quit every open regular application across all modes with a graceful terminate (never a forced kill); excludes CerebralHelm itself.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/apps-quit-all-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/apps-quit-all-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "destructive",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_destructive",
+  "requiredPermissions": [],
+  "secretReferences": [],
+  "timeoutMs": 15000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["application.lifecycle"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "timeout", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

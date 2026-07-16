@@ -53,7 +53,7 @@
       "title": "SettingsSnapshotWorkspace",
       "type": "object",
       "additionalProperties": false,
-      "required": ["windowsStoredByMode", "mainDisplayId"],
+      "required": ["windowsStoredByMode", "mainDisplayId", "layoutDisplayId"],
       "properties": {
         "windowsStoredByMode": {
           "description": "Whether a mode switch hides the outgoing mode's apps and returns the incoming mode's stored ones (NIC-85). Defaults to false when unset.",
@@ -61,6 +61,11 @@
         },
         "mainDisplayId": {
           "description": "The stable display id the main dashboard backdrop is hosted on. Resolves to the `system-primary` sentinel when unset; a stale or disconnected id also degrades to system primary at the shell.",
+          "type": "string",
+          "minLength": 1
+        },
+        "layoutDisplayId": {
+          "description": "The stable display id layout mode opens on and whose bottom bar shows the hotswap pill (NIC-142). Resolves to the `system-primary` sentinel when unset; a stale or disconnected id degrades to the main display, then system primary, at the shell.",
           "type": "string",
           "minLength": 1
         }

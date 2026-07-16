@@ -25,7 +25,9 @@
         "bridge.capability.changed",
         "system.status.changed",
         "workflow.action.progress",
-        "display.topology.changed"
+        "display.topology.changed",
+        "layout.session.changed",
+        "mode.windowcollapse.changed"
       ]
     },
     "timestamp": {

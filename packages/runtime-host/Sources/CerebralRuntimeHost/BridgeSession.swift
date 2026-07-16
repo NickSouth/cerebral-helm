@@ -68,6 +68,50 @@ public final class BridgeSession: @unchecked Sendable {
     /// empty profile list, so the UI simply offers no profile choices.
     private let chromeProfiles: (any ChromeProfileDiscoveryCapability)?
 
+    /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
+    /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
+    /// uses. Optional: a host without it (pre-Mac, tests) still ends the session
+    /// and clears the bar, but cannot hide the windows (honestly degraded).
+    private let workspaceWindows: (any WorkspaceWindowsCapability)?
+
+    /// Surfaces a layout quick-toggle target on `toggleLayout` (NIC-142): the same
+    /// app/URL open capabilities the runtime uses, called directly. The layout
+    /// session is authorized once at open, so a rapid toggle does not re-confirm
+    /// (owner decision) — these bypass the confirmation gate the way `closeLayout`'s
+    /// hide does, never a per-press prompt. The shared URL capability reuses the
+    /// runtime's tab-surfacing registry, so toggling to a URL surfaces its tab.
+    private let app: (any AppCapability)?
+    private let url: (any URLCapability)?
+
+    /// Reads visible windows' frames for live layout capture (NIC-142) — the AX
+    /// geometry capability. Optional: absent pre-Mac, so capture degrades honestly.
+    private let window: (any WindowCapability)?
+
+    /// Enumerates and acts on individual open windows for the window navigator
+    /// (NIC-143): list, minimize, surface, close. Direct-capability like the layout
+    /// ops — navigator actions are authorized as benign local view changes, never a
+    /// per-press confirmation. Optional: absent pre-Mac/tests, so the navigator
+    /// degrades to an honest empty inventory and no-op actions. The live AX adapter
+    /// lands in a later increment.
+    private let appWindows: (any AppWindowsCapability)?
+    /// Resolves the default browser's bundle id (NIC-142) so a layout URL window that
+    /// opens in the default browser (no Chrome profile) can be arranged like an app.
+    /// A URL with a Chrome profile always targets `com.google.Chrome`.
+    private let defaultBrowserBundleID: (@Sendable () -> String?)?
+
+    /// The active layout session (NIC-142), when a layout is open. Ephemeral
+    /// runtime state — started by `openLayout`, cleared by `closeLayout` or a mode
+    /// switch. Guarded by its own lock; the session is the only source of the
+    /// `layout.session.changed` state.
+    private let layoutLock = NSLock()
+    private var activeLayoutSession: LayoutSession?
+
+    /// The session-only, per-mode collapse-all buckets (NIC-143). In-memory and not
+    /// persisted — a relaunch starts every mode expanded. Owned wholly by the bridge:
+    /// the toggle op fills/empties it, and a mode switch re-applies the entered mode's
+    /// bucket after any "Windows Stored by Mode" restore (the bucket wins).
+    private let collapseStore = ModeCollapseStore()
+
     public init(
         runtime: CommandRuntime,
         configDirectory: URL,
@@ -77,6 +121,12 @@ public final class BridgeSession: @unchecked Sendable {
         modeStateStore: (any ModeStateStore)? = nil,
         faviconCapability: (any FaviconCapability)? = nil,
         chromeProfiles: (any ChromeProfileDiscoveryCapability)? = nil,
+        workspaceWindows: (any WorkspaceWindowsCapability)? = nil,
+        app: (any AppCapability)? = nil,
+        url: (any URLCapability)? = nil,
+        window: (any WindowCapability)? = nil,
+        appWindows: (any AppWindowsCapability)? = nil,
+        defaultBrowserBundleID: (@Sendable () -> String?)? = nil,
         emitEventJSON: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.runtime = runtime
@@ -86,6 +136,12 @@ public final class BridgeSession: @unchecked Sendable {
         self.modeStateStore = modeStateStore
         self.faviconCapability = faviconCapability
         self.chromeProfiles = chromeProfiles
+        self.workspaceWindows = workspaceWindows
+        self.app = app
+        self.url = url
+        self.window = window
+        self.appWindows = appWindows
+        self.defaultBrowserBundleID = defaultBrowserBundleID
         self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
     }
@@ -161,6 +217,32 @@ public final class BridgeSession: @unchecked Sendable {
             return await runSpeedTest(request)
         case .getSettings:
             return getSettings(request)
+        case .openLayout:
+            return await openLayout(request)
+        case .closeLayout:
+            return await closeLayout(request)
+        case .toggleLayout:
+            return await toggleLayout(request)
+        case .pinLayoutWindow:
+            return await pinLayoutWindow(request)
+        case .updateLayout:
+            return await updateLayout(request)
+        case .captureLayout:
+            return await captureLayout(request)
+        case .addLayoutTarget:
+            return await addLayoutTarget(request)
+        case .toggleModeCollapse:
+            return await toggleModeCollapse(request)
+        case .closeAllWindows:
+            return await closeAllWindows(request)
+        case .listWindows:
+            return await listWindows(request)
+        case .minimizeWindow:
+            return await windowAction(request) { try await $0.minimize(windowID: $1) }
+        case .surfaceWindow:
+            return await windowAction(request) { try await $0.surface(windowID: $1) }
+        case .closeWindow:
+            return await windowAction(request) { try await $0.close(windowID: $1) }
         default:
             // captureNote (confirmation-gated local_write returning a synchronous
             // noteId) and subscribe follow later.
@@ -182,14 +264,14 @@ public final class BridgeSession: @unchecked Sendable {
         let source = input.source.flatMap(CommandSource.init(rawValue:)) ?? .dashboard
         let outcome = await runtime.submit(input.rawInput, source: source)
         registerAwaitingConfirmation(outcome)
-        emitConfigChangedIfModeApplied(outcome)
+        await emitConfigChangedIfModeApplied(outcome)
         return ok(request, payload: receipt(for: outcome))
     }
 
     /// A raw `mode <id>` command (palette, CLI-over-bridge) that succeeded also
     /// re-themes the dashboard, exactly like the `applyMode` operation — one
     /// switch, one visible result, regardless of which surface asked.
-    private func emitConfigChangedIfModeApplied(_ outcome: CommandRuntimeOutcome) {
+    private func emitConfigChangedIfModeApplied(_ outcome: CommandRuntimeOutcome) async {
         guard
             case let .completed(_, status, result) = outcome,
             status == .succeeded,
@@ -197,10 +279,14 @@ public final class BridgeSession: @unchecked Sendable {
             let output = result.output,
             let decoded = try? CerebralHelmModeApplyOutput(data: output)
         else { return }
+        // A mode switch ends any active layout session — the outgoing layout's
+        // windows fall under the mode's own snapshot behavior (NIC-142).
+        endActiveLayoutSession()
         let snapshot = composeState(activeModeID: decoded.modeID)
         emit(BridgeEventFactory.configChangedEvent(
             snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
+        await reapplyCollapseBucket(enteredModeID: decoded.modeID)
     }
 
     private func applyMode(
@@ -217,12 +303,642 @@ public final class BridgeSession: @unchecked Sendable {
         // dashboard swap below and the durable switch are the whole effect
         // (workspace re-scope, NIC-85).
         _ = await runtime.submit("mode \(input.modeId)", source: .dashboard)
+        // A mode switch ends any active layout session (NIC-142).
+        endActiveLayoutSession()
         // Re-theme the dashboard by emitting the target mode's snapshot.
         let snapshot = composeState(activeModeID: input.modeId)
         emit(BridgeEventFactory.configChangedEvent(
             snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
+        await reapplyCollapseBucket(enteredModeID: input.modeId)
         return ok(request, payload: ApplyModeResult(modeId: input.modeId, status: "ok"))
+    }
+
+    // MARK: - Collapse / expand all (NIC-143)
+
+    /// Toggles the collapse-all state of a mode: on collapse, captures the currently
+    /// visible applications and hides them into the mode's session-only bucket; on
+    /// expand, un-hides exactly that bucket and clears it. Uses the same permission-free
+    /// app-level hide/unhide as "Windows Stored by Mode" (owner decision: hide, not
+    /// Dock-minimize) and never re-confirms — it is a benign local view change. Collapsing
+    /// an empty desktop is a no-op (nothing to hide, so the mode stays expanded). Emits
+    /// `mode.windowcollapse.changed` so the bottom-bar icon reflects the new state.
+    private func toggleModeCollapse(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: ToggleModeCollapseInput = decodePayload(request), !input.modeId.isEmpty else {
+            return invalidInput(request, "toggleModeCollapse requires a modeId.")
+        }
+        // Without the app-level window capability (pre-Mac, tests) we cannot hide or
+        // return windows, so the collapse state cannot change — report it honestly.
+        guard let windows = workspaceWindows else {
+            return ok(request, payload: ToggleModeCollapseResult(
+                collapsed: collapseStore.isCollapsed(modeID: input.modeId)
+            ))
+        }
+
+        let collapsed: Bool
+        if collapseStore.isCollapsed(modeID: input.modeId) {
+            // Expand: un-hide only the apps this mode collapsed (windows opened since
+            // are left as-is), then clear the bucket.
+            let bucket = collapseStore.expand(modeID: input.modeId)
+            if !bucket.isEmpty {
+                _ = try? await windows.unhideApplications(bundleIDs: bucket)
+            }
+            collapsed = false
+        } else {
+            // Collapse: capture the currently visible apps (the capability already
+            // excludes the host app) and hide them. Nothing visible ⇒ no-op.
+            let visible = (try? await windows.visibleApplicationBundleIDs()) ?? []
+            guard !visible.isEmpty else {
+                return ok(request, payload: ToggleModeCollapseResult(collapsed: false))
+            }
+            _ = try? await windows.hideApplications(bundleIDs: visible)
+            collapseStore.collapse(modeID: input.modeId, bundleIDs: visible)
+            collapsed = true
+        }
+        emit(BridgeEventFactory.windowCollapseChangedEvent(
+            modeId: input.modeId, collapsed: collapsed,
+            id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+        return ok(request, payload: ToggleModeCollapseResult(collapsed: collapsed))
+    }
+
+    /// Close all windows across every mode (NIC-143): quits every open regular
+    /// application (except CerebralHelm). Routes through the command bus like any
+    /// destructive tool — `apps.quitall` is `destructive`, so the policy engine gates
+    /// it on a confirmation. This mirrors `submitCommand`: register the awaiting
+    /// confirmation (pushing the disclosure) and return an accepting receipt; the quit
+    /// happens only after the user approves through the normal confirmation flow.
+    private func closeAllWindows(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let outcome = await runtime.submit("quit-all", source: .dashboard)
+        registerAwaitingConfirmation(outcome)
+        return ok(request, payload: receipt(for: outcome))
+    }
+
+    // MARK: - Window navigator (NIC-143)
+
+    /// The window-navigator inventory: every open window grouped by application. A
+    /// direct-capability read, no confirmation. Degrades to an honest empty list when
+    /// the capability is absent (pre-Mac / before the live AX adapter lands).
+    private func listWindows(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let groups = (try? await appWindows?.listWindows()) ?? []
+        let apps = groups.map { group in
+            WindowGroupDTO(
+                bundleId: group.bundleID,
+                appName: group.appName,
+                appIconPng: group.appIconPNGBase64,
+                windows: group.windows.map { WindowDTO(id: $0.id, title: $0.title, minimized: $0.minimized) }
+            )
+        }
+        return ok(request, payload: WindowInventory(apps: apps))
+    }
+
+    /// Shared body for the minimize/surface/close window actions (NIC-143): resolve the
+    /// window id and run the action, reporting whether it took effect. A benign local
+    /// view change (surface/minimize) or the equivalent of the window's own close button
+    /// — direct-capability, no per-press confirmation. No-op `ok: false` when the
+    /// capability is absent or the id is unknown.
+    private func windowAction(
+        _ request: CerebralHelmBridgeOperationRequest,
+        _ act: @escaping (any AppWindowsCapability, String) async throws -> Bool
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: WindowRefInput = decodePayload(request), !input.windowId.isEmpty else {
+            return invalidInput(request, "a window action requires a windowId.")
+        }
+        guard let capability = appWindows else {
+            return ok(request, payload: WindowActionResult(ok: false))
+        }
+        let affected = (try? await act(capability, input.windowId)) ?? false
+        return ok(request, payload: WindowActionResult(ok: affected))
+    }
+
+    /// After a mode switch, re-apply the entered mode's collapse bucket (NIC-143):
+    /// "Windows Stored by Mode" restore-on-enter may have un-hidden apps the user had
+    /// collapsed, so re-hide anything still in that mode's bucket — the collapse bucket
+    /// is authoritative for its mode (owner: "a window state by mode, like open/closed").
+    /// Always (re)announces the entered mode's collapse state so the bottom-bar icon is
+    /// correct for the mode now shown, even when nothing needed re-hiding.
+    private func reapplyCollapseBucket(enteredModeID: String) async {
+        let collapsed = collapseStore.isCollapsed(modeID: enteredModeID)
+        if collapsed,
+           let bucket = collapseStore.bucket(modeID: enteredModeID), !bucket.isEmpty,
+           let windows = workspaceWindows {
+            _ = try? await windows.hideApplications(bundleIDs: bucket)
+        }
+        emit(BridgeEventFactory.windowCollapseChangedEvent(
+            modeId: enteredModeID, collapsed: collapsed,
+            id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+    }
+
+    // MARK: - Layout session (NIC-142)
+
+    /// Enters layout mode for a mode: starts the bottom-bar layout session from the
+    /// mode's authored layout (emitting `layout.session.changed`) and opens its
+    /// windows by running the synthesized `open-<mode>-layout` workflow through the
+    /// command bus — a normal, aggregate-confirmed sequence of narrow tool steps.
+    ///
+    /// The session is populated from the *authored config*, not the workflow result:
+    /// the workflow is confirmation-gated (`local_write`), so it may still be
+    /// awaiting the user's approval when this returns. The bar reflects the layout's
+    /// intent immediately; the windows open once approved.
+    private func openLayout(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: OpenLayoutInput = decodePayload(request), !input.modeId.isEmpty else {
+            return invalidInput(request, "openLayout requires a modeId.")
+        }
+        guard BootstrapComposer.modeExists(input.modeId, configDirectory: configDirectory) else {
+            return ok(request, payload: OpenLayoutResult(accepted: false, modeId: input.modeId))
+        }
+        guard let layout = resolveLayout(modeID: input.modeId) else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "no_layout",
+                message: "Mode \"\(input.modeId)\" has no authored layout."
+            )
+        }
+
+        let session = buildLayoutSession(modeID: input.modeId, layout: layout)
+        setActiveLayoutSession(session)
+        emit(BridgeEventFactory.layoutSessionChangedEvent(
+            session: session.snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+
+        // Force the correct setup on open (NIC-142, owner direction 2026-07-15): open and
+        // arrange EVERY static window + hotswap target from the authored (override-merged)
+        // layout so nothing cold-starts on toggle, then hide the inactive hotswaps.
+        // Direct capability calls (authorized once at open; the same executor bypass as
+        // toggle/close). This supersedes the synthesized-workflow open, which read the
+        // SHIPPED layout and so fought the override-merged session's frames.
+        await openAndArrangeLayout(layout: layout, session: session)
+
+        return ok(request, payload: OpenLayoutResult(accepted: true, modeId: input.modeId))
+    }
+
+    /// Opens + arranges an entire layout on entry (NIC-142): every static window and
+    /// EVERY hotswap target is opened and arranged into its frame from the resolved
+    /// (override-merged) layout, then the inactive hotswap apps are hidden so only the
+    /// active one shows. Opening all hotswaps up front means toggling never cold-starts
+    /// a window (owner direction). URL windows are opened but not arranged (a URL is not
+    /// an app; browser placement is a later increment). App-level hide, so two hotswaps
+    /// sharing a bundle (e.g. two Chrome profiles) are never hidden out from under the
+    /// active one.
+    private func openAndArrangeLayout(layout: Layout, session: LayoutSession) async {
+        // ref → bundle id for app windows, from the already-resolved session.
+        var appBundleByRef: [String: String] = [:]
+        for window in session.windows where window.bundleID != nil {
+            appBundleByRef[window.ref] = window.bundleID
+        }
+        for target in session.quickToggle?.targets ?? [] where target.bundleID != nil {
+            appBundleByRef[target.ref] = target.bundleID
+        }
+        let references = try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace?.stateRoot
+        )
+
+        // The window to arrange for a ref: the app bundle for an app, or the browser
+        // bundle for a URL (Chrome for a profiled URL, else the default browser) — a
+        // URL "window" is its browser (NIC-142).
+        func arrangeBundle(_ ref: String, kind: Kind) -> String? {
+            switch kind {
+            case .app:
+                return appBundleByRef[ref]
+            case .url:
+                guard let entry = references?.urls[ref] else { return nil }
+                return entry.profile != nil ? UserChromeProfileReferences.chromeBundleID : defaultBrowserBundleID?()
+            }
+        }
+        func arrange(_ ref: String, kind: Kind, _ frameRaw: String) async {
+            guard let bundle = arrangeBundle(ref, kind: kind), let frame = WindowFrame(rawValue: frameRaw) else {
+                return
+            }
+            _ = try? await window?.arrange(bundleID: bundle, frame: frame, display: .primary)
+        }
+        func surface(_ ref: String, kind: Kind) async {
+            switch kind {
+            case .app: _ = try? await app?.open(appID: ref)
+            case .url: _ = try? await url?.open(urlID: ref)
+            }
+        }
+
+        // Static windows: open + arrange (apps and URLs).
+        for staticWindow in layout.windows {
+            await surface(staticWindow.ref, kind: staticWindow.kind)
+            await arrange(staticWindow.ref, kind: staticWindow.kind, staticWindow.frame.rawValue)
+        }
+
+        // Hotswap targets: open + arrange ALL, then hide every inactive app (URL targets
+        // share the browser window, so they are surfaced by tab rather than hidden).
+        guard let toggle = layout.quickToggle else { return }
+        let frameRaw = toggle.frame.rawValue
+        let activeRef = session.quickToggle?.activeRef ?? toggle.targets.first?.ref
+        for target in toggle.targets {
+            await surface(target.ref, kind: target.kind)
+            await arrange(target.ref, kind: target.kind, frameRaw)
+        }
+        let activeBundle = activeRef.flatMap { appBundleByRef[$0] }
+        let inactiveBundles = Set(toggle.targets.compactMap { target -> String? in
+            guard target.kind == .app, let bundle = appBundleByRef[target.ref], bundle != activeBundle else {
+                return nil
+            }
+            return bundle
+        })
+        if !inactiveBundles.isEmpty {
+            _ = try? await workspaceWindows?.hideApplications(bundleIDs: Array(inactiveBundles))
+        }
+        // Bring the active hotswap forward and re-arrange it last so it shows in place.
+        if let activeRef, let active = toggle.targets.first(where: { $0.ref == activeRef }) {
+            await surface(active.ref, kind: active.kind)
+            await arrange(active.ref, kind: active.kind, frameRaw)
+        }
+    }
+
+    /// The browser bundle id to arrange for a layout URL window (NIC-142): Chrome for a
+    /// profiled URL, else the default browser. nil when the ref is unknown or no default
+    /// browser resolver is wired.
+    private func urlBrowserBundleID(forURLRef ref: String) -> String? {
+        let references = try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace?.stateRoot
+        )
+        guard let entry = references?.urls[ref] else { return nil }
+        return entry.profile != nil ? UserChromeProfileReferences.chromeBundleID : defaultBrowserBundleID?()
+    }
+
+    /// Exits layout mode: hides the session's app windows (permission-free, like
+    /// "Windows Stored by Mode") and clears the session, emitting a null
+    /// `layout.session.changed`. URL windows have no bundle id and are left open.
+    private func closeLayout(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let session = takeActiveLayoutSession() else {
+            return ok(request, payload: CloseLayoutResult(closed: false))
+        }
+        let bundleIDs = session.appBundleIDs
+        if let windows = workspaceWindows, !bundleIDs.isEmpty {
+            _ = try? await windows.hideApplications(bundleIDs: bundleIDs)
+        }
+        emit(BridgeEventFactory.layoutSessionChangedEvent(
+            session: nil, id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+        return ok(request, payload: CloseLayoutResult(closed: true))
+    }
+
+    /// Swaps the dynamic quick-toggle slot to a target (NIC-142): hides the
+    /// previously-shown target's app window and surfaces the pressed one — an app is
+    /// re-opened/activated, a URL surfaces its tab through the runtime's shared
+    /// tab-surfacing registry. No confirmation: the session was authorized when the
+    /// layout opened (owner decision). A URL target that was previously shown cannot
+    /// be hidden (its window is the shared browser), so the new target surfaces over it.
+    private func toggleLayout(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: ToggleLayoutInput = decodePayload(request), !input.ref.isEmpty else {
+            return invalidInput(request, "toggleLayout requires a ref.")
+        }
+        guard
+            let session = peekActiveLayoutSession(),
+            let toggle = session.quickToggle,
+            let target = toggle.targets.first(where: { $0.ref == input.ref })
+        else {
+            // No active layout, no quick-toggle slot, or an unknown target.
+            return ok(request, payload: ToggleLayoutResult(accepted: false))
+        }
+        if toggle.activeRef == input.ref {
+            return ok(request, payload: ToggleLayoutResult(accepted: true))  // already shown
+        }
+
+        // Hide the previously-shown app target (permission-free); a URL prior can't
+        // be hidden — the pressed target simply surfaces over the shared browser.
+        if let previous = toggle.targets.first(where: { $0.ref == toggle.activeRef }),
+           previous.kind == "app", let bundleID = previous.bundleID, let windows = workspaceWindows {
+            _ = try? await windows.hideApplications(bundleIDs: [bundleID])
+        }
+
+        // Surface the pressed target directly (authorized once at open; no re-prompt),
+        // then re-arrange it into the hotswap frame — the user may have moved it, and a
+        // freshly surfaced window lands wherever the app put it, so force it back to the
+        // slot on every swap (NIC-142).
+        let frame = toggle.frame.flatMap(WindowFrame.init(rawValue:))
+        switch target.kind {
+        case "url":
+            _ = try? await url?.open(urlID: target.ref)
+            // A URL "window" is its browser: Chrome for a profiled URL, else the default.
+            if let frame, let bundleID = urlBrowserBundleID(forURLRef: target.ref) {
+                _ = try? await window?.arrange(bundleID: bundleID, frame: frame, display: .primary)
+            }
+        default:
+            _ = try? await app?.open(appID: target.ref)
+            if let frame, let bundleID = target.bundleID {
+                _ = try? await window?.arrange(bundleID: bundleID, frame: frame, display: .primary)
+            }
+        }
+
+        let updated = session.withActiveToggle(input.ref)
+        setActiveLayoutSession(updated)
+        emit(BridgeEventFactory.layoutSessionChangedEvent(
+            session: updated.snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+        return ok(request, payload: ToggleLayoutResult(accepted: true))
+    }
+
+    /// Pins an app/URL reference as a quick-toggle target on a mode's layout
+    /// (NIC-142) and persists it through the validated config-override path, so the
+    /// pin survives restarts and drives the next open. When a session for that mode
+    /// is active, the new target appears in the bar immediately. Requires the layout
+    /// to already have a dynamic slot (the frame the pinned window would occupy).
+    private func pinLayoutWindow(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: PinLayoutWindowInput = decodePayload(request),
+              !input.modeId.isEmpty, !input.ref.isEmpty else {
+            return invalidInput(request, "pinLayoutWindow requires a modeId and ref.")
+        }
+        guard let workspace else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "overrides_unavailable",
+                message: "Pinning requires a durable workspace."
+            )
+        }
+        guard let layout = resolveLayout(modeID: input.modeId) else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "no_layout",
+                message: "Mode \"\(input.modeId)\" has no authored layout."
+            )
+        }
+        guard let toggle = layout.quickToggle else {
+            return ok(request, payload: PinLayoutWindowResult(
+                accepted: false, errors: ["This layout has no dynamic slot to pin a window to."]
+            ))
+        }
+
+        // Resolve the ref's kind from the reference catalog — this is also the
+        // existence check (an id in neither catalog cannot be pinned).
+        let references = try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace.stateRoot
+        )
+        let kind: Kind
+        if references?.apps[input.ref] != nil {
+            kind = .app
+        } else if references?.urls[input.ref] != nil {
+            kind = .url
+        } else {
+            return ok(request, payload: PinLayoutWindowResult(
+                accepted: false, errors: ["\"\(input.ref)\" is not a configured app or URL reference."]
+            ))
+        }
+
+        // Already a target → accepted no-op (idempotent pin).
+        if toggle.targets.contains(where: { $0.ref == input.ref }) {
+            return ok(request, payload: PinLayoutWindowResult(accepted: true, errors: []))
+        }
+
+        let newLayout = Layout(
+            display: layout.display,
+            quickToggle: QuickToggle(frame: toggle.frame, targets: toggle.targets + [Target(kind: kind, ref: input.ref)]),
+            windows: layout.windows
+        )
+        // Preserve any existing override fields (e.g. pinned quick apps) — the
+        // override file replaces wholesale, so a layout-only write must not drop them.
+        let existing = readOverride(modeID: input.modeId, workspace: workspace)
+        let override = CerebralHelmModeOverride(
+            extensions: existing?.extensions,
+            id: input.modeId,
+            layout: encodePayload(newLayout),
+            quickApps: existing?.quickApps,
+            schemaVersion: "1.0.0"
+        )
+        switch ConfigOverrideWriter(workspace: workspace).write(override) {
+        case .applied:
+            refreshActiveLayoutSession(modeID: input.modeId, layout: newLayout)
+            return ok(request, payload: PinLayoutWindowResult(accepted: true, errors: []))
+        case let .rejected(errors):
+            return ok(request, payload: PinLayoutWindowResult(accepted: false, errors: errors.map(\.message)))
+        }
+    }
+
+    /// Adds a quick-toggle target to the ACTIVE layout session for this session only
+    /// (NIC-142) — the bottom-bar "+" live add. Unlike `pinLayoutWindow` it does NOT
+    /// persist to the override: the target lives in the in-memory session and is gone
+    /// when the layout closes or the mode switches. Requires an active session with a
+    /// dynamic slot; idempotent for a ref already present. No confirmation — the
+    /// session was authorized when the layout opened.
+    private func addLayoutTarget(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: AddLayoutTargetInput = decodePayload(request), !input.ref.isEmpty else {
+            return invalidInput(request, "addLayoutTarget requires a ref.")
+        }
+        guard let session = peekActiveLayoutSession(), let toggle = session.quickToggle else {
+            // No active layout or no dynamic slot to add into (a session-only add
+            // cannot mint a slot).
+            return ok(request, payload: AddLayoutTargetResult(accepted: false))
+        }
+        // Already a target → accepted no-op, no re-emit (idempotent).
+        if toggle.targets.contains(where: { $0.ref == input.ref }) {
+            return ok(request, payload: AddLayoutTargetResult(accepted: true))
+        }
+        // Resolve the ref against the reference catalog — the existence check plus the
+        // kind/label/bundle id the session window needs.
+        let references = try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace?.stateRoot
+        )
+        let window: LayoutSessionWindow
+        if let entry = references?.apps[input.ref] {
+            window = LayoutSessionWindow(ref: input.ref, kind: "app", label: entry.label, bundleID: entry.target)
+        } else if let entry = references?.urls[input.ref] {
+            window = LayoutSessionWindow(ref: input.ref, kind: "url", label: entry.label, bundleID: nil)
+        } else {
+            return ok(request, payload: AddLayoutTargetResult(accepted: false))
+        }
+        guard let updated = session.withAddedToggleTarget(window) else {
+            return ok(request, payload: AddLayoutTargetResult(accepted: false))
+        }
+        setActiveLayoutSession(updated)
+        emit(BridgeEventFactory.layoutSessionChangedEvent(
+            session: updated.snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+        return ok(request, payload: AddLayoutTargetResult(accepted: true))
+    }
+
+    /// Writes a full authored layout to a mode's override (NIC-142 authoring) — the
+    /// Save side of the Settings layout editor. Validates every reference against the
+    /// catalog and the structure through the same override write path; preserves any
+    /// existing override fields (e.g. pinned quick apps).
+    private func updateLayout(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: UpdateLayoutInput = decodePayload(request), !input.modeId.isEmpty else {
+            return invalidInput(request, "updateLayout requires a modeId and layout.")
+        }
+        guard let workspace else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "overrides_unavailable",
+                message: "Authoring a layout requires a durable workspace."
+            )
+        }
+        guard let layout = Layout.from(raw: input.layout) else {
+            return ok(request, payload: UpdateLayoutResult(accepted: false, errors: ["The layout is malformed."]))
+        }
+        // Reference-existence: every window and toggle target must name a configured
+        // app or URL reference (the same gate quick-app pinning uses).
+        let known = configuredReferenceIDs()
+        var unknown: Set<String> = []
+        for window in layout.windows where !known.contains(window.ref) { unknown.insert(window.ref) }
+        for target in layout.quickToggle?.targets ?? [] where !known.contains(target.ref) { unknown.insert(target.ref) }
+        guard unknown.isEmpty else {
+            return ok(request, payload: UpdateLayoutResult(
+                accepted: false,
+                errors: unknown.sorted().map { "\"\($0)\" is not a configured app or URL reference." }
+            ))
+        }
+
+        let existing = readOverride(modeID: input.modeId, workspace: workspace)
+        let override = CerebralHelmModeOverride(
+            extensions: existing?.extensions, id: input.modeId, layout: input.layout,
+            quickApps: existing?.quickApps, schemaVersion: "1.0.0"
+        )
+        switch ConfigOverrideWriter(workspace: workspace).write(override) {
+        case .applied:
+            refreshActiveLayoutSession(modeID: input.modeId, layout: layout)
+            return ok(request, payload: UpdateLayoutResult(accepted: true, errors: []))
+        case let .rejected(errors):
+            return ok(request, payload: UpdateLayoutResult(accepted: false, errors: errors.map(\.message)))
+        }
+    }
+
+    /// Proposes a layout from the currently-arranged windows (NIC-142 live capture):
+    /// each visible app that resolves to a configured reference, snapped to the named
+    /// frame it most occupies. The editor lets the user refine and Save (updateLayout).
+    /// macOS-only — degrades honestly without the AX window capability.
+    private func captureLayout(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let window, let workspaceWindows else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "capture_unavailable",
+                message: "Layout capture is available on the macOS host."
+            )
+        }
+        let visible: WindowRect
+        do {
+            guard let frame = try await window.visibleFrame() else {
+                return errorResponse(
+                    request, category: .unavailableCapability,
+                    code: "no_display", message: "No display is available to capture."
+                )
+            }
+            visible = frame
+        } catch {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "capture_denied",
+                message: "Layout capture needs the Accessibility permission."
+            )
+        }
+
+        let refByBundle = appReferencesByTarget()
+        let visibleApps = (try? await workspaceWindows.visibleApplicationBundleIDs()) ?? []
+        var windows: [CaptureWindow] = []
+        for bundleID in visibleApps {
+            guard let ref = refByBundle[bundleID] else { continue }  // configured references only
+            guard let rect = try? await window.captureFrame(bundleID: bundleID) else { continue }
+            let frame = WindowFrameGeometry.snap(rect, in: visible)
+            windows.append(CaptureWindow(ref: ref, kind: "app", frame: frame.rawValue))
+        }
+        return ok(request, payload: CaptureLayoutResult(windows: windows))
+    }
+
+    /// The mode's effective layout (NIC-142): the override-merged layout when a
+    /// workspace is bound (so a user's pins drive open), else the shipped layout.
+    private func resolveLayout(modeID: String) -> Layout? {
+        if let workspace, case let .activated(config) = ConfigLoader(workspace: workspace).load() {
+            return config.mode(id: modeID)?.layout
+        }
+        return ModeLayoutCatalog.load(configDirectory: configDirectory)[modeID]
+    }
+
+    private func readOverride(modeID: String, workspace: WorkspacePaths) -> CerebralHelmModeOverride? {
+        let url = workspace.overridesDirectory.appendingPathComponent("\(modeID).json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? CerebralHelmModeOverride(data: data)
+    }
+
+    /// Rebuilds the active session for `modeID` from a changed layout, keeping the
+    /// currently-shown quick-toggle target, and re-emits it.
+    private func refreshActiveLayoutSession(modeID: String, layout: Layout) {
+        guard let current = peekActiveLayoutSession(), current.modeID == modeID else { return }
+        var refreshed = buildLayoutSession(modeID: modeID, layout: layout)
+        if let active = current.quickToggle?.activeRef {
+            refreshed = refreshed.withActiveToggle(active)
+        }
+        setActiveLayoutSession(refreshed)
+        emit(BridgeEventFactory.layoutSessionChangedEvent(
+            session: refreshed.snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+    }
+
+    /// Ends an active layout session without hiding windows (a mode switch already
+    /// owns the outgoing mode's window behavior). No-op when none is active.
+    private func endActiveLayoutSession() {
+        guard takeActiveLayoutSession() != nil else { return }
+        emit(BridgeEventFactory.layoutSessionChangedEvent(
+            session: nil, id: BridgeEventFactory.newEventID(), timestamp: Date()
+        ))
+    }
+
+    /// Resolves an authored layout into a session: each window/toggle target's
+    /// human label and (for apps) bundle id, looked up in the reference catalog.
+    private func buildLayoutSession(modeID: String, layout: Layout) -> LayoutSession {
+        let references = try? ReferenceCatalogLoader.load(
+            configDirectory: configDirectory, stateRoot: workspace?.stateRoot
+        )
+        func resolve(ref: String, kind: Kind) -> LayoutSessionWindow {
+            switch kind {
+            case .app:
+                let entry = references?.apps[ref]
+                return LayoutSessionWindow(ref: ref, kind: "app", label: entry?.label ?? ref, bundleID: entry?.target)
+            case .url:
+                let entry = references?.urls[ref]
+                return LayoutSessionWindow(ref: ref, kind: "url", label: entry?.label ?? ref, bundleID: nil)
+            }
+        }
+        let windows = layout.windows.map { resolve(ref: $0.ref, kind: $0.kind) }
+        let toggle = layout.quickToggle.flatMap { qt -> LayoutSessionToggle? in
+            guard let first = qt.targets.first else { return nil }
+            return LayoutSessionToggle(
+                activeRef: first.ref,
+                targets: qt.targets.map { resolve(ref: $0.ref, kind: $0.kind) },
+                frame: qt.frame.rawValue
+            )
+        }
+        return LayoutSession(modeID: modeID, windows: windows, quickToggle: toggle)
+    }
+
+    private func setActiveLayoutSession(_ session: LayoutSession?) {
+        layoutLock.lock(); defer { layoutLock.unlock() }
+        activeLayoutSession = session
+    }
+
+    private func takeActiveLayoutSession() -> LayoutSession? {
+        layoutLock.lock(); defer { layoutLock.unlock() }
+        let session = activeLayoutSession
+        activeLayoutSession = nil
+        return session
+    }
+
+    private func peekActiveLayoutSession() -> LayoutSession? {
+        layoutLock.lock(); defer { layoutLock.unlock() }
+        return activeLayoutSession
     }
 
     private func captureNote(
@@ -394,8 +1110,12 @@ public final class BridgeSession: @unchecked Sendable {
             ))
         }
 
+        // Preserve any existing override fields (e.g. an authored layout, NIC-142) —
+        // the override file replaces wholesale, so a quick-apps write must not drop them.
+        let existing = readOverride(modeID: input.modeId, workspace: workspace)
         let override = CerebralHelmModeOverride(
-            extensions: nil, id: input.modeId, quickApps: input.quickApps, schemaVersion: "1.0.0"
+            extensions: existing?.extensions, id: input.modeId, layout: existing?.layout,
+            quickApps: input.quickApps, schemaVersion: "1.0.0"
         )
         switch ConfigOverrideWriter(workspace: workspace).write(override) {
         case .applied:
@@ -898,6 +1618,78 @@ public final class BridgeSession: @unchecked Sendable {
     private struct UpdateQuickAppsInput: Decodable {
         let modeId: String
         let quickApps: [String]
+    }
+    private struct OpenLayoutInput: Decodable {
+        let modeId: String
+    }
+    private struct OpenLayoutResult: Encodable {
+        let accepted: Bool
+        let modeId: String
+    }
+    private struct CloseLayoutResult: Encodable {
+        let closed: Bool
+    }
+    private struct ToggleLayoutInput: Decodable {
+        let ref: String
+    }
+    private struct ToggleLayoutResult: Encodable {
+        let accepted: Bool
+    }
+    private struct PinLayoutWindowInput: Decodable {
+        let modeId: String
+        let ref: String
+    }
+    private struct PinLayoutWindowResult: Encodable {
+        let accepted: Bool
+        let errors: [String]
+    }
+    private struct AddLayoutTargetInput: Decodable {
+        let ref: String
+    }
+    private struct AddLayoutTargetResult: Encodable {
+        let accepted: Bool
+    }
+    private struct ToggleModeCollapseInput: Decodable {
+        let modeId: String
+    }
+    private struct ToggleModeCollapseResult: Encodable {
+        let collapsed: Bool
+    }
+    private struct WindowRefInput: Decodable {
+        let windowId: String
+    }
+    private struct WindowActionResult: Encodable {
+        let ok: Bool
+    }
+    private struct WindowDTO: Encodable {
+        let id: String
+        let title: String
+        let minimized: Bool
+    }
+    private struct WindowGroupDTO: Encodable {
+        let bundleId: String
+        let appName: String
+        let appIconPng: String?
+        let windows: [WindowDTO]
+    }
+    private struct WindowInventory: Encodable {
+        let apps: [WindowGroupDTO]
+    }
+    private struct UpdateLayoutInput: Decodable {
+        let modeId: String
+        let layout: [String: JSONAny]
+    }
+    private struct UpdateLayoutResult: Encodable {
+        let accepted: Bool
+        let errors: [String]
+    }
+    private struct CaptureWindow: Encodable {
+        let ref: String
+        let kind: String
+        let frame: String
+    }
+    private struct CaptureLayoutResult: Encodable {
+        let windows: [CaptureWindow]
     }
     private struct UpdateQuickAppsResult: Encodable {
         let accepted: Bool

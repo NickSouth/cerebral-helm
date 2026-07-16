@@ -5,6 +5,7 @@ import type {
   BridgeEventListener,
   CerebralBridge,
   ChromeProfile,
+  LayoutSession,
   RecentActivity,
   SettingsSnapshot,
   Unsubscribe,
@@ -71,7 +72,11 @@ function mergeSettingsChanges(
 ): SettingsSnapshot {
   const appearance = changes.appearance as { reducedMotion?: unknown; assistantName?: unknown } | undefined;
   const knowledge = changes.knowledge as { rootReference?: unknown } | undefined;
-  const workspace = changes.workspace as { windowsStoredByMode?: unknown; mainDisplayId?: unknown } | undefined;
+  const workspace = changes.workspace as {
+    windowsStoredByMode?: unknown;
+    mainDisplayId?: unknown;
+    layoutDisplayId?: unknown;
+  } | undefined;
   return {
     schemaVersion: prev.schemaVersion,
     defaultModeId: typeof changes.defaultModeId === "string" ? changes.defaultModeId : prev.defaultModeId,
@@ -93,7 +98,11 @@ function mergeSettingsChanges(
           ? workspace.windowsStoredByMode
           : prev.workspace.windowsStoredByMode,
       mainDisplayId:
-        typeof workspace?.mainDisplayId === "string" ? workspace.mainDisplayId : prev.workspace.mainDisplayId
+        typeof workspace?.mainDisplayId === "string" ? workspace.mainDisplayId : prev.workspace.mainDisplayId,
+      layoutDisplayId:
+        typeof workspace?.layoutDisplayId === "string"
+          ? workspace.layoutDisplayId
+          : prev.workspace.layoutDisplayId
     },
     modeColors:
       changes.modeColors && typeof changes.modeColors === "object"
@@ -169,11 +178,79 @@ function mintUrlReference(
   };
 }
 
+/** The layout a mode opens in browser previews / tests (NIC-142). Mirrors the
+ *  shipped `config/modes/developer.json` layout — Developer is the only mode that
+ *  ships an authored layout, so every other mode honestly has none. */
+function mockLayoutSession(modeId: string): LayoutSession | null {
+  if (modeId !== "developer") {
+    return null;
+  }
+  return {
+    modeId,
+    windows: [{ ref: "claude-desktop", kind: "app", label: "Claude" }],
+    quickToggle: {
+      activeRef: "vscode",
+      targets: [
+        { ref: "vscode", kind: "app", label: "Visual Studio Code" },
+        { ref: "github", kind: "url", label: "GitHub" }
+      ]
+    }
+  };
+}
+
+/** Reference-id → display label for mock pins (mirrors the mock's listApps names). */
+function mockRefLabel(ref: string): string {
+  const labels: Record<string, string> = {
+    terminal: "Terminal",
+    vscode: "Visual Studio Code",
+    "claude-desktop": "Claude",
+    github: "GitHub"
+  };
+  return labels[ref] ?? ref;
+}
+
 export function createMockCerebralBridge(
   options: { bootstrapKey?: string } = {}
 ): MockCerebralBridge {
   const bootstrapKey = options.bootstrapKey ?? DEFAULT_BOOTSTRAP_KEY;
   const listeners = new Set<BridgeEventListener>();
+  // The active layout session (NIC-142), held mutably so toggleLayout can swap the
+  // dynamic slot and re-broadcast, mirroring the real bridge.
+  let activeLayout: LayoutSession | null = null;
+  // Session-only per-mode collapse-all state (NIC-143), so a browser preview can flip
+  // the bottom-bar collapse/expand icon; the real bridge hides/returns the windows.
+  const collapsedModes = new Set<string>();
+  // A mutable window inventory for the navigator (NIC-143), so a browser preview can
+  // minimize/surface/close and see the change on the next listWindows; the real bridge
+  // enumerates and acts on live windows via Accessibility.
+  const windowGroups: {
+    bundleId: string;
+    appName: string;
+    windows: { id: string; title: string; minimized: boolean }[];
+  }[] = [
+    {
+      bundleId: "com.google.Chrome",
+      appName: "Google Chrome",
+      windows: [
+        { id: "1001", title: "Inbox — Gmail", minimized: false },
+        { id: "1002", title: "CerebralHelm · GitHub", minimized: true }
+      ]
+    },
+    {
+      bundleId: "com.microsoft.VSCode",
+      appName: "Visual Studio Code",
+      windows: [{ id: "2001", title: "BridgeSession.swift — cerebral-helm", minimized: false }]
+    }
+  ];
+  const findWindow = (id: string) => {
+    for (const group of windowGroups) {
+      const window = group.windows.find((candidate) => candidate.id === id);
+      if (window) {
+        return { group, window };
+      }
+    }
+    return null;
+  };
   // Representative persisted settings, held mutably so updateSettings visibly persists +
   // broadcasts a settings.changed event (mirrors the real bridge; NIC-141/137).
   let settingsSnapshot: SettingsSnapshot = {
@@ -182,7 +259,7 @@ export function createMockCerebralBridge(
     confirmAllActions: false,
     appearance: { reducedMotion: false, assistantName: "Heimlich" },
     knowledge: { rootReference: "knowledge-root" },
-    workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary" },
+    workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
     modeColors: {}
   };
   let settingsEventSeq = 0;
@@ -456,6 +533,199 @@ export function createMockCerebralBridge(
           () => resolve({ status: "ok", downloadMbps: 243.7, uploadMbps: 17.9, testedAt: new Date().toISOString() }),
           2600
         );
+      });
+    },
+    openLayout(input) {
+      // Mirror the bridge (NIC-142): a mode with an authored layout starts a
+      // session delivered as a layout.session.changed event; a mode without one is
+      // an honest rejection. Only Developer ships a layout in the mock fixtures.
+      const session = mockLayoutSession(input.modeId);
+      if (!session) {
+        return Promise.resolve({ accepted: false, modeId: input.modeId });
+      }
+      activeLayout = session;
+      emit({
+        eventId: "brevt_mock_layout_open01",
+        type: "layout.session.changed",
+        schemaVersion: "1.0.0",
+        timestamp: new Date().toISOString(),
+        payload: { session }
+      });
+      return Promise.resolve({ accepted: true, modeId: input.modeId });
+    },
+    closeLayout() {
+      activeLayout = null;
+      emit({
+        eventId: "brevt_mock_layout_close1",
+        type: "layout.session.changed",
+        schemaVersion: "1.0.0",
+        timestamp: new Date().toISOString(),
+        payload: { session: null }
+      });
+      return Promise.resolve({ closed: true });
+    },
+    toggleLayout(input) {
+      // Swap the dynamic slot to the pressed target and re-broadcast (NIC-142). An
+      // unknown target — or no active layout — is an honest rejection.
+      const toggle = activeLayout?.quickToggle;
+      if (!activeLayout || !toggle || !toggle.targets.some((target) => target.ref === input.ref)) {
+        return Promise.resolve({ accepted: false });
+      }
+      activeLayout = {
+        ...activeLayout,
+        quickToggle: { ...toggle, activeRef: input.ref }
+      };
+      emit({
+        eventId: "brevt_mock_layout_toggle",
+        type: "layout.session.changed",
+        schemaVersion: "1.0.0",
+        timestamp: new Date().toISOString(),
+        payload: { session: activeLayout }
+      });
+      return Promise.resolve({ accepted: true });
+    },
+    pinLayoutWindow(input) {
+      // Append the reference as a new quick-toggle target and re-broadcast (NIC-142),
+      // mirroring the bridge's validated override write.
+      const toggle = activeLayout?.quickToggle;
+      if (!activeLayout || !toggle) {
+        return Promise.resolve({ accepted: false, errors: ["This layout has no dynamic slot."] });
+      }
+      if (!toggle.targets.some((target) => target.ref === input.ref)) {
+        activeLayout = {
+          ...activeLayout,
+          quickToggle: {
+            ...toggle,
+            targets: [...toggle.targets, { ref: input.ref, kind: "app", label: mockRefLabel(input.ref) }]
+          }
+        };
+        emit({
+          eventId: "brevt_mock_layout_pin01",
+          type: "layout.session.changed",
+          schemaVersion: "1.0.0",
+          timestamp: new Date().toISOString(),
+          payload: { session: activeLayout }
+        });
+      }
+      return Promise.resolve({ accepted: true, errors: [] });
+    },
+    addLayoutTarget(input) {
+      // Session-only "+" live add (NIC-142): append the reference to the active
+      // session's dynamic slot and re-broadcast. No persistence (the mock never
+      // writes overrides anyway) — the distinction from pinLayoutWindow is the op.
+      const toggle = activeLayout?.quickToggle;
+      if (!activeLayout || !toggle) {
+        return Promise.resolve({ accepted: false });
+      }
+      if (!toggle.targets.some((target) => target.ref === input.ref)) {
+        activeLayout = {
+          ...activeLayout,
+          quickToggle: {
+            ...toggle,
+            targets: [...toggle.targets, { ref: input.ref, kind: "app", label: mockRefLabel(input.ref) }]
+          }
+        };
+        emit({
+          eventId: "brevt_mock_layout_add01",
+          type: "layout.session.changed",
+          schemaVersion: "1.0.0",
+          timestamp: new Date().toISOString(),
+          payload: { session: activeLayout }
+        });
+      }
+      return Promise.resolve({ accepted: true });
+    },
+    updateLayout() {
+      // The settings editor's Save; the mock accepts a well-formed layout (NIC-142).
+      return Promise.resolve({ accepted: true, errors: [] });
+    },
+    toggleModeCollapse(input) {
+      // Flip the mode's collapse-all state and broadcast it, so a browser preview shows
+      // the icon change (NIC-143). The real bridge hides/returns the actual windows.
+      const collapsed = !collapsedModes.has(input.modeId);
+      if (collapsed) {
+        collapsedModes.add(input.modeId);
+      } else {
+        collapsedModes.delete(input.modeId);
+      }
+      emit({
+        eventId: "brevt_mock_collapse01",
+        type: "mode.windowcollapse.changed",
+        schemaVersion: "1.0.0",
+        timestamp: new Date().toISOString(),
+        payload: { modeId: input.modeId, collapsed }
+      });
+      return Promise.resolve({ collapsed });
+    },
+    closeAllWindows() {
+      // Destructive, confirmation-gated (NIC-143): the real bridge routes this through
+      // the command bus + policy engine. The mock surfaces a representative destructive
+      // disclosure so a browser preview shows the confirmation the user must approve —
+      // approve/cancel flow through the same `decideConfirmation` path.
+      const base = (confirmationBridgeEvent.payload as { confirmation: Record<string, unknown> })
+        .confirmation;
+      emit({
+        eventId: "brevt_mock_quitall0001",
+        type: "confirmation.changed",
+        schemaVersion: "1.0.0",
+        timestamp: new Date().toISOString(),
+        payload: {
+          confirmation: {
+            ...base,
+            id: "conf_quitall00000000000000001",
+            actionSummary: "Quit every open application across all modes.",
+            risk: "destructive",
+            reversibility: "not_reversible",
+            policyReason: "Risk class 'destructive' requires confirmation.",
+            destination: null,
+            arguments: [],
+            tool: {
+              id: "apps.quitall",
+              version: "1.0.0",
+              purpose: "Quit every open application across all modes; graceful terminate."
+            }
+          }
+        }
+      });
+      return Promise.resolve({ commandId: "cmd_quitall00000000000000001", accepted: true });
+    },
+    listWindows() {
+      return Promise.resolve({
+        apps: windowGroups.map((group) => ({
+          ...group,
+          windows: group.windows.map((window) => ({ ...window }))
+        }))
+      });
+    },
+    minimizeWindow(input) {
+      const found = findWindow(input.windowId);
+      if (found) {
+        found.window.minimized = true;
+      }
+      return Promise.resolve({ ok: found !== null });
+    },
+    surfaceWindow(input) {
+      const found = findWindow(input.windowId);
+      if (found) {
+        found.window.minimized = false;
+      }
+      return Promise.resolve({ ok: found !== null });
+    },
+    closeWindow(input) {
+      const found = findWindow(input.windowId);
+      if (found) {
+        found.group.windows = found.group.windows.filter((window) => window.id !== input.windowId);
+      }
+      return Promise.resolve({ ok: found !== null });
+    },
+    captureLayout() {
+      // A representative capture for browser previews of the authoring editor — the
+      // real bridge snaps the currently-arranged windows to named frames.
+      return Promise.resolve({
+        windows: [
+          { ref: "vscode", kind: "app", frame: "left-two-thirds" },
+          { ref: "claude-desktop", kind: "app", frame: "right-third" }
+        ]
       });
     },
     subscribe(listener): Unsubscribe {

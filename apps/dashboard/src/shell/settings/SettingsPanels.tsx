@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useDashboardState } from "../../state/DashboardStateProvider";
+import { LayoutEditor } from "./LayoutEditor";
 import { useAppearance, DEFAULT_ASSISTANT_NAME } from "../../state/AppearanceProvider";
 import { toModeId, MODE_IDS, MODE_DEFAULT_COLORS, type ModeTokenName } from "../../tokens/tokens";
 import { Unavailable } from "../../components/Unavailable";
@@ -203,6 +204,9 @@ function GeneralPanelBody() {
   const [mainDisplayId, setMainDisplayId] = useState(
     () => snapshot?.workspace.mainDisplayId ?? SYSTEM_PRIMARY
   );
+  const [layoutDisplayId, setLayoutDisplayId] = useState(
+    () => snapshot?.workspace.layoutDisplayId ?? SYSTEM_PRIMARY
+  );
   const [preset, setPreset] = useState(
     () => (window as HotkeyWindow).__cerebralHotkey?.preset ?? "option-space"
   );
@@ -218,6 +222,15 @@ function GeneralPanelBody() {
     // live (the shell re-hosts backdrops without waiting for a restart).
     void updateSettings({ workspace: { mainDisplayId: nextId } });
     postShellControl("setMainDisplay", { id: nextId });
+  }
+
+  function onLayoutDisplayChange(nextId: string) {
+    setLayoutDisplayId(nextId);
+    // Durable via the validated settings path; the shellControl post applies it
+    // live (the shell re-targets layout opens + moves the hotswap pill without a
+    // restart, NIC-142).
+    void updateSettings({ workspace: { layoutDisplayId: nextId } });
+    postShellControl("setLayoutDisplay", { id: nextId });
   }
 
   function onReducedMotionToggle(next: boolean) {
@@ -247,6 +260,25 @@ function GeneralPanelBody() {
             onChange={(event) => onMainDisplayChange(event.target.value)}
           >
             <option value={SYSTEM_PRIMARY}>System primary</option>
+            {selectableDisplays.map((display) => (
+              <option key={display.id} value={display.id}>
+                {display.name}
+                {display.primary ? " (primary)" : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field
+          label="Layout display"
+          hint="Which display layout mode opens on — and the only one whose bottom bar shows the layout hotswap. Displays without a stable identity fall back to the main display."
+        >
+          <select
+            className="settings-select"
+            value={layoutDisplayId}
+            aria-label="Layout display"
+            onChange={(event) => onLayoutDisplayChange(event.target.value)}
+          >
+            <option value={SYSTEM_PRIMARY}>Same as main display</option>
             {selectableDisplays.map((display) => (
               <option key={display.id} value={display.id}>
                 {display.name}
@@ -386,6 +418,9 @@ function ModesPanelBody() {
     () => snapshot?.workspace.windowsStoredByMode ?? false
   );
   const windowsCapability = capabilities?.["native.workspace.windows"];
+  // Which mode's layout editor is open inline (the plain-browser fallback). In the
+  // native shell the "Edit layout" button opens a dedicated window instead (NIC-142).
+  const [editingModeId, setEditingModeId] = useState<string | null>(null);
 
   function onDefaultModeChange(nextId: string) {
     setDefaultModeId(nextId as typeof defaultModeId);
@@ -395,6 +430,14 @@ function ModesPanelBody() {
   function onWindowsToggle(next: boolean) {
     setWindowsStoredByMode(next);
     void updateSettings({ workspace: { windowsStoredByMode: next } });
+  }
+
+  function openLayoutEditor(modeId: string) {
+    // Prefer the dedicated native editor window; fall back to the inline editor when
+    // there is no native channel (a plain browser).
+    if (!postShellControl("openLayoutEditor", { modeId })) {
+      setEditingModeId((current) => (current === modeId ? null : modeId));
+    }
   }
 
   return (
@@ -435,6 +478,37 @@ function ModesPanelBody() {
             <span className="settings-switch__track" aria-hidden="true" />
           </label>
         </Field>
+      </Section>
+      <Section title="Mode layouts">
+        <p className="settings-note">
+          Author each mode's window arrangement — which apps and URLs open where, and the hotswap
+          window. Executive has no layout.
+        </p>
+        <ul className="settings-list">
+          {modes
+            .filter((modeView) => modeView.id !== "executive")
+            .map((modeView) => (
+              <li key={modeView.id} className="settings-list__item">
+                <span className="settings-list__title">{modeView.label}</span>
+                <button
+                  type="button"
+                  className="settings-button"
+                  aria-label={`Edit ${modeView.label} layout`}
+                  onClick={() => openLayoutEditor(modeView.id)}
+                >
+                  Edit layout
+                </button>
+              </li>
+            ))}
+        </ul>
+        {editingModeId ? (
+          <LayoutEditor
+            key={editingModeId}
+            modeId={editingModeId}
+            label={modes.find((modeView) => modeView.id === editingModeId)?.label ?? humanizeId(editingModeId)}
+            onClose={() => setEditingModeId(null)}
+          />
+        ) : null}
       </Section>
       <Section title="Configured modes">
         <p className="settings-note">

@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator = WindowCoordinator()
     private var menuBar: MenuBarController?
     private var bridgeRuntime: AppBridgeRuntime?
+    /// Keeps other apps' windows off the persistent bottom bar (NIC-144). Reads the
+    /// coordinator's live reserved strips; inert until Accessibility is trusted.
+    private var windowSnap: WindowSnapObserver?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Single-instance guard (NIC-89): a duplicate launch — e.g. the login
@@ -111,9 +114,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.mainDisplayIDProvider = { [weak bridgeRuntime] in
             bridgeRuntime?.storedMainDisplayID()
         }
+        // The persisted "Layout display" choice (NIC-142), read through the runtime
+        // until a settings-read bridge operation exists.
+        coordinator.layoutDisplayIDProvider = { [weak bridgeRuntime] in
+            bridgeRuntime?.storedLayoutDisplayID()
+        }
+        // Feed the reserved bottom-bar strips to the layout arrange so windows land above
+        // the bar the first time, not after the snap observer nudges them (NIC-142).
+        coordinator.onReservedStripsChanged = { [weak bridgeRuntime] strips in
+            bridgeRuntime?.setReservedStrips(strips)
+        }
         bridgeRuntime.startDisplayObservation { [weak self] topology in
             self?.coordinator.handleDisplayTopologyChange(topology)
         }
+
+        // Window-snap awareness of the bottom bar (NIC-144): keep other apps' windows
+        // above the reserved strip the coordinator caches from the bar's live rect.
+        // Inert without Accessibility trust — never a prompt (FR-SAF-07); a later grant
+        // takes effect on the next observation start.
+        let windowSnap = WindowSnapObserver(
+            surface: SystemWindowSnapSurface(),
+            reservedStrips: { [weak self] in self?.coordinator.currentReservedStrips() ?? [] }
+        )
+        windowSnap.start()
+        self.windowSnap = windowSnap
 
         // The menu-bar item + global summon hotkey (NIC-75 / FR-SHL-02). Both the menu
         // item and the hotkey drive the coordinator.
@@ -128,5 +152,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// capability flags and announce any availability transition.
     func applicationDidBecomeActive(_ notification: Notification) {
         bridgeRuntime?.recheckPermissions()
+        // The same return-from-System-Settings moment may have granted Accessibility —
+        // re-arm window-snap observation (idempotent once armed), so it starts working
+        // without a relaunch (NIC-144).
+        windowSnap?.start()
     }
 }
