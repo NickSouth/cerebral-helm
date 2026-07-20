@@ -6,6 +6,10 @@ public enum CommandIntent: Equatable, Sendable {
     case openApp(ReferenceEntry)
     case openURL(ReferenceEntry)
     case applyMode(modeId: String)
+    /// Open a repository directory in the configured editor (NIC-131) — a single
+    /// `project.open` tool call. The path is constrained to the projects root by the
+    /// adapter, and the `local_write` risk routes it through a confirmation.
+    case openProject(repoPath: String)
     case captureNote(text: String)
     case searchNotes(query: String)
     case runHook(ReferenceEntry)

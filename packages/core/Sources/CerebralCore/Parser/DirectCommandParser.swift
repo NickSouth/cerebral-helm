@@ -6,6 +6,7 @@ import Foundation
 /// - `open <id>`   — resolve an app or URL reference
 /// - `mode <id>`   — apply a configured mode
 /// - `note <text>` — capture a note
+/// - `project <path>` — open a repository directory in the configured editor
 /// - `search <text>` — search notes
 /// - `hook <id>`   — run a configured hook
 /// - `run <id>`    — run a configured workflow / quick action
@@ -27,6 +28,7 @@ public struct DirectCommandParser: Sendable {
         "open <app|url>",
         "mode <id>",
         "note <text>",
+        "project <path>",
         "search <text>",
         "hook <id>",
         "run <action>",
@@ -64,6 +66,10 @@ public struct DirectCommandParser: Sendable {
             return parseRun(remainder)
         case "note":
             return parseFreeText(verb: "note", remainder: remainder) { .captureNote(text: $0) }
+        case "project":
+            // The remainder is the whole repository path (paths may contain spaces),
+            // so the free-text handler takes it verbatim (NIC-131).
+            return parseFreeText(verb: "project", remainder: remainder) { .openProject(repoPath: $0) }
         case "search":
             return parseFreeText(verb: "search", remainder: remainder) { .searchNotes(query: $0) }
         case "apps":

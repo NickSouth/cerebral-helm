@@ -151,6 +151,25 @@ func localWriteRunsThenPhaseUnavailable() async throws {
     #expect(recorder.statuses == [.received, .planned, .running, .failed])
 }
 
+@Test("a project command maps to project.open, runs without confirmation, and is phase-unavailable pre-Mac (NIC-131)")
+func projectOpenRunsThenPhaseUnavailable() async throws {
+    // `project <path>` parses to the project.open tool (local_write → no confirmation).
+    // project.open is Mac-only, so pre-Mac the executor refuses it as unavailable-in-phase —
+    // which proves the grammar routes to the project.open tool without gating.
+    let recorder = EventRecorder()
+    let runtime = try makeRuntime(recorder: recorder)
+
+    let outcome = await runtime.submit("project /Users/x/Projects/demo", source: .cli)
+    guard case let .completed(_, status, result) = outcome else {
+        Issue.record("Expected completed (no confirmation), got \(outcome)"); return
+    }
+    #expect(status == .failed)
+    #expect(result?.toolID == "project.open")
+    #expect(result?.status == .unavailable)
+    #expect(result?.error?.code == "tool.unavailable_in_phase")
+    #expect(recorder.statuses == [.received, .planned, .running, .failed])
+}
+
 @Test("a shell hook requires confirmation, then is refused as phase-unavailable on approval (AC-33.2, FR-SAF-03, NIC-111)")
 func shellHookRequiresConfirmation() async throws {
     // hook.run declares availability.preMac == false. Confirmation still gates the

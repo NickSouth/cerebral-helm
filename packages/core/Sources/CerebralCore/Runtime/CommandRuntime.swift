@@ -517,6 +517,22 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [ConfirmationArgument(name: "kind", value: "note", sensitive: false)],
                 actionSummary: "Capture a note."
             )
+        case let .openProject(repoPath):
+            // Open a repository directory in the configured editor (NIC-131). The
+            // descriptor's `local_write` risk routes it through a policy-owned
+            // confirmation before the editor launches; the adapter constrains the path
+            // to the projects root. The repo folder name is shown in the disclosure (not
+            // sensitive) so the user sees which repository will open.
+            let repoName = URL(fileURLWithPath: repoPath).lastPathComponent
+            return make(
+                toolID: "project.open",
+                input: try? CerebralHelmProjectOpenInput(repoPath: repoPath).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "repository", value: repoPath, sensitive: false)],
+                actionSummary: "Open \(repoName.isEmpty ? "repository" : repoName) in the editor."
+            )
         case let .searchNotes(query):
             return make(
                 toolID: "note.search",

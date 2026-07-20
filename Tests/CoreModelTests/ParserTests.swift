@@ -30,11 +30,27 @@ func supportedGrammarResolves() {
     #expect(parser.parse("open github") == .parsed(.openURL(github)))
     #expect(parser.parse("mode developer") == .parsed(.applyMode(modeId: "developer")))
     #expect(parser.parse("note pick up milk") == .parsed(.captureNote(text: "pick up milk")))
+    #expect(parser.parse("project /Users/x/Projects/foo") == .parsed(.openProject(repoPath: "/Users/x/Projects/foo")))
     #expect(parser.parse("search updater config") == .parsed(.searchNotes(query: "updater config")))
     #expect(parser.parse("hook ondraft-dev") == .parsed(.runHook(ondraft)))
     #expect(parser.parse("run open-developer-layout") == .parsed(.runAction(actionId: "open-developer-layout")))
     #expect(parser.parse("apps") == .parsed(.listApps))
     #expect(parser.parse("speedtest") == .parsed(.runSpeedTest))
+}
+
+@Test("project takes the whole remainder as the path and requires an argument (NIC-131)")
+func projectGrammar() {
+    let parser = sampleParser()
+
+    // Paths may contain spaces — the whole remainder is the path, not just the first token.
+    #expect(
+        parser.parse("project /Users/x/My Projects/demo")
+            == .parsed(.openProject(repoPath: "/Users/x/My Projects/demo"))
+    )
+    // An argument-less `project` never executes.
+    if case .parsed = parser.parse("project") {
+        Issue.record("argument-less project must not execute")
+    }
 }
 
 @Test("an unresolved workflow id is unrecognized and suggests configured actions")
