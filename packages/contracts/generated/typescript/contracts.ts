@@ -1229,6 +1229,19 @@ export enum Freshness {
     Unknown = "unknown",
 }
 
+export interface CerebralHelmProjectOpenInput {
+    /**
+     * Absolute path of the repository directory to open in the configured editor. The adapter
+     * constrains it to the projects root; a path outside is denied.
+     */
+    repoPath: string;
+}
+
+export interface CerebralHelmProjectOpenOutput {
+    opened:   boolean;
+    repoPath: string;
+}
+
 export interface CerebralHelmSystemStatusReadInput {
     metrics?: ID[];
 }

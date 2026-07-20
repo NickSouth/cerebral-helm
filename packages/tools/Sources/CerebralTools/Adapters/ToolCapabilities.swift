@@ -12,6 +12,9 @@
 /// unavailable instead of pretending they work.
 public struct ToolCapabilities: Sendable {
     public let app: any AppCapability
+    /// Opens a repository directory in the configured editor (NIC-131). `.none`-matrix
+    /// mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let project: any ProjectCapability
     public let url: any URLCapability
     public let process: any ProcessCapability
     public let systemStatus: any SystemStatusCapability
@@ -29,6 +32,7 @@ public struct ToolCapabilities: Sendable {
 
     public init(
         app: any AppCapability,
+        project: any ProjectCapability = MockProjectCapability(matrix: .none),
         url: any URLCapability,
         process: any ProcessCapability,
         systemStatus: any SystemStatusCapability,
@@ -41,6 +45,7 @@ public struct ToolCapabilities: Sendable {
         nativeCapabilityIDs: Set<String> = []
     ) {
         self.app = app
+        self.project = project
         self.url = url
         self.process = process
         self.systemStatus = systemStatus
@@ -58,6 +63,7 @@ public struct ToolCapabilities: Sendable {
     public static func mocks(matrix: CapabilityMatrix = .allAvailable) -> ToolCapabilities {
         ToolCapabilities(
             app: MockAppCapability(matrix: matrix),
+            project: MockProjectCapability(matrix: matrix),
             url: MockURLCapability(matrix: matrix),
             process: MockProcessCapability(matrix: matrix),
             systemStatus: MockSystemStatusCapability(matrix: matrix),

@@ -11,6 +11,7 @@ const fixturesRoot = path.join(contractsRoot, "fixtures");
 
 const mvpToolIds = new Set([
   "app.open",
+  "project.open",
   "url.open",
   "hook.run",
   "note.capture",

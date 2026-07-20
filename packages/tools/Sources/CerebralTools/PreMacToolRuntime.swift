@@ -33,6 +33,7 @@ public enum PreMacToolRuntime {
 
         let handlers: [String: any ToolHandler] = [
             "app.open": AppOpenHandler(capability: capabilities.app),
+            "project.open": ProjectOpenHandler(capability: capabilities.project),
             "url.open": URLOpenHandler(capability: capabilities.url),
             "system.status.read": SystemStatusReadHandler(capability: capabilities.systemStatus),
             "network.speed.test": NetworkSpeedTestHandler(capability: capabilities.networkSpeedTest),
@@ -107,6 +108,7 @@ public enum PreMacToolRuntime {
         let data = input ?? Data("{}".utf8)
         switch toolID {
         case "app.open": _ = try CerebralHelmAppOpenInput(data: data)
+        case "project.open": _ = try CerebralHelmProjectOpenInput(data: data)
         case "url.open": _ = try CerebralHelmURLOpenInput(data: data)
         case "hook.run": _ = try CerebralHelmHookRunInput(data: data)
         case "note.capture": _ = try CerebralHelmNoteCaptureInput(data: data)

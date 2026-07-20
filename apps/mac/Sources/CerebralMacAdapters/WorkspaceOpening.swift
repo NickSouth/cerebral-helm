@@ -5,6 +5,7 @@
 #if canImport(AppKit)
 import AppKit
 import Foundation
+import CerebralTools
 
 /// The thin seam over `NSWorkspace` the adapters call through, so reference
 /// resolution and error mapping are unit-testable with a fake and the real
@@ -24,6 +25,12 @@ public protocol WorkspaceOpening: Sendable {
     func openApplication(at url: URL, arguments: [String]) async throws
     /// Opens `url` with its default handler.
     func openURL(_ url: URL) async throws
+    /// Opens the given file-system paths (e.g. a repository directory) with the
+    /// application at `applicationURL` — Launch Services asks that app to open them
+    /// (NIC-131). Used to open a repo folder in the configured editor; unlike
+    /// `openApplication(at:arguments:)`, the app decides how to handle the documents,
+    /// so an editor reuses its running instance instead of spawning a new one.
+    func open(paths: [URL], withApplicationAt applicationURL: URL) async throws
     /// The bundle id of the default web browser (the app that handles `https`), or
     /// `nil` when it can't be resolved. Lets the URL adapter route a plain URL into a
     /// per-mode Chrome window only when Chrome is actually the default (NIC-143 follow-up).
@@ -34,6 +41,13 @@ public extension WorkspaceOpening {
     /// Default: unknown default browser — a fake without a browser degrades to the plain
     /// open path.
     func defaultBrowserBundleID() -> String? { nil }
+
+    /// Default: a conformer that does not open documents reports the capability as
+    /// unavailable (fails closed) — so a fake that never overrides this can't silently
+    /// succeed. The live ``SystemWorkspace`` overrides it.
+    func open(paths: [URL], withApplicationAt applicationURL: URL) async throws {
+        throw NativeCapabilityError.unavailable
+    }
 }
 
 /// The live `NSWorkspace`-backed implementation the app composes.
@@ -90,6 +104,25 @@ public struct SystemWorkspace: WorkspaceOpening {
     public func openURL(_ url: URL) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
             NSWorkspace.shared.open(url, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    public func open(paths: [URL], withApplicationAt applicationURL: URL) async throws {
+        // "Open these documents with this application" — Launch Services hands the paths
+        // to the app, which (for an editor like VS Code) opens the folder in its running
+        // instance. A plain application launch with the paths as arguments would instead
+        // spawn a new instance, so this uses the document-open API deliberately.
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            NSWorkspace.shared.open(
+                paths, withApplicationAt: applicationURL,
+                configuration: NSWorkspace.OpenConfiguration()
+            ) { _, error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {

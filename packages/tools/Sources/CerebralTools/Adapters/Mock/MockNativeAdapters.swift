@@ -26,6 +26,21 @@ public struct MockAppCapability: AppCapability {
     }
 }
 
+public struct MockProjectCapability: ProjectCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(repoPath: String) async throws -> ProjectOpenResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.projectOpen, matrix: matrix, fault: fault, subject: repoPath)
+        return ProjectOpenResult(repoPath: repoPath, opened: true)
+    }
+}
+
 public struct MockURLCapability: URLCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault

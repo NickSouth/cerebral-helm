@@ -62,6 +62,9 @@ public enum MacToolCapabilities {
                     appsProvider: { referenceStore.current.apps }, workspace: workspace,
                     chromeLauncher: chromeLauncher, currentModeProvider: currentModeProvider
                 ),
+                project: NSWorkspaceProjectCapability(
+                    appsProvider: { referenceStore.current.apps }, workspace: workspace
+                ),
                 url: NSWorkspaceURLCapability(
                     urlsProvider: { referenceStore.current.urls },
                     workspace: workspace,
@@ -80,6 +83,7 @@ public enum MacToolCapabilities {
                 appWindows: MacAppWindowsCapability(),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,
+                    CapabilityMatrix.Capability.projectOpen,
                     CapabilityMatrix.Capability.urlOpen,
                     CapabilityMatrix.Capability.hookRun,
                     CapabilityMatrix.Capability.systemStatusRead,

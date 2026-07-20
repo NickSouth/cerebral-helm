@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/project-open-input.schema.json",
+  "title": "CerebralHelm Project Open Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repoPath"],
+  "properties": {
+    "repoPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute path of the repository directory to open in the configured editor. The adapter constrains it to the projects root; a path outside is denied."
+    }
+  }
+}

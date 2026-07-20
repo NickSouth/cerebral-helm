@@ -55,6 +55,31 @@ public struct AppOpenHandler: ToolHandler {
     }
 }
 
+// MARK: - project.open
+
+public struct ProjectOpenHandler: ToolHandler {
+    public let toolID = "project.open"
+    private let capability: any ProjectCapability
+
+    public init(capability: any ProjectCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmProjectOpenInput
+        do { decoded = try CerebralHelmProjectOpenInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("project.open input does not match its contract.")
+        }
+        do {
+            let result = try await capability.open(repoPath: decoded.repoPath)
+            return try CerebralHelmProjectOpenOutput(
+                opened: result.opened,
+                repoPath: result.repoPath
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 // MARK: - url.open
 
 public struct URLOpenHandler: ToolHandler {

@@ -37,6 +37,28 @@ public struct AppOpenResult: Equatable, Sendable {
     }
 }
 
+// MARK: - project.open
+
+/// Opens a repository *directory* in the configured editor (NIC-131). Distinct from
+/// ``AppCapability``, which launches a configured app reference by id and has no path
+/// input by construction: this takes a filesystem path, so it is a separate, path-aware
+/// capability. The adapter constrains the path to the configured projects root — a path
+/// outside it is `NativeCapabilityError.permissionDenied` — so no arbitrary path can be
+/// opened, and only the configured editor is ever launched.
+public protocol ProjectCapability: Sendable {
+    func open(repoPath: String) async throws -> ProjectOpenResult
+}
+
+public struct ProjectOpenResult: Equatable, Sendable {
+    public let repoPath: String
+    public let opened: Bool
+
+    public init(repoPath: String, opened: Bool) {
+        self.repoPath = repoPath
+        self.opened = opened
+    }
+}
+
 // MARK: - url.open
 
 public protocol URLCapability: Sendable {

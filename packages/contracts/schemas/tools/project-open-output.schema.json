@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/project-open-output.schema.json",
+  "title": "CerebralHelm Project Open Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repoPath", "opened"],
+  "properties": {
+    "repoPath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "opened": {
+      "type": "boolean"
+    }
+  }
+}
