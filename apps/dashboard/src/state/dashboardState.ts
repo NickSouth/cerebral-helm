@@ -3,6 +3,7 @@ import type {
   DashboardBootstrapState,
   DashboardMode
 } from "../bridge/types";
+import type { WidgetData } from "../widgets/widgetData";
 import type { LayoutSession } from "../bridge/cerebralBridge";
 
 export type { LayoutSession };
@@ -98,6 +99,12 @@ export type DashboardState = DashboardBootstrapState & {
    *  first toggle, and every mode starts expanded. Drives the bottom-bar
    *  collapse/expand icon for the current mode. */
   readonly windowCollapse?: Readonly<Record<string, boolean>>;
+  /** Live widget data keyed by widget id (NIC-131, the widget-liveness blueprint), folded
+   *  from `widget.data.changed`. Runtime-only and sparse: a widget id is absent until its
+   *  producer streams data; a rail resolves its slot as this value over the bootstrap
+   *  `regions.widgets.{side}` (see resolveWidgetData). Lives outside `regions` so it
+   *  survives `config.changed` mode switches without per-region preservation. */
+  readonly liveWidgets?: Readonly<Record<string, WidgetData>>;
 };
 
 /**

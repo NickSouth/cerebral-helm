@@ -424,6 +424,62 @@ describe("reduceDashboardState", () => {
     // A mode-scoped region (news) does take the snapshot's value.
     expect(next.regions.news).toBe(schoolSnapshot.regions.news);
   });
+
+  it("folds a widget.data.changed stream into liveWidgets keyed by widget id (NIC-131)", () => {
+    const base = loadBootstrapState();
+    const widget = {
+      widgetId: "repositories",
+      state: "ready",
+      headline: "1 repository",
+      data: { items: [{ id: "cerebral-helm", name: "cerebral-helm", branch: "dev", path: "/p/cerebral-helm" }] }
+    };
+    const event: BridgeEvent = {
+      eventId: "brevt_widget0001",
+      type: "widget.data.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-19T16:00:00.000Z",
+      payload: { widgetId: "repositories", widget }
+    };
+
+    const next = reduceDashboardState(base, event);
+    expect(next.liveWidgets?.repositories).toBe(widget);
+
+    // A malformed payload — missing widget, or an envelope whose own id disagrees with the
+    // event key — is ignored (same reference, no fabricated update).
+    expect(reduceDashboardState(base, { ...event, payload: { widgetId: "repositories" } })).toBe(base);
+    expect(
+      reduceDashboardState(base, {
+        ...event,
+        payload: { widgetId: "repositories", widget: { ...widget, widgetId: "projects" } }
+      })
+    ).toBe(base);
+  });
+
+  it("carries liveWidgets across a config.changed mode switch (NIC-131 blueprint)", () => {
+    const base = loadBootstrapState(); // Executive
+    const widget = { widgetId: "repositories", state: "ready", data: { items: [] } };
+    const withLive = reduceDashboardState(base, {
+      eventId: "brevt_widget0002",
+      type: "widget.data.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-19T16:00:00.000Z",
+      payload: { widgetId: "repositories", widget }
+    });
+    expect(withLive.liveWidgets?.repositories).toBe(widget);
+
+    const snapshot = getDashboardFixture("mode.school.ready");
+    const switched = reduceDashboardState(withLive, {
+      eventId: "brevt_config_widget",
+      type: "config.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-19T16:00:00.000Z",
+      payload: { snapshot }
+    });
+
+    // The mode-scoped slice swaps, but live widget data (outside `regions`) is untouched.
+    expect(switched.mode).toBe("School");
+    expect(switched.liveWidgets?.repositories).toBe(widget);
+  });
 });
 
 describe("createBridgeStore", () => {

@@ -20,7 +20,8 @@ export type BridgeEventType =
   | "workflow.action.progress"
   | "display.topology.changed"
   | "layout.session.changed"
-  | "mode.windowcollapse.changed";
+  | "mode.windowcollapse.changed"
+  | "widget.data.changed";
 
 export interface BridgeEvent {
   readonly eventId: string;

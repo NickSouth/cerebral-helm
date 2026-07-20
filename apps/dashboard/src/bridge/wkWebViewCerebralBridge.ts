@@ -70,7 +70,8 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "workflow.action.progress",
   "display.topology.changed",
   "layout.session.changed",
-  "mode.windowcollapse.changed"
+  "mode.windowcollapse.changed",
+  "widget.data.changed"
 ]);
 
 /** True when running inside the native shell (the message handler is registered). */

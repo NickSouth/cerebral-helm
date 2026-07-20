@@ -108,6 +108,34 @@ public enum BridgeEventFactory {
         )
     }
 
+    /// A `widget.data.changed` event (NIC-131 — the widget-liveness blueprint): one
+    /// dashboard widget's live data was refreshed by its producer. `widgetId` names the
+    /// registered widget slot (e.g. "repositories"); `widget` is the full WidgetData
+    /// envelope the dashboard renders. The reducer keys it into a runtime `liveWidgets`
+    /// map by `widgetId`, so a rail resolves its slot as the live value over the bootstrap
+    /// value — and it survives mode switches because it lives outside `regions` (which a
+    /// mode-switch snapshot swaps wholesale). Generic over the widget payload so each
+    /// widget's producer passes its own encoded envelope with no shared concrete type here.
+    public static func widgetDataChangedEvent<Widget: Encodable>(
+        widgetId: String, widget: Widget, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(WidgetDataChangedPayload(widgetId: widgetId, widget: widget)),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .widgetDataChanged
+        )
+    }
+
+    /// `{ widgetId, widget }` — the `widget.data.changed` payload (NIC-131). Declared at
+    /// enum scope (Swift forbids a type nested inside a generic function) and generic over
+    /// the widget envelope so each producer supplies its own encoded shape.
+    private struct WidgetDataChangedPayload<Widget: Encodable>: Encodable {
+        let widgetId: String
+        let widget: Widget
+    }
+
     /// A `settings.changed` event (live cross-webview sync): the durable settings were
     /// updated through `updateSettings`, so every surface — the dashboard and the
     /// separate native settings window — reflects the new assistant name, mode colors,

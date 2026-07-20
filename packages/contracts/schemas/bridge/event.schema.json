@@ -27,7 +27,8 @@
         "workflow.action.progress",
         "display.topology.changed",
         "layout.session.changed",
-        "mode.windowcollapse.changed"
+        "mode.windowcollapse.changed",
+        "widget.data.changed"
       ]
     },
     "timestamp": {

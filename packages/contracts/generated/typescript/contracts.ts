@@ -346,6 +346,7 @@ export enum CerebralHelmBridgeEventType {
     ModeWindowcollapseChanged = "mode.windowcollapse.changed",
     SettingsChanged = "settings.changed",
     SystemStatusChanged = "system.status.changed",
+    WidgetDataChanged = "widget.data.changed",
     WorkflowActionProgress = "workflow.action.progress",
 }
 

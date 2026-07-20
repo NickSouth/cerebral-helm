@@ -1689,6 +1689,7 @@ public enum CerebralHelmBridgeEventType: String, Codable {
     case modeWindowcollapseChanged = "mode.windowcollapse.changed"
     case settingsChanged = "settings.changed"
     case systemStatusChanged = "system.status.changed"
+    case widgetDataChanged = "widget.data.changed"
     case workflowActionProgress = "workflow.action.progress"
 }
 

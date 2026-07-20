@@ -37,3 +37,37 @@ export interface WidgetData<TPayload = unknown> {
   readonly emptyMessage?: string;
   readonly action?: WidgetAction;
 }
+
+/**
+ * One repository row in the `repositories` widget's payload (NIC-131). `branch` is omitted
+ * when the local repo's HEAD can't be resolved (never fabricated); `path` is the absolute
+ * repo directory the click-to-open action targets (Increment 6). This documents the shape
+ * the live producer streams under `WidgetData.data`; the render dispatch in WidgetSlot reads
+ * this slice.
+ */
+export interface RepositoryWidgetItem {
+  readonly id: string;
+  readonly name: string;
+  readonly branch?: string;
+  readonly path: string;
+}
+
+/** The `repositories` widget's `data` payload (documented shape for `WidgetData.data`). */
+export interface RepositoriesWidgetPayload {
+  readonly items: readonly RepositoryWidgetItem[];
+}
+
+/**
+ * Resolve the WidgetData a rail slot renders: the live-streamed value for `widgetId`
+ * (NIC-131 blueprint) when a producer has delivered one, else the bootstrap/config value.
+ * `liveWidgets` is runtime-only state keyed by widget id and lives outside `regions`, so
+ * this resolution survives `config.changed` mode switches by construction — every future
+ * live widget inherits it without touching the mode-switch reducer path.
+ */
+export function resolveWidgetData(
+  liveWidgets: Readonly<Record<string, WidgetData>> | undefined,
+  widgetId: string,
+  fallback: WidgetData
+): WidgetData {
+  return liveWidgets?.[widgetId] ?? fallback;
+}

@@ -14,6 +14,7 @@ import type {
   LayoutSession,
   WorkflowRunProgress
 } from "./dashboardState";
+import type { WidgetData } from "../widgets/widgetData";
 
 /** One channel of the native status publisher's `system_metrics` payload (NIC-81b). */
 interface MetricsChannelPayload {
@@ -176,6 +177,26 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
         modes: state.modes.map((mode) =>
           mode.id === payload.modeId ? { ...mode, quickApps: payload.quickApps ?? [] } : mode
         )
+      };
+    }
+    case "widget.data.changed": {
+      // One widget's producer streamed fresh data (NIC-131, the widget-liveness blueprint).
+      // Keyed into a runtime `liveWidgets` map by widget id; a rail resolves its slot as this
+      // value over the bootstrap `regions.widgets.{side}` (resolveWidgetData). Runtime-only
+      // state that lives OUTSIDE `regions`, so it survives `config.changed` mode switches by
+      // construction — no per-region preservation needed. A malformed payload, or an envelope
+      // whose own widgetId disagrees with the event key, is ignored (no fabricated update).
+      const payload = event.payload as { widgetId?: string; widget?: WidgetData };
+      const widget = payload.widget;
+      if (!payload.widgetId || !widget || widget.widgetId !== payload.widgetId) {
+        return state;
+      }
+      if (state.liveWidgets?.[payload.widgetId] === widget) {
+        return state;
+      }
+      return {
+        ...state,
+        liveWidgets: { ...state.liveWidgets, [payload.widgetId]: widget }
       };
     }
     case "command.lifecycle.transition": {
