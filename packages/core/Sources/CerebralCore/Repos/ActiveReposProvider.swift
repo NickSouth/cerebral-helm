@@ -47,11 +47,13 @@ public protocol ActiveReposProvider: Sendable {
 }
 
 /// Lists active repositories by reading local git state directly (the "read `.git/HEAD`
-/// directly" decision, NIC-131): it enumerates the immediate subdirectories of the root,
-/// keeps those that are git repositories, and resolves each one's branch from its `HEAD`
-/// file. No process is spawned and no shell is invoked. Because branch names come straight
-/// out of `HEAD`, `packed-refs` is irrelevant here — it would only be needed to resolve a
-/// ref to a commit SHA, which this deliberately does not do.
+/// directly" decision, NIC-131): it walks the projects root two levels deep — each immediate
+/// child of the root is a **project folder** (which has a name and a description and may or
+/// may not contain code), and the actual git repositories live one level below that, inside
+/// each project folder. It keeps the depth-2 directories that are git repositories and
+/// resolves each one's branch from its `HEAD` file. No process is spawned and no shell is
+/// invoked. Because branch names come straight out of `HEAD`, `packed-refs` is irrelevant
+/// here — it would only be needed to resolve a ref to a commit SHA, which this does not do.
 public struct FileSystemActiveReposProvider: ActiveReposProvider {
     private let root: URL
     private let limit: Int
@@ -70,37 +72,31 @@ public struct FileSystemActiveReposProvider: ActiveReposProvider {
         var rootIsDirectory: ObjCBool = false
         guard
             fileManager.fileExists(atPath: root.path, isDirectory: &rootIsDirectory),
-            rootIsDirectory.boolValue
+            rootIsDirectory.boolValue,
+            let projectFolders = subdirectories(of: root)
         else {
             throw ActiveReposError.rootUnavailable(root.path)
         }
 
-        let entries: [URL]
-        do {
-            entries = try fileManager.contentsOfDirectory(
-                at: root,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )
-        } catch {
-            throw ActiveReposError.rootUnavailable(root.path)
-        }
-
         var repos: [RepoStatus] = []
-        for entry in entries {
-            guard isDirectory(entry), let headURL = resolvedHeadURL(forRepositoryAt: entry) else {
-                continue
-            }
-            let name = entry.lastPathComponent
-            repos.append(
-                RepoStatus(
-                    id: name,
-                    name: name,
-                    branch: branch(fromHeadAt: headURL),
-                    path: entry.standardizedFileURL.path,
-                    lastActivityAt: modificationDate(of: headURL)
+        for projectFolder in projectFolders {
+            // Repositories live one level below each project folder (NIC-131): a project has a
+            // name + description and may contain a repo, but need not be one itself, so the
+            // project folder is never treated as a repository — only its children are.
+            for candidate in subdirectories(of: projectFolder) ?? [] {
+                guard let headURL = resolvedHeadURL(forRepositoryAt: candidate) else { continue }
+                let name = candidate.lastPathComponent
+                repos.append(
+                    RepoStatus(
+                        // Keyed by <project>/<repo> so two projects with same-named repos stay distinct.
+                        id: "\(projectFolder.lastPathComponent)/\(name)",
+                        name: name,
+                        branch: branch(fromHeadAt: headURL),
+                        path: candidate.standardizedFileURL.path,
+                        lastActivityAt: modificationDate(of: headURL)
+                    )
                 )
-            )
+            }
         }
 
         // Most-recently-active first; ties break on name for a stable, deterministic order.
@@ -113,6 +109,17 @@ public struct FileSystemActiveReposProvider: ActiveReposProvider {
     }
 
     // MARK: - Filesystem helpers
+
+    /// The immediate subdirectories of `directory` (visible only), or `nil` when it can't be
+    /// listed. `nil` on the root is `rootUnavailable`; `nil` on a project folder just skips it.
+    private func subdirectories(of directory: URL) -> [URL]? {
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+        return entries.filter { isDirectory($0) }
+    }
 
     private func isDirectory(_ url: URL) -> Bool {
         (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true

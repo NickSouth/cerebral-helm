@@ -1690,12 +1690,103 @@
   font-size: var(--ch-font-size-sm);
 }
 
+/* Both cells stay on a single line and truncate with an ellipsis rather than wrapping
+   (a long branch like `mvp-polish/integrations-and-widgets` must not stack the row). The
+   secondary (branch) shrinks first; the primary (name) keeps its room. `min-width: 0` is
+   required for a flex child to shrink below its content width so the ellipsis can appear. */
 .widget-list__primary {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An interactive widget row (NIC-131 Repositories): a full-bleed reset button inside the
+   card `li`, so the row keeps its card styling while the whole row is the click target. */
+.widget-list__button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--ch-space-2);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.widget-list__button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Repositories row (NIC-131): a folder icon + name on the left, the branch in a monospace
+   "code chip" on the right. Both truncate with an ellipsis rather than wrapping. */
+.repo-row__name {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-1); /* tight icon↔name */
+  min-width: 0; /* lets the label shrink so its ellipsis can appear */
+  flex: 1 1 auto;
   color: var(--ch-text-primary);
 }
 
-.widget-list__secondary {
+.repo-row__icon {
+  flex: 0 0 auto;
   color: var(--ch-text-muted);
+}
+
+.repo-row__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem; /* a hair smaller than the row default so more name fits */
+}
+
+/* The name wins the row: the branch chip yields space first (higher shrink + a lower cap),
+   so the repo name only truncates as a last resort once the chip is at its minimum. */
+.repo-row__branch {
+  flex: 0 4 auto;
+  min-width: 0; /* size tight to the branch text (short ones like `main` shouldn't be padded wide) */
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px var(--ch-space-2);
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  line-height: 1.5;
+  color: var(--ch-text-muted);
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 22%, var(--ch-panel-border));
+  border-radius: var(--ch-radius-sm);
+}
+
+/* A repo with no resolvable branch: a plain muted dash, not an empty code chip. */
+.repo-row__branch--none {
+  min-width: auto;
+  font-family: inherit;
+  background: transparent;
+  border-color: transparent;
+  color: var(--ch-text-faint);
+}
+
+.widget-list__secondary {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--ch-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .widget__freshness {
@@ -1713,10 +1804,13 @@
 
 .shell-right .widget-list {
   gap: var(--ch-space-2);
+  /* Nudge the row cards a fraction toward the panel edges to reclaim text width (the panel
+     keeps ~0.75rem of padding on each side, so this stays comfortably inside the border). */
+  margin-inline: calc(-1 * var(--ch-space-1));
 }
 
 .shell-right .widget-list__item {
-  padding: var(--ch-space-2) var(--ch-space-3);
+  padding: var(--ch-space-2);
   border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 18%, var(--ch-panel-border));
   border-radius: var(--ch-radius-md);
   background: var(--ch-surface-raised);
