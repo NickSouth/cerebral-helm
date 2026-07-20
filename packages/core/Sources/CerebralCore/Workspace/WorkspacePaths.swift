@@ -152,6 +152,16 @@ public struct WorkspacePaths: Sendable {
         return base.appendingPathComponent(appName, isDirectory: true).standardizedFileURL
     }
 
+    /// The default projects root the active-repos widget scans (NIC-131): `~/Projects`.
+    /// Defined here, in portable tested code, so the app never hardcodes the location; a
+    /// future durable setting may override it with a user-selected root. This is user
+    /// *content*, not app state, so it sits outside the state-root layout above.
+    public static func defaultProjectsRoot() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Projects", isDirectory: true)
+            .standardizedFileURL
+    }
+
     /// Builds paths for the packaged macOS app (NIC-72): read-only config and tool
     /// descriptors resolve from the app bundle's Resources, while writable
     /// personal-production state lives at an explicit, outside-the-bundle root
