@@ -136,6 +136,71 @@ public enum BridgeEventFactory {
         let widget: Widget
     }
 
+    // MARK: - Repositories widget (NIC-131)
+
+    /// The `repositories` widget's live envelope — the Swift mirror of the web `WidgetData`
+    /// for this widget. Optional fields are omitted (not encoded as null) when nil by the
+    /// synthesized encoding, matching the envelope the dashboard renders.
+    public struct RepositoriesWidget: Encodable, Sendable {
+        public let widgetId: String
+        public let state: String
+        public let headline: String?
+        public let emptyMessage: String?
+        public let freshness: WidgetFreshnessPayload?
+        public let data: RepositoriesWidgetData?
+    }
+
+    public struct RepositoriesWidgetData: Encodable, Sendable {
+        public let items: [RepositoryItem]
+    }
+
+    /// One repository row. `branch` is omitted when the repo's HEAD couldn't be resolved
+    /// (never fabricated); `path` is the click-to-open target (`project.open`, Increment 4).
+    public struct RepositoryItem: Encodable, Sendable {
+        public let id: String
+        public let name: String
+        public let branch: String?
+        public let path: String
+    }
+
+    /// Freshness stamp mirroring the web `WidgetFreshness` (`observedAt` + human label).
+    public struct WidgetFreshnessPayload: Encodable, Sendable {
+        public let observedAt: Date
+        public let label: String
+    }
+
+    /// Maps the active-repos reader's result into the `repositories` widget envelope
+    /// (NIC-131). A read failure is an honest `unavailable`; a readable-but-empty root is
+    /// `empty`; otherwise `ready` with one row per repo. Nothing is fabricated — a repo
+    /// whose branch couldn't be resolved simply omits it.
+    public static func repositoriesWidget(
+        from result: Swift.Result<[RepoStatus], Error>, now: Date
+    ) -> RepositoriesWidget {
+        switch result {
+        case .failure:
+            return RepositoriesWidget(
+                widgetId: "repositories", state: "unavailable", headline: nil,
+                emptyMessage: "Your projects folder isn't available.", freshness: nil, data: nil
+            )
+        case let .success(repos) where repos.isEmpty:
+            return RepositoriesWidget(
+                widgetId: "repositories", state: "empty", headline: nil,
+                emptyMessage: "No repositories in your projects folder yet.", freshness: nil, data: nil
+            )
+        case let .success(repos):
+            let items = repos.map {
+                RepositoryItem(id: $0.id, name: $0.name, branch: $0.branch, path: $0.path)
+            }
+            return RepositoriesWidget(
+                widgetId: "repositories", state: "ready",
+                headline: repos.count == 1 ? "1 repository" : "\(repos.count) repositories",
+                emptyMessage: nil,
+                freshness: WidgetFreshnessPayload(observedAt: now, label: "just now"),
+                data: RepositoriesWidgetData(items: items)
+            )
+        }
+    }
+
     /// A `settings.changed` event (live cross-webview sync): the durable settings were
     /// updated through `updateSettings`, so every surface — the dashboard and the
     /// separate native settings window — reflects the new assistant name, mode colors,

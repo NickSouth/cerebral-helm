@@ -31,6 +31,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// Streams live system metrics to the dashboard (NIC-81b). Shares the status
     /// capability actor with the `system.status.read` tool.
     private let statusPublisher: SystemStatusPublisher
+    /// Streams the live `repositories` widget to the dashboard (NIC-131) — reads active
+    /// git repos under `~/Projects` and their branches. Runs on the same visibility
+    /// gate as the metrics stream.
+    private let reposPublisher: ActiveReposPublisher
     /// Watches display connect/disconnect/rearrange (NIC-87). Native subscribers
     /// are told first (window re-hosting), then the dashboard via one
     /// `display.topology.changed` event.
@@ -113,6 +117,8 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let descriptors = (try? ToolDescriptorCatalog.loadDescriptors(directory: paths.toolDescriptorsDirectory)) ?? []
         requiredPermissions = CompositionCapabilities.requiredPermissionsByCapability(descriptors)
         statusPublisher = SystemStatusPublisher(status: composition.systemStatus, emit: { relay.emit($0) })
+        // The active-repos widget producer (NIC-131): default provider scans ~/Projects.
+        reposPublisher = ActiveReposPublisher(emit: { relay.emit($0) })
         displayObserver = DisplayTopologyObserver(emit: { relay.emit($0) })
         guard let runtime = try? makeCommandRuntime(paths: paths, phase: .macOS, capabilities: capabilities, onEvent: { event in
             let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
@@ -237,18 +243,24 @@ final class AppBridgeRuntime: @unchecked Sendable {
         relay.setSink(sink)
     }
 
-    /// Start the live metrics stream (call once the event sink is bound, so the
-    /// first snapshot has a consumer).
+    /// Start the live streams — system metrics (NIC-81b) and the active-repos widget
+    /// (NIC-131). Call once the event sink is bound, so the first snapshot of each has a
+    /// consumer.
     func startStatusPublishing() {
-        let publisher = statusPublisher
-        Task { await publisher.start() }
+        let metrics = statusPublisher
+        let repos = reposPublisher
+        Task { await metrics.start() }
+        Task { await repos.start() }
     }
 
-    /// Pause/resume the metrics stream from the shell's visibility signal
-    /// (dashboard occluded → no sampling; MAC-ADAPTER-3 battery AC).
+    /// Pause/resume the live streams from the shell's visibility signal (dashboard
+    /// occluded → no sampling; MAC-ADAPTER-3 battery AC). Both the metrics and
+    /// active-repos producers share this gate.
     func setStatusPublishingActive(_ active: Bool) {
-        let publisher = statusPublisher
-        Task { await publisher.setActive(active) }
+        let metrics = statusPublisher
+        let repos = reposPublisher
+        Task { await metrics.setActive(active) }
+        Task { await repos.setActive(active) }
     }
 
     /// The persisted "Main display" id (NIC-120b) — nil when never set. A stale
