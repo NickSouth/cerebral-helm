@@ -58,6 +58,26 @@ export interface RepositoriesWidgetPayload {
 }
 
 /**
+ * One project row in the `projects` widget's payload (NIC-129), in most-important-first order
+ * (the native reader sorts by each project's `PROJECT.md` `importance`, then recency).
+ * `descriptorPath` is omitted when the project has no `PROJECT.md`; `hasDescriptor` is the
+ * honest gate the row uses to enable/disable click-to-expand (Increment 6). This documents
+ * the shape the live producer streams under `WidgetData.data`.
+ */
+export interface ProjectWidgetItem {
+  readonly id: string;
+  readonly name: string;
+  readonly path: string;
+  readonly descriptorPath?: string;
+  readonly hasDescriptor: boolean;
+}
+
+/** The `projects` widget's `data` payload (documented shape for `WidgetData.data`). */
+export interface ProjectsWidgetPayload {
+  readonly items: readonly ProjectWidgetItem[];
+}
+
+/**
  * Resolve the WidgetData a rail slot renders: the live-streamed value for `widgetId`
  * (NIC-131 blueprint) when a producer has delivered one, else the bootstrap/config value.
  * `liveWidgets` is runtime-only state keyed by widget id and lives outside `regions`, so

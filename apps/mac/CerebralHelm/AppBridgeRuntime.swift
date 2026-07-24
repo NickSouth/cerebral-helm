@@ -35,6 +35,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// git repos under `~/Projects` and their branches. Runs on the same visibility
     /// gate as the metrics stream.
     private let reposPublisher: ActiveReposPublisher
+    /// Streams the live `projects` widget to the dashboard (NIC-129) — reads the project
+    /// folders under `~/Projects` and their `PROJECT.md` importance. Runs on the same
+    /// visibility gate as the metrics and repos streams.
+    private let projectsPublisher: ActiveProjectsPublisher
     /// Watches display connect/disconnect/rearrange (NIC-87). Native subscribers
     /// are told first (window re-hosting), then the dashboard via one
     /// `display.topology.changed` event.
@@ -119,6 +123,8 @@ final class AppBridgeRuntime: @unchecked Sendable {
         statusPublisher = SystemStatusPublisher(status: composition.systemStatus, emit: { relay.emit($0) })
         // The active-repos widget producer (NIC-131): default provider scans ~/Projects.
         reposPublisher = ActiveReposPublisher(emit: { relay.emit($0) })
+        // The active-projects widget producer (NIC-129): default provider scans ~/Projects.
+        projectsPublisher = ActiveProjectsPublisher(emit: { relay.emit($0) })
         displayObserver = DisplayTopologyObserver(emit: { relay.emit($0) })
         guard let runtime = try? makeCommandRuntime(paths: paths, phase: .macOS, capabilities: capabilities, onEvent: { event in
             let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
@@ -249,8 +255,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
     func startStatusPublishing() {
         let metrics = statusPublisher
         let repos = reposPublisher
+        let projects = projectsPublisher
         Task { await metrics.start() }
         Task { await repos.start() }
+        Task { await projects.start() }
     }
 
     /// Pause/resume the live streams from the shell's visibility signal (dashboard
@@ -259,8 +267,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
     func setStatusPublishingActive(_ active: Bool) {
         let metrics = statusPublisher
         let repos = reposPublisher
+        let projects = projectsPublisher
         Task { await metrics.setActive(active) }
         Task { await repos.setActive(active) }
+        Task { await projects.setActive(active) }
     }
 
     /// The persisted "Main display" id (NIC-120b) — nil when never set. A stale

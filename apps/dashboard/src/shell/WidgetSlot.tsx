@@ -76,8 +76,14 @@ const WIDGET_BODIES: Readonly<Record<string, (data: any) => ReactNode>> = {
       )
     ),
   spotify: (data) => list(row(data.track, data.artist, "track")),
+  // NIC-129 Increment 3: read-only project rows by name, in the producer's importance order.
+  // Click-to-expand (a detail window per project) arrives in Increment 6 as its own component.
   projects: (data) =>
-    list((data.items ?? []).map((item: any, index: number) => row(item.name, item.status, index))),
+    list(
+      (data.items ?? []).map((item: any, index: number) =>
+        row(item.name, null, item.id ?? index)
+      )
+    ),
   courses: (data) =>
     list((data.items ?? []).map((item: any, index: number) => row(item.name, item.next, index))),
   "media-list": (data) =>

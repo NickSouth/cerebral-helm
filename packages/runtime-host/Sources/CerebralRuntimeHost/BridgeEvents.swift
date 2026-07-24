@@ -201,6 +201,70 @@ public enum BridgeEventFactory {
         }
     }
 
+    // MARK: - Projects widget (NIC-129)
+
+    /// The `projects` widget's live envelope — the Swift mirror of the web `WidgetData` for
+    /// this widget. Optional fields are omitted (not encoded as null) when nil by the
+    /// synthesized encoding, matching the envelope the dashboard renders.
+    public struct ProjectsWidget: Encodable, Sendable {
+        public let widgetId: String
+        public let state: String
+        public let headline: String?
+        public let emptyMessage: String?
+        public let freshness: WidgetFreshnessPayload?
+        public let data: ProjectsWidgetData?
+    }
+
+    public struct ProjectsWidgetData: Encodable, Sendable {
+        public let items: [ProjectItem]
+    }
+
+    /// One project row, in most-important-first order (the reader already sorted them).
+    /// `descriptorPath` is omitted when the project has no `PROJECT.md`; `hasDescriptor` is
+    /// the honest gate the dashboard uses to enable/disable the click-to-expand row (Inc 6).
+    public struct ProjectItem: Encodable, Sendable {
+        public let id: String
+        public let name: String
+        public let path: String
+        public let descriptorPath: String?
+        public let hasDescriptor: Bool
+    }
+
+    /// Maps the active-projects reader's result into the `projects` widget envelope (NIC-129).
+    /// A read failure is an honest `unavailable`; a readable-but-empty root is `empty`;
+    /// otherwise `ready` with one row per project. Nothing is fabricated — a project without a
+    /// `PROJECT.md` simply reports `hasDescriptor == false` and omits its descriptor path.
+    public static func projectsWidget(
+        from result: Swift.Result<[ProjectSummary], Error>, now: Date
+    ) -> ProjectsWidget {
+        switch result {
+        case .failure:
+            return ProjectsWidget(
+                widgetId: "projects", state: "unavailable", headline: nil,
+                emptyMessage: "Your projects folder isn't available.", freshness: nil, data: nil
+            )
+        case let .success(projects) where projects.isEmpty:
+            return ProjectsWidget(
+                widgetId: "projects", state: "empty", headline: nil,
+                emptyMessage: "No projects in your projects folder yet.", freshness: nil, data: nil
+            )
+        case let .success(projects):
+            let items = projects.map {
+                ProjectItem(
+                    id: $0.id, name: $0.name, path: $0.path,
+                    descriptorPath: $0.descriptorPath, hasDescriptor: $0.hasDescriptor
+                )
+            }
+            return ProjectsWidget(
+                widgetId: "projects", state: "ready",
+                headline: projects.count == 1 ? "1 project" : "\(projects.count) projects",
+                emptyMessage: nil,
+                freshness: WidgetFreshnessPayload(observedAt: now, label: "just now"),
+                data: ProjectsWidgetData(items: items)
+            )
+        }
+    }
+
     /// A `settings.changed` event (live cross-webview sync): the durable settings were
     /// updated through `updateSettings`, so every surface — the dashboard and the
     /// separate native settings window — reflects the new assistant name, mode colors,

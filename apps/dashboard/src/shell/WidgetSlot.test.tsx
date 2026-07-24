@@ -94,3 +94,50 @@ describe("WidgetSlot repositories (NIC-131)", () => {
     expect(screen.getByText("No repositories in your projects folder yet.")).toBeTruthy();
   });
 });
+
+/** NIC-129 Increment 3: the Executive "Projects" widget renders the project folders by name,
+ *  in the producer's importance order. Rows are read-only here; click-to-expand is Increment 6. */
+
+const projectsReady: WidgetData = {
+  widgetId: "projects",
+  state: "ready",
+  headline: "2 projects",
+  freshness: { observedAt: "2026-07-24T16:00:00.000Z", label: "just now" },
+  data: {
+    items: [
+      {
+        id: "CerebralHelm",
+        name: "CerebralHelm",
+        path: "/Users/x/Projects/CerebralHelm",
+        descriptorPath: "/Users/x/Projects/CerebralHelm/PROJECT.md",
+        hasDescriptor: true
+      },
+      { id: "OnDraft", name: "OnDraft", path: "/Users/x/Projects/OnDraft", hasDescriptor: false }
+    ]
+  }
+};
+
+describe("WidgetSlot projects (NIC-129)", () => {
+  it("renders each project by name, in the streamed order", () => {
+    renderSlot(projectsReady);
+    const items = Array.from(document.querySelectorAll(".widget-list__item"));
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toContain("CerebralHelm");
+    expect(items[1].textContent).toContain("OnDraft");
+  });
+
+  it("is read-only in this increment — no interactive rows yet", () => {
+    const { submissions } = renderSlot(projectsReady);
+    expect(repoButtons()).toHaveLength(0);
+    expect(submissions).toHaveLength(0);
+  });
+
+  it("renders an honest empty state", () => {
+    renderSlot({
+      widgetId: "projects",
+      state: "empty",
+      emptyMessage: "No projects in your projects folder yet."
+    });
+    expect(screen.getByText("No projects in your projects folder yet.")).toBeTruthy();
+  });
+});

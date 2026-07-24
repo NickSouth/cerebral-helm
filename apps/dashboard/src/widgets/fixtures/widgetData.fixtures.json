@@ -48,15 +48,25 @@
     "projects": {
       "widgetId": "projects",
       "state": "ready",
-      "headline": "2 active",
+      "headline": "2 projects",
       "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" },
       "data": {
         "items": [
-          { "name": "Quarterly planning", "status": "in-progress" },
-          { "name": "Board prep", "status": "review" }
+          {
+            "id": "CerebralHelm",
+            "name": "CerebralHelm",
+            "path": "/Users/example/Projects/CerebralHelm",
+            "descriptorPath": "/Users/example/Projects/CerebralHelm/PROJECT.md",
+            "hasDescriptor": true
+          },
+          {
+            "id": "OnDraft",
+            "name": "OnDraft",
+            "path": "/Users/example/Projects/OnDraft",
+            "hasDescriptor": false
+          }
         ]
-      },
-      "action": { "id": "review-projects", "label": "Review projects" }
+      }
     },
     "repositories": {
       "widgetId": "repositories",
