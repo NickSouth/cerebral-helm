@@ -83,6 +83,14 @@ if (surface === "palette") {
       </React.StrictMode>
     );
   });
+} else if (surface === "projectdetail") {
+  void import("./app/ProjectDetailApp").then(({ ProjectDetailApp }) => {
+    root.render(
+      <React.StrictMode>
+        <ProjectDetailApp />
+      </React.StrictMode>
+    );
+  });
 } else {
   void import("./app/AppRoot").then(({ AppRoot }) => {
     root.render(

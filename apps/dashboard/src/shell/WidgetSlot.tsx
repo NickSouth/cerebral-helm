@@ -5,11 +5,12 @@ import { StaleMarker } from "../components/StaleMarker";
 import { Unavailable } from "../components/Unavailable";
 import { EmptyState } from "../components/EmptyState";
 import { WIDGET_REGISTRY } from "../widgets/widgets";
-import type { RepositoryWidgetItem, WidgetData } from "../widgets/widgetData";
+import type { ProjectWidgetItem, RepositoryWidgetItem, WidgetData } from "../widgets/widgetData";
 import { useBridge } from "../state/BridgeProvider";
 import { useActionStatus } from "../state/ActionStatusProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { submitOpenProject } from "./openProject";
+import { submitOpenProjectDetail } from "./openProjectDetail";
 import { formatDay } from "./format";
 
 const WIDGET_LABELS: ReadonlyMap<string, string> = new Map(
@@ -76,14 +77,6 @@ const WIDGET_BODIES: Readonly<Record<string, (data: any) => ReactNode>> = {
       )
     ),
   spotify: (data) => list(row(data.track, data.artist, "track")),
-  // NIC-129 Increment 3: read-only project rows by name, in the producer's importance order.
-  // Click-to-expand (a detail window per project) arrives in Increment 6 as its own component.
-  projects: (data) =>
-    list(
-      (data.items ?? []).map((item: any, index: number) =>
-        row(item.name, null, item.id ?? index)
-      )
-    ),
   courses: (data) =>
     list((data.items ?? []).map((item: any, index: number) => row(item.name, item.next, index))),
   "media-list": (data) =>
@@ -172,12 +165,62 @@ function RepositoriesBody({ items }: { items: readonly RepositoryWidgetItem[] })
   );
 }
 
+/**
+ * The Executive "Projects" widget body (NIC-129): each project is a clickable row that opens
+ * its `PROJECT.md` in a native detail window (`shellControl.openProjectDetail`, owned by the
+ * `WindowCoordinator`). A project with no descriptor is honestly non-expandable — the row is
+ * disabled rather than opening an empty window — and read-only recovery disables every row.
+ * Like `RepositoriesBody`, this needs the posture hook, so it is a component rather than a
+ * static `WIDGET_BODIES` entry.
+ */
+function ProjectsBody({ items }: { items: readonly ProjectWidgetItem[] }) {
+  const { readOnly } = useUiPosture();
+
+  return (
+    <ul className="widget-list">
+      {items.map((item) => {
+        const expandable = item.hasDescriptor && !readOnly;
+        return (
+          <li key={item.id} className="widget-list__item">
+            <button
+              type="button"
+              className="widget-list__button"
+              disabled={!expandable}
+              aria-disabled={!expandable || undefined}
+              title={
+                readOnly
+                  ? "Opening a project is paused while the dashboard is read-only"
+                  : item.hasDescriptor
+                    ? `Open ${item.name}`
+                    : `${item.name} has no PROJECT.md yet`
+              }
+              onClick={() => {
+                submitOpenProjectDetail(item.path);
+              }}
+            >
+              <span className="repo-row__name">
+                <FolderGlyph />
+                <span className="repo-row__label">{item.name}</span>
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
   // The repositories widget renders interactive rows (click-to-open), so it needs runtime
   // hooks and is dispatched to its own component instead of a pure static renderer (NIC-131).
   if (widgetId === "repositories") {
     const items = (data as { items?: readonly RepositoryWidgetItem[] })?.items ?? [];
     return <RepositoriesBody items={items} />;
+  }
+  // The projects widget likewise renders interactive rows (click-to-expand a detail window).
+  if (widgetId === "projects") {
+    const items = (data as { items?: readonly ProjectWidgetItem[] })?.items ?? [];
+    return <ProjectsBody items={items} />;
   }
   const render = WIDGET_BODIES[widgetId];
   return render ? <>{render((data ?? {}) as Record<string, unknown>)}</> : <Unavailable />;

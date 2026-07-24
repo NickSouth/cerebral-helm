@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { WidgetSlot } from "./WidgetSlot";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
@@ -95,8 +95,9 @@ describe("WidgetSlot repositories (NIC-131)", () => {
   });
 });
 
-/** NIC-129 Increment 3: the Executive "Projects" widget renders the project folders by name,
- *  in the producer's importance order. Rows are read-only here; click-to-expand is Increment 6. */
+/** NIC-129 Increment 6: the Executive "Projects" widget renders the project folders by name
+ *  and opens a project's PROJECT.md in a native detail window on click (shellControl). A
+ *  project without a descriptor is non-expandable; read-only recovery disables every row. */
 
 const projectsReady: WidgetData = {
   widgetId: "projects",
@@ -117,27 +118,66 @@ const projectsReady: WidgetData = {
   }
 };
 
+interface WebkitTestWindow {
+  webkit?: { messageHandlers?: { shellControl?: { postMessage(message: unknown): void } } };
+}
+
 describe("WidgetSlot projects (NIC-129)", () => {
+  let shellPosts: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    shellPosts = [];
+    (window as unknown as WebkitTestWindow).webkit = {
+      messageHandlers: {
+        shellControl: { postMessage: (m: unknown) => shellPosts.push(m as Record<string, unknown>) }
+      }
+    };
+  });
+
+  afterEach(() => {
+    delete (window as unknown as WebkitTestWindow).webkit;
+  });
+
   it("renders each project by name, in the streamed order", () => {
     renderSlot(projectsReady);
-    const items = Array.from(document.querySelectorAll(".widget-list__item"));
-    expect(items).toHaveLength(2);
-    expect(items[0].textContent).toContain("CerebralHelm");
-    expect(items[1].textContent).toContain("OnDraft");
+    const buttons = repoButtons();
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0].textContent).toContain("CerebralHelm");
+    expect(buttons[1].textContent).toContain("OnDraft");
   });
 
-  it("is read-only in this increment — no interactive rows yet", () => {
-    const { submissions } = renderSlot(projectsReady);
-    expect(repoButtons()).toHaveLength(0);
-    expect(submissions).toHaveLength(0);
+  it("opens the detail window for a project with a PROJECT.md on click", () => {
+    renderSlot(projectsReady);
+    fireEvent.click(repoButtons()[0]);
+    expect(shellPosts).toContainEqual({
+      action: "openProjectDetail",
+      path: "/Users/x/Projects/CerebralHelm"
+    });
   });
 
-  it("renders an honest empty state", () => {
+  it("disables a project with no PROJECT.md and posts nothing on click", () => {
+    renderSlot(projectsReady);
+    const buttons = repoButtons();
+    expect(buttons[1].disabled).toBe(true); // OnDraft: hasDescriptor false → non-expandable
+    fireEvent.click(buttons[1]);
+    expect(shellPosts).toHaveLength(0);
+  });
+
+  it("disables every row under read-only recovery and posts nothing", () => {
+    renderSlot(projectsReady, (base) => ({ ...base, uiState: "offline" }));
+    const buttons = repoButtons();
+    expect(buttons[0].disabled).toBe(true);
+    fireEvent.click(buttons[0]);
+    expect(shellPosts).toHaveLength(0);
+  });
+
+  it("renders an honest empty state without any interactive rows", () => {
     renderSlot({
       widgetId: "projects",
       state: "empty",
       emptyMessage: "No projects in your projects folder yet."
     });
+    expect(repoButtons()).toHaveLength(0);
     expect(screen.getByText("No projects in your projects folder yet.")).toBeTruthy();
   });
 });

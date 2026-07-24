@@ -42,6 +42,9 @@ final class WindowCoordinator: @unchecked Sendable {
     /// mode-specific), torn down on close. `nil` while closed.
     private var layoutEditor: LayoutEditorWindowController?
     private var windowNavigator: WindowNavigatorWindowController?
+    /// The expandable project detail window (NIC-129): built fresh on each open (its descriptor
+    /// is re-read), torn down on close. `nil` while closed.
+    private var projectDetail: ProjectDetailWindowController?
     /// One additional backdrop per connected non-main display (NIC-120b), keyed by
     /// the display's topology id. Created/removed by `reconcileBackdrops` on every
     /// topology change; each binds the SAME shared session (no second runtime).
@@ -193,6 +196,7 @@ final class WindowCoordinator: @unchecked Sendable {
         layoutPin?.deliverBridgeEvent(json)
         layoutEditor?.deliverBridgeEvent(json)
         windowNavigator?.deliverBridgeEvent(json)
+        projectDetail?.deliverBridgeEvent(json)
         if json.contains("\"config.changed\"") {
             palette?.deliverBridgeEvent(json)
             // Keep the open dropdown's active-mode highlight and theme current if the mode
@@ -495,6 +499,43 @@ final class WindowCoordinator: @unchecked Sendable {
         windowNavigator = nil
     }
 
+    /// Open the expandable project detail window (NIC-129): reads the clicked project's
+    /// `PROJECT.md` (constrained to the projects root) and renders it in its own window with a
+    /// placeholder live-status section. Built fresh each open (any existing one is replaced) so
+    /// the descriptor is current. A no-op in recovery, or when the project has no readable
+    /// descriptor — Increment 6 disables the row in that case, so the click shouldn't fire.
+    func openProjectDetail(path: String) {
+        guard let session, let dashboardRoot else { return }
+        guard let descriptor = ProjectDescriptor.read(projectPath: path) else { return }
+        projectDetail?.close()
+        let controller = ProjectDetailWindowController(
+            dashboardRoot: dashboardRoot, session: session, projectPath: path,
+            name: descriptor.name, markdownBody: descriptor.body,
+            importance: descriptor.importance ?? 0
+        )
+        controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
+        projectDetail = controller
+        if let screen = dashboard?.window.screen ?? mainScreen() ?? NSScreen.main {
+            controller.positionCentered(on: screen)
+        }
+        controller.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Close and release the project detail window — the × control posts `closeProjectDetail`.
+    func closeProjectDetail() {
+        projectDetail?.close()
+        projectDetail = nil
+    }
+
+    /// Persist a new `importance` for a project (NIC-129): the detail window's priority stepper
+    /// posts each change, and this writes it into the project's `PROJECT.md` frontmatter
+    /// (constrained to the projects root, floored at 0). The `projects` widget reorders on its
+    /// producer's next scan; the stepper already updated its own number optimistically.
+    func setProjectImportance(path: String, importance: Int) {
+        ProjectImportanceWriter.write(projectPath: path, importance: importance)
+    }
+
     /// Open the transparent mode-swap dropdown above the bottom bar's mode control
     /// (NIC-144). Built fresh each open (any existing one is replaced) so its active-mode
     /// highlight is current — a transient menu, not a warm panel. `anchor` is the mode
@@ -671,6 +712,15 @@ final class WindowCoordinator: @unchecked Sendable {
             openWindowNavigator()
         case "closeWindowNavigator":
             closeWindowNavigator()
+        case "openProjectDetail":
+            guard let path = body["path"] as? String else { return }
+            openProjectDetail(path: path)
+        case "closeProjectDetail":
+            closeProjectDetail()
+        case "setProjectImportance":
+            guard let path = body["path"] as? String,
+                  let importance = body["importance"] as? Int else { return }
+            setProjectImportance(path: path, importance: importance)
         case "openModeMenu":
             openModeMenu(anchor: body["anchor"] as? [String: Any], from: source)
         case "closeModeMenu":

@@ -2795,6 +2795,148 @@
   display: flex;
 }
 
+/* Project detail window (NIC-129): a project's PROJECT.md rendered as markdown, plus a
+   placeholder live-status section. Hosted in its own native window (?surface=projectdetail). */
+.project-detail {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ch-surface-panel);
+  color: var(--ch-text-primary);
+  overflow: hidden;
+}
+
+.project-detail__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-3) var(--ch-space-4);
+  border-bottom: 1px solid var(--ch-panel-border);
+}
+
+.project-detail__title {
+  margin: 0;
+  margin-inline-end: auto;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+}
+
+/* Editable priority (importance) stepper in the top bar (NIC-129). */
+.project-detail__priority {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  padding: 0 var(--ch-space-2);
+}
+
+.project-detail__priority-label {
+  font-size: var(--ch-font-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ch-text-muted);
+}
+
+.project-detail__priority-value {
+  min-width: 1.5ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+}
+
+.project-detail__priority-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1px solid var(--ch-panel-border);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+  border-radius: var(--ch-radius-sm);
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.project-detail__priority-step:hover:not(:disabled) {
+  border-color: var(--ch-accent-primary);
+  color: var(--ch-accent-primary);
+}
+
+.project-detail__priority-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.project-detail__close {
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  cursor: pointer;
+  border-radius: var(--ch-radius-sm);
+  padding: 0 var(--ch-space-2);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.project-detail__close:hover {
+  color: var(--ch-text-primary);
+}
+
+.project-detail__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--ch-space-4);
+}
+
+.project-detail__status {
+  border-top: 1px solid var(--ch-panel-border);
+  padding: var(--ch-space-3) var(--ch-space-4);
+}
+
+.project-detail__status-title {
+  margin: 0 0 var(--ch-space-1);
+  font-size: var(--ch-font-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ch-text-muted);
+}
+
+.project-detail__status-note {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+/* Minimal markdown block styles (NIC-129) — the small subset the in-house renderer emits. */
+.md {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+  line-height: 1.5;
+}
+
+.md-heading {
+  margin: 0;
+  line-height: 1.3;
+}
+
+.md-paragraph {
+  margin: 0;
+}
+
+.md-list {
+  margin: 0;
+  padding-inline-start: var(--ch-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
 .win-nav__scrim {
   position: fixed;
   inset: 0;
