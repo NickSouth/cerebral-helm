@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "brevt_000000000000000000000010",
+  "type": "weather.changed",
+  "timestamp": "2026-07-24T16:00:00.030Z",
+  "payload": {
+    "weather": {
+      "state": "ready",
+      "label": "68°F · Sunny",
+      "temperatureF": 68,
+      "condition": "Sunny"
+    }
+  }
+}

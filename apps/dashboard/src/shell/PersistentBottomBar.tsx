@@ -484,7 +484,10 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
   const state = useDashboardState();
   const { openSettings } = useSettings();
   const { assistantName } = useAppearance();
-  const { heimlich, weather } = state;
+  const { heimlich } = state;
+  // Live weather (NIC-169, streamed via `weather.changed`) wins over the per-mode bootstrap
+  // `weather`; absent until the native producer's first sample, so pre-Mac this is the mock value.
+  const weather = state.liveWeather ?? state.weather;
   const battery = state.regions.systemHealth.battery;
   const barRef = useRef<HTMLElement>(null);
 

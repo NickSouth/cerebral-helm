@@ -1,6 +1,7 @@
 // Platform permission status (NIC-83, MAC-ADAPTER-5).
 #if canImport(AppKit)
 import ApplicationServices
+import CoreLocation
 import Foundation
 import CerebralTools
 
@@ -34,6 +35,11 @@ public struct MacPermissionChecker: PermissionChecking {
             return .notRequired
         case "accessibility":
             return AXIsProcessTrusted() ? .granted : .denied
+        case "location":
+            // The weather widget's location fix (NIC-169). Read the live CoreLocation
+            // authorization without prompting — the prompt stays at point of use in
+            // `CoreLocationProvider`. Reading the status is a plain property access.
+            return CoreLocationProvider.permissionStatus(from: CLLocationManager().authorizationStatus)
         default:
             return .notDetermined
         }

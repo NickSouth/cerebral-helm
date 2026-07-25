@@ -39,6 +39,54 @@ describe("reduceDashboardState", () => {
     expect(reduceDashboardState(base, lifecycleEvent("idle"))).toBe(base);
   });
 
+  it("folds live weather into liveWeather that survives a mode switch (NIC-169)", () => {
+    const base = loadBootstrapState();
+    const live = {
+      state: "ready",
+      label: "68°F · Sunny",
+      temperatureF: 68,
+      condition: "Sunny"
+    } as const;
+    const weatherEvent: BridgeEvent = {
+      eventId: "brevt_weather0001",
+      type: "weather.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-24T16:00:00.000Z",
+      payload: { weather: live }
+    };
+
+    const withWeather = reduceDashboardState(base, weatherEvent);
+    expect(withWeather.liveWeather).toEqual(live);
+    // An identical re-emit is a no-op (no needless re-render).
+    expect(reduceDashboardState(withWeather, weatherEvent)).toBe(withWeather);
+
+    // A mode switch swaps the mode-scoped bootstrap `weather`, but the runtime-only
+    // `liveWeather` lives outside the snapshot, so it survives with no flash (NIC-136).
+    const switched = reduceDashboardState(withWeather, {
+      eventId: "brevt_weathercfg001",
+      type: "config.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-24T16:00:01.000Z",
+      payload: { snapshot: getDashboardFixture("mode.developer.ready") }
+    });
+    expect(switched.mode).toBe("Developer");
+    expect(switched.weather?.temperatureF).toBe(66); // the developer bootstrap value
+    expect(switched.liveWeather).toEqual(live); // live value preserved across the switch
+  });
+
+  it("ignores a malformed weather.changed payload (no fabricated update)", () => {
+    const base = loadBootstrapState();
+    const malformed: BridgeEvent = {
+      eventId: "brevt_weatherbad01",
+      type: "weather.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-24T16:00:00.000Z",
+      payload: { weather: { label: "no state field" } }
+    };
+    expect(reduceDashboardState(base, malformed)).toBe(base);
+    expect(reduceDashboardState(base, { ...malformed, payload: {} })).toBe(base);
+  });
+
   it("folds mode.windowcollapse.changed into a per-mode collapse map (NIC-143)", () => {
     const base = loadBootstrapState();
     const collapse = (modeId: string, collapsed: boolean): BridgeEvent => ({

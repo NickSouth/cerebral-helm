@@ -1,7 +1,8 @@
 import type {
   ConfirmationDisclosure,
   DashboardBootstrapState,
-  DashboardMode
+  DashboardMode,
+  WeatherChannel
 } from "../bridge/types";
 import type { WidgetData } from "../widgets/widgetData";
 import type { LayoutSession } from "../bridge/cerebralBridge";
@@ -105,6 +106,14 @@ export type DashboardState = DashboardBootstrapState & {
    *  `regions.widgets.{side}` (see resolveWidgetData). Lives outside `regions` so it
    *  survives `config.changed` mode switches without per-region preservation. */
   readonly liveWidgets?: Readonly<Record<string, WidgetData>>;
+  /** Live ambient weather (NIC-169), folded from `weather.changed`. Runtime-only and, like
+   *  `liveWidgets`, lives OUTSIDE the bootstrap `weather` channel so it survives `config.changed`
+   *  mode switches by construction. The bottom bar resolves this over the per-mode bootstrap
+   *  `weather` (live wins); absent until the native producer streams its first sample. Real
+   *  weather is machine-global, so a single live value is correct across every mode — keeping it
+   *  here (rather than clobbering the mode-scoped bootstrap `weather`) leaves the per-mode mock
+   *  fixtures untouched. */
+  readonly liveWeather?: WeatherChannel | null;
 };
 
 /**

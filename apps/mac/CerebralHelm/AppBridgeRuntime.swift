@@ -39,6 +39,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// folders under `~/Projects` and their `PROJECT.md` importance. Runs on the same
     /// visibility gate as the metrics and repos streams.
     private let projectsPublisher: ActiveProjectsPublisher
+    /// Streams the bottom bar's ambient weather (NIC-169) — resolves the device location via
+    /// CoreLocation (prompting at point of use) and fetches current conditions from Open-Meteo
+    /// on a slow cadence. Runs on the same visibility gate as the other streams.
+    private let weatherPublisher: WeatherPublisher
     /// Watches display connect/disconnect/rearrange (NIC-87). Native subscribers
     /// are told first (window re-hosting), then the dashboard via one
     /// `display.topology.changed` event.
@@ -125,6 +129,15 @@ final class AppBridgeRuntime: @unchecked Sendable {
         reposPublisher = ActiveReposPublisher(emit: { relay.emit($0) })
         // The active-projects widget producer (NIC-129): default provider scans ~/Projects.
         projectsPublisher = ActiveProjectsPublisher(emit: { relay.emit($0) })
+        // The weather producer (NIC-169): CoreLocationProvider is @MainActor; this init runs on
+        // the main thread (AppDelegate.applicationDidFinishLaunching), so assumeIsolated is safe.
+        weatherPublisher = MainActor.assumeIsolated {
+            WeatherPublisher(
+                location: CoreLocationProvider(),
+                weather: OpenMeteoWeatherProvider(),
+                emit: { relay.emit($0) }
+            )
+        }
         displayObserver = DisplayTopologyObserver(emit: { relay.emit($0) })
         guard let runtime = try? makeCommandRuntime(paths: paths, phase: .macOS, capabilities: capabilities, onEvent: { event in
             let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
@@ -167,7 +180,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 phase: .macOS,
                 capabilities: capabilities,
                 requiredPermissions: requiredPermissions,
-                permissions: permissionChecker
+                permissions: permissionChecker,
+                // The weather producer is composed below (NIC-169), so `weather` reports
+                // available once the Location grant is satisfied.
+                weatherProviderComposed: true
             ),
             settingsStore: settingsStore,
             // Bootstrap restores the last active mode across restarts (FR-MOD-05).
@@ -230,7 +246,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
             phase: .macOS,
             capabilities: toolCapabilities,
             requiredPermissions: requiredPermissions,
-            permissions: permissionChecker
+            permissions: permissionChecker,
+            // Re-derive weather too: granting Location in System Settings flips it available
+            // live on the next app-active recheck (NIC-169/NIC-83).
+            weatherProviderComposed: true
         )
         for changed in session.updateCapabilities(updated) {
             let event = BridgeEventFactory.capabilityChangedEvent(
@@ -256,9 +275,11 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let metrics = statusPublisher
         let repos = reposPublisher
         let projects = projectsPublisher
+        let weather = weatherPublisher
         Task { await metrics.start() }
         Task { await repos.start() }
         Task { await projects.start() }
+        Task { await weather.start() }
     }
 
     /// Pause/resume the live streams from the shell's visibility signal (dashboard
@@ -268,9 +289,11 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let metrics = statusPublisher
         let repos = reposPublisher
         let projects = projectsPublisher
+        let weather = weatherPublisher
         Task { await metrics.setActive(active) }
         Task { await repos.setActive(active) }
         Task { await projects.setActive(active) }
+        Task { await weather.setActive(active) }
     }
 
     /// The persisted "Main display" id (NIC-120b) — nil when never set. A stale

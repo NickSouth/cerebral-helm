@@ -201,6 +201,55 @@ public enum BridgeEventFactory {
         }
     }
 
+    // MARK: - Weather (NIC-169)
+
+    /// A `weather.changed` event carrying the bottom bar's ambient weather channel (NIC-169).
+    /// The dashboard folds `payload.weather` into its runtime-only `liveWeather` field, which
+    /// wins over the per-mode bootstrap `weather` and survives mode switches by construction
+    /// (it lives outside the mode snapshot). Weather is machine-global, so one live value is
+    /// correct across every mode. Emitted by the ``WeatherPublisher`` (Increment 5).
+    public static func weatherChangedEvent(
+        channel: DashboardWeatherChannel, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Payload: Encodable {
+            let weather: DashboardWeatherChannel
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Payload(weather: channel)),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .weatherChanged
+        )
+    }
+
+    /// Maps a weather-provider result into the bottom bar's `DashboardWeatherChannel` (NIC-169).
+    /// A reading is `ready` with a rounded "NN°F · Condition" label; a failure is an honest
+    /// `unavailable` with no fabricated temperature or condition — a missing/denied location
+    /// reads "Location unavailable", any other failure "Weather unavailable" (FR-SAF-07).
+    public static func weather(
+        from result: Swift.Result<WeatherReading, Error>, now _: Date
+    ) -> DashboardWeatherChannel {
+        switch result {
+        case let .success(reading):
+            let rounded = Int(reading.temperatureF.rounded())
+            return DashboardWeatherChannel(
+                condition: reading.condition,
+                label: "\(rounded)°F · \(reading.condition)",
+                state: .ready,
+                temperatureF: Double(rounded)
+            )
+        case let .failure(error):
+            let isLocation = (error as? WeatherError).map { $0 == .locationUnavailable } ?? false
+            return DashboardWeatherChannel(
+                condition: nil,
+                label: isLocation ? "Location unavailable" : "Weather unavailable",
+                state: .unavailable,
+                temperatureF: nil
+            )
+        }
+    }
+
     // MARK: - Projects widget (NIC-129)
 
     /// The `projects` widget's live envelope — the Swift mirror of the web `WidgetData` for

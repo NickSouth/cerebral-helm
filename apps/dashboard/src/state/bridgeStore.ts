@@ -5,7 +5,8 @@ import type {
   DashboardStateSnapshot,
   HeimlichState,
   RegionState,
-  SystemHealthRegion
+  SystemHealthRegion,
+  WeatherChannel
 } from "../bridge/types";
 import type {
   DashboardState,
@@ -198,6 +199,22 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
         ...state,
         liveWidgets: { ...state.liveWidgets, [payload.widgetId]: widget }
       };
+    }
+    case "weather.changed": {
+      // The native weather producer streamed a fresh sample (NIC-169). Folded into the
+      // runtime-only `liveWeather` field — kept OUTSIDE the bootstrap `weather` channel so it
+      // survives `config.changed` mode switches by construction (same reasoning as `liveWidgets`)
+      // and never disturbs the per-mode mock `weather` fixtures. The bottom bar resolves
+      // `liveWeather` over the bootstrap `weather` (live wins). A payload missing a well-formed
+      // channel (`state` string) is ignored — no fabricated update.
+      const weather = (event.payload as { weather?: WeatherChannel }).weather;
+      if (!weather || typeof weather.state !== "string") {
+        return state;
+      }
+      if (state.liveWeather === weather) {
+        return state;
+      }
+      return { ...state, liveWeather: weather };
     }
     case "command.lifecycle.transition": {
       const status = String((event.payload as { currentStatus?: unknown }).currentStatus ?? "");

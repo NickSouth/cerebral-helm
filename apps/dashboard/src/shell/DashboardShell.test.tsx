@@ -346,6 +346,17 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     expect(bar.getByText("Battery · Unavailable")).toBeInTheDocument();
   });
 
+  it("renders live weather over the per-mode bootstrap weather (NIC-169)", () => {
+    // Executive bootstrap mocks 72°F; a streamed live sample must win.
+    renderShellWithState((base) => ({
+      ...base,
+      liveWeather: { state: "ready", label: "55°F · Rain", temperatureF: 55, condition: "Rain" }
+    }));
+    const bar = statusBar();
+    expect(bar.getByText("55°F")).toBeInTheDocument();
+    expect(bar.queryByText("72°F")).toBeNull();
+  });
+
   it("opens the mode menu as a native top-most dropdown when the channel exists (NIC-144)", () => {
     const posted: Array<Record<string, unknown>> = [];
     (window as unknown as { webkit?: unknown }).webkit = {

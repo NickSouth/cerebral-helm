@@ -1075,6 +1075,23 @@
   fill: var(--ch-weather-cloud);
 }
 
+.weather-glyph[data-weather="snow"] {
+  color: var(--ch-weather-snow);
+}
+
+.weather-glyph[data-weather="fog"] {
+  color: var(--ch-weather-fog);
+}
+
+/* Thunderstorm is two-tone: a stormy blue cloud with a warm yellow bolt in front. */
+.weather-glyph[data-weather="thunder"] .weather-glyph__thundercloud {
+  fill: var(--ch-weather-rain);
+}
+
+.weather-glyph[data-weather="thunder"] .weather-glyph__thunderbolt {
+  fill: var(--ch-weather-sun);
+}
+
 .bottom-bar__wifi {
   color: var(--ch-accent-secondary);
 }
