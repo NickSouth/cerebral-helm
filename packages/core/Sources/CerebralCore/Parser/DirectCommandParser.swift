@@ -30,6 +30,7 @@ public struct DirectCommandParser: Sendable {
         "note <text>",
         "project <path>",
         "search <text>",
+        "google <query>",
         "hook <id>",
         "run <action>",
         "apps",
@@ -72,6 +73,10 @@ public struct DirectCommandParser: Sendable {
             return parseFreeText(verb: "project", remainder: remainder) { .openProject(repoPath: $0) }
         case "search":
             return parseFreeText(verb: "search", remainder: remainder) { .searchNotes(query: $0) }
+        case "google":
+            // The remainder is the whole search query (queries contain spaces), taken verbatim
+            // (NIC-134). The adapter builds the google.com search URL; only this query varies.
+            return parseFreeText(verb: "google", remainder: remainder) { .googleSearch(query: $0) }
         case "apps":
             // Argument-free by design: discovery is all-or-nothing and read-only.
             return .parsed(.listApps)

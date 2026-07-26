@@ -81,6 +81,30 @@ public struct URLOpenResult: Equatable, Sendable {
     }
 }
 
+// MARK: - google.search
+
+/// Opens a Google search for a query in the browser (NIC-134). Like ``ProjectCapability``'s
+/// path constraint, the destination is not free-form: the adapter builds the Google search URL
+/// host-side (the host is fixed to `google.com`) and only the query varies, so untrusted data
+/// can never choose the target host. The adapter prefers a running Google Chrome instance,
+/// falling back to the default browser. Reusable by any "search the web for X" affordance.
+public protocol GoogleSearchCapability: Sendable {
+    func search(query: String) async throws -> GoogleSearchResult
+}
+
+public struct GoogleSearchResult: Equatable, Sendable {
+    public let query: String
+    public let opened: Bool
+    /// The Google search URL that was opened.
+    public let resolvedURL: String
+
+    public init(query: String, opened: Bool, resolvedURL: String) {
+        self.query = query
+        self.opened = opened
+        self.resolvedURL = resolvedURL
+    }
+}
+
 // MARK: - hook.run (process)
 
 public protocol ProcessCapability: Sendable {

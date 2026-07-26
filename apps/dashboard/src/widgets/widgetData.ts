@@ -88,6 +88,10 @@ export interface ReleaseWidgetItem {
   readonly title: string;
   readonly mediaType: "movie" | "tv";
   readonly year?: number;
+  /** Poster artwork as a self-contained `data:` URI (base64), fetched natively by the producer
+   *  (NIC-134) because the dashboard origin does not load external image URLs. Absent when the
+   *  release has no poster or it couldn't be fetched — the card shows a title placeholder. */
+  readonly posterImage?: string;
 }
 
 /** The `releases` widget's `data` payload (documented shape for `WidgetData.data`). */

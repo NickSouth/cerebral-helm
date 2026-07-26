@@ -340,6 +340,8 @@ public enum BridgeEventFactory {
         public let title: String
         public let mediaType: String
         public let year: Int?
+        /// Poster artwork as a self-contained `data:` URI, omitted when absent (never null).
+        public let posterImage: String?
     }
 
     /// Maps a releases-provider result into the `releases` widget envelope (NIC-134). A missing
@@ -368,7 +370,10 @@ public enum BridgeEventFactory {
             )
         case let .success(releases):
             let items = releases.map {
-                ReleaseWidgetItem(id: $0.id, title: $0.title, mediaType: $0.mediaType.rawValue, year: $0.year)
+                ReleaseWidgetItem(
+                    id: $0.id, title: $0.title, mediaType: $0.mediaType.rawValue,
+                    year: $0.year, posterImage: $0.posterImage
+                )
             }
             return ReleasesWidget(
                 widgetId: "releases", state: "ready", headline: "New & hot", emptyMessage: nil,

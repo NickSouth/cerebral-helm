@@ -22,12 +22,18 @@ public struct ReleaseItem: Equatable, Sendable {
     public let mediaType: ReleaseMediaType
     /// Release/first-air year, or nil when the provider has no date.
     public let year: Int?
+    /// The poster artwork as a self-contained `data:` URI (base64), or nil when the provider had
+    /// no poster or it couldn't be fetched — the card then falls back to a title-only placeholder,
+    /// never a broken image. Embedded as a data URI (like app/URL icons) because the dashboard's
+    /// `cerebral://` origin does not load external image URLs; the adapter fetches it natively.
+    public let posterImage: String?
 
-    public init(id: String, title: String, mediaType: ReleaseMediaType, year: Int?) {
+    public init(id: String, title: String, mediaType: ReleaseMediaType, year: Int?, posterImage: String? = nil) {
         self.id = id
         self.title = title
         self.mediaType = mediaType
         self.year = year
+        self.posterImage = posterImage
     }
 }
 

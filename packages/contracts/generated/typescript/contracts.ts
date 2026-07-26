@@ -1113,6 +1113,24 @@ export interface Tool {
     version: string;
 }
 
+export interface CerebralHelmGoogleSearchInput {
+    /**
+     * The search text. The adapter builds a Google search URL host-side (the host is fixed to
+     * google.com); only this query is variable, so untrusted data can never choose the
+     * destination.
+     */
+    query: string;
+}
+
+export interface CerebralHelmGoogleSearchOutput {
+    opened: boolean;
+    query:  string;
+    /**
+     * The Google search URL that was opened.
+     */
+    resolvedURL: string;
+}
+
 export interface CerebralHelmHookRunInput {
     hookId: string;
 }

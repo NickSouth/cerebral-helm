@@ -1814,12 +1814,143 @@
 
 /* Required source attribution for a data provider (e.g. TMDB, NIC-134): a quiet footnote
    that must stay visible whenever the widget shows that provider's data. */
-.widget__attribution {
-  margin: var(--ch-space-1) 0 0;
-  font-size: var(--ch-font-size-label);
-  line-height: 1.3;
+/* Releases widget (NIC-134): a 2×2 grid of poster cards (2 movies + 2 shows) that fills the
+   panel, with a pager to page through more. The grid fills the available height and posters
+   crop to fit, so four cards never overflow the rail. */
+.releases {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  min-height: 0;
+}
+
+.releases__pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+  flex: 0 0 auto;
+}
+
+.releases__arrow {
+  margin: 0;
+  padding: 0 var(--ch-space-1);
+  border: 0;
+  background: transparent;
   color: var(--ch-text-muted);
-  opacity: 0.7;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.releases__arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.releases__arrow:not(:disabled):hover {
+  color: var(--ch-text-primary);
+}
+
+.releases__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.releases__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ch-text-muted);
+  opacity: 0.4;
+}
+
+.releases__dot--active {
+  background: var(--ch-accent-primary);
+  opacity: 1;
+}
+
+.releases__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: auto;
+  gap: var(--ch-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-height: 0;
+}
+
+.releases__cell {
+  min-width: 0;
+}
+
+.release-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.release-card:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.release-card__poster {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  display: block;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--ch-panel-border);
+  background: color-mix(in srgb, var(--ch-text-muted) 12%, transparent);
+}
+
+.release-card__poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.release-card:not(:disabled):hover .release-card__poster {
+  border-color: var(--ch-accent-primary);
+}
+
+.release-card__placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.release-card__title {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: var(--ch-text-primary);
+}
+
+.release-card__meta {
+  flex: 0 0 auto;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
 }
 
 /* Right-rail widget (e.g. Projects): fills its half of the rail, and each list row is a

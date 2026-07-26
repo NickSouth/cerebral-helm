@@ -107,6 +107,32 @@ public struct URLOpenHandler: ToolHandler {
     }
 }
 
+// MARK: - google.search
+
+public struct GoogleSearchHandler: ToolHandler {
+    public let toolID = "google.search"
+    private let capability: any GoogleSearchCapability
+
+    public init(capability: any GoogleSearchCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmGoogleSearchInput
+        do { decoded = try CerebralHelmGoogleSearchInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("google.search input does not match its contract.")
+        }
+        do {
+            let result = try await capability.search(query: decoded.query)
+            return try CerebralHelmGoogleSearchOutput(
+                opened: result.opened,
+                query: result.query,
+                resolvedURL: result.resolvedURL
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 // MARK: - system.status.read
 
 public struct SystemStatusReadHandler: ToolHandler {

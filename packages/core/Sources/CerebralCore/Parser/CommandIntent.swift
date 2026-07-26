@@ -12,6 +12,9 @@ public enum CommandIntent: Equatable, Sendable {
     case openProject(repoPath: String)
     case captureNote(text: String)
     case searchNotes(query: String)
+    /// Open a Google search for the query in the browser (NIC-134) — a single `google.search`
+    /// tool call. The host is fixed to google.com by the adapter; only the query varies.
+    case googleSearch(query: String)
     case runHook(ReferenceEntry)
     /// Measure current internet download/upload capacity on request (NIC-135) —
     /// a single read-only `network.speed.test` tool call.

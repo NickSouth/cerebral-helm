@@ -43,6 +43,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// CoreLocation (prompting at point of use) and fetches current conditions from Open-Meteo
     /// on a slow cadence. Runs on the same visibility gate as the other streams.
     private let weatherPublisher: WeatherPublisher
+    /// Streams the Entertainment `releases` widget (NIC-134) — resolves the TMDB API key from
+    /// the Keychain and fetches trending movies + TV on a slow cadence. Runs on the same
+    /// visibility gate as the other streams; a missing key emits an honest "add your key" state.
+    private let releasesPublisher: ReleasesPublisher
     /// Watches display connect/disconnect/rearrange (NIC-87). Native subscribers
     /// are told first (window re-hosting), then the dashboard via one
     /// `display.topology.changed` event.
@@ -138,6 +142,14 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 emit: { relay.emit($0) }
             )
         }
+        // The Releases producer (NIC-134): reads the TMDB key from the Keychain (the same
+        // KeychainSecretCapability the storeSecret op writes) and fetches trending releases.
+        let releases = ReleasesPublisher(
+            secretStore: composition.secretStore,
+            provider: TMDBReleasesProvider(),
+            emit: { relay.emit($0) }
+        )
+        releasesPublisher = releases
         displayObserver = DisplayTopologyObserver(emit: { relay.emit($0) })
         guard let runtime = try? makeCommandRuntime(paths: paths, phase: .macOS, capabilities: capabilities, onEvent: { event in
             let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
@@ -199,6 +211,12 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // writes the value, getSecretStatus reports presence — the value never
             // enters config or a log (FR-CFG-03).
             secretStore: composition.secretStore,
+            // When the TMDB key is stored, refresh the releases producer at once so the
+            // widget goes live immediately instead of on its next 30-min tick (NIC-134).
+            onSecretStored: { reference in
+                guard reference == "tmdb_api_key" else { return }
+                Task { await releases.refresh() }
+            },
             // Hides a layout's app windows on closeLayout (NIC-142) — the same
             // permission-free primitive "Windows Stored by Mode" uses.
             workspaceWindows: composition.capabilities.workspaceWindows,
@@ -280,10 +298,12 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let repos = reposPublisher
         let projects = projectsPublisher
         let weather = weatherPublisher
+        let releases = releasesPublisher
         Task { await metrics.start() }
         Task { await repos.start() }
         Task { await projects.start() }
         Task { await weather.start() }
+        Task { await releases.start() }
     }
 
     /// Pause/resume the live streams from the shell's visibility signal (dashboard
@@ -294,10 +314,12 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let repos = reposPublisher
         let projects = projectsPublisher
         let weather = weatherPublisher
+        let releases = releasesPublisher
         Task { await metrics.setActive(active) }
         Task { await repos.setActive(active) }
         Task { await projects.setActive(active) }
         Task { await weather.setActive(active) }
+        Task { await releases.setActive(active) }
     }
 
     /// The persisted "Main display" id (NIC-120b) — nil when never set. A stale

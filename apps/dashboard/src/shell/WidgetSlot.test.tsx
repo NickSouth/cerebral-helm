@@ -1,9 +1,10 @@
-import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { WidgetSlot } from "./WidgetSlot";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
 import { ActionStatusProvider } from "../state/ActionStatusProvider";
+import { AppearanceProvider } from "../state/AppearanceProvider";
 import { createBridgeStore } from "../state/bridgeStore";
 import { createMockCerebralBridge, loadBootstrapState } from "../bridge/mockCerebralBridge";
 import type { DashboardState } from "../state/dashboardState";
@@ -45,9 +46,11 @@ function renderSlot(data: WidgetData, mutate?: (base: DashboardState) => Dashboa
   render(
     <BridgeProvider bridge={spyBridge}>
       <DashboardStateProvider store={store}>
-        <ActionStatusProvider>
-          <WidgetSlot data={data} labelId="region-widget-right" />
-        </ActionStatusProvider>
+        <AppearanceProvider>
+          <ActionStatusProvider>
+            <WidgetSlot data={data} labelId="region-widget-right" />
+          </ActionStatusProvider>
+        </AppearanceProvider>
       </DashboardStateProvider>
     </BridgeProvider>
   );
@@ -193,45 +196,106 @@ const releasesReady: WidgetData = {
   freshness: { observedAt: "2026-07-26T16:00:00.000Z", label: "10m ago" },
   data: {
     items: [
-      { id: "movie-1", title: "Dune: Part Two", mediaType: "movie", year: 2024 },
+      {
+        id: "movie-1",
+        title: "Dune: Part Two",
+        mediaType: "movie",
+        year: 2024,
+        posterImage: "data:image/jpeg;base64,AAAA"
+      },
       { id: "tv-1", title: "The Bear", mediaType: "tv", year: 2024 },
       { id: "movie-2", title: "Nosferatu", mediaType: "movie" }
     ]
   }
 };
 
+/** Eight releases (4 movies + 4 shows) so the widget pages 4-at-a-time. */
+const releasesTwoPages: WidgetData = {
+  widgetId: "releases",
+  state: "ready",
+  headline: "New & hot",
+  data: {
+    items: Array.from({ length: 8 }).map((_, i) => ({
+      id: `r${i}`,
+      title: `Title ${i}`,
+      mediaType: i % 2 === 0 ? "movie" : "tv",
+      year: 2024
+    }))
+  }
+};
+
+function releaseCards(): HTMLButtonElement[] {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>("button.release-card"));
+}
+
+function cardTitles(): (string | null | undefined)[] {
+  return releaseCards().map((c) => c.querySelector(".release-card__title")?.textContent);
+}
+
 describe("WidgetSlot releases (NIC-134)", () => {
-  it("renders each release with its title and a Movie/TV · year label", () => {
+  it("shows two releases per page as cards with title and Movie/TV · year meta", () => {
     renderSlot(releasesReady);
-    const items = Array.from(document.querySelectorAll("li.widget-list__item"));
-    expect(items).toHaveLength(3);
-    expect(items[0].textContent).toContain("Dune: Part Two");
-    expect(items[0].textContent).toContain("Movie · 2024");
-    expect(items[1].textContent).toContain("The Bear");
-    expect(items[1].textContent).toContain("TV · 2024");
+    const cards = releaseCards();
+    expect(cards).toHaveLength(2); // 1 movie + 1 show per page
+    expect(cards[0].textContent).toContain("Dune: Part Two");
+    expect(cards[0].textContent).toContain("Movie · 2024");
+    expect(cards[1].textContent).toContain("The Bear");
+    expect(cards[1].textContent).toContain("TV · 2024");
+  });
+
+  it("shows the poster image when present and a kind placeholder when absent", () => {
+    renderSlot(releasesReady);
+    const cards = releaseCards();
+    // Dune has a poster; The Bear does not → a placeholder, no image.
+    expect(cards[0].querySelector("img")?.getAttribute("src")).toBe("data:image/jpeg;base64,AAAA");
+    expect(cards[1].querySelector("img")).toBeNull();
+    expect(cards[1].querySelector(".release-card__placeholder")?.textContent).toBe("TV");
   });
 
   it("drops the year when TMDB has no release date, never fabricating one", () => {
     renderSlot(releasesReady);
-    const items = Array.from(document.querySelectorAll("li.widget-list__item"));
-    // Nosferatu has no year in the payload: the label is just the kind, no " · ".
-    expect(items[2].textContent).toContain("Movie");
-    expect(items[2].textContent).not.toContain("·");
+    // Nosferatu (no year) is on page 2.
+    fireEvent.click(screen.getByRole("button", { name: "More releases" }));
+    const card = releaseCards()[0];
+    expect(card.textContent).toContain("Nosferatu");
+    expect(card.textContent).toContain("Movie");
+    expect(card.textContent).not.toContain("·");
   });
 
-  it("shows the required TMDB attribution alongside the data", () => {
-    renderSlot(releasesReady);
-    expect(screen.getByText(/uses the TMDB API but is not endorsed/i)).toBeTruthy();
-  });
-
-  it("renders an honest empty state with no rows or attribution", () => {
+  it("renders an honest empty state with no cards", () => {
     renderSlot({
       widgetId: "releases",
       state: "empty",
       emptyMessage: "No new releases right now."
     });
-    expect(document.querySelectorAll("li.widget-list__item")).toHaveLength(0);
-    expect(screen.queryByText(/uses the TMDB API/i)).toBeNull();
+    expect(releaseCards()).toHaveLength(0);
     expect(screen.getByText("No new releases right now.")).toBeTruthy();
+  });
+
+  it("clicking a release submits a 'where to watch' Google search (NIC-134)", () => {
+    const { submissions } = renderSlot(releasesReady);
+    fireEvent.click(releaseCards()[0]);
+    expect(submissions).toEqual(["google where to watch Dune: Part Two"]);
+  });
+
+  it("pages 2 releases at a time; the arrow reveals the next pair (NIC-134)", () => {
+    renderSlot(releasesTwoPages);
+    expect(cardTitles()).toEqual(["Title 0", "Title 1"]);
+    fireEvent.click(screen.getByRole("button", { name: "More releases" }));
+    expect(cardTitles()).toEqual(["Title 2", "Title 3"]);
+  });
+
+  it("auto-advances to the next page on the autoplay interval, wrapping (NIC-134)", () => {
+    vi.useFakeTimers();
+    try {
+      renderSlot(releasesTwoPages); // 8 items → 4 pages
+      expect(cardTitles()).toEqual(["Title 0", "Title 1"]);
+      act(() => {
+        vi.advanceTimersByTime(30_000);
+      });
+      expect(cardTitles()).toEqual(["Title 2", "Title 3"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

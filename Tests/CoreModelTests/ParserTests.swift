@@ -53,6 +53,21 @@ func projectGrammar() {
     }
 }
 
+@Test("google takes the whole remainder as the query and requires an argument (NIC-134)")
+func googleGrammar() {
+    let parser = sampleParser()
+
+    // Queries contain spaces — the whole remainder is the query.
+    #expect(
+        parser.parse("google where to watch Dune: Part Two")
+            == .parsed(.googleSearch(query: "where to watch Dune: Part Two"))
+    )
+    // An argument-less `google` never executes.
+    if case .parsed = parser.parse("google") {
+        Issue.record("argument-less google must not execute")
+    }
+}
+
 @Test("an unresolved workflow id is unrecognized and suggests configured actions")
 func unresolvedWorkflowIsRejected() {
     let result = sampleParser().parse("run banana")

@@ -204,6 +204,21 @@ public actor MockSecretStore: SecretManaging {
     }
 }
 
+public struct MockGoogleSearchCapability: GoogleSearchCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func search(query: String) async throws -> GoogleSearchResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.googleSearch, matrix: matrix, fault: fault, subject: query)
+        return GoogleSearchResult(query: query, opened: true, resolvedURL: "https://www.google.com/search?q=\(query)")
+    }
+}
+
 public struct MockWindowCapability: WindowCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault

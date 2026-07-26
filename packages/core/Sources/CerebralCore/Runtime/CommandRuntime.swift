@@ -533,6 +533,19 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [ConfirmationArgument(name: "repository", value: repoPath, sensitive: false)],
                 actionSummary: "Open \(repoName.isEmpty ? "repository" : repoName) in the editor."
             )
+        case let .googleSearch(query):
+            // Open a Google search in the browser (NIC-134). The descriptor's `local_write`
+            // risk (like url.open/project.open) means one-click, no confirmation; the adapter
+            // builds the google.com URL host-side, so the query is data, never the destination.
+            return make(
+                toolID: "google.search",
+                input: try? CerebralHelmGoogleSearchInput(query: query).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "query", value: query, sensitive: false)],
+                actionSummary: "Search Google for \(query)."
+            )
         case let .searchNotes(query):
             return make(
                 toolID: "note.search",

@@ -1,16 +1,23 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Panel } from "./Panel";
 import { PanelGlyph, type PanelGlyphName } from "./PanelGlyph";
 import { StaleMarker } from "../components/StaleMarker";
 import { Unavailable } from "../components/Unavailable";
 import { EmptyState } from "../components/EmptyState";
 import { WIDGET_REGISTRY } from "../widgets/widgets";
-import type { ProjectWidgetItem, RepositoryWidgetItem, WidgetData } from "../widgets/widgetData";
+import type {
+  ProjectWidgetItem,
+  ReleaseWidgetItem,
+  RepositoryWidgetItem,
+  WidgetData
+} from "../widgets/widgetData";
 import { useBridge } from "../state/BridgeProvider";
 import { useActionStatus } from "../state/ActionStatusProvider";
+import { useAppearance } from "../state/AppearanceProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { submitOpenProject } from "./openProject";
 import { submitOpenProjectDetail } from "./openProjectDetail";
+import { submitGoogleSearch } from "./googleSearch";
 import { formatDay } from "./format";
 
 const WIDGET_LABELS: ReadonlyMap<string, string> = new Map(
@@ -89,20 +96,7 @@ const WIDGET_BODIES: Readonly<Record<string, (data: any) => ReactNode>> = {
     ),
   spotify: (data) => list(row(data.track, data.artist, "track")),
   courses: (data) =>
-    list((data.items ?? []).map((item: any, index: number) => row(item.name, item.next, index))),
-  releases: (data) => (
-    <>
-      {list(
-        (data.items ?? []).map((item: any, index: number) =>
-          row(item.title, releaseMeta(item), item.id ?? index)
-        )
-      )}
-      {/* TMDB terms require attributing the source for any use of their API (NIC-134). */}
-      <p className="widget__attribution">
-        This product uses the TMDB API but is not endorsed or certified by TMDB.
-      </p>
-    </>
-  )
+    list((data.items ?? []).map((item: any, index: number) => row(item.name, item.next, index)))
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -232,6 +226,121 @@ function ProjectsBody({ items }: { items: readonly ProjectWidgetItem[] }) {
   );
 }
 
+/**
+ * The Entertainment "Releases" widget body (NIC-134): each release is a clickable row that opens
+ * a "where to watch <title>" Google search in the browser through the gated `google.search` path
+ * (`submitGoogleSearch`). Read-only recovery disables the rows, and a rejected dispatch is
+ * surfaced honestly in the status line — never a fabricated success. TMDB attribution is required
+ * by their API terms and always shown. Like `RepositoriesBody`, this needs the bridge/posture/
+ * status hooks, so it is a component rather than a static `WIDGET_BODIES` entry.
+ */
+/** Releases are shown 2 at a time (1 movie + 1 show, full poster size); arrows page through more,
+ *  and the carousel auto-advances on this interval (paused under reduced motion). */
+const RELEASES_PER_PAGE = 2;
+const RELEASES_AUTOPLAY_MS = 30_000;
+
+function ReleasesBody({ items }: { items: readonly ReleaseWidgetItem[] }) {
+  const bridge = useBridge();
+  const { announce } = useActionStatus();
+  const { readOnly } = useUiPosture();
+  const { reducedMotion } = useAppearance();
+  const [page, setPage] = useState(0);
+
+  const pageCount = Math.max(1, Math.ceil(items.length / RELEASES_PER_PAGE));
+  const safePage = Math.min(page, pageCount - 1);
+  const start = safePage * RELEASES_PER_PAGE;
+  const pageItems = items.slice(start, start + RELEASES_PER_PAGE);
+
+  // Auto-advance to the next page every 30s, wrapping. Keyed on `safePage`, so a manual arrow
+  // press resets the countdown (a fresh 30s before the next auto-advance). Disabled when there is
+  // only one page or the user prefers reduced motion.
+  useEffect(() => {
+    if (pageCount <= 1 || reducedMotion) return;
+    const id = window.setInterval(() => {
+      setPage((current) => (current + 1) % pageCount);
+    }, RELEASES_AUTOPLAY_MS);
+    return () => window.clearInterval(id);
+  }, [pageCount, reducedMotion, safePage]);
+
+  const openWhereToWatch = (item: ReleaseWidgetItem) => {
+    void submitGoogleSearch(bridge, `where to watch ${item.title}`)
+      .then((receipt) => {
+        if (!receipt.accepted) {
+          announce(`I couldn't search for ${item.title} — the command wasn't accepted.`, "error");
+        }
+      })
+      .catch(() => {
+        announce(`Searching for ${item.title} failed — the bridge did not accept it.`, "error");
+      });
+  };
+
+  return (
+    <div className="releases">
+      {pageCount > 1 ? (
+        <div className="releases__pager">
+          <button
+            type="button"
+            className="releases__arrow"
+            disabled={safePage === 0}
+            aria-label="Previous releases"
+            onClick={() => setPage(safePage - 1)}
+          >
+            ‹
+          </button>
+          <span className="releases__dots">
+            {Array.from({ length: pageCount }).map((_, index) => (
+              <span
+                key={index}
+                className={`releases__dot${index === safePage ? " releases__dot--active" : ""}`}
+                aria-hidden="true"
+              />
+            ))}
+          </span>
+          <button
+            type="button"
+            className="releases__arrow"
+            disabled={safePage >= pageCount - 1}
+            aria-label="More releases"
+            onClick={() => setPage(safePage + 1)}
+          >
+            ›
+          </button>
+        </div>
+      ) : null}
+      <ul className="releases__grid">
+        {pageItems.map((item, index) => (
+          <li key={item.id ?? index} className="releases__cell">
+            <button
+              type="button"
+              className="release-card"
+              disabled={readOnly}
+              aria-disabled={readOnly || undefined}
+              title={
+                readOnly
+                  ? "Searching is paused while the dashboard is read-only"
+                  : `Find where to watch ${item.title}`
+              }
+              onClick={() => {
+                openWhereToWatch(item);
+              }}
+            >
+              <span className="release-card__poster">
+                {item.posterImage ? (
+                  <img src={item.posterImage} alt="" loading="lazy" />
+                ) : (
+                  <span className="release-card__placeholder">{releaseKindLabel(item.mediaType)}</span>
+                )}
+              </span>
+              <span className="release-card__title">{item.title}</span>
+              <span className="release-card__meta">{releaseMeta(item)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
   // The repositories widget renders interactive rows (click-to-open), so it needs runtime
   // hooks and is dispatched to its own component instead of a pure static renderer (NIC-131).
@@ -243,6 +352,11 @@ function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
   if (widgetId === "projects") {
     const items = (data as { items?: readonly ProjectWidgetItem[] })?.items ?? [];
     return <ProjectsBody items={items} />;
+  }
+  // The releases widget rows click through to a "where to watch" Google search (NIC-134).
+  if (widgetId === "releases") {
+    const items = (data as { items?: readonly ReleaseWidgetItem[] })?.items ?? [];
+    return <ReleasesBody items={items} />;
   }
   const render = WIDGET_BODIES[widgetId];
   return render ? <>{render((data ?? {}) as Record<string, unknown>)}</> : <Unavailable />;

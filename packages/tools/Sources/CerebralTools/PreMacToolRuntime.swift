@@ -39,6 +39,7 @@ public enum PreMacToolRuntime {
             "network.speed.test": NetworkSpeedTestHandler(capability: capabilities.networkSpeedTest),
             "apps.list": AppsListHandler(capability: capabilities.appDiscovery),
             "apps.quitall": AppsQuitAllHandler(capability: capabilities.applicationLifecycle),
+            "google.search": GoogleSearchHandler(capability: capabilities.googleSearch),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
@@ -119,6 +120,7 @@ public enum PreMacToolRuntime {
         case "network.speed.test": _ = try CerebralHelmNetworkSpeedTestInput(data: data)
         case "apps.list": _ = try CerebralHelmAppsListInput(data: data)
         case "apps.quitall": _ = try CerebralHelmAppsQuitAllInput(data: data)
+        case "google.search": _ = try CerebralHelmGoogleSearchInput(data: data)
         default: break
         }
     }

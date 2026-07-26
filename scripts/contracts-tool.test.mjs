@@ -21,7 +21,8 @@ const mvpToolIds = new Set([
   "window.arrange",
   "apps.list",
   "network.speed.test",
-  "apps.quitall"
+  "apps.quitall",
+  "google.search"
 ]);
 
 const riskClasses = new Set([

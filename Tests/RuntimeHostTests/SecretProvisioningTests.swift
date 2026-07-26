@@ -18,14 +18,24 @@ private func secretRepositoryRoot() -> URL {
 }
 
 private func makeSecretSession(
-    store: (any SecretManaging)?
+    store: (any SecretManaging)?,
+    onSecretStored: (@Sendable (String) -> Void)? = nil
 ) throws -> BridgeSession {
     let paths = try WorkspacePaths.temporary(repositoryRoot: secretRepositoryRoot())
     return BridgeSession(
         runtime: try makeCommandRuntime(paths: paths),
         configDirectory: paths.configDirectory,
-        secretStore: store
+        secretStore: store,
+        onSecretStored: onSecretStored
     )
+}
+
+/// Thread-safe collector for the onSecretStored callback references.
+private final class StoredReferenceRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var refs: [String] = []
+    func record(_ reference: String) { lock.lock(); refs.append(reference); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return refs }
 }
 
 private func secretPayload(_ json: String) -> [String: JSONAny] {
@@ -110,6 +120,25 @@ func secretStatusUnboundIsNotSet() async throws {
     let status = await session.execute(secretRequest(.getSecretStatus, #"{"reference":"tmdb_api_key"}"#))
     #expect(status.status == .ok)
     #expect(try decodeSecret(status, as: SecretStatusResultDTO.self).bound == false)
+}
+
+@Test("a successful store notifies live consumers with the reference; a rejected one does not")
+func storeSecretNotifiesLiveConsumers() async throws {
+    let recorder = StoredReferenceRecorder()
+    let session = try makeSecretSession(
+        store: MockSecretStore(), onSecretStored: { recorder.record($0) }
+    )
+
+    _ = await session.execute(secretRequest(
+        .storeSecret, #"{"reference":"tmdb_api_key","value":"tok"}"#
+    ))
+    #expect(recorder.all == ["tmdb_api_key"])
+
+    // An empty value is rejected before the store, so no live consumer is nudged.
+    _ = await session.execute(secretRequest(
+        .storeSecret, #"{"reference":"tmdb_api_key","value":"   "}"#
+    ))
+    #expect(recorder.all == ["tmdb_api_key"]) // unchanged
 }
 
 @Test("storeSecret without a secret store degrades honestly, never a fabricated success")

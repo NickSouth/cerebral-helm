@@ -74,6 +74,11 @@ public final class BridgeSession: @unchecked Sendable {
     /// written through `store` and its presence read through `resolve`; the response never
     /// echoes it (FR-CFG-03, FR-OBS-03).
     private let secretStore: (any SecretManaging)?
+    /// Invoked with the reference after a secret is successfully stored (NIC-134), so a live
+    /// consumer — e.g. the releases producer keyed on the TMDB API key — can refresh at once
+    /// rather than waiting out its slow cadence. Optional; a host without live secret consumers
+    /// leaves it nil.
+    private let onSecretStored: (@Sendable (String) -> Void)?
 
     /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
     /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
@@ -129,6 +134,7 @@ public final class BridgeSession: @unchecked Sendable {
         faviconCapability: (any FaviconCapability)? = nil,
         chromeProfiles: (any ChromeProfileDiscoveryCapability)? = nil,
         secretStore: (any SecretManaging)? = nil,
+        onSecretStored: (@Sendable (String) -> Void)? = nil,
         workspaceWindows: (any WorkspaceWindowsCapability)? = nil,
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
@@ -145,6 +151,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.faviconCapability = faviconCapability
         self.chromeProfiles = chromeProfiles
         self.secretStore = secretStore
+        self.onSecretStored = onSecretStored
         self.workspaceWindows = workspaceWindows
         self.app = app
         self.url = url
@@ -1032,6 +1039,9 @@ public final class BridgeSession: @unchecked Sendable {
         }
         do {
             try await secretStore.store(reference: input.reference, value: value)
+            // Nudge any live consumer keyed on this secret (e.g. the releases producer) so the
+            // widget reflects a just-entered key at once, not on its next slow tick (NIC-134).
+            onSecretStored?(input.reference)
             return ok(request, payload: StoreSecretResult(reference: input.reference, stored: true))
         } catch {
             // Deliberately generic: never surface the value or a raw keychain diagnostic.
