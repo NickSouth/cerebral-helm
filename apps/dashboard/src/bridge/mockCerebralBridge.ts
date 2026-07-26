@@ -263,6 +263,10 @@ export function createMockCerebralBridge(
     modeColors: {}
   };
   let settingsEventSeq = 0;
+  // The bound secret references (NIC-134), held mutably so storeSecret visibly binds one and
+  // getSecretStatus reflects it — the browser stand-in for the Keychain. Values are never kept
+  // (the mock only tracks presence), mirroring the presence-only surface the real bridge exposes.
+  const boundSecrets = new Set<string>();
   // The configured URL references (NIC-146), held mutably so addUrlReference visibly
   // mints and listUrls reflects it — the browser stand-in for the user URL catalog.
   // Seeded with the shipped config/references/urls.json entries.
@@ -426,6 +430,18 @@ export function createMockCerebralBridge(
       // The mutable snapshot (seeded with representative non-defaults) so browser previews prove
       // the settings UI reads stored state and reflects saves (NIC-141/137).
       return Promise.resolve(settingsSnapshot);
+    },
+    storeSecret(input) {
+      // The browser stand-in for the Keychain write (NIC-134): a non-empty value binds the
+      // reference. The value is not retained — only presence — mirroring the real surface.
+      const stored = input.value.trim().length > 0;
+      if (stored) {
+        boundSecrets.add(input.reference);
+      }
+      return Promise.resolve({ reference: input.reference, stored });
+    },
+    getSecretStatus(input) {
+      return Promise.resolve({ reference: input.reference, bound: boundSecrets.has(input.reference) });
     },
     listApps() {
       // A representative installed-app set for browser previews of the More Apps

@@ -314,6 +314,70 @@ public enum BridgeEventFactory {
         }
     }
 
+    // MARK: - Releases widget (NIC-134)
+
+    /// The `releases` widget's live envelope — the Swift mirror of the web `WidgetData` for the
+    /// Entertainment right slot (NIC-134). Optional fields are omitted (not encoded as null)
+    /// when nil by the synthesized encoding, matching the envelope the dashboard renders.
+    public struct ReleasesWidget: Encodable, Sendable {
+        public let widgetId: String
+        public let state: String
+        public let headline: String?
+        public let emptyMessage: String?
+        public let freshness: WidgetFreshnessPayload?
+        public let data: ReleasesWidgetData?
+    }
+
+    public struct ReleasesWidgetData: Encodable, Sendable {
+        public let items: [ReleaseWidgetItem]
+    }
+
+    /// One release row. `mediaType` is the ``ReleaseMediaType`` raw value (`"movie" | "tv"`),
+    /// matching the web `ReleaseWidgetItem`; `year` is omitted when the provider had no release
+    /// date (never fabricated).
+    public struct ReleaseWidgetItem: Encodable, Sendable {
+        public let id: String
+        public let title: String
+        public let mediaType: String
+        public let year: Int?
+    }
+
+    /// Maps a releases-provider result into the `releases` widget envelope (NIC-134). A missing
+    /// credential is an honest `unavailable` that guides the user to add their key; any other
+    /// failure is a generic `unavailable`; an empty result is `empty`; otherwise `ready` with one
+    /// row per release. Nothing is fabricated — an item without a known year simply omits it. The
+    /// headline is the widget's identity ("New & hot") rather than a count, since the list is a
+    /// rotating hot/new selection, not a set the user is tracking.
+    public static func releasesWidget(
+        from result: Swift.Result<[ReleaseItem], Error>, now: Date
+    ) -> ReleasesWidget {
+        switch result {
+        case let .failure(error):
+            let credentialsMissing = (error as? ReleaseError).map { $0 == .credentialsMissing } ?? false
+            return ReleasesWidget(
+                widgetId: "releases", state: "unavailable", headline: nil,
+                emptyMessage: credentialsMissing
+                    ? "Add your TMDB API key in Settings → Setup to see new releases."
+                    : "Releases aren't available right now.",
+                freshness: nil, data: nil
+            )
+        case let .success(releases) where releases.isEmpty:
+            return ReleasesWidget(
+                widgetId: "releases", state: "empty", headline: nil,
+                emptyMessage: "No new releases right now.", freshness: nil, data: nil
+            )
+        case let .success(releases):
+            let items = releases.map {
+                ReleaseWidgetItem(id: $0.id, title: $0.title, mediaType: $0.mediaType.rawValue, year: $0.year)
+            }
+            return ReleasesWidget(
+                widgetId: "releases", state: "ready", headline: "New & hot", emptyMessage: nil,
+                freshness: WidgetFreshnessPayload(observedAt: now, label: "just now"),
+                data: ReleasesWidgetData(items: items)
+            )
+        }
+    }
+
     /// A `settings.changed` event (live cross-webview sync): the durable settings were
     /// updated through `updateSettings`, so every surface — the dashboard and the
     /// separate native settings window — reflects the new assistant name, mode colors,

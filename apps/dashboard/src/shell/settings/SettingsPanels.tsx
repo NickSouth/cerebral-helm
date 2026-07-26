@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useBridge } from "../../state/BridgeProvider";
 import { useDashboardState } from "../../state/DashboardStateProvider";
 import { LayoutEditor } from "./LayoutEditor";
 import { useAppearance, DEFAULT_ASSISTANT_NAME } from "../../state/AppearanceProvider";
@@ -671,6 +672,95 @@ function CustomizationPanelBody() {
 
 // --- Setup ----------------------------------------------------------------
 
+/** The logical Keychain reference for the TMDB API key (NIC-134). Matches the descriptor
+ *  reference pattern `^[a-z][a-z0-9_]*$` so config, keychain, and this UI agree. */
+const TMDB_SECRET_REFERENCE = "tmdb_api_key";
+
+/**
+ * The TMDB API-key provisioning field (NIC-134): stores the key in the Keychain through the
+ * `storeSecret` bridge op and shows whether one is set via `getSecretStatus` — presence only,
+ * the value is never read back into the field. The value the user types is sent once on Save and
+ * then cleared; it never lands in config or a log (FR-CFG-03, FR-OBS-03).
+ */
+function IntegrationsProvidersField() {
+  const bridge = useBridge();
+  const [bound, setBound] = useState<boolean | null>(null); // null while the status read settles
+  const [draft, setDraft] = useState("");
+  const [phase, setPhase] = useState<"idle" | "saving" | "error">("idle");
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      .getSecretStatus({ reference: TMDB_SECRET_REFERENCE })
+      .then((result) => {
+        if (active) setBound(result.bound);
+      })
+      .catch(() => {
+        if (active) setBound(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
+  const canSave = draft.trim().length > 0 && phase !== "saving";
+
+  function save() {
+    const value = draft.trim();
+    if (!value) return;
+    setPhase("saving");
+    void bridge
+      .storeSecret({ reference: TMDB_SECRET_REFERENCE, value })
+      .then((result) => {
+        if (result.stored) {
+          setBound(true);
+          setDraft(""); // never retain the secret in the field
+          setPhase("idle");
+        } else {
+          setPhase("error");
+        }
+      })
+      .catch(() => setPhase("error"));
+  }
+
+  const statusLabel = bound === null ? "Checking…" : bound ? "Key set" : "Not set";
+
+  return (
+    <Field
+      label="TMDB API key"
+      hint="Powers the Entertainment Releases widget. Stored in your macOS Keychain — never in config or logs. Get a free key at themoviedb.org."
+    >
+      <div className="settings-secret">
+        <span className="settings-secret__status" data-bound={bound === true}>
+          {statusLabel}
+        </span>
+        <input
+          type="password"
+          className="settings-input"
+          value={draft}
+          placeholder={bound ? "Enter a new key to replace it" : "Paste your TMDB API key"}
+          aria-label="TMDB API key"
+          autoComplete="off"
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <button
+          type="button"
+          className="settings-button settings-button--primary"
+          disabled={!canSave}
+          onClick={save}
+        >
+          Save
+        </button>
+      </div>
+      {phase === "error" ? (
+        <p className="settings-note" role="alert">
+          That key couldn't be saved. Check it and try again.
+        </p>
+      ) : null}
+    </Field>
+  );
+}
+
 function SetupPanel() {
   // The knowledge-root control seeds from the persisted read (NIC-141).
   const { status } = useSettingsSnapshot();
@@ -749,9 +839,7 @@ function SetupPanelBody() {
         </Field>
       </Section>
       <Section title="Integrations & onboarding">
-        <Field label="Integrations & providers">
-          <Unavailable label="Requires the macOS host" />
-        </Field>
+        <IntegrationsProvidersField />
         <Field label="Onboarding">
           <Unavailable label="Requires the macOS host" />
         </Field>

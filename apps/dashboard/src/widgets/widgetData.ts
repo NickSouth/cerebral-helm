@@ -78,6 +78,24 @@ export interface ProjectsWidgetPayload {
 }
 
 /**
+ * One release row in the `releases` widget's payload (NIC-134, Entertainment right slot): a
+ * new/hot movie or TV show from TMDB. `year` is omitted when the release date is unknown
+ * (never fabricated); `id` is the TMDB id, used as the stable row key. This documents the
+ * shape the live producer will stream (Increment 5); pre-bridge it backs the fixture rows.
+ */
+export interface ReleaseWidgetItem {
+  readonly id: string;
+  readonly title: string;
+  readonly mediaType: "movie" | "tv";
+  readonly year?: number;
+}
+
+/** The `releases` widget's `data` payload (documented shape for `WidgetData.data`). */
+export interface ReleasesWidgetPayload {
+  readonly items: readonly ReleaseWidgetItem[];
+}
+
+/**
  * Resolve the WidgetData a rail slot renders: the live-streamed value for `widgetId`
  * (NIC-131 blueprint) when a producer has delivered one, else the bootstrap/config value.
  * `liveWidgets` is runtime-only state keyed by widget id and lives outside `regions`, so

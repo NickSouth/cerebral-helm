@@ -26,8 +26,19 @@ const WIDGET_ICONS: Readonly<Record<string, PanelGlyphName>> = {
   deadlines: "deadlines",
   spotify: "music",
   courses: "courses",
-  "media-list": "media"
+  releases: "media"
 };
+
+/** Human label for a release's media type (never a fabricated category). */
+function releaseKindLabel(mediaType: unknown): string {
+  return mediaType === "tv" ? "TV" : "Movie";
+}
+
+/** "Movie · 2025" / "TV · 2024" / "Movie" — year is dropped when TMDB has no release date. */
+function releaseMeta(item: { mediaType?: unknown; year?: unknown }): string {
+  const kind = releaseKindLabel(item.mediaType);
+  return typeof item.year === "number" ? `${kind} · ${item.year}` : kind;
+}
 
 function row(primary: ReactNode, secondary: ReactNode, key: string | number) {
   return (
@@ -79,8 +90,19 @@ const WIDGET_BODIES: Readonly<Record<string, (data: any) => ReactNode>> = {
   spotify: (data) => list(row(data.track, data.artist, "track")),
   courses: (data) =>
     list((data.items ?? []).map((item: any, index: number) => row(item.name, item.next, index))),
-  "media-list": (data) =>
-    list((data.items ?? []).map((item: any, index: number) => row(item.title, item.kind, index)))
+  releases: (data) => (
+    <>
+      {list(
+        (data.items ?? []).map((item: any, index: number) =>
+          row(item.title, releaseMeta(item), item.id ?? index)
+        )
+      )}
+      {/* TMDB terms require attributing the source for any use of their API (NIC-134). */}
+      <p className="widget__attribution">
+        This product uses the TMDB API but is not endorsed or certified by TMDB.
+      </p>
+    </>
+  )
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 

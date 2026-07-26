@@ -181,6 +181,45 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(await within(dialog).findByRole("button", { name: "Browse…" })).toBeDisabled();
   });
 
+  it("stores the TMDB API key through the bridge and reflects it as set, never echoing the value (NIC-134)", async () => {
+    const { bridge } = renderApp();
+    const stored: Array<{ reference: string; value: string }> = [];
+    const realStore = bridge.storeSecret.bind(bridge);
+    bridge.storeSecret = (input) => {
+      stored.push({ reference: input.reference, value: input.value });
+      return realStore(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    // Presence read settles to "Not set" (no key seeded in the mock).
+    expect(await within(dialog).findByText("Not set")).toBeInTheDocument();
+
+    // Scope to the TMDB field — the Knowledge-root section has its own "Save" button.
+    const input = within(dialog).getByLabelText("TMDB API key");
+    const field = input.closest(".settings-field") as HTMLElement;
+    fireEvent.change(input, { target: { value: "tmdb-secret-xyz" } });
+    fireEvent.click(within(field).getByRole("button", { name: "Save" }));
+
+    // The key reached the bridge with the correct logical reference.
+    await waitFor(() => expect(stored).toHaveLength(1));
+    expect(stored[0]).toEqual({ reference: "tmdb_api_key", value: "tmdb-secret-xyz" });
+
+    // The field now reports "Key set" and no longer holds the value (never echoed back).
+    expect(await within(dialog).findByText("Key set")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+  });
+
+  it("disables Save until a key is entered (NIC-134)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+    await within(dialog).findByText("Not set");
+    const field = within(dialog).getByLabelText("TMDB API key").closest(".settings-field") as HTMLElement;
+    expect(within(field).getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
   it("applies persisted reduced motion app-wide at startup, before settings is opened (NIC-141)", async () => {
     const bridge = createMockCerebralBridge();
     bridge.getSettings = () =>

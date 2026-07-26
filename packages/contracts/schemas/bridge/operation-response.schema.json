@@ -34,6 +34,8 @@
         "updateQuickApps",
         "runSpeedTest",
         "getSettings",
+        "storeSecret",
+        "getSecretStatus",
         "addUrlReference",
         "listUrls",
         "listChromeProfiles",

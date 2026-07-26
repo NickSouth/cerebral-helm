@@ -195,6 +195,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // Enumerates Chrome profiles for the profile dropdown + avatar badges
             // (NIC-151), driven off listChromeProfiles.
             chromeProfiles: composition.chromeProfiles,
+            // Provisions/reads API credentials in the Keychain (NIC-134): storeSecret
+            // writes the value, getSecretStatus reports presence — the value never
+            // enters config or a log (FR-CFG-03).
+            secretStore: composition.secretStore,
             // Hides a layout's app windows on closeLayout (NIC-142) — the same
             // permission-free primitive "Windows Stored by Mode" uses.
             workspaceWindows: composition.capabilities.workspaceWindows,

@@ -171,6 +171,39 @@ public struct MockSecretCapability: SecretCapability {
     }
 }
 
+/// An in-memory ``SecretManaging`` for pre-Mac builds and tests (NIC-134): an actor holding a
+/// dictionary, so the settings provisioning ops (`storeSecret`/`getSecretStatus`) can be
+/// exercised off the real Keychain. `readValue` throws `notFound` for an unbound reference,
+/// matching the Keychain adapter's contract.
+public actor MockSecretStore: SecretManaging {
+    private var values: [String: String]
+
+    public init(values: [String: String] = [:]) {
+        self.values = values
+    }
+
+    public func store(reference: String, value: String) async throws {
+        values[reference] = value
+    }
+
+    public func readValue(reference: String) async throws -> String {
+        guard let value = values[reference] else {
+            throw NativeCapabilityError.notFound("No secret is stored for reference '\(reference)'.")
+        }
+        return value
+    }
+
+    public func delete(reference: String) async throws {
+        guard values.removeValue(forKey: reference) != nil else {
+            throw NativeCapabilityError.notFound("No secret is stored for reference '\(reference)'.")
+        }
+    }
+
+    public func resolve(reference: String) async throws -> SecretResolution {
+        SecretResolution(reference: reference, isResolved: values[reference] != nil)
+    }
+}
+
 public struct MockWindowCapability: WindowCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault

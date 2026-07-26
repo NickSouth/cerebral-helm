@@ -411,6 +411,25 @@
   flex: none;
 }
 
+/* Secret-provisioning row (NIC-134): a presence chip + masked input + Save. */
+.settings-secret {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  flex: none;
+}
+
+.settings-secret__status {
+  flex: none;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  white-space: nowrap;
+}
+
+.settings-secret__status[data-bound="true"] {
+  color: var(--ch-accent-primary);
+}
+
 /* Per-mode layout authoring editor (NIC-142). */
 .settings-layout-editor {
   display: flex;

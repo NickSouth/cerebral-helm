@@ -67,6 +67,13 @@ public final class BridgeSession: @unchecked Sendable {
     /// badges (NIC-151). Optional: a host without it (tests, non-Mac) serves an
     /// empty profile list, so the UI simply offers no profile choices.
     private let chromeProfiles: (any ChromeProfileDiscoveryCapability)?
+    /// Provisions and answers presence for logical secret references (NIC-134): the
+    /// `storeSecret`/`getSecretStatus` ops drive it directly, like `secretStore` on the Mac
+    /// composition. Optional — a host without it (tests without secrets, pre-Mac) reports the
+    /// secret surface honestly unavailable. The stored *value* never leaves this session: it is
+    /// written through `store` and its presence read through `resolve`; the response never
+    /// echoes it (FR-CFG-03, FR-OBS-03).
+    private let secretStore: (any SecretManaging)?
 
     /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
     /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
@@ -121,6 +128,7 @@ public final class BridgeSession: @unchecked Sendable {
         modeStateStore: (any ModeStateStore)? = nil,
         faviconCapability: (any FaviconCapability)? = nil,
         chromeProfiles: (any ChromeProfileDiscoveryCapability)? = nil,
+        secretStore: (any SecretManaging)? = nil,
         workspaceWindows: (any WorkspaceWindowsCapability)? = nil,
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
@@ -136,6 +144,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.modeStateStore = modeStateStore
         self.faviconCapability = faviconCapability
         self.chromeProfiles = chromeProfiles
+        self.secretStore = secretStore
         self.workspaceWindows = workspaceWindows
         self.app = app
         self.url = url
@@ -217,6 +226,10 @@ public final class BridgeSession: @unchecked Sendable {
             return await runSpeedTest(request)
         case .getSettings:
             return getSettings(request)
+        case .storeSecret:
+            return await storeSecret(request)
+        case .getSecretStatus:
+            return await getSecretStatus(request)
         case .openLayout:
             return await openLayout(request)
         case .closeLayout:
@@ -996,6 +1009,58 @@ public final class BridgeSession: @unchecked Sendable {
         ))
     }
 
+    /// Stores an API credential in the Keychain behind a logical reference (NIC-134). The value
+    /// is trimmed of surrounding whitespace (a pasted key often carries a trailing newline) and
+    /// written through ``SecretManaging/store(reference:value:)``; the response reports presence
+    /// only — it never echoes the value, and the value never touches config or a log (FR-CFG-03,
+    /// FR-OBS-03). A store overwrites in place, so re-entering a key corrects a wrong one.
+    private func storeSecret(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: StoreSecretInput = decodePayload(request), !input.reference.isEmpty else {
+            return invalidInput(request, "storeSecret requires a reference.")
+        }
+        let value = input.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else {
+            return invalidInput(request, "Enter a value to store.")
+        }
+        guard let secretStore else {
+            return errorResponse(
+                request, category: .unavailableCapability, code: "secret_store_unavailable",
+                message: "Storing a secret requires the macOS host."
+            )
+        }
+        do {
+            try await secretStore.store(reference: input.reference, value: value)
+            return ok(request, payload: StoreSecretResult(reference: input.reference, stored: true))
+        } catch {
+            // Deliberately generic: never surface the value or a raw keychain diagnostic.
+            return errorResponse(
+                request, category: .unavailableCapability, code: "secret_store_failed",
+                message: "That secret couldn't be stored. Check the reference name and try again."
+            )
+        }
+    }
+
+    /// Reports whether a logical secret reference is bound, without exposing the value (NIC-134) —
+    /// so the settings field can honestly show "Set" vs "Not set" on load. A host without a secret
+    /// store, or a resolve failure, reports `bound: false` (an honest "not set") rather than an
+    /// error, so the field still renders.
+    private func getSecretStatus(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: SecretStatusInput = decodePayload(request), !input.reference.isEmpty else {
+            return invalidInput(request, "getSecretStatus requires a reference.")
+        }
+        guard let secretStore else {
+            return ok(request, payload: SecretStatusResult(reference: input.reference, bound: false))
+        }
+        let resolution = try? await secretStore.resolve(reference: input.reference)
+        return ok(request, payload: SecretStatusResult(
+            reference: input.reference, bound: resolution?.isResolved ?? false
+        ))
+    }
+
     private func searchNotes(
         _ request: CerebralHelmBridgeOperationRequest
     ) async -> CerebralHelmBridgeOperationResponse {
@@ -1618,6 +1683,24 @@ public final class BridgeSession: @unchecked Sendable {
     private struct UpdateQuickAppsInput: Decodable {
         let modeId: String
         let quickApps: [String]
+    }
+    /// `{ reference, value }` — the `storeSecret` payload (NIC-134). `value` is the live secret;
+    /// it is written to the Keychain and never echoed back or logged.
+    private struct StoreSecretInput: Decodable {
+        let reference: String
+        let value: String
+    }
+    private struct StoreSecretResult: Encodable {
+        let reference: String
+        let stored: Bool
+    }
+    private struct SecretStatusInput: Decodable {
+        let reference: String
+    }
+    /// Presence only — whether the reference is bound. Never carries the value (FR-CFG-03).
+    private struct SecretStatusResult: Encodable {
+        let reference: String
+        let bound: Bool
     }
     private struct OpenLayoutInput: Decodable {
         let modeId: String

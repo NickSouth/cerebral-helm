@@ -181,3 +181,57 @@ describe("WidgetSlot projects (NIC-129)", () => {
     expect(screen.getByText("No projects in your projects folder yet.")).toBeTruthy();
   });
 });
+
+/** NIC-134 Increment 1: the Entertainment "Releases" widget renders new/hot movies and TV
+ *  from TMDB with a required source attribution. Rows are non-interactive in this increment
+ *  (click-to-search lands in a later increment). */
+
+const releasesReady: WidgetData = {
+  widgetId: "releases",
+  state: "ready",
+  headline: "New & hot",
+  freshness: { observedAt: "2026-07-26T16:00:00.000Z", label: "10m ago" },
+  data: {
+    items: [
+      { id: "movie-1", title: "Dune: Part Two", mediaType: "movie", year: 2024 },
+      { id: "tv-1", title: "The Bear", mediaType: "tv", year: 2024 },
+      { id: "movie-2", title: "Nosferatu", mediaType: "movie" }
+    ]
+  }
+};
+
+describe("WidgetSlot releases (NIC-134)", () => {
+  it("renders each release with its title and a Movie/TV · year label", () => {
+    renderSlot(releasesReady);
+    const items = Array.from(document.querySelectorAll("li.widget-list__item"));
+    expect(items).toHaveLength(3);
+    expect(items[0].textContent).toContain("Dune: Part Two");
+    expect(items[0].textContent).toContain("Movie · 2024");
+    expect(items[1].textContent).toContain("The Bear");
+    expect(items[1].textContent).toContain("TV · 2024");
+  });
+
+  it("drops the year when TMDB has no release date, never fabricating one", () => {
+    renderSlot(releasesReady);
+    const items = Array.from(document.querySelectorAll("li.widget-list__item"));
+    // Nosferatu has no year in the payload: the label is just the kind, no " · ".
+    expect(items[2].textContent).toContain("Movie");
+    expect(items[2].textContent).not.toContain("·");
+  });
+
+  it("shows the required TMDB attribution alongside the data", () => {
+    renderSlot(releasesReady);
+    expect(screen.getByText(/uses the TMDB API but is not endorsed/i)).toBeTruthy();
+  });
+
+  it("renders an honest empty state with no rows or attribution", () => {
+    renderSlot({
+      widgetId: "releases",
+      state: "empty",
+      emptyMessage: "No new releases right now."
+    });
+    expect(document.querySelectorAll("li.widget-list__item")).toHaveLength(0);
+    expect(screen.queryByText(/uses the TMDB API/i)).toBeNull();
+    expect(screen.getByText("No new releases right now.")).toBeTruthy();
+  });
+});

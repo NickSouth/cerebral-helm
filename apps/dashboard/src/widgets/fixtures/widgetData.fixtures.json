@@ -91,18 +91,19 @@
       },
       "action": { "id": "open-courses", "label": "Open courses" }
     },
-    "media-list": {
-      "widgetId": "media-list",
+    "releases": {
+      "widgetId": "releases",
       "state": "ready",
-      "headline": "Continue watching",
+      "headline": "New & hot",
       "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "10m ago" },
       "data": {
         "items": [
-          { "title": "The Bear", "kind": "continue" },
-          { "title": "Dune", "kind": "queued" }
+          { "id": "movie-1", "title": "Dune: Part Two", "mediaType": "movie", "year": 2024 },
+          { "id": "tv-1", "title": "The Bear", "mediaType": "tv", "year": 2024 },
+          { "id": "movie-2", "title": "Nosferatu", "mediaType": "movie" }
         ]
       },
-      "action": { "id": "browse-library", "label": "Browse library" }
+      "action": { "id": "browse-releases", "label": "Browse releases" }
     }
   },
   "degraded": {

@@ -115,7 +115,7 @@
       ],
       "widgets": {
         "left": "spotify",
-        "right": "media-list"
+        "right": "releases"
       },
       "greeting": {
         "persona": "Downtime concierge",

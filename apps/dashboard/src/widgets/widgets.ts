@@ -59,10 +59,10 @@ export const WIDGET_REGISTRY = [
     summary: "Current courses and their concise state."
   },
   {
-    id: "media-list",
-    label: "Media List",
+    id: "releases",
+    label: "Releases",
     sides: ["right"],
-    summary: "Continue, queued, saved, and recent media."
+    summary: "New and upcoming movies and TV shows (TMDB)."
   }
 ] as const satisfies readonly WidgetDefinition[];
 

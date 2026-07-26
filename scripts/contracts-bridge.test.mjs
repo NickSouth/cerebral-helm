@@ -35,6 +35,8 @@ const bridgeOperations = new Set([
   "updateQuickApps",
   "runSpeedTest",
   "getSettings",
+  "storeSecret",
+  "getSecretStatus",
   "addUrlReference",
   "listUrls",
   "listChromeProfiles",

@@ -158,6 +158,27 @@ export interface SpeedTestResult {
   readonly testedAt?: string;
 }
 
+/** Provision an API credential into the Keychain behind a logical reference (NIC-134). The
+ *  `value` is the live secret — it is written to the secret store and never returned or logged
+ *  (FR-CFG-03, FR-OBS-03). Storing overwrites in place, so re-entering a key corrects it. */
+export interface StoreSecretInput {
+  readonly reference: string;
+  readonly value: string;
+}
+export interface StoreSecretResult {
+  readonly reference: string;
+  /** True when the value was written to the store. */
+  readonly stored: boolean;
+}
+export interface SecretStatusInput {
+  readonly reference: string;
+}
+/** Presence only — whether the reference is bound. Never carries the value. */
+export interface SecretStatusResult {
+  readonly reference: string;
+  readonly bound: boolean;
+}
+
 export interface UpdateQuickAppsInput {
   readonly modeId: string;
   readonly quickApps: readonly string[];
@@ -433,6 +454,11 @@ export interface CerebralBridge {
   /** Read the effective persisted settings so the settings UI initializes its
    *  controls from stored state instead of defaults (NIC-141). */
   getSettings(): Promise<SettingsSnapshot>;
+
+  /** Store an API credential in the Keychain (NIC-134). The value is written, never returned. */
+  storeSecret(input: StoreSecretInput): Promise<StoreSecretResult>;
+  /** Report whether a logical secret reference is bound, without exposing its value. */
+  getSecretStatus(input: SecretStatusInput): Promise<SecretStatusResult>;
   /** Read-only application discovery for the More Apps picker (NIC-119). */
   listApps(): Promise<ListAppsResult>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */

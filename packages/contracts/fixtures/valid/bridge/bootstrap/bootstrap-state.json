@@ -50,7 +50,7 @@
       "theme": { "accentPrimary": "entertainment.primary", "accentSecondary": "entertainment.secondary" },
       "quickApps": ["spotify", "youtube", "steam", "discord", "photos"],
       "quickActions": ["open-entertainment-layout", "open-media", "capture-note", "check-system-status", "resume-playback", "open-queue", "browse-library", "start-party-mode"],
-      "widgets": { "left": "spotify", "right": "media-list" },
+      "widgets": { "left": "spotify", "right": "releases" },
       "greeting": { "persona": "Downtime concierge", "directive": "Greet and suggest something to unwind with.", "fallback": "Time to unwind." },
       "calendarProfile": "leisure",
       "newsProfile": "interest"
