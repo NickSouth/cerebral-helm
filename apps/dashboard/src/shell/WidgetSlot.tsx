@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Panel } from "./Panel";
 import { PanelGlyph, type PanelGlyphName } from "./PanelGlyph";
 import { StaleMarker } from "../components/StaleMarker";
+import { SkeletonBone } from "../components/Skeleton";
 import { Unavailable } from "../components/Unavailable";
 import { EmptyState } from "../components/EmptyState";
 import { WIDGET_REGISTRY } from "../widgets/widgets";
@@ -12,6 +13,7 @@ import type {
   ProjectWidgetItem,
   ReleaseWidgetItem,
   RepositoryWidgetItem,
+  SpotifyRecentTrack,
   SpotifyWidgetPayload,
   StockQuoteWidgetItem,
   WidgetData
@@ -24,6 +26,7 @@ import { submitOpenProject } from "./openProject";
 import { submitOpenProjectDetail } from "./openProjectDetail";
 import { submitGoogleSearch } from "./googleSearch";
 import { submitSpotifyControl, type SpotifyControlAction } from "./spotifyControl";
+import { submitOpenApp } from "./openApp";
 import { formatDay } from "./format";
 
 const WIDGET_LABELS: ReadonlyMap<string, string> = new Map(
@@ -732,21 +735,42 @@ function SpotifyBody({ track }: { track: SpotifyWidgetPayload }) {
     typeof track.durationMs === "number" &&
     track.durationMs > 0;
 
+  // Optimistic play/pause: flip the icon/status the instant the user taps, then let the next poll
+  // confirm it. Cleared whenever the payload's play state (or the track) changes, so the server
+  // stays authoritative. `effectivePlaying` is what the UI shows.
+  const [optimisticPlaying, setOptimisticPlaying] = useState<boolean | null>(null);
+  useEffect(() => {
+    setOptimisticPlaying(null);
+  }, [track.isPlaying, track.track]);
+  const effectivePlaying = optimisticPlaying ?? track.isPlaying ?? false;
+
+  // Optimistic skip: on next/previous we don't yet know the new track, so show a skeleton until the
+  // refresh lands (the track name changes). A safety timeout clears it even if the track repeats.
+  const [skipping, setSkipping] = useState(false);
+  useEffect(() => {
+    setSkipping(false);
+  }, [track.track]);
+  useEffect(() => {
+    if (!skipping) return;
+    const id = window.setTimeout(() => setSkipping(false), 2500);
+    return () => window.clearTimeout(id);
+  }, [skipping]);
+
   // Anchor the polled position to a local timestamp and advance it every second while playing, so
-  // the bar and time move fluidly between polls; each new payload resyncs it. Reduced motion (or a
-  // paused track) shows the polled value without the per-second tick.
+  // the bar and time move fluidly between polls; each new payload resyncs it. Uses the optimistic
+  // play state, so pausing stops the bar at once. Stilled under reduced motion.
   const [displayMs, setDisplayMs] = useState(track.progressMs ?? 0);
   useEffect(() => {
     const base = track.progressMs ?? 0;
     setDisplayMs(base);
-    if (!hasProgress || !track.isPlaying || reducedMotion) return;
+    if (!hasProgress || !effectivePlaying || reducedMotion) return;
     const duration = track.durationMs as number;
     const anchor = Date.now();
     const id = window.setInterval(() => {
       setDisplayMs(Math.min(duration, base + (Date.now() - anchor)));
     }, 1000);
     return () => window.clearInterval(id);
-  }, [track.progressMs, track.durationMs, track.isPlaying, hasProgress, reducedMotion]);
+  }, [track.progressMs, track.durationMs, effectivePlaying, hasProgress, reducedMotion]);
 
   const control = (action: SpotifyControlAction, gerund: string) => {
     void submitSpotifyControl(bridge, action)
@@ -760,37 +784,87 @@ function SpotifyBody({ track }: { track: SpotifyWidgetPayload }) {
       });
   };
 
-  const playPauseLabel = track.isPlaying ? "Pause" : "Play";
-  const stateWord = track.isPlaying ? "Playing" : "Paused";
+  const togglePlayPause = () => {
+    setOptimisticPlaying(!effectivePlaying); // flip immediately
+    if (effectivePlaying) {
+      control("pause", "pause playback");
+    } else {
+      control("play", "resume playback");
+    }
+  };
+
+  const skip = (action: "next" | "previous", gerund: string) => {
+    setSkipping(true); // show the skeleton until the new track lands
+    control(action, gerund);
+  };
+
+  const openSpotify = () => {
+    void submitOpenApp(bridge, "spotify")
+      .then((receipt) => {
+        if (!receipt.accepted) {
+          announce("I couldn't open Spotify — the command wasn't accepted.", "error");
+        }
+      })
+      .catch(() => {
+        announce("Opening Spotify failed — the bridge did not accept it.", "error");
+      });
+  };
+
+  const playPauseLabel = effectivePlaying ? "Pause" : "Play";
+  const stateWord = effectivePlaying ? "Playing" : "Paused";
   const statusText = track.deviceName ? `${stateWord} · ${track.deviceName}` : stateWord;
   const percent = hasProgress
     ? Math.min(100, (displayMs / (track.durationMs as number)) * 100)
     : 0;
+  const upNextText = track.upNextTrack
+    ? track.upNextArtist
+      ? `${track.upNextTrack} — ${track.upNextArtist}`
+      : track.upNextTrack
+    : null;
 
   return (
     <div className="nowplaying">
-      <SpotifyLogo />
       <div className="nowplaying__main">
         <span className="nowplaying__art">
-          {track.artworkImage ? <img src={track.artworkImage} alt="" loading="lazy" /> : <MusicGlyph />}
+          {skipping ? (
+            <SkeletonBone className="nowplaying__art-bone" />
+          ) : track.artworkImage ? (
+            <img src={track.artworkImage} alt="" loading="lazy" />
+          ) : (
+            <MusicGlyph />
+          )}
         </span>
         <span className="nowplaying__meta">
-          <span className="nowplaying__track" title={track.track}>
-            {track.track}
-          </span>
-          <span className="nowplaying__artist" title={track.artist}>
-            {track.artist}
-          </span>
-          {track.album ? <span className="nowplaying__album">{track.album}</span> : null}
+          {skipping ? (
+            <SkeletonBone className="nowplaying__bone nowplaying__bone--track" />
+          ) : (
+            <span className="nowplaying__track" title={track.track}>
+              {track.track}
+            </span>
+          )}
+          {skipping ? (
+            <SkeletonBone className="nowplaying__bone nowplaying__bone--artist" />
+          ) : (
+            <span className="nowplaying__artist" title={track.artist}>
+              {track.artist}
+            </span>
+          )}
+          {!skipping && track.album ? <span className="nowplaying__album">{track.album}</span> : null}
           <span
-            className={`nowplaying__status nowplaying__status--${track.isPlaying ? "playing" : "paused"}`}
+            className={`nowplaying__status nowplaying__status--${effectivePlaying ? "playing" : "paused"}`}
             title={statusText}
           >
             {statusText}
           </span>
         </span>
       </div>
-      {hasProgress ? (
+      {skipping ? (
+        <div className="nowplaying__progress">
+          <SkeletonBone className="nowplaying__bone nowplaying__bone--time" />
+          <SkeletonBone className="nowplaying__bone nowplaying__bar-bone" />
+          <SkeletonBone className="nowplaying__bone nowplaying__bone--time" />
+        </div>
+      ) : hasProgress ? (
         <div className="nowplaying__progress">
           <span className="nowplaying__time">{formatTrackTime(displayMs)}</span>
           <span className="nowplaying__bar">
@@ -798,6 +872,12 @@ function SpotifyBody({ track }: { track: SpotifyWidgetPayload }) {
           </span>
           <span className="nowplaying__time">{formatTrackTime(track.durationMs as number)}</span>
         </div>
+      ) : null}
+      {!skipping && upNextText ? (
+        <p className="nowplaying__upnext" title={upNextText}>
+          <span className="nowplaying__upnext-label">Up next</span>
+          <span className="nowplaying__upnext-track">{upNextText}</span>
+        </p>
       ) : null}
       <span className="nowplaying__controls">
           <button
@@ -807,7 +887,7 @@ function SpotifyBody({ track }: { track: SpotifyWidgetPayload }) {
             aria-disabled={readOnly || undefined}
             aria-label="Previous track"
             title={readOnly ? "Controls are paused while the dashboard is read-only" : "Previous track"}
-            onClick={() => control("previous", "go to the previous track")}
+            onClick={() => skip("previous", "go to the previous track")}
           >
             <PrevIcon />
           </button>
@@ -818,11 +898,9 @@ function SpotifyBody({ track }: { track: SpotifyWidgetPayload }) {
             aria-disabled={readOnly || undefined}
             aria-label={playPauseLabel}
             title={readOnly ? "Controls are paused while the dashboard is read-only" : playPauseLabel}
-            onClick={() =>
-              track.isPlaying ? control("pause", "pause playback") : control("play", "resume playback")
-            }
+            onClick={togglePlayPause}
           >
-            {track.isPlaying ? <PauseIcon /> : <PlayIcon />}
+            {effectivePlaying ? <PauseIcon /> : <PlayIcon />}
           </button>
           <button
             type="button"
@@ -831,11 +909,79 @@ function SpotifyBody({ track }: { track: SpotifyWidgetPayload }) {
             aria-disabled={readOnly || undefined}
             aria-label="Next track"
             title={readOnly ? "Controls are paused while the dashboard is read-only" : "Next track"}
-            onClick={() => control("next", "skip to the next track")}
+            onClick={() => skip("next", "skip to the next track")}
           >
             <NextIcon />
           </button>
         </span>
+      <button
+        type="button"
+        className="nowplaying__open"
+        disabled={readOnly}
+        aria-disabled={readOnly || undefined}
+        title={readOnly ? "Opening Spotify is paused while the dashboard is read-only" : "Open Spotify"}
+        onClick={openSpotify}
+      >
+        <SpotifyLogo />
+        <span>Open in Spotify</span>
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The Spotify widget's idle state (NIC-133): when nothing is playing, a "Recently played" list of
+ * the last few tracks, each a tappable row that opens Spotify, plus the "Open in Spotify" button.
+ * Read-only recovery disables the rows; a rejected dispatch is announced honestly.
+ */
+function SpotifyRecentBody({ items }: { items: readonly SpotifyRecentTrack[] }) {
+  const bridge = useBridge();
+  const { announce } = useActionStatus();
+  const { readOnly } = useUiPosture();
+
+  const openSpotify = () => {
+    void submitOpenApp(bridge, "spotify")
+      .then((receipt) => {
+        if (!receipt.accepted) {
+          announce("I couldn't open Spotify — the command wasn't accepted.", "error");
+        }
+      })
+      .catch(() => {
+        announce("Opening Spotify failed — the bridge did not accept it.", "error");
+      });
+  };
+
+  return (
+    <div className="nowplaying nowplaying--recent">
+      <ul className="nowplaying__recent">
+        {items.map((item, index) => (
+          <li key={index} className="nowplaying__recent-item">
+            <button
+              type="button"
+              className="nowplaying__recent-row"
+              disabled={readOnly}
+              aria-disabled={readOnly || undefined}
+              title={readOnly ? "Opening Spotify is paused while the dashboard is read-only" : `Open Spotify — ${item.track}`}
+              onClick={openSpotify}
+            >
+              <MusicGlyph />
+              <span className="nowplaying__recent-track">{item.track}</span>
+              <span className="nowplaying__recent-artist">{item.artist}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        className="nowplaying__open"
+        disabled={readOnly}
+        aria-disabled={readOnly || undefined}
+        title={readOnly ? "Opening Spotify is paused while the dashboard is read-only" : "Open Spotify"}
+        onClick={openSpotify}
+      >
+        <SpotifyLogo />
+        <span>Open in Spotify</span>
+      </button>
     </div>
   );
 }
@@ -863,11 +1009,13 @@ function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
     const items = (data as { items?: readonly ReleaseWidgetItem[] })?.items ?? [];
     return <ReleasesBody items={items} />;
   }
-  // The spotify widget shows the current Spotify track (artwork + track/artist + playing state);
-  // playback controls land in a later increment (NIC-133). A `ready` payload always has a track.
+  // The spotify widget shows the current track (artwork + controls + progress) when playing, or a
+  // "Recently played" list to jump back into Spotify when idle (NIC-133).
   if (widgetId === "spotify") {
-    const track = data as SpotifyWidgetPayload | undefined;
-    return track?.track ? <SpotifyBody track={track} /> : <Unavailable />;
+    const payload = data as SpotifyWidgetPayload | undefined;
+    if (payload?.track) return <SpotifyBody track={payload} />;
+    if (payload?.recent?.length) return <SpotifyRecentBody items={payload.recent} />;
+    return <Unavailable />;
   }
   // The project-git-status widget renders a per-repo report with a repo pager (NIC-130).
   if (widgetId === "project-git-status") {

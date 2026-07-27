@@ -133,12 +133,19 @@ export interface ReleasesWidgetPayload {
  * the producer (a later increment) because the dashboard origin does not load external image URLs.
  * `isPlaying` distinguishes actively playing from paused — a paused track is still the current one.
  */
-export interface SpotifyWidgetPayload {
+/** A recently-played track shown in the idle "jump back in" list (NIC-133). */
+export interface SpotifyRecentTrack {
   readonly track: string;
   readonly artist: string;
+}
+
+export interface SpotifyWidgetPayload {
+  /** The current track — absent in the idle "recently played" state (then `recent` is populated). */
+  readonly track?: string;
+  readonly artist?: string;
   readonly album?: string;
   readonly artworkImage?: string;
-  readonly isPlaying: boolean;
+  readonly isPlaying?: boolean;
   /** The active Spotify device's name (e.g. "Nick's MacBook Pro"), omitted when unknown. */
   readonly deviceName?: string;
   /** Playback position within the track, in milliseconds — with `durationMs`, drives the progress
@@ -146,6 +153,13 @@ export interface SpotifyWidgetPayload {
   readonly progressMs?: number;
   /** Track length in milliseconds. Omitted when unknown. */
   readonly durationMs?: number;
+  /** The next queued track's title (the "Up next" line), omitted when the queue is empty/unknown. */
+  readonly upNextTrack?: string;
+  /** The next queued track's artist, omitted when unknown. */
+  readonly upNextArtist?: string;
+  /** Recently-played tracks — populated only in the idle state (no current track) for the "jump
+   *  back in" list. */
+  readonly recent?: readonly SpotifyRecentTrack[];
 }
 
 /**

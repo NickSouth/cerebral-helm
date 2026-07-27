@@ -73,7 +73,6 @@
       "widgetId": "spotify",
       "state": "ready",
       "headline": "Now playing",
-      "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
       "data": {
         "track": "Weightless",
         "artist": "Marconi Union",
@@ -82,7 +81,9 @@
         "isPlaying": true,
         "deviceName": "Nick's MacBook Pro",
         "progressMs": 83000,
-        "durationMs": 240000
+        "durationMs": 240000,
+        "upNextTrack": "Nightcall",
+        "upNextArtist": "Kavinsky"
       }
     },
     "projects": {

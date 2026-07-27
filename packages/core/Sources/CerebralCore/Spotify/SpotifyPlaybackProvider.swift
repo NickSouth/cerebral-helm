@@ -25,10 +25,15 @@ public struct SpotifyNowPlaying: Equatable, Sendable {
     public let progressMs: Int?
     /// Track length in milliseconds, or nil when unknown.
     public let durationMs: Int?
+    /// The next track's title from the queue (the "Up next" line), or nil when unknown/empty.
+    public let upNextTrack: String?
+    /// The next track's artist, or nil when unknown.
+    public let upNextArtist: String?
 
     public init(
         track: String, artist: String, album: String? = nil, artworkImage: String? = nil,
-        isPlaying: Bool, deviceName: String? = nil, progressMs: Int? = nil, durationMs: Int? = nil
+        isPlaying: Bool, deviceName: String? = nil, progressMs: Int? = nil, durationMs: Int? = nil,
+        upNextTrack: String? = nil, upNextArtist: String? = nil
     ) {
         self.track = track
         self.artist = artist
@@ -38,6 +43,8 @@ public struct SpotifyNowPlaying: Equatable, Sendable {
         self.deviceName = deviceName
         self.progressMs = progressMs
         self.durationMs = durationMs
+        self.upNextTrack = upNextTrack
+        self.upNextArtist = upNextArtist
     }
 }
 
@@ -59,6 +66,18 @@ public enum SpotifyPlaybackError: Error, Equatable, Sendable {
     case providerFailed(String)
 }
 
+/// A recently-played track (NIC-133), shown as a tappable "jump back into Spotify" list when
+/// nothing is currently playing. Just the display title + artist — tapping opens Spotify.
+public struct SpotifyRecentTrack: Equatable, Sendable {
+    public let track: String
+    public let artist: String
+
+    public init(track: String, artist: String) {
+        self.track = track
+        self.artist = artist
+    }
+}
+
 /// Port that reads the track currently playing on Spotify (NIC-133). Provider-neutral and
 /// credential-driven: the caller (the ``SpotifyPublisher``, Increment 7) resolves a valid access
 /// token from the auth session and passes it in, so this contract never touches the secret store.
@@ -67,23 +86,39 @@ public enum SpotifyPlaybackError: Error, Equatable, Sendable {
 /// device — a healthy `empty` state, not a failure); throws ``SpotifyPlaybackError`` otherwise.
 public protocol SpotifyPlaybackProvider: Sendable {
     func nowPlaying(accessToken: String) async throws -> SpotifyNowPlaying?
+    /// The user's recently-played tracks, for the idle state's "jump back in" list. Best-effort —
+    /// the default returns none, so a provider without it (or one whose token lacks the
+    /// `user-read-recently-played` scope) simply shows a plain empty state.
+    func recentlyPlayed(accessToken: String) async throws -> [SpotifyRecentTrack]
+}
+
+public extension SpotifyPlaybackProvider {
+    func recentlyPlayed(accessToken: String) async throws -> [SpotifyRecentTrack] { [] }
 }
 
 /// A fixed-outcome ``SpotifyPlaybackProvider`` for pre-Mac builds and tests: it ignores the token
 /// and always yields the track (or nil, or throws the error) it was constructed with.
 public struct MockSpotifyPlaybackProvider: SpotifyPlaybackProvider {
     private let outcome: Result<SpotifyNowPlaying?, SpotifyPlaybackError>
+    private let recent: [SpotifyRecentTrack]
 
-    /// Succeeds with the given track, or with `nil` to model nothing playing.
-    public init(nowPlaying: SpotifyNowPlaying?) {
+    /// Succeeds with the given track, or with `nil` to model nothing playing. `recent` is the
+    /// recently-played list returned by ``recentlyPlayed(accessToken:)`` (the idle "jump back in").
+    public init(nowPlaying: SpotifyNowPlaying?, recent: [SpotifyRecentTrack] = []) {
         self.outcome = .success(nowPlaying)
+        self.recent = recent
     }
 
     public init(error: SpotifyPlaybackError) {
         self.outcome = .failure(error)
+        self.recent = []
     }
 
     public func nowPlaying(accessToken: String) async throws -> SpotifyNowPlaying? {
         try outcome.get()
+    }
+
+    public func recentlyPlayed(accessToken: String) async throws -> [SpotifyRecentTrack] {
+        recent
     }
 }

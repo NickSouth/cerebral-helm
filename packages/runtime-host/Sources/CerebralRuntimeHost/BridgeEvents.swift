@@ -460,14 +460,25 @@ public enum BridgeEventFactory {
     /// and `artworkImage` are omitted when Spotify had none (never fabricated); `artworkImage` is a
     /// self-contained `data:` URI. Matches the web `SpotifyWidgetPayload`.
     public struct SpotifyWidgetData: Encodable, Sendable {
-        public let track: String
-        public let artist: String
+        // The now-playing fields are optional so the idle "recently played" state can reuse this
+        // envelope with just `recent` populated (no current track).
+        public let track: String?
+        public let artist: String?
         public let album: String?
         public let artworkImage: String?
-        public let isPlaying: Bool
+        public let isPlaying: Bool?
         public let deviceName: String?
         public let progressMs: Int?
         public let durationMs: Int?
+        public let upNextTrack: String?
+        public let upNextArtist: String?
+        /// The recently-played list, populated only in the idle state (no current track).
+        public let recent: [SpotifyRecentTrackPayload]?
+    }
+
+    public struct SpotifyRecentTrackPayload: Encodable, Sendable {
+        public let track: String
+        public let artist: String
     }
 
     /// Maps a now-playing result into the `spotify` widget envelope (NIC-133). The states are
@@ -476,7 +487,9 @@ public enum BridgeEventFactory {
     /// diagnostic; nothing playing (a successful `nil`) is a healthy `empty`; otherwise `ready`
     /// with the current track. Nothing is fabricated — a track without an album/artwork omits it.
     public static func spotifyWidget(
-        from result: Swift.Result<SpotifyNowPlaying?, Error>, now: Date
+        from result: Swift.Result<SpotifyNowPlaying?, Error>,
+        recent: [SpotifyRecentTrack] = [],
+        now: Date
     ) -> SpotifyWidget {
         switch result {
         case let .failure(error):
@@ -494,18 +507,34 @@ public enum BridgeEventFactory {
                 emptyMessage: message, freshness: nil, data: nil
             )
         case .success(.none):
+            // Nothing playing: offer the recently-played "jump back in" list when we have one,
+            // otherwise a plain empty state.
+            guard !recent.isEmpty else {
+                return SpotifyWidget(
+                    widgetId: "spotify", state: "empty", headline: nil,
+                    emptyMessage: "Nothing playing right now.", freshness: nil, data: nil
+                )
+            }
             return SpotifyWidget(
-                widgetId: "spotify", state: "empty", headline: nil,
-                emptyMessage: "Nothing playing right now.", freshness: nil, data: nil
+                widgetId: "spotify", state: "ready", headline: "Recently played", emptyMessage: nil,
+                freshness: nil,
+                data: SpotifyWidgetData(
+                    track: nil, artist: nil, album: nil, artworkImage: nil, isPlaying: nil,
+                    deviceName: nil, progressMs: nil, durationMs: nil, upNextTrack: nil, upNextArtist: nil,
+                    recent: recent.map { SpotifyRecentTrackPayload(track: $0.track, artist: $0.artist) }
+                )
             )
         case let .success(.some(track)):
+            // No freshness label: the widget polls on a fast cadence and is essentially always
+            // live, so a "just now" stamp is noise (owner) — omitting it also reclaims a line.
             return SpotifyWidget(
                 widgetId: "spotify", state: "ready", headline: "Now playing", emptyMessage: nil,
-                freshness: WidgetFreshnessPayload(observedAt: now, label: "just now"),
+                freshness: nil,
                 data: SpotifyWidgetData(
                     track: track.track, artist: track.artist, album: track.album,
                     artworkImage: track.artworkImage, isPlaying: track.isPlaying,
-                    deviceName: track.deviceName, progressMs: track.progressMs, durationMs: track.durationMs
+                    deviceName: track.deviceName, progressMs: track.progressMs, durationMs: track.durationMs,
+                    upNextTrack: track.upNextTrack, upNextArtist: track.upNextArtist, recent: nil
                 )
             )
         }

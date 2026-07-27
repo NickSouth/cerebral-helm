@@ -129,4 +129,60 @@ func spotifyParseFailure() {
         _ = try SpotifyWebPlaybackProvider.parse(Data("not json".utf8))
     }
 }
+
+@Test("the queue's first track becomes the Up Next title + artist; an empty queue yields nil")
+func spotifyParsesQueueNext() throws {
+    let json = Data("""
+    { "currently_playing": { "name": "Weightless" },
+      "queue": [
+        { "name": "Ludovico", "artists": [{ "name": "Einaudi" }, { "name": "Daniel Hope" }] },
+        { "name": "Later", "artists": [{ "name": "Someone" }] }
+      ] }
+    """.utf8)
+    let next = try #require(SpotifyWebPlaybackProvider.parseQueueNext(json))
+    #expect(next.track == "Ludovico")
+    #expect(next.artist == "Einaudi, Daniel Hope")
+
+    // An empty queue (or a blank next title) has no Up Next.
+    #expect(SpotifyWebPlaybackProvider.parseQueueNext(Data(#"{ "queue": [] }"#.utf8)) == nil)
+    #expect(SpotifyWebPlaybackProvider.parseQueueNext(Data("not json".utf8)) == nil)
+}
+
+@Test("the queue request targets the queue endpoint with the token in the header")
+func spotifyQueueRequest() throws {
+    let request = try #require(SpotifyWebPlaybackProvider.makeQueueRequest(
+        host: "https://api.spotify.com", accessToken: "tok"
+    ))
+    #expect(request.url?.absoluteString == "https://api.spotify.com/v1/me/player/queue")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer tok")
+}
+
+@Test("recently-played parses de-duplicated, most-recent-first, capped tracks")
+func spotifyParsesRecentlyPlayed() {
+    let json = Data("""
+    { "items": [
+      { "track": { "name": "Nightcall", "artists": [{ "name": "Kavinsky" }] } },
+      { "track": { "name": "Nightcall", "artists": [{ "name": "Kavinsky" }] } },
+      { "track": { "name": "Ludovico", "artists": [{ "name": "Einaudi" }, { "name": "Hope" }] } },
+      { "track": { "name": "   " } },
+      { "track": { "name": "Weightless", "artists": [{ "name": "Marconi Union" }] } },
+      { "track": { "name": "Extra", "artists": [{ "name": "Someone" }] } }
+    ] }
+    """.utf8)
+    let recent = SpotifyWebPlaybackProvider.parseRecentlyPlayed(json)
+    // The replayed "Nightcall" appears once, the blank title is skipped, and it caps at 3.
+    #expect(recent.map(\.track) == ["Nightcall", "Ludovico", "Weightless"])
+    #expect(recent[1].artist == "Einaudi, Hope")
+    // Anything unparseable yields no recent list.
+    #expect(SpotifyWebPlaybackProvider.parseRecentlyPlayed(Data("not json".utf8)).isEmpty)
+}
+
+@Test("the recently-played request targets the endpoint with a limit and header token")
+func spotifyRecentlyPlayedRequest() throws {
+    let request = try #require(SpotifyWebPlaybackProvider.makeRecentlyPlayedRequest(
+        host: "https://api.spotify.com", accessToken: "tok"
+    ))
+    #expect(request.url?.absoluteString.hasPrefix("https://api.spotify.com/v1/me/player/recently-played?limit=") == true)
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer tok")
+}
 #endif

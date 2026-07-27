@@ -18,7 +18,7 @@ func spotifyReadyMapping() {
             SpotifyNowPlaying(
                 track: "Weightless", artist: "Marconi Union",
                 album: "Ambient Transmissions Vol. 2", artworkImage: "data:image/png;base64,AAAA",
-                isPlaying: true
+                isPlaying: true, upNextTrack: "The Bear", upNextArtist: "FKJ"
             )
         ),
         now: spotifyFixedNow
@@ -28,21 +28,42 @@ func spotifyReadyMapping() {
     #expect(widget.state == "ready")
     #expect(widget.headline == "Now playing")
     #expect(widget.emptyMessage == nil)
-    #expect(widget.freshness?.observedAt == spotifyFixedNow)
+    // No freshness stamp — the widget is essentially always live, so "just now" is omitted (NIC-133).
+    #expect(widget.freshness == nil)
     #expect(widget.data?.track == "Weightless")
     #expect(widget.data?.artist == "Marconi Union")
     #expect(widget.data?.album == "Ambient Transmissions Vol. 2")
     #expect(widget.data?.artworkImage == "data:image/png;base64,AAAA")
     #expect(widget.data?.isPlaying == true)
+    #expect(widget.data?.upNextTrack == "The Bear")
+    #expect(widget.data?.upNextArtist == "FKJ")
 }
 
-@Test("nothing playing (a successful nil) maps to a healthy empty widget")
+@Test("nothing playing with no recent history maps to a healthy empty widget")
 func spotifyNothingPlayingMapping() {
     let widget = BridgeEventFactory.spotifyWidget(from: .success(nil), now: spotifyFixedNow)
     #expect(widget.state == "empty")
     #expect(widget.data == nil)
     #expect(widget.emptyMessage?.isEmpty == false)
     #expect(widget.freshness == nil)
+}
+
+@Test("nothing playing but with recent history maps to a ready 'Recently played' list, no track")
+func spotifyIdleWithRecentMapping() {
+    let widget = BridgeEventFactory.spotifyWidget(
+        from: .success(nil),
+        recent: [
+            SpotifyRecentTrack(track: "Nightcall", artist: "Kavinsky"),
+            SpotifyRecentTrack(track: "Ludovico", artist: "Einaudi"),
+        ],
+        now: spotifyFixedNow
+    )
+    #expect(widget.state == "ready")
+    #expect(widget.headline == "Recently played")
+    #expect(widget.data?.track == nil) // no current track in the idle state
+    #expect(widget.data?.recent?.count == 2)
+    #expect(widget.data?.recent?.first?.track == "Nightcall")
+    #expect(widget.data?.recent?.first?.artist == "Kavinsky")
 }
 
 @Test("a missing credential maps to unavailable with guidance to connect")

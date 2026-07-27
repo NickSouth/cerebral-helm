@@ -17,15 +17,38 @@ import CerebralCore
 /// "unavailable" — never a fabricated track). Album artwork is fetched natively and embedded as a
 /// `data:` URI (the dashboard's `cerebral://` origin does not load external image URLs); a fetch
 /// miss simply omits the artwork, so the card falls back to its music-note placeholder.
+/// A tiny one-entry cache so the fast (3s) poll doesn't re-download the same album art every tick
+/// (NIC-133): keyed on the artwork URL, it holds the last successfully-embedded data URI. A URL miss
+/// or a failed fetch is not cached, so it retries next tick. `@unchecked Sendable` — lock-guarded.
+final class SpotifyArtworkCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cachedURL: String?
+    private var cachedURI: String?
+
+    func value(forURL url: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return cachedURL == url ? cachedURI : nil
+    }
+
+    func store(url: String, uri: String) {
+        lock.lock(); defer { lock.unlock() }
+        cachedURL = url
+        cachedURI = uri
+    }
+}
+
 public struct SpotifyWebPlaybackProvider: SpotifyPlaybackProvider {
     private let session: URLSession
     private let host: String
     private let fetchArtwork: Bool
+    private let fetchQueue: Bool
+    private let artworkCache: SpotifyArtworkCache
 
     public init(
         session: URLSession? = nil,
         host: String = "https://api.spotify.com",
         fetchArtwork: Bool = true,
+        fetchQueue: Bool = true,
         resourceTimeout: TimeInterval = 15
     ) {
         if let session {
@@ -38,6 +61,8 @@ public struct SpotifyWebPlaybackProvider: SpotifyPlaybackProvider {
         }
         self.host = host
         self.fetchArtwork = fetchArtwork
+        self.fetchQueue = fetchQueue
+        self.artworkCache = SpotifyArtworkCache()
     }
 
     public func nowPlaying(accessToken: String) async throws -> SpotifyNowPlaying? {
@@ -68,19 +93,37 @@ public struct SpotifyWebPlaybackProvider: SpotifyPlaybackProvider {
 
         guard let parsed else { return nil } // 200 but nothing showable (ad / private session)
         let artwork = (fetchArtwork ? await fetchArtworkDataURI(parsed.artworkURL) : nil)
+        // The next track in the queue (best-effort — a queue-fetch miss just omits the "Up next" line).
+        let next = (fetchQueue ? await fetchQueueNext(accessToken: accessToken) : nil)
         return SpotifyNowPlaying(
             track: parsed.track, artist: parsed.artist, album: parsed.album,
             artworkImage: artwork, isPlaying: parsed.isPlaying,
-            deviceName: parsed.deviceName, progressMs: parsed.progressMs, durationMs: parsed.durationMs
+            deviceName: parsed.deviceName, progressMs: parsed.progressMs, durationMs: parsed.durationMs,
+            upNextTrack: next?.track, upNextArtist: next?.artist
         )
     }
 
     private func fetchArtworkDataURI(_ url: URL?) async -> String? {
         guard let url else { return nil }
+        // Reuse the last embedded image when the artwork URL is unchanged (the common case at a fast
+        // cadence), so the same album art isn't re-downloaded every tick.
+        if let cached = artworkCache.value(forURL: url.absoluteString) { return cached }
         guard let (data, response) = try? await session.data(from: url),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let uri = Self.artworkDataURI(data)
+        else { return nil }
+        artworkCache.store(url: url.absoluteString, uri: uri)
+        return uri
+    }
+
+    /// Fetches the next track from the playback queue (best-effort). Returns nil on any failure or an
+    /// empty queue, so the widget simply omits the "Up next" line rather than showing a stale one.
+    private func fetchQueueNext(accessToken: String) async -> (track: String, artist: String)? {
+        guard let request = Self.makeQueueRequest(host: host, accessToken: accessToken),
+              let (data, response) = try? await session.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
         else { return nil }
-        return Self.artworkDataURI(data)
+        return Self.parseQueueNext(data)
     }
 
     // MARK: - Pure helpers (unit-tested)
@@ -94,6 +137,80 @@ public struct SpotifyWebPlaybackProvider: SpotifyPlaybackProvider {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         return request
+    }
+
+    /// The playback-queue request (the "Up next" source). Token in the header, never the URL.
+    static func makeQueueRequest(host: String, accessToken: String) -> URLRequest? {
+        guard let url = URL(string: "\(host)/v1/me/player/queue") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    public func recentlyPlayed(accessToken: String) async throws -> [SpotifyRecentTrack] {
+        guard let request = Self.makeRecentlyPlayedRequest(host: host, accessToken: accessToken),
+              let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
+        else { return [] }
+        return Self.parseRecentlyPlayed(data)
+    }
+
+    /// The recently-played request. Token in the header, never the URL.
+    static func makeRecentlyPlayedRequest(host: String, accessToken: String, limit: Int = 20) -> URLRequest? {
+        guard let url = URL(string: "\(host)/v1/me/player/recently-played?limit=\(limit)") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    /// Parses recently-played history into a de-duplicated, most-recent-first list of tracks (the
+    /// history repeats a track that was replayed). Caps at `limit` distinct tracks; a blank title is
+    /// skipped. Returns [] on any parse failure — the widget then falls back to a plain empty state.
+    static func parseRecentlyPlayed(_ data: Data, limit: Int = 3) -> [SpotifyRecentTrack] {
+        struct RecentResponse: Decodable {
+            let items: [Item]?
+            struct Item: Decodable { let track: Response.Item? }
+        }
+        guard let decoded = try? JSONDecoder().decode(RecentResponse.self, from: data) else { return [] }
+        var result: [SpotifyRecentTrack] = []
+        var seen = Set<String>()
+        for item in decoded.items ?? [] {
+            guard let track = item.track else { continue }
+            let title = (track.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { continue }
+            let artists = (track.artists ?? [])
+                .compactMap { $0.name?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            let artist = artists.isEmpty
+                ? (track.show?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+                : artists.joined(separator: ", ")
+            let key = "\(title)\u{1}\(artist)"
+            guard seen.insert(key).inserted else { continue } // drop a replayed duplicate
+            result.append(SpotifyRecentTrack(track: title, artist: artist))
+            if result.count >= limit { break }
+        }
+        return result
+    }
+
+    /// The title + artist of the first queued track, or nil for an empty/unparseable queue. The
+    /// artist falls back to the show name for a podcast episode; a blank title yields nil.
+    static func parseQueueNext(_ data: Data) -> (track: String, artist: String)? {
+        struct QueueResponse: Decodable { let queue: [Response.Item]? }
+        guard let decoded = try? JSONDecoder().decode(QueueResponse.self, from: data),
+              let next = decoded.queue?.first else { return nil }
+        let track = (next.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !track.isEmpty else { return nil }
+        let artists = (next.artists ?? [])
+            .compactMap { $0.name?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let artist = artists.isEmpty
+            ? (next.show?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+            : artists.joined(separator: ", ")
+        return (track, artist)
     }
 
     /// A parsed now-playing item, carrying the artwork URL the image fetch needs (kept separate from

@@ -653,6 +653,28 @@ describe("WidgetSlot spotify (NIC-133)", () => {
     expect(nowPlayingCard()?.querySelector(".nowplaying__album")).toBeNull();
   });
 
+  it("shows a Recently Played list that opens Spotify when nothing is playing (NIC-133)", () => {
+    const { submissions } = renderSlot({
+      widgetId: "spotify",
+      state: "ready",
+      data: {
+        recent: [
+          { track: "Nightcall", artist: "Kavinsky" },
+          { track: "Weightless", artist: "Marconi Union" }
+        ]
+      }
+    });
+    // No now-playing card in the idle state.
+    expect(document.querySelector(".nowplaying__track")).toBeNull();
+    const rows = Array.from(document.querySelectorAll(".nowplaying__recent-row"));
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain("Nightcall");
+    expect(rows[0].textContent).toContain("Kavinsky");
+    // Tapping a recent track opens Spotify.
+    fireEvent.click(rows[0]);
+    expect(submissions).toEqual(["open spotify"]);
+  });
+
   it("renders an honest unavailable state (not connected) with no now-playing card", () => {
     renderSlot({
       widgetId: "spotify",
@@ -688,6 +710,36 @@ describe("WidgetSlot spotify (NIC-133)", () => {
     expect(parseFloat(fill.style.width)).toBeCloseTo(34.58, 1);
   });
 
+  it("shows the Up Next track and an Open-in-Spotify button; no 'just now' stamp (NIC-133 polish)", () => {
+    const { submissions } = renderSlot({
+      widgetId: "spotify",
+      state: "ready",
+      data: {
+        track: "Weightless",
+        artist: "Marconi Union",
+        isPlaying: true,
+        upNextTrack: "Nightcall",
+        upNextArtist: "Kavinsky"
+      }
+    });
+    // Up next line.
+    expect(document.querySelector(".nowplaying__upnext-track")?.textContent).toBe("Nightcall — Kavinsky");
+    // No freshness label is rendered for this widget.
+    expect(document.querySelector(".widget__freshness")).toBeNull();
+    // The Open button launches Spotify via the app.open grammar.
+    fireEvent.click(screen.getByRole("button", { name: /Open in Spotify/ }));
+    expect(submissions).toEqual(["open spotify"]);
+  });
+
+  it("omits the Up Next line when the queue is empty/unknown (NIC-133)", () => {
+    renderSlot({
+      widgetId: "spotify",
+      state: "ready",
+      data: { track: "Weightless", artist: "Marconi Union", isPlaying: true }
+    });
+    expect(document.querySelector(".nowplaying__upnext")).toBeNull();
+  });
+
   it("omits the progress bar when duration is unknown, never faking one (NIC-133)", () => {
     renderSlot({
       widgetId: "spotify",
@@ -715,6 +767,27 @@ describe("WidgetSlot spotify (NIC-133)", () => {
     expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Play" }));
     expect(submissions).toEqual(["spotify play"]);
+  });
+
+  it("optimistically flips play/pause on tap before the server confirms (NIC-133)", () => {
+    const { submissions } = renderSlot(spotifyPlaying); // isPlaying: true → shows Pause
+    // Tap pause: the icon flips to Play immediately (optimistic), and the command dispatches.
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    expect(screen.getByRole("button", { name: "Play" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+    expect(submissions).toEqual(["spotify pause"]);
+    // The status text flips optimistically too.
+    expect(document.querySelector(".nowplaying__status")?.textContent).toBe("Paused");
+  });
+
+  it("shows a skip skeleton until the new track lands (NIC-133)", () => {
+    renderSlot(spotifyPlaying);
+    expect(document.querySelector(".nowplaying__track")?.textContent).toBe("Weightless");
+    // Skipping shows a skeleton in place of the track title/artwork.
+    fireEvent.click(screen.getByRole("button", { name: "Next track" }));
+    expect(document.querySelector(".nowplaying__bone--track")).not.toBeNull();
+    expect(document.querySelector(".nowplaying__track")).toBeNull();
+    expect(document.querySelector(".nowplaying__art-bone")).not.toBeNull();
   });
 
   it("disables the controls under read-only recovery and dispatches nothing (NIC-133)", () => {

@@ -84,6 +84,7 @@ public struct SpotifyTokenExchange {
         "user-read-playback-state",
         "user-read-currently-playing",
         "user-modify-playback-state",
+        "user-read-recently-played",
     ]
 
     public init(

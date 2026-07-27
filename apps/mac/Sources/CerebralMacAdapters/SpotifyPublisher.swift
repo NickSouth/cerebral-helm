@@ -90,9 +90,15 @@ public actor SpotifyPublisher {
     @discardableResult
     private func tick() async -> Bool {
         let result: Swift.Result<SpotifyNowPlaying?, Error>
+        var recent: [SpotifyRecentTrack] = []
         do {
             let token = try await session.accessToken()
             let nowPlaying = try await provider.nowPlaying(accessToken: token)
+            // Nothing playing → fetch the recently-played "jump back in" list (best-effort; a token
+            // without the recently-played scope just yields none, and the widget stays a plain empty).
+            if nowPlaying == nil {
+                recent = (try? await provider.recentlyPlayed(accessToken: token)) ?? []
+            }
             result = .success(nowPlaying)
         } catch {
             // credentialsMissing → "connect"; notConnected → "reconnect"; anything else → generic
@@ -100,7 +106,7 @@ public actor SpotifyPublisher {
             result = .failure(error)
         }
 
-        let widget = BridgeEventFactory.spotifyWidget(from: result, now: Date())
+        let widget = BridgeEventFactory.spotifyWidget(from: result, recent: recent, now: Date())
         let event = BridgeEventFactory.widgetDataChangedEvent(
             widgetId: "spotify",
             widget: widget,

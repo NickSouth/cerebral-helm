@@ -269,8 +269,7 @@
               "widgetId": "spotify",
               "state": "ready",
               "headline": "Now playing",
-              "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
-              "data": { "track": "Weightless", "artist": "Marconi Union", "album": "Ambient Transmissions Vol. 2", "artworkImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "isPlaying": true, "deviceName": "Nick's MacBook Pro", "progressMs": 83000, "durationMs": 240000 }
+              "data": { "track": "Weightless", "artist": "Marconi Union", "album": "Ambient Transmissions Vol. 2", "artworkImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "isPlaying": true, "deviceName": "Nick's MacBook Pro", "progressMs": 83000, "durationMs": 240000, "upNextTrack": "Nightcall", "upNextArtist": "Kavinsky" }
             },
             "right": {
               "widgetId": "releases",

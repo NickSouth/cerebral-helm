@@ -2208,7 +2208,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--ch-space-2);
-  position: relative; /* anchors the Spotify logo badge */
   /* A fixed-size card, never a fill-the-panel grid: keep its natural height so that when the rail
      panel is short it degrades by clipping the bottom (artwork + track stay visible) rather than
      shrinking to nothing — the flex-collapse trap the stocks tiles hit (NIC-128). */
@@ -2222,11 +2221,160 @@
   align-items: center;
 }
 
-/* The Spotify mark, tucked into the card's top-right corner. */
+/* The Spotify mark (used inside the "Open in Spotify" button). */
 .nowplaying__logo {
-  position: absolute;
-  top: 0;
-  right: 0;
+  flex: 0 0 auto;
+}
+
+/* "Up next · <track> — <artist>", one truncated line. */
+.nowplaying__upnext {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--ch-space-2);
+  min-width: 0;
+  font-size: var(--ch-font-size-sm);
+}
+
+.nowplaying__upnext-label {
+  flex: 0 0 auto;
+  font-size: var(--ch-font-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ch-text-muted);
+}
+
+.nowplaying__upnext-track {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+}
+
+/* "Open in Spotify" button — the Spotify mark beside its label, full width at the card's foot. */
+.nowplaying__open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-2);
+  align-self: stretch;
+  padding: var(--ch-space-1) var(--ch-space-2);
+  border: 1px solid color-mix(in srgb, #1db954 45%, var(--ch-panel-border));
+  border-radius: var(--ch-radius-pill);
+  background: color-mix(in srgb, #1db954 12%, transparent);
+  color: var(--ch-text-primary);
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  cursor: pointer;
+  transition: border-color var(--ch-motion-fast) var(--ch-ease-standard),
+    background var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.nowplaying__open:not(:disabled):hover {
+  border-color: #1db954;
+  background: color-mix(in srgb, #1db954 20%, transparent);
+}
+
+.nowplaying__open:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Idle "Recently played" list (NIC-133): tappable rows that open Spotify. */
+.nowplaying__recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.nowplaying__recent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: var(--ch-space-1) var(--ch-space-1);
+  border: 0;
+  border-radius: var(--ch-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.nowplaying__recent-row:not(:disabled):hover {
+  background: var(--ch-surface-raised);
+}
+
+.nowplaying__recent-row:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.nowplaying__recent-row .nowplaying__note {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--ch-text-muted);
+}
+
+.nowplaying__recent-track {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+}
+
+.nowplaying__recent-artist {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* Optimistic skip skeleton (NIC-133): shown for the beat between a skip and the new track landing. */
+.nowplaying__art-bone {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--ch-radius-md);
+}
+
+.nowplaying__bone {
+  display: block;
+  height: 0.8em;
+  border-radius: 4px;
+}
+
+.nowplaying__bone--track {
+  width: 70%;
+  height: 0.95em;
+}
+
+.nowplaying__bone--artist {
+  width: 50%;
+}
+
+.nowplaying__bone--time {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 0.7em;
+}
+
+.nowplaying__bar-bone {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 2px;
 }
 
 .nowplaying__art {
