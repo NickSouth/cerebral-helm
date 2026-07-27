@@ -31,6 +31,7 @@ public struct DirectCommandParser: Sendable {
         "project <path>",
         "search <text>",
         "google <query>",
+        "spotify <action>",
         "web <url>",
         "hook <id>",
         "run <action>",
@@ -78,6 +79,11 @@ public struct DirectCommandParser: Sendable {
             // The remainder is the whole search query (queries contain spaces), taken verbatim
             // (NIC-134). The adapter builds the google.com search URL; only this query varies.
             return parseFreeText(verb: "google", remainder: remainder) { .googleSearch(query: $0) }
+        case "spotify":
+            // The remainder is the playback action (play/pause/next/previous), taken verbatim
+            // (NIC-133). The tool descriptor validates it against the input enum; an unknown action
+            // is refused by the contract, not acted on.
+            return parseFreeText(verb: "spotify", remainder: remainder) { .spotifyControl(action: $0) }
         case "web":
             // The remainder is the whole https URL, taken verbatim (NIC-127). The adapter
             // validates the scheme/host; a non-https or malformed link is refused, not opened.

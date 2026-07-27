@@ -125,6 +125,30 @@ export interface ReleasesWidgetPayload {
 }
 
 /**
+ * The `spotify` widget's `data` payload (NIC-133, Entertainment left slot): the track currently
+ * playing on Spotify. Present only when the widget state is `ready` — nothing playing is a healthy
+ * `empty` state and not-connected is `unavailable`, both handled at the slot level, so a `ready`
+ * payload always carries a track. `album` and `artworkImage` are omitted (never fabricated) when
+ * Spotify doesn't provide them; `artworkImage` is a self-contained `data:` URI fetched natively by
+ * the producer (a later increment) because the dashboard origin does not load external image URLs.
+ * `isPlaying` distinguishes actively playing from paused — a paused track is still the current one.
+ */
+export interface SpotifyWidgetPayload {
+  readonly track: string;
+  readonly artist: string;
+  readonly album?: string;
+  readonly artworkImage?: string;
+  readonly isPlaying: boolean;
+  /** The active Spotify device's name (e.g. "Nick's MacBook Pro"), omitted when unknown. */
+  readonly deviceName?: string;
+  /** Playback position within the track, in milliseconds — with `durationMs`, drives the progress
+   *  bar (which the widget advances smoothly between polls). Omitted when unknown. */
+  readonly progressMs?: number;
+  /** Track length in milliseconds. Omitted when unknown. */
+  readonly durationMs?: number;
+}
+
+/**
  * The local branch's relationship to its `origin` remote-tracking ref (NIC-130), derived from
  * comparing ref SHAs in `.git` — never a numeric count. `synced` = the local tip equals
  * `origin/<branch>`; `diverged` = they differ (direction is deliberately not claimed, since that

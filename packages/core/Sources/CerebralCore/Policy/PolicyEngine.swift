@@ -74,6 +74,13 @@ public struct PolicyRequest: Sendable {
     public let plannedActionRisks: [Risk]
     public let shellInvocation: HookInvocation?
     public let callerRequestedConfirmation: Bool?
+    /// A descriptor-declared, deliberate exemption for a specific low-stakes `external_write` tool
+    /// (its `confirmationPolicyKey` is `allow_external_write_without_confirmation`, e.g. Spotify
+    /// playback control, NIC-133). It runs one-click instead of confirming. Descriptor-sourced only
+    /// — a caller/model can never set it — and it affects **only** the `external_write` class; it
+    /// can never downgrade destructive/financial/purchase, and the stricter-only "Ask before all
+    /// actions" override still re-arms confirmation over it.
+    public let waivesExternalWriteConfirmation: Bool
 
     public init(
         toolID: String,
@@ -81,7 +88,8 @@ public struct PolicyRequest: Sendable {
         runtimeRiskPolicy: RuntimeRiskPolicy = .descriptorRisk,
         plannedActionRisks: [Risk] = [],
         shellInvocation: HookInvocation? = nil,
-        callerRequestedConfirmation: Bool? = nil
+        callerRequestedConfirmation: Bool? = nil,
+        waivesExternalWriteConfirmation: Bool = false
     ) {
         self.toolID = toolID
         self.declaredRisk = declaredRisk
@@ -89,6 +97,7 @@ public struct PolicyRequest: Sendable {
         self.plannedActionRisks = plannedActionRisks
         self.shellInvocation = shellInvocation
         self.callerRequestedConfirmation = callerRequestedConfirmation
+        self.waivesExternalWriteConfirmation = waivesExternalWriteConfirmation
     }
 }
 
@@ -174,7 +183,16 @@ public struct PolicyEngine: Sendable {
                 return (.allow, "allow.shell_allowlisted", "The exact shell invocation is explicitly allowlisted.")
             }
             return (.requireConfirmation, "confirm.shell", "Shell execution requires confirmation unless the exact invocation is allowlisted.")
-        case .externalWrite, .destructive, .financial, .purchaseOrBooking:
+        case .externalWrite:
+            // External writes confirm by default — except a specific tool the descriptor exempts as
+            // low-stakes (e.g. Spotify play/pause/skip, NIC-133), which runs one-click. The
+            // exemption is descriptor-sourced only, and the stricter-only overrides below still
+            // re-arm confirmation when "Ask before all actions" is on.
+            if request.waivesExternalWriteConfirmation {
+                return (.allow, "allow.external_write_exempt", "This low-stakes external action is descriptor-exempted from confirmation.")
+            }
+            return (.requireConfirmation, "confirm.external_write", "Risk class 'external_write' requires confirmation.")
+        case .destructive, .financial, .purchaseOrBooking:
             return (.requireConfirmation, "confirm.\(risk.rawValue)", "Risk class '\(risk.rawValue)' requires confirmation.")
         }
     }

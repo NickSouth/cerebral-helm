@@ -2200,6 +2200,185 @@
   color: var(--ch-text-muted);
 }
 
+/* Spotify now-playing widget (NIC-133, Entertainment left): a single current-track card — square
+   artwork beside the track/artist/album and a playing/paused indicator. Display only for now;
+   playback controls land in a later increment. The card sits at the top of its (taller) rail
+   panel; nothing-playing / not-connected are honest slot-level states, not rendered here. */
+.nowplaying {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  position: relative; /* anchors the Spotify logo badge */
+  /* A fixed-size card, never a fill-the-panel grid: keep its natural height so that when the rail
+     panel is short it degrades by clipping the bottom (artwork + track stay visible) rather than
+     shrinking to nothing — the flex-collapse trap the stocks tiles hit (NIC-128). */
+  flex: 0 0 auto;
+}
+
+/* The artwork + track/artist row. */
+.nowplaying__main {
+  display: flex;
+  gap: var(--ch-space-3);
+  align-items: center;
+}
+
+/* The Spotify mark, tucked into the card's top-right corner. */
+.nowplaying__logo {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.nowplaying__art {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: color-mix(in srgb, var(--ch-text-muted) 12%, transparent);
+  color: var(--ch-text-muted);
+}
+
+.nowplaying__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.nowplaying__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Let the track/artist truncate with an ellipsis instead of overflowing the card. */
+  min-width: 0;
+}
+
+.nowplaying__track,
+.nowplaying__artist,
+.nowplaying__album {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nowplaying__track {
+  font-size: var(--ch-font-size-base);
+  color: var(--ch-text-primary);
+}
+
+.nowplaying__artist {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+.nowplaying__album {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* A dot + word ("Playing" / "Paused") — the dot is never the only signal. Playing is accented
+   green; paused stays muted. */
+.nowplaying__status {
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-1);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.nowplaying__status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.nowplaying__status--playing {
+  color: var(--ch-status-success);
+}
+
+/* Progress bar (NIC-133): current time · track · duration. The fill advances smoothly client-side
+   while playing (the component ticks it every second), so it stays fluid between polls. */
+.nowplaying__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.nowplaying__time {
+  flex: 0 0 auto;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.nowplaying__bar {
+  flex: 1 1 auto;
+  height: 4px;
+  min-width: 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ch-text-muted) 24%, transparent);
+  overflow: hidden;
+}
+
+.nowplaying__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ch-status-success);
+  transition: width 1s linear;
+}
+
+/* Playback controls (NIC-133): previous / play-pause / next. Compact reset-styled icon buttons;
+   the middle one is accented. Disabled under read-only recovery. */
+.nowplaying__controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-3);
+  margin-top: 2px;
+}
+
+.nowplaying__control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+  transition:
+    border-color var(--ch-motion-fast) var(--ch-ease-standard),
+    color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.nowplaying__control:not(:disabled):hover {
+  border-color: var(--ch-accent-primary);
+  color: var(--ch-accent-primary);
+}
+
+.nowplaying__control--primary {
+  width: 30px;
+  height: 30px;
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 40%, var(--ch-panel-border));
+}
+
+.nowplaying__control:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Stocks widget (NIC-128, Executive left): a 2×2 grid of compact ticker tiles (4 per page),
    with a pager to page through more — mirroring the releases carousel but with intrinsic-height
    tiles (never flex-fill, which collapses to 0 in the stacked <1440px layout). */

@@ -450,6 +450,19 @@ export function createMockCerebralBridge(
     getSecretStatus(input) {
       return Promise.resolve({ reference: input.reference, bound: boundSecrets.has(input.reference) });
     },
+    deleteSecret(input) {
+      const deleted = boundSecrets.delete(input.reference);
+      return Promise.resolve({ reference: input.reference, deleted });
+    },
+    connectSpotify() {
+      // The browser stand-in for the OAuth round trip (NIC-133): binds the token reference so the
+      // Settings control flips to "Connected", without any real browser flow.
+      boundSecrets.add("spotify_oauth");
+      return Promise.resolve({
+        connected: true,
+        scope: "user-read-playback-state user-read-currently-playing user-modify-playback-state"
+      });
+    },
     listApps() {
       // A representative installed-app set for browser previews of the More Apps
       // picker (NIC-119). No icons — the honest non-Mac fallback glyph renders.

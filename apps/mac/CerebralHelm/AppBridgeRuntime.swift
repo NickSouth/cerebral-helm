@@ -63,6 +63,11 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// visibility gate as the other streams; local branch/sync always render while the GitHub half
     /// degrades honestly when there's no remote, no token, or a fetch failure.
     private let projectGitStatusPublisher: ProjectGitStatusPublisher
+    /// Streams the Entertainment `spotify` widget (NIC-133) — resolves a valid access token from the
+    /// Keychain-backed OAuth session (refreshing as needed) and reads the currently-playing track on
+    /// a fast cadence. Same visibility gate as the other streams; not-connected/nothing-playing
+    /// degrade honestly. Refreshed immediately after a successful connect.
+    private let spotifyPublisher: SpotifyPublisher
     /// Watches display connect/disconnect/rearrange (NIC-87). Native subscribers
     /// are told first (window re-hosting), then the dashboard via one
     /// `display.topology.changed` event.
@@ -130,12 +135,17 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // init, and read at arrange time (a much later async call).
         let layoutDisplayContext = self.layoutDisplayContext
         let reservedStripsBox = self.reservedStripsBox
+        // Shared hook: after a playback control succeeds, the control capability fires this and the
+        // Spotify producer re-polls at once (wired below, once the publisher exists) — so a widget
+        // skip/play/pause updates the track/art near-instantly, not on the next cadence tick (NIC-133).
+        let spotifyRefreshSignal = SpotifyRefreshSignal()
         let composition = MacToolCapabilities.make(
             referenceStore: referenceStore,
             urlOpenRegistry: urlOpenRegistry,
             currentModeProvider: { modeStateStore.flatMap { try? $0.loadActiveModeID() } },
             layoutDisplay: { layoutDisplayContext.resolve() },
-            reservedStrips: { reservedStripsBox.current() }
+            reservedStrips: { reservedStripsBox.current() },
+            spotifyRefresh: spotifyRefreshSignal
         )
         let capabilities = composition.capabilities
         toolCapabilities = capabilities
@@ -176,6 +186,21 @@ final class AppBridgeRuntime: @unchecked Sendable {
             emit: { relay.emit($0) }
         )
         projectGitStatusPublisher = projectGitStatus
+        // The Spotify producer (NIC-133): resolves a valid access token from the Keychain-backed
+        // OAuth session (refreshing as needed) and reads the currently-playing track on a fast
+        // cadence. Not connected → an honest "connect" state; nothing playing → a healthy empty.
+        let spotify = SpotifyPublisher(
+            session: SpotifyAuthSession(
+                secretStore: composition.secretStore,
+                refresher: SpotifyTokenExchange()
+            ),
+            provider: SpotifyWebPlaybackProvider(),
+            emit: { relay.emit($0) }
+        )
+        spotifyPublisher = spotify
+        // Now that the publisher exists, point the control-refresh hook at it: a successful
+        // play/pause/skip re-polls now-playing at once (NIC-133).
+        spotifyRefreshSignal.setAction { Task { await spotify.refresh() } }
         // The News producer (NIC-127): reads the NewsData key from the Keychain and fetches
         // headlines per relevance profile declared in config/news/profiles.json. The profile →
         // category mapping lives in that config (not hardcoded); when it can't be loaded there are
@@ -240,6 +265,13 @@ final class AppBridgeRuntime: @unchecked Sendable {
             let stored = try? settingsStore?.load()
             return (layout: stored?.layoutDisplayID, main: stored?.mainDisplayID)
         }
+        // The Spotify connect coordinator (NIC-133): the `connectSpotify` op runs its OAuth flow
+        // (loopback listener + system browser + code exchange), persisting tokens to the same
+        // Keychain the other providers use. The public Client ID is read from the secret store
+        // (`spotify_client_id`, entered in Settings) at connect time — absent → an honest "add your
+        // Client ID". The tokens never cross back through the bridge; only the granted scope does.
+        let spotifyCoordinator = SpotifyAuthCoordinator(secretStore: composition.secretStore)
+        let spotifySecretStore = composition.secretStore
         session = BridgeSession(
             runtime: runtime,
             configDirectory: paths.configDirectory,
@@ -284,6 +316,24 @@ final class AppBridgeRuntime: @unchecked Sendable {
             onSettingsChanged: { changes in
                 guard changes.stockTickersJSON != nil else { return }
                 Task { await stocks.refresh() }
+            },
+            // Runs the Spotify OAuth connect flow for the `connectSpotify` op (NIC-133): reads the
+            // public Client ID from the Keychain, then drives the coordinator's browser round trip.
+            // A missing/blank Client ID surfaces as an honest "add your Client ID" (credentialsMissing).
+            spotifyConnect: {
+                let clientID: String
+                do {
+                    clientID = try await spotifySecretStore.readValue(reference: "spotify_client_id")
+                } catch {
+                    throw SpotifyPlaybackError.credentialsMissing
+                }
+                let trimmed = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { throw SpotifyPlaybackError.credentialsMissing }
+                let connection = try await spotifyCoordinator.connect(clientID: trimmed)
+                // Tokens are stored — emit a now-playing sample at once so the widget goes live
+                // immediately rather than on the publisher's next tick.
+                await spotify.refresh()
+                return SpotifyConnectionInfo(scope: connection.scope)
             },
             // Hides a layout's app windows on closeLayout (NIC-142) — the same
             // permission-free primitive "Windows Stored by Mode" uses.
@@ -370,6 +420,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let stocks = stocksPublisher
         let news = newsPublisher
         let projectGitStatus = projectGitStatusPublisher
+        let spotify = spotifyPublisher
         Task { await metrics.start() }
         Task { await repos.start() }
         Task { await projects.start() }
@@ -378,6 +429,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         Task { await stocks.start() }
         if let news { Task { await news.start() } }
         Task { await projectGitStatus.start() }
+        Task { await spotify.start() }
     }
 
     /// Pause/resume the live streams from the shell's visibility signal (dashboard
@@ -392,6 +444,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let stocks = stocksPublisher
         let news = newsPublisher
         let projectGitStatus = projectGitStatusPublisher
+        let spotify = spotifyPublisher
         Task { await metrics.setActive(active) }
         Task { await repos.setActive(active) }
         Task { await projects.setActive(active) }
@@ -400,6 +453,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         Task { await stocks.setActive(active) }
         if let news { Task { await news.setActive(active) } }
         Task { await projectGitStatus.setActive(active) }
+        Task { await spotify.setActive(active) }
     }
 
     /// The persisted "Main display" id (NIC-120b) — nil when never set. A stale

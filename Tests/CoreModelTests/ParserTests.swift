@@ -68,6 +68,18 @@ func googleGrammar() {
     }
 }
 
+@Test("spotify takes the action as the remainder and requires an argument (NIC-133)")
+func spotifyGrammar() {
+    let parser = sampleParser()
+
+    #expect(parser.parse("spotify pause") == .parsed(.spotifyControl(action: "pause")))
+    #expect(parser.parse("spotify next") == .parsed(.spotifyControl(action: "next")))
+    // An argument-less `spotify` never executes.
+    if case .parsed = parser.parse("spotify") {
+        Issue.record("argument-less spotify must not execute")
+    }
+}
+
 @Test("web takes the whole remainder as the url and requires an argument (NIC-127)")
 func webGrammar() {
     let parser = sampleParser()

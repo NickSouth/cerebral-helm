@@ -26,6 +26,8 @@ import type {
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
+  ConnectSpotifyResult,
+  DeleteSecretResult,
   SecretStatusResult,
   SettingsSnapshot,
   SpeedTestResult,
@@ -275,6 +277,12 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     getSecretStatus(input) {
       return operation<SecretStatusResult>("getSecretStatus", { ...input });
+    },
+    deleteSecret(input) {
+      return operation<DeleteSecretResult>("deleteSecret", { ...input });
+    },
+    connectSpotify() {
+      return operation<ConnectSpotifyResult>("connectSpotify", {});
     },
     listApps() {
       return operation<ListAppsResult>("listApps", {});

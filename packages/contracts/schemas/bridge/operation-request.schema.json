@@ -36,6 +36,8 @@
         "getSettings",
         "storeSecret",
         "getSecretStatus",
+        "deleteSecret",
+        "connectSpotify",
         "addUrlReference",
         "listUrls",
         "listChromeProfiles",

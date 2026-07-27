@@ -29,7 +29,7 @@ private let mvpToolIDs: Set<String> = [
     "app.open", "project.open", "url.open", "hook.run", "note.capture",
     "note.search", "mode.apply", "system.status.read", "window.arrange",
     "apps.list", "network.speed.test", "apps.quitall", "google.search",
-    "web.open",
+    "web.open", "spotify.control",
 ]
 
 private struct StubHandler: ToolHandler {
@@ -160,5 +160,5 @@ func shippedOverlaysAreConsistent() throws {
     #expect(registry.tool("network.speed.test")?.availableOnMacOS == true)
     #expect(registry.tool("project.open")?.availableInPreMac == false)
     #expect(registry.tool("project.open")?.availableOnMacOS == true)
-    #expect(registry.toolIDs.count == 14)
+    #expect(registry.toolIDs.count == 15)
 }

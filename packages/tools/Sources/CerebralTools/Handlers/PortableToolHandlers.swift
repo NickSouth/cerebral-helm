@@ -133,6 +133,30 @@ public struct GoogleSearchHandler: ToolHandler {
     }
 }
 
+public struct SpotifyControlHandler: ToolHandler {
+    public let toolID = "spotify.control"
+    private let capability: any SpotifyControlCapability
+
+    public init(capability: any SpotifyControlCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmSpotifyControlInput
+        do { decoded = try CerebralHelmSpotifyControlInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("spotify.control input does not match its contract.")
+        }
+        do {
+            let result = try await capability.control(action: decoded.action.rawValue)
+            return try CerebralHelmSpotifyControlOutput(
+                action: SpotifyPlaybackAction(rawValue: result.action) ?? decoded.action,
+                activeDevice: result.activeDevice,
+                applied: result.applied
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 // MARK: - web.open
 
 public struct WebOpenHandler: ToolHandler {

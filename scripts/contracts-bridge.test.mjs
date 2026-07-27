@@ -37,6 +37,8 @@ const bridgeOperations = new Set([
   "getSettings",
   "storeSecret",
   "getSecretStatus",
+  "deleteSecret",
+  "connectSpotify",
   "addUrlReference",
   "listUrls",
   "listChromeProfiles",

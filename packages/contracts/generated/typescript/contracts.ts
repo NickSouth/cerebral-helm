@@ -451,7 +451,9 @@ export enum Operation {
     CloseAllWindows = "closeAllWindows",
     CloseLayout = "closeLayout",
     CloseWindow = "closeWindow",
+    ConnectSpotify = "connectSpotify",
     DecideConfirmation = "decideConfirmation",
+    DeleteSecret = "deleteSecret",
     GetBootstrapState = "getBootstrapState",
     GetRecentActivity = "getRecentActivity",
     GetSecretStatus = "getSecretStatus",
@@ -1291,6 +1293,38 @@ export interface CerebralHelmProjectOpenOutput {
     repoPath: string;
 }
 
+export interface CerebralHelmSpotifyControlInput {
+    /**
+     * The playback command to send to the user's active Spotify device: resume, pause, skip
+     * forward, or skip back.
+     */
+    action: SpotifyPlaybackAction;
+}
+
+/**
+ * The playback command to send to the user's active Spotify device: resume, pause, skip
+ * forward, or skip back.
+ */
+export enum SpotifyPlaybackAction {
+    Next = "next",
+    Pause = "pause",
+    Play = "play",
+    Previous = "previous",
+}
+
+export interface CerebralHelmSpotifyControlOutput {
+    action: SpotifyPlaybackAction;
+    /**
+     * Whether there was an active Spotify device. False → nothing to control; the widget guides
+     * the user to start playback on a device.
+     */
+    activeDevice: boolean;
+    /**
+     * True when Spotify accepted the command. False when there was no active device to act on.
+     */
+    applied: boolean;
+}
+
 export interface CerebralHelmSystemStatusReadInput {
     metrics?: ID[];
 }
@@ -1362,6 +1396,7 @@ export interface AvailabilityClass {
 }
 
 export enum ConfirmationPolicyKey {
+    AllowExternalWriteWithoutConfirmation = "allow_external_write_without_confirmation",
     AllowReadWithoutConfirmation = "allow_read_without_confirmation",
     ConfirmDestructive = "confirm_destructive",
     ConfirmExternalWrite = "confirm_external_write",

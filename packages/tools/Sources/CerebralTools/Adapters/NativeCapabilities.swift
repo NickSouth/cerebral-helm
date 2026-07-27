@@ -105,6 +105,31 @@ public struct GoogleSearchResult: Equatable, Sendable {
     }
 }
 
+// MARK: - spotify.control
+
+/// Controls the user's Spotify playback (NIC-133): play/pause/next/previous, sent to the active
+/// device via the Spotify Web API. Requires a connected account (a valid OAuth token) — the adapter
+/// resolves it; a missing/dead authorization surfaces as ``NativeCapabilityError``. When there is no
+/// active device to act on, the result reports `activeDevice: false` rather than erroring, so the
+/// widget can guide the user honestly instead of appearing broken.
+public protocol SpotifyControlCapability: Sendable {
+    func control(action: String) async throws -> SpotifyControlResult
+}
+
+public struct SpotifyControlResult: Equatable, Sendable {
+    public let action: String
+    /// True when Spotify accepted the command; false when there was no active device.
+    public let applied: Bool
+    /// Whether there was an active Spotify device to control.
+    public let activeDevice: Bool
+
+    public init(action: String, applied: Bool, activeDevice: Bool) {
+        self.action = action
+        self.applied = applied
+        self.activeDevice = activeDevice
+    }
+}
+
 // MARK: - web.open
 
 /// Opens an arbitrary https web address in the browser (NIC-127). Where ``URLCapability`` resolves

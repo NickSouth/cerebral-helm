@@ -65,6 +65,7 @@ public final class CommandRuntime: @unchecked Sendable {
         let toolPurpose: String
         let declaredRisk: Risk
         let runtimeRiskPolicy: RuntimeRiskPolicy
+        let waivesExternalWriteConfirmation: Bool
         let plannedActionRisks: [Risk]
         let input: Data
         let shellInvocation: HookInvocation?
@@ -262,7 +263,8 @@ public final class CommandRuntime: @unchecked Sendable {
                 declaredRisk: resolved.declaredRisk,
                 runtimeRiskPolicy: resolved.runtimeRiskPolicy,
                 plannedActionRisks: resolved.plannedActionRisks,
-                shellInvocation: resolved.shellInvocation
+                shellInvocation: resolved.shellInvocation,
+                waivesExternalWriteConfirmation: resolved.waivesExternalWriteConfirmation
             )
         )
 
@@ -546,6 +548,22 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [ConfirmationArgument(name: "query", value: query, sensitive: false)],
                 actionSummary: "Search Google for \(query)."
             )
+        case let .spotifyControl(action):
+            // Control Spotify playback (NIC-133). The descriptor's `external_write` risk is honest —
+            // this hits Spotify's API — but its `allow_external_write_without_confirmation` policy key
+            // waives confirmation (owner: play/pause/skip is too low-stakes to prompt), so it runs
+            // one-click; the "Ask before all actions" toggle still re-arms a prompt over it.
+            return make(
+                toolID: "spotify.control",
+                // An unrecognised action doesn't match the input enum → nil input → the command is
+                // refused (no tool resolved), never sent as a bogus control.
+                input: SpotifyPlaybackAction(rawValue: action).flatMap { try? CerebralHelmSpotifyControlInput(action: $0).jsonData() },
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "action", value: action, sensitive: false)],
+                actionSummary: "Spotify: \(action)."
+            )
         case let .webOpen(url):
             // Open an https web address in the browser (NIC-127). The descriptor's `local_write`
             // risk (like url.open/google.search) means one-click, no confirmation; the adapter
@@ -682,6 +700,7 @@ public final class CommandRuntime: @unchecked Sendable {
             toolPurpose: tool.descriptor.purpose,
             declaredRisk: tool.risk,
             runtimeRiskPolicy: tool.descriptor.runtimeRiskPolicy,
+            waivesExternalWriteConfirmation: tool.descriptor.confirmationPolicyKey == .allowExternalWriteWithoutConfirmation,
             plannedActionRisks: plannedActionRisks,
             input: input,
             shellInvocation: shellInvocation,

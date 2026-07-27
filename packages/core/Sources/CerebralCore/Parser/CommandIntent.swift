@@ -15,6 +15,9 @@ public enum CommandIntent: Equatable, Sendable {
     /// Open a Google search for the query in the browser (NIC-134) — a single `google.search`
     /// tool call. The host is fixed to google.com by the adapter; only the query varies.
     case googleSearch(query: String)
+    /// Control the user's Spotify playback (NIC-133) — a single `spotify.control` tool call. The
+    /// action is one of play/pause/next/previous; the adapter sends it to the active device.
+    case spotifyControl(action: String)
     /// Open an https web address in the browser (NIC-127) — a single `web.open` tool call, used
     /// for news article links. The adapter validates the scheme/host; a non-https link is refused.
     case webOpen(url: String)

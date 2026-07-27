@@ -583,3 +583,145 @@ describe("WidgetSlot project-git-status (NIC-130)", () => {
     expect(screen.getByText("No repositories in your projects folder yet.")).toBeTruthy();
   });
 });
+
+/** NIC-133 Increment 1: the Entertainment "Spotify" widget renders the current track — artwork,
+ *  track, artist, optional album, and a playing/paused indicator. Display only in this increment
+ *  (playback controls land later); nothing-playing and not-connected are honest slot-level states. */
+
+const spotifyPlaying: WidgetData = {
+  widgetId: "spotify",
+  state: "ready",
+  headline: "Now playing",
+  freshness: { observedAt: "2026-07-27T16:00:00.000Z", label: "just now" },
+  data: {
+    track: "Weightless",
+    artist: "Marconi Union",
+    album: "Ambient Transmissions Vol. 2",
+    artworkImage: "data:image/png;base64,AAAA",
+    isPlaying: true
+  }
+};
+
+function nowPlayingCard(): HTMLElement | null {
+  return document.querySelector(".nowplaying");
+}
+
+describe("WidgetSlot spotify (NIC-133)", () => {
+  it("renders the current track with artwork, track, artist, album, and a playing indicator", () => {
+    renderSlot(spotifyPlaying);
+    const card = nowPlayingCard();
+    expect(card).not.toBeNull();
+    expect(card?.querySelector(".nowplaying__track")?.textContent).toBe("Weightless");
+    expect(card?.querySelector(".nowplaying__artist")?.textContent).toBe("Marconi Union");
+    expect(card?.querySelector(".nowplaying__album")?.textContent).toBe(
+      "Ambient Transmissions Vol. 2"
+    );
+    expect(card?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
+    const status = card?.querySelector(".nowplaying__status");
+    expect(status?.textContent).toBe("Playing");
+    expect(status?.className).toContain("nowplaying__status--playing");
+  });
+
+  it("shows a paused indicator when the track is not actively playing", () => {
+    renderSlot({
+      widgetId: "spotify",
+      state: "ready",
+      data: { track: "Weightless", artist: "Marconi Union", isPlaying: false }
+    });
+    const status = nowPlayingCard()?.querySelector(".nowplaying__status");
+    expect(status?.textContent).toBe("Paused");
+    expect(status?.className).toContain("nowplaying__status--paused");
+  });
+
+  it("shows a music-note placeholder when there is no artwork, never a broken image", () => {
+    renderSlot({
+      widgetId: "spotify",
+      state: "ready",
+      data: { track: "Untitled", artist: "Unknown", isPlaying: true }
+    });
+    const card = nowPlayingCard();
+    expect(card?.querySelector("img")).toBeNull();
+    expect(card?.querySelector(".nowplaying__note")).not.toBeNull();
+  });
+
+  it("omits the album line when Spotify provides none, never fabricating one", () => {
+    renderSlot({
+      widgetId: "spotify",
+      state: "ready",
+      data: { track: "Untitled", artist: "Unknown", isPlaying: true }
+    });
+    expect(nowPlayingCard()?.querySelector(".nowplaying__album")).toBeNull();
+  });
+
+  it("renders an honest unavailable state (not connected) with no now-playing card", () => {
+    renderSlot({
+      widgetId: "spotify",
+      state: "unavailable",
+      emptyMessage: "Spotify isn't connected yet."
+    });
+    expect(nowPlayingCard()).toBeNull();
+    expect(screen.getByText("Spotify isn't connected yet.")).toBeTruthy();
+  });
+
+  it("shows the active device and a progress bar with time labels (NIC-133 polish)", () => {
+    renderSlot({
+      widgetId: "spotify",
+      state: "ready",
+      data: {
+        track: "Weightless",
+        artist: "Marconi Union",
+        isPlaying: true,
+        deviceName: "Nick's MacBook Pro",
+        progressMs: 83000,
+        durationMs: 240000
+      }
+    });
+    // The status line names the active device.
+    expect(nowPlayingCard()?.querySelector(".nowplaying__status")?.textContent).toBe(
+      "Playing · Nick's MacBook Pro"
+    );
+    // Time labels: current (1:23) and duration (4:00).
+    const times = Array.from(document.querySelectorAll(".nowplaying__time")).map((el) => el.textContent);
+    expect(times).toEqual(["1:23", "4:00"]);
+    // The bar fill reflects ~34.6% (83s / 240s).
+    const fill = document.querySelector(".nowplaying__bar-fill") as HTMLElement;
+    expect(parseFloat(fill.style.width)).toBeCloseTo(34.58, 1);
+  });
+
+  it("omits the progress bar when duration is unknown, never faking one (NIC-133)", () => {
+    renderSlot({
+      widgetId: "spotify",
+      state: "ready",
+      data: { track: "Weightless", artist: "Marconi Union", isPlaying: false }
+    });
+    expect(document.querySelector(".nowplaying__progress")).toBeNull();
+  });
+
+  it("dispatches play/pause/next/previous through the spotify grammar on click (NIC-133)", () => {
+    // Playing → the primary control pauses; prev/next skip.
+    const { submissions } = renderSlot(spotifyPlaying);
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next track" }));
+    fireEvent.click(screen.getByRole("button", { name: "Previous track" }));
+    expect(submissions).toEqual(["spotify pause", "spotify next", "spotify previous"]);
+  });
+
+  it("shows a Play control (not Pause) and dispatches play when the track is paused (NIC-133)", () => {
+    const { submissions } = renderSlot({
+      widgetId: "spotify",
+      state: "ready",
+      data: { track: "Weightless", artist: "Marconi Union", isPlaying: false }
+    });
+    expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    expect(submissions).toEqual(["spotify play"]);
+  });
+
+  it("disables the controls under read-only recovery and dispatches nothing (NIC-133)", () => {
+    const { submissions } = renderSlot(spotifyPlaying, (base) => ({ ...base, uiState: "offline" }));
+    const pause = screen.getByRole("button", { name: "Pause" }) as HTMLButtonElement;
+    expect(pause.disabled).toBe(true);
+    fireEvent.click(pause);
+    expect(submissions).toHaveLength(0);
+  });
+});

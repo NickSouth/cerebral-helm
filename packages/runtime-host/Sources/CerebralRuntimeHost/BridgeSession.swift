@@ -3,6 +3,16 @@ import CerebralContracts
 import CerebralCore
 import CerebralTools
 
+/// The outcome of a successful Spotify connect (NIC-133), returned by the host's connect closure to
+/// the `connectSpotify` op: the granted scope only. The OAuth tokens are persisted to the Keychain
+/// by the Mac coordinator and never travel back through the bridge.
+public struct SpotifyConnectionInfo: Sendable, Equatable {
+    public let scope: String?
+    public init(scope: String?) {
+        self.scope = scope
+    }
+}
+
 /// Executes versioned bridge operation requests against the live ``CommandRuntime``
 /// (NIC-74b, ADR-004). Transport-agnostic: the WKWebView transport (or a test) hands
 /// it a decoded operation request and forwards the response it returns.
@@ -86,6 +96,13 @@ public final class BridgeSession: @unchecked Sendable {
     /// cadence. Optional; a host with no settings-driven producers leaves it nil.
     private let onSettingsChanged: (@Sendable (SettingsChanges) -> Void)?
 
+    /// Runs the Spotify OAuth connect flow (NIC-133): the `connectSpotify` op awaits it, and it
+    /// resolves once the browser round trip completes (tokens are persisted to the Keychain by the
+    /// coordinator) or throws honestly (no Client ID, user cancelled, Spotify rejected). Optional —
+    /// a host without the Mac coordinator (pre-Mac, tests) reports the connect surface unavailable.
+    /// The tokens never cross back through here; only the granted scope does.
+    private let spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)?
+
     /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
     /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
     /// uses. Optional: a host without it (pre-Mac, tests) still ends the session
@@ -142,6 +159,7 @@ public final class BridgeSession: @unchecked Sendable {
         secretStore: (any SecretManaging)? = nil,
         onSecretStored: (@Sendable (String) -> Void)? = nil,
         onSettingsChanged: (@Sendable (SettingsChanges) -> Void)? = nil,
+        spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil,
         workspaceWindows: (any WorkspaceWindowsCapability)? = nil,
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
@@ -160,6 +178,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.secretStore = secretStore
         self.onSecretStored = onSecretStored
         self.onSettingsChanged = onSettingsChanged
+        self.spotifyConnect = spotifyConnect
         self.workspaceWindows = workspaceWindows
         self.app = app
         self.url = url
@@ -245,6 +264,10 @@ public final class BridgeSession: @unchecked Sendable {
             return await storeSecret(request)
         case .getSecretStatus:
             return await getSecretStatus(request)
+        case .deleteSecret:
+            return await deleteSecret(request)
+        case .connectSpotify:
+            return await connectSpotify(request)
         case .openLayout:
             return await openLayout(request)
         case .closeLayout:
@@ -1079,6 +1102,67 @@ public final class BridgeSession: @unchecked Sendable {
         ))
     }
 
+    /// Removes a stored secret (NIC-133) — the "disconnect" path (e.g. Spotify's `spotify_oauth`
+    /// blob, or clearing a provider key). Idempotent: deleting an absent reference reports
+    /// `deleted: false` without erroring, so a disconnect on an already-disconnected account is a
+    /// clean no-op. The value is never read or echoed.
+    private func deleteSecret(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: SecretStatusInput = decodePayload(request), !input.reference.isEmpty else {
+            return invalidInput(request, "deleteSecret requires a reference.")
+        }
+        guard let secretStore else {
+            return ok(request, payload: DeleteSecretResult(reference: input.reference, deleted: false))
+        }
+        do {
+            try await secretStore.delete(reference: input.reference)
+            return ok(request, payload: DeleteSecretResult(reference: input.reference, deleted: true))
+        } catch {
+            // Absent (or an unreadable store) — nothing to remove, an honest idempotent no-op.
+            return ok(request, payload: DeleteSecretResult(reference: input.reference, deleted: false))
+        }
+    }
+
+    /// Runs the Spotify OAuth connect flow (NIC-133): opens the browser to Spotify's consent page,
+    /// captures the redirect, exchanges the code, and persists the tokens to the Keychain — all
+    /// inside the injected `spotifyConnect` closure (the Mac coordinator). The response reports only
+    /// `connected` and the granted `scope`; the tokens never cross back. Failures degrade to an
+    /// honest message and never leak a diagnostic: no Client ID / user declined → guidance; a
+    /// Spotify rejection or timeout → a generic retry message.
+    private func connectSpotify(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let spotifyConnect else {
+            return errorResponse(
+                request, category: .unavailableCapability, code: "spotify_connect_unavailable",
+                message: "Connecting Spotify requires the macOS host."
+            )
+        }
+        do {
+            let connection = try await spotifyConnect()
+            return ok(request, payload: ConnectSpotifyResult(connected: true, scope: connection.scope))
+        } catch let error as SpotifyPlaybackError {
+            let message: String
+            switch error {
+            case .credentialsMissing:
+                message = "Add your Spotify Client ID in Settings → Setup, then connect."
+            case .notConnected:
+                message = "Spotify didn't accept the connection. Please try connecting again."
+            case .providerFailed:
+                message = "Couldn't connect to Spotify. Please try again."
+            }
+            return errorResponse(
+                request, category: .unavailableCapability, code: "spotify_connect_failed", message: message
+            )
+        } catch {
+            return errorResponse(
+                request, category: .unavailableCapability, code: "spotify_connect_failed",
+                message: "Couldn't connect to Spotify. Please try again."
+            )
+        }
+    }
+
     private func searchNotes(
         _ request: CerebralHelmBridgeOperationRequest
     ) async -> CerebralHelmBridgeOperationResponse {
@@ -1723,6 +1807,18 @@ public final class BridgeSession: @unchecked Sendable {
     private struct SecretStatusResult: Encodable {
         let reference: String
         let bound: Bool
+    }
+    /// `{ reference, deleted }` — the `deleteSecret` result (NIC-133). `deleted` is false when the
+    /// reference was already absent (an idempotent no-op), true when a stored value was removed.
+    private struct DeleteSecretResult: Encodable {
+        let reference: String
+        let deleted: Bool
+    }
+    /// `{ connected, scope? }` — the `connectSpotify` result (NIC-133). Reports success and the
+    /// granted scope only; the OAuth tokens never cross the bridge (they live in the Keychain).
+    private struct ConnectSpotifyResult: Encodable {
+        let connected: Bool
+        let scope: String?
     }
     private struct OpenLayoutInput: Decodable {
         let modeId: String

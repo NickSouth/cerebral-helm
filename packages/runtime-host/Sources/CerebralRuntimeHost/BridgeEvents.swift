@@ -442,6 +442,75 @@ public enum BridgeEventFactory {
         }
     }
 
+    // MARK: - Spotify widget (NIC-133)
+
+    /// The `spotify` widget's live envelope — the Swift mirror of the web `WidgetData` for the
+    /// Entertainment left slot (NIC-133). Optional fields are omitted (not encoded as null) when
+    /// nil by the synthesized encoding, matching the envelope the dashboard renders.
+    public struct SpotifyWidget: Encodable, Sendable {
+        public let widgetId: String
+        public let state: String
+        public let headline: String?
+        public let emptyMessage: String?
+        public let freshness: WidgetFreshnessPayload?
+        public let data: SpotifyWidgetData?
+    }
+
+    /// The now-playing track (a flat payload — a `ready` widget always carries a track). `album`
+    /// and `artworkImage` are omitted when Spotify had none (never fabricated); `artworkImage` is a
+    /// self-contained `data:` URI. Matches the web `SpotifyWidgetPayload`.
+    public struct SpotifyWidgetData: Encodable, Sendable {
+        public let track: String
+        public let artist: String
+        public let album: String?
+        public let artworkImage: String?
+        public let isPlaying: Bool
+        public let deviceName: String?
+        public let progressMs: Int?
+        public let durationMs: Int?
+    }
+
+    /// Maps a now-playing result into the `spotify` widget envelope (NIC-133). The states are
+    /// worded honestly: a missing credential guides the user to connect; a rejected authorization
+    /// guides them to reconnect; any other failure is a generic `unavailable` that never leaks the
+    /// diagnostic; nothing playing (a successful `nil`) is a healthy `empty`; otherwise `ready`
+    /// with the current track. Nothing is fabricated — a track without an album/artwork omits it.
+    public static func spotifyWidget(
+        from result: Swift.Result<SpotifyNowPlaying?, Error>, now: Date
+    ) -> SpotifyWidget {
+        switch result {
+        case let .failure(error):
+            let message: String
+            switch error as? SpotifyPlaybackError {
+            case .credentialsMissing:
+                message = "Connect Spotify in Settings → Setup to see what's playing."
+            case .notConnected:
+                message = "Reconnect Spotify in Settings → Setup."
+            default:
+                message = "Spotify isn't available right now."
+            }
+            return SpotifyWidget(
+                widgetId: "spotify", state: "unavailable", headline: nil,
+                emptyMessage: message, freshness: nil, data: nil
+            )
+        case .success(.none):
+            return SpotifyWidget(
+                widgetId: "spotify", state: "empty", headline: nil,
+                emptyMessage: "Nothing playing right now.", freshness: nil, data: nil
+            )
+        case let .success(.some(track)):
+            return SpotifyWidget(
+                widgetId: "spotify", state: "ready", headline: "Now playing", emptyMessage: nil,
+                freshness: WidgetFreshnessPayload(observedAt: now, label: "just now"),
+                data: SpotifyWidgetData(
+                    track: track.track, artist: track.artist, album: track.album,
+                    artworkImage: track.artworkImage, isPlaying: track.isPlaying,
+                    deviceName: track.deviceName, progressMs: track.progressMs, durationMs: track.durationMs
+                )
+            )
+        }
+    }
+
     // MARK: - Stocks widget (NIC-128)
 
     /// The `stocks` widget's live envelope — the Swift mirror of the web `WidgetData` for the

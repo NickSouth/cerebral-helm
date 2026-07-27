@@ -12,6 +12,7 @@ import type {
   ProjectWidgetItem,
   ReleaseWidgetItem,
   RepositoryWidgetItem,
+  SpotifyWidgetPayload,
   StockQuoteWidgetItem,
   WidgetData
 } from "../widgets/widgetData";
@@ -22,6 +23,7 @@ import { useUiPosture } from "../state/useUiPosture";
 import { submitOpenProject } from "./openProject";
 import { submitOpenProjectDetail } from "./openProjectDetail";
 import { submitGoogleSearch } from "./googleSearch";
+import { submitSpotifyControl, type SpotifyControlAction } from "./spotifyControl";
 import { formatDay } from "./format";
 
 const WIDGET_LABELS: ReadonlyMap<string, string> = new Map(
@@ -82,7 +84,6 @@ const WIDGET_BODIES: Readonly<Record<string, (data: any) => ReactNode>> = {
         row(item.title, formatDay(item.dueAt), index)
       )
     ),
-  spotify: (data) => list(row(data.track, data.artist, "track")),
   courses: (data) =>
     list((data.items ?? []).map((item: any, index: number) => row(item.name, item.next, index)))
 };
@@ -628,6 +629,217 @@ function ProjectGitStatusBody({ items }: { items: readonly ProjectGitStatusItem[
   );
 }
 
+/** A small line-icon music note for the now-playing artwork placeholder (matches the FolderGlyph
+ *  line-icon convention). */
+function MusicGlyph() {
+  return (
+    <svg
+      className="nowplaying__note"
+      viewBox="0 0 24 24"
+      width="22"
+      height="22"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 17V4l10-2v13" />
+      <circle cx="6" cy="17" r="3" />
+      <circle cx="16" cy="15" r="3" />
+    </svg>
+  );
+}
+
+/** Playback control glyphs (filled, matching the media aesthetic). */
+function PrevIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+      <path d="M6 6h2v12H6zM19 6v12L9 12z" />
+    </svg>
+  );
+}
+function NextIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+      <path d="M16 6h2v12h-2zM5 6l10 6L5 18z" />
+    </svg>
+  );
+}
+function PlayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+      <path d="M7 5l12 7-12 7z" />
+    </svg>
+  );
+}
+function PauseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+      <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
+    </svg>
+  );
+}
+
+/** The Spotify mark (green circle + sound waves) — a small brand cue on the now-playing card. */
+function SpotifyLogo() {
+  return (
+    <svg
+      className="nowplaying__logo"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-label="Spotify"
+      role="img"
+    >
+      <circle cx="12" cy="12" r="12" fill="#1DB954" />
+      <g fill="none" stroke="#fff" strokeLinecap="round">
+        <path strokeWidth="2.1" d="M6 9c4-1 8-0.5 11.6 1.6" />
+        <path strokeWidth="1.7" d="M6.6 12.5c3.2-0.8 6.6-0.4 9.4 1.3" />
+        <path strokeWidth="1.4" d="M7.1 15.6c2.5-0.6 5.1-0.3 7.3 1" />
+      </g>
+    </svg>
+  );
+}
+
+/** "1:23" from milliseconds — the compact time label for the progress bar. */
+function formatTrackTime(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+/**
+ * The Entertainment "Spotify" widget body (NIC-133): the track currently playing on Spotify —
+ * artwork, track, artist, the active device, a live progress bar, and playback controls (previous /
+ * play-pause / next). The progress bar advances smoothly client-side every second while playing and
+ * resyncs on each poll, so it stays fluid despite the polling cadence. The controls dispatch the
+ * `spotify.control` tool through the command bus (`submitSpotifyControl`); it's honestly
+ * `external_write` but the descriptor waives confirmation, so a tap acts at once, and the producer
+ * re-polls right after so the track updates near-instantly. Read-only recovery disables the buttons,
+ * and a rejected dispatch is surfaced honestly — never a fabricated success.
+ */
+function SpotifyBody({ track }: { track: SpotifyWidgetPayload }) {
+  const bridge = useBridge();
+  const { announce } = useActionStatus();
+  const { readOnly } = useUiPosture();
+  const { reducedMotion } = useAppearance();
+
+  const hasProgress =
+    typeof track.progressMs === "number" &&
+    typeof track.durationMs === "number" &&
+    track.durationMs > 0;
+
+  // Anchor the polled position to a local timestamp and advance it every second while playing, so
+  // the bar and time move fluidly between polls; each new payload resyncs it. Reduced motion (or a
+  // paused track) shows the polled value without the per-second tick.
+  const [displayMs, setDisplayMs] = useState(track.progressMs ?? 0);
+  useEffect(() => {
+    const base = track.progressMs ?? 0;
+    setDisplayMs(base);
+    if (!hasProgress || !track.isPlaying || reducedMotion) return;
+    const duration = track.durationMs as number;
+    const anchor = Date.now();
+    const id = window.setInterval(() => {
+      setDisplayMs(Math.min(duration, base + (Date.now() - anchor)));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [track.progressMs, track.durationMs, track.isPlaying, hasProgress, reducedMotion]);
+
+  const control = (action: SpotifyControlAction, gerund: string) => {
+    void submitSpotifyControl(bridge, action)
+      .then((receipt) => {
+        if (!receipt.accepted) {
+          announce(`I couldn't ${gerund} — the command wasn't accepted.`, "error");
+        }
+      })
+      .catch(() => {
+        announce(`${gerund} failed — the bridge did not accept it.`, "error");
+      });
+  };
+
+  const playPauseLabel = track.isPlaying ? "Pause" : "Play";
+  const stateWord = track.isPlaying ? "Playing" : "Paused";
+  const statusText = track.deviceName ? `${stateWord} · ${track.deviceName}` : stateWord;
+  const percent = hasProgress
+    ? Math.min(100, (displayMs / (track.durationMs as number)) * 100)
+    : 0;
+
+  return (
+    <div className="nowplaying">
+      <SpotifyLogo />
+      <div className="nowplaying__main">
+        <span className="nowplaying__art">
+          {track.artworkImage ? <img src={track.artworkImage} alt="" loading="lazy" /> : <MusicGlyph />}
+        </span>
+        <span className="nowplaying__meta">
+          <span className="nowplaying__track" title={track.track}>
+            {track.track}
+          </span>
+          <span className="nowplaying__artist" title={track.artist}>
+            {track.artist}
+          </span>
+          {track.album ? <span className="nowplaying__album">{track.album}</span> : null}
+          <span
+            className={`nowplaying__status nowplaying__status--${track.isPlaying ? "playing" : "paused"}`}
+            title={statusText}
+          >
+            {statusText}
+          </span>
+        </span>
+      </div>
+      {hasProgress ? (
+        <div className="nowplaying__progress">
+          <span className="nowplaying__time">{formatTrackTime(displayMs)}</span>
+          <span className="nowplaying__bar">
+            <span className="nowplaying__bar-fill" style={{ width: `${percent}%` }} />
+          </span>
+          <span className="nowplaying__time">{formatTrackTime(track.durationMs as number)}</span>
+        </div>
+      ) : null}
+      <span className="nowplaying__controls">
+          <button
+            type="button"
+            className="nowplaying__control"
+            disabled={readOnly}
+            aria-disabled={readOnly || undefined}
+            aria-label="Previous track"
+            title={readOnly ? "Controls are paused while the dashboard is read-only" : "Previous track"}
+            onClick={() => control("previous", "go to the previous track")}
+          >
+            <PrevIcon />
+          </button>
+          <button
+            type="button"
+            className="nowplaying__control nowplaying__control--primary"
+            disabled={readOnly}
+            aria-disabled={readOnly || undefined}
+            aria-label={playPauseLabel}
+            title={readOnly ? "Controls are paused while the dashboard is read-only" : playPauseLabel}
+            onClick={() =>
+              track.isPlaying ? control("pause", "pause playback") : control("play", "resume playback")
+            }
+          >
+            {track.isPlaying ? <PauseIcon /> : <PlayIcon />}
+          </button>
+          <button
+            type="button"
+            className="nowplaying__control"
+            disabled={readOnly}
+            aria-disabled={readOnly || undefined}
+            aria-label="Next track"
+            title={readOnly ? "Controls are paused while the dashboard is read-only" : "Next track"}
+            onClick={() => control("next", "skip to the next track")}
+          >
+            <NextIcon />
+          </button>
+        </span>
+    </div>
+  );
+}
+
 function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
   // The stocks widget renders a paginated tile grid and owns the reduced-motion hook, so it is
   // dispatched to its own component instead of a pure static renderer (NIC-128).
@@ -650,6 +862,12 @@ function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
   if (widgetId === "releases") {
     const items = (data as { items?: readonly ReleaseWidgetItem[] })?.items ?? [];
     return <ReleasesBody items={items} />;
+  }
+  // The spotify widget shows the current Spotify track (artwork + track/artist + playing state);
+  // playback controls land in a later increment (NIC-133). A `ready` payload always has a track.
+  if (widgetId === "spotify") {
+    const track = data as SpotifyWidgetPayload | undefined;
+    return track?.track ? <SpotifyBody track={track} /> : <Unavailable />;
   }
   // The project-git-status widget renders a per-repo report with a repo pager (NIC-130).
   if (widgetId === "project-git-status") {

@@ -33,6 +33,9 @@ public struct ToolCapabilities: Sendable {
     /// preferring a running Chrome instance. `.none`-matrix mock by default (pre-Mac/tests); the
     /// macOS shell binds the honest adapter.
     public let webOpen: any WebOpenCapability
+    /// Controls the user's Spotify playback (NIC-133): play/pause/next/previous. `.none`-matrix
+    /// mock by default (pre-Mac/tests); the macOS shell binds the honest Web-API adapter.
+    public let spotifyControl: any SpotifyControlCapability
     /// Stable capability IDs (``CapabilityMatrix/Capability/appOpen`` etc.) bound
     /// to honest native implementations in this bundle. Empty for the mock bundle.
     public let nativeCapabilityIDs: Set<String>
@@ -51,6 +54,7 @@ public struct ToolCapabilities: Sendable {
         appWindows: any AppWindowsCapability = MockAppWindowsCapability(groups: []),
         googleSearch: any GoogleSearchCapability = MockGoogleSearchCapability(matrix: .none),
         webOpen: any WebOpenCapability = MockWebOpenCapability(matrix: .none),
+        spotifyControl: any SpotifyControlCapability = MockSpotifyControlCapability(matrix: .none),
         nativeCapabilityIDs: Set<String> = []
     ) {
         self.app = app
@@ -66,6 +70,7 @@ public struct ToolCapabilities: Sendable {
         self.appWindows = appWindows
         self.googleSearch = googleSearch
         self.webOpen = webOpen
+        self.spotifyControl = spotifyControl
         self.nativeCapabilityIDs = nativeCapabilityIDs
     }
 
@@ -85,7 +90,8 @@ public struct ToolCapabilities: Sendable {
             applicationLifecycle: MockApplicationLifecycleCapability(matrix: matrix),
             appWindows: MockAppWindowsCapability(groups: []),
             googleSearch: MockGoogleSearchCapability(matrix: matrix),
-            webOpen: MockWebOpenCapability(matrix: matrix)
+            webOpen: MockWebOpenCapability(matrix: matrix),
+            spotifyControl: MockSpotifyControlCapability(matrix: matrix)
         )
     }
 }

@@ -679,6 +679,8 @@ const TMDB_SECRET_REFERENCE = "tmdb_api_key";
 const FINNHUB_SECRET_REFERENCE = "finnhub_api_key";
 const NEWSDATA_SECRET_REFERENCE = "newsdata_api_key";
 const GITHUB_SECRET_REFERENCE = "github_api_token";
+const SPOTIFY_CLIENT_ID_REFERENCE = "spotify_client_id";
+const SPOTIFY_OAUTH_REFERENCE = "spotify_oauth";
 
 /**
  * A masked API-key provisioning field for a provider (generalized from the TMDB field, NIC-134;
@@ -767,6 +769,102 @@ function ProviderKeyField({
       {phase === "error" ? (
         <p className="settings-note" role="alert">
           That key couldn't be saved. Check it and try again.
+        </p>
+      ) : null}
+    </Field>
+  );
+}
+
+/**
+ * The Spotify connect control (NIC-133): a "Connect Spotify" button that runs the OAuth flow on the
+ * macOS host (`connectSpotify` — opens the browser, captures the redirect, stores tokens in the
+ * Keychain), and a "Disconnect" that clears them (`deleteSecret`). Connection state comes from
+ * `getSecretStatus("spotify_oauth")` — presence only, the tokens are never read back. Requires the
+ * Spotify Client ID field above to be set; a connect without it fails with honest guidance.
+ */
+function SpotifyConnectField() {
+  const bridge = useBridge();
+  const [connected, setConnected] = useState<boolean | null>(null); // null while the status settles
+  const [phase, setPhase] = useState<"idle" | "connecting" | "error">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      .getSecretStatus({ reference: SPOTIFY_OAUTH_REFERENCE })
+      .then((result) => {
+        if (active) setConnected(result.bound);
+      })
+      .catch(() => {
+        if (active) setConnected(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
+  function connect() {
+    setPhase("connecting");
+    setMessage(null);
+    void bridge
+      .connectSpotify()
+      .then((result) => {
+        if (result.connected) {
+          setConnected(true);
+          setPhase("idle");
+        } else {
+          setPhase("error");
+          setMessage("Couldn't connect to Spotify. Please try again.");
+        }
+      })
+      .catch((error: unknown) => {
+        setPhase("error");
+        setMessage(error instanceof Error ? error.message : "Couldn't connect to Spotify. Please try again.");
+      });
+  }
+
+  function disconnect() {
+    void bridge
+      .deleteSecret({ reference: SPOTIFY_OAUTH_REFERENCE })
+      .then(() => {
+        setConnected(false);
+        setPhase("idle");
+        setMessage(null);
+      })
+      .catch(() => {
+        // Leave the state as-is; a failed delete is rare and the next status read reconciles it.
+      });
+  }
+
+  const statusLabel = connected === null ? "Checking…" : connected ? "Connected" : "Not connected";
+
+  return (
+    <Field
+      label="Spotify account"
+      hint="Connect Spotify to show your now-playing track (and controls) on the Entertainment dashboard. Uses the Client ID above; opens your browser to sign in. Tokens are stored in your macOS Keychain — never in config or logs."
+    >
+      <div className="settings-secret">
+        <span className="settings-secret__status" data-bound={connected === true}>
+          {statusLabel}
+        </span>
+        {connected ? (
+          <button type="button" className="settings-button" onClick={disconnect}>
+            Disconnect
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="settings-button settings-button--primary"
+            disabled={phase === "connecting"}
+            onClick={connect}
+          >
+            {phase === "connecting" ? "Connecting…" : "Connect Spotify"}
+          </button>
+        )}
+      </div>
+      {phase === "error" && message ? (
+        <p className="settings-note" role="alert">
+          {message}
         </p>
       ) : null}
     </Field>
@@ -990,6 +1088,13 @@ function SetupPanelBody() {
           hint="Powers the Developer Project Git Status widget (read-only: pull requests, Actions, commits). Stored in your macOS Keychain — never in config or logs. Create a fine-grained token at github.com/settings/tokens."
           placeholder="Paste your GitHub token"
         />
+        <ProviderKeyField
+          reference={SPOTIFY_CLIENT_ID_REFERENCE}
+          label="Spotify Client ID"
+          hint="Powers the Entertainment Spotify widget. Create an app at developer.spotify.com and add the redirect URI http://127.0.0.1:8888/callback — then paste its Client ID here. Public, but stored in your macOS Keychain."
+          placeholder="Paste your Spotify Client ID"
+        />
+        <SpotifyConnectField />
         <StocksTickersField />
         <Field label="Onboarding">
           <Unavailable label="Requires the macOS host" />

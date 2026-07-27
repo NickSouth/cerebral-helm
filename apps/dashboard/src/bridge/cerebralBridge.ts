@@ -183,6 +183,20 @@ export interface SecretStatusResult {
   readonly reference: string;
   readonly bound: boolean;
 }
+export interface DeleteSecretInput {
+  readonly reference: string;
+}
+export interface DeleteSecretResult {
+  readonly reference: string;
+  /** True when a stored value was removed; false when the reference was already absent. */
+  readonly deleted: boolean;
+}
+/** The result of a Spotify OAuth connect (NIC-133): success + the granted scope only — the tokens
+ *  live in the Keychain and never cross the bridge. */
+export interface ConnectSpotifyResult {
+  readonly connected: boolean;
+  readonly scope?: string;
+}
 
 export interface UpdateQuickAppsInput {
   readonly modeId: string;
@@ -464,6 +478,12 @@ export interface CerebralBridge {
   storeSecret(input: StoreSecretInput): Promise<StoreSecretResult>;
   /** Report whether a logical secret reference is bound, without exposing its value. */
   getSecretStatus(input: SecretStatusInput): Promise<SecretStatusResult>;
+  /** Remove a stored secret (NIC-133) — the disconnect / clear-key path. Idempotent. */
+  deleteSecret(input: DeleteSecretInput): Promise<DeleteSecretResult>;
+  /** Run the Spotify OAuth connect flow on the macOS host (NIC-133): opens the browser, captures
+   *  the redirect, and persists tokens to the Keychain. Resolves with the granted scope, or rejects
+   *  with an honest message (no Client ID, cancelled, rejected). */
+  connectSpotify(): Promise<ConnectSpotifyResult>;
   /** Read-only application discovery for the More Apps picker (NIC-119). */
   listApps(): Promise<ListAppsResult>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */

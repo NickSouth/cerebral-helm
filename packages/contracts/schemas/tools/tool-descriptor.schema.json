@@ -61,6 +61,7 @@
         "allow_read_without_confirmation",
         "confirm_local_write",
         "confirm_external_write",
+        "allow_external_write_without_confirmation",
         "confirm_destructive",
         "confirm_shell",
         "confirm_financial",

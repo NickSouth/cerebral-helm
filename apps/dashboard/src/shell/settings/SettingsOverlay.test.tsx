@@ -284,6 +284,64 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(input).toHaveValue("");
   });
 
+  it("stores the Spotify Client ID under its own reference (NIC-133)", async () => {
+    const { bridge } = renderApp();
+    const stored: Array<{ reference: string; value: string }> = [];
+    const realStore = bridge.storeSecret.bind(bridge);
+    bridge.storeSecret = (input) => {
+      stored.push({ reference: input.reference, value: input.value });
+      return realStore(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const input = await within(dialog).findByLabelText("Spotify Client ID");
+    const field = input.closest(".settings-field") as HTMLElement;
+    expect(await within(field).findByText("Not set")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "spotify-client-abc" } });
+    fireEvent.click(within(field).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(stored).toHaveLength(1));
+    expect(stored[0]).toEqual({ reference: "spotify_client_id", value: "spotify-client-abc" });
+    expect(await within(field).findByText("Key set")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+  });
+
+  it("connects Spotify via the OAuth op and disconnects by clearing the token (NIC-133)", async () => {
+    const { bridge } = renderApp();
+    const connectCalls: number[] = [];
+    const deleted: string[] = [];
+    const realConnect = bridge.connectSpotify.bind(bridge);
+    bridge.connectSpotify = () => {
+      connectCalls.push(1);
+      return realConnect();
+    };
+    const realDelete = bridge.deleteSecret.bind(bridge);
+    bridge.deleteSecret = (input) => {
+      deleted.push(input.reference);
+      return realDelete(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    // The connect control lives in the "Spotify account" field, distinct from the Client ID key field.
+    const field = (await within(dialog).findByText("Spotify account")).closest(
+      ".settings-field"
+    ) as HTMLElement;
+    expect(await within(field).findByText("Not connected")).toBeInTheDocument();
+
+    fireEvent.click(within(field).getByRole("button", { name: "Connect Spotify" }));
+    await waitFor(() => expect(connectCalls).toHaveLength(1));
+    // The mock binds spotify_oauth, so the control flips to Connected and offers Disconnect.
+    expect(await within(field).findByText("Connected")).toBeInTheDocument();
+
+    fireEvent.click(within(field).getByRole("button", { name: "Disconnect" }));
+    await waitFor(() => expect(deleted).toEqual(["spotify_oauth"]));
+    expect(await within(field).findByText("Not connected")).toBeInTheDocument();
+  });
+
   it("disables Save until a key is entered (NIC-134)", async () => {
     renderApp();
     const dialog = openSettings();
