@@ -2,6 +2,7 @@ import type {
   ConfirmationDisclosure,
   DashboardBootstrapState,
   DashboardMode,
+  NewsRegion,
   WeatherChannel
 } from "../bridge/types";
 import type { WidgetData } from "../widgets/widgetData";
@@ -114,6 +115,14 @@ export type DashboardState = DashboardBootstrapState & {
    *  here (rather than clobbering the mode-scoped bootstrap `weather`) leaves the per-mode mock
    *  fixtures untouched. */
   readonly liveWeather?: WeatherChannel | null;
+  /** Live per-mode news (NIC-127), folded from `news.changed` and keyed by the mode's
+   *  `newsProfile`. Runtime-only and sparse: a profile is absent until its producer streams
+   *  headlines. Unlike `liveWeather` (one machine-global value), news content differs per mode,
+   *  so it is a map — the News panel resolves `liveNews[activeMode.newsProfile]` over the
+   *  bootstrap `regions.news` (live wins). Lives OUTSIDE `regions`, so it survives
+   *  `config.changed` mode switches by construction (same reasoning as `liveWidgets`) and never
+   *  disturbs the per-mode mock `news` fixtures. */
+  readonly liveNews?: Readonly<Record<string, NewsRegion>>;
 };
 
 /**

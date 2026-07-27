@@ -29,6 +29,10 @@ public struct ToolCapabilities: Sendable {
     /// Opens a Google search in the browser (NIC-134), preferring a running Chrome instance.
     /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
     public let googleSearch: any GoogleSearchCapability
+    /// Opens an arbitrary https web address in the browser (NIC-127), for news article links,
+    /// preferring a running Chrome instance. `.none`-matrix mock by default (pre-Mac/tests); the
+    /// macOS shell binds the honest adapter.
+    public let webOpen: any WebOpenCapability
     /// Stable capability IDs (``CapabilityMatrix/Capability/appOpen`` etc.) bound
     /// to honest native implementations in this bundle. Empty for the mock bundle.
     public let nativeCapabilityIDs: Set<String>
@@ -46,6 +50,7 @@ public struct ToolCapabilities: Sendable {
         applicationLifecycle: any ApplicationLifecycleCapability = MockApplicationLifecycleCapability(matrix: .none),
         appWindows: any AppWindowsCapability = MockAppWindowsCapability(groups: []),
         googleSearch: any GoogleSearchCapability = MockGoogleSearchCapability(matrix: .none),
+        webOpen: any WebOpenCapability = MockWebOpenCapability(matrix: .none),
         nativeCapabilityIDs: Set<String> = []
     ) {
         self.app = app
@@ -60,6 +65,7 @@ public struct ToolCapabilities: Sendable {
         self.applicationLifecycle = applicationLifecycle
         self.appWindows = appWindows
         self.googleSearch = googleSearch
+        self.webOpen = webOpen
         self.nativeCapabilityIDs = nativeCapabilityIDs
     }
 
@@ -78,7 +84,8 @@ public struct ToolCapabilities: Sendable {
             appDiscovery: MockAppDiscoveryCapability(matrix: matrix),
             applicationLifecycle: MockApplicationLifecycleCapability(matrix: matrix),
             appWindows: MockAppWindowsCapability(groups: []),
-            googleSearch: MockGoogleSearchCapability(matrix: matrix)
+            googleSearch: MockGoogleSearchCapability(matrix: matrix),
+            webOpen: MockWebOpenCapability(matrix: matrix)
         )
     }
 }

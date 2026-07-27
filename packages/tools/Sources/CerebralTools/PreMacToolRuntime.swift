@@ -40,6 +40,7 @@ public enum PreMacToolRuntime {
             "apps.list": AppsListHandler(capability: capabilities.appDiscovery),
             "apps.quitall": AppsQuitAllHandler(capability: capabilities.applicationLifecycle),
             "google.search": GoogleSearchHandler(capability: capabilities.googleSearch),
+            "web.open": WebOpenHandler(capability: capabilities.webOpen),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
@@ -121,6 +122,7 @@ public enum PreMacToolRuntime {
         case "apps.list": _ = try CerebralHelmAppsListInput(data: data)
         case "apps.quitall": _ = try CerebralHelmAppsQuitAllInput(data: data)
         case "google.search": _ = try CerebralHelmGoogleSearchInput(data: data)
+        case "web.open": _ = try CerebralHelmWebOpenInput(data: data)
         default: break
         }
     }

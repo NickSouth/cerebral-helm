@@ -1673,14 +1673,46 @@
 
 .news__title {
   color: var(--ch-text-primary);
+  /* Wrap to at most two lines, then ellipsize — titles are informative, so a hard single-line
+     cut-off loses too much; two lines fills the panel without overflowing (NIC-127). The classic
+     -webkit-box clamp is WebKit-native, so it is reliable in the app's WKWebView. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .news__source {
   color: var(--ch-text-muted);
   font-size: var(--ch-font-size-label);
+}
+
+/* A clickable headline (NIC-127): a full-bleed reset button keeping the item's two-line
+   title+source layout, with a hover/focus affordance. A headline with no url renders as plain
+   text (no .news__link), so there is never a dead button. */
+.news__link {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.news__link:hover:not(:disabled) .news__title,
+.news__link:focus-visible .news__title {
+  color: var(--ch-accent-primary);
+  text-decoration: underline;
+}
+
+.news__link:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 /* Free-widget slots. */

@@ -119,6 +119,9 @@ export interface NewsHeadline {
   readonly id: string;
   readonly title: string;
   readonly source: string;
+  /** The article's navigable destination (design spec §5.4), opened on click via the `web.open`
+   *  tool. Omitted when the source has no link — the headline then renders as non-interactive text. */
+  readonly url?: string;
 }
 
 export interface NewsRegion {

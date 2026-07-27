@@ -36,9 +36,10 @@
           "news": {
             "state": "ready",
             "headlines": [
-              { "id": "news-market", "title": "Markets edge higher into the close", "source": "Market Wire" },
-              { "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily" },
-              { "id": "news-earnings", "title": "Quarterly earnings season opens", "source": "Briefing" }
+              { "id": "news-market", "title": "Markets edge higher into the close as investors weigh fresh inflation data", "source": "Market Wire", "url": "https://example.com/markets-edge-higher" },
+              { "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily", "url": "https://example.com/rates-steady" },
+              { "id": "news-earnings", "title": "Quarterly earnings season opens", "source": "Briefing", "url": "https://example.com/earnings-season" },
+              { "id": "news-ma", "title": "Tech giant announces major acquisition to expand cloud portfolio", "source": "Deal Book", "url": "https://example.com/tech-acquisition" }
             ]
           },
           "widgets": {
@@ -96,9 +97,10 @@
           "news": {
             "state": "ready",
             "headlines": [
-              { "id": "news-ts", "title": "TypeScript 5.9 ships incremental project references", "source": "Dev Weekly" },
-              { "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums" },
-              { "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest" }
+              { "id": "news-ts", "title": "TypeScript 5.9 ships incremental project references", "source": "Dev Weekly", "url": "https://example.com/typescript-5-9" },
+              { "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums", "url": "https://example.com/swift-windows" },
+              { "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest", "url": "https://example.com/vite-5" },
+              { "id": "news-rust", "title": "Rust adoption climbs as more teams rewrite performance-critical services", "source": "The Register", "url": "https://example.com/rust-adoption" }
             ]
           },
           "widgets": {
@@ -160,9 +162,10 @@
           "news": {
             "state": "ready",
             "headlines": [
-              { "id": "news-grant", "title": "New research grant program announced", "source": "Campus News" },
-              { "id": "news-lib", "title": "Library extends finals-week hours", "source": "Student Desk" },
-              { "id": "news-study", "title": "Study finds spaced repetition boosts recall", "source": "Academic Brief" }
+              { "id": "news-grant", "title": "New research grant program announced", "source": "Campus News", "url": "https://example.com/research-grant" },
+              { "id": "news-lib", "title": "Library extends finals-week hours", "source": "Student Desk", "url": "https://example.com/library-hours" },
+              { "id": "news-study", "title": "Study finds spaced repetition boosts recall", "source": "Academic Brief", "url": "https://example.com/spaced-repetition" },
+              { "id": "news-scholar", "title": "National scholarship applications open earlier than usual this year", "source": "Ed News", "url": "https://example.com/scholarships" }
             ]
           },
           "widgets": {
@@ -220,9 +223,10 @@
           "news": {
             "state": "ready",
             "headlines": [
-              { "id": "news-game", "title": "Anticipated indie title launches this week", "source": "Play Wire" },
-              { "id": "news-show", "title": "Streaming series renewed for a new season", "source": "Screen Desk" },
-              { "id": "news-music", "title": "Surprise album drops overnight", "source": "Sound Brief" }
+              { "id": "news-game", "title": "Anticipated indie title launches this week", "source": "Play Wire", "url": "https://example.com/indie-launch" },
+              { "id": "news-show", "title": "Streaming series renewed for a new season", "source": "Screen Desk", "url": "https://example.com/series-renewed" },
+              { "id": "news-music", "title": "Surprise album drops overnight", "source": "Sound Brief", "url": "https://example.com/surprise-album" },
+              { "id": "news-box", "title": "Blockbuster sequel tops the weekend box office with record numbers", "source": "Screen Desk", "url": "https://example.com/box-office" }
             ]
           },
           "widgets": {
@@ -613,7 +617,7 @@
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-lecture", "title": "CS260 lecture", "start": "2026-06-23T17:00:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 16, "memoryPercent": 44, "network": { "state": "ready", "label": "Wi-Fi · 90 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
-          "news": { "state": "ready", "headlines": [{ "id": "news-lib", "title": "Library extends finals-week hours", "source": "Student Desk" }] },
+          "news": { "state": "ready", "headlines": [{ "id": "news-lib", "title": "Library extends finals-week hours", "source": "Student Desk", "url": "https://example.com/library-hours" }] },
           "widgets": {
             "left": { "widgetId": "deadlines", "state": "ready", "headline": "2 due this week", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "5m ago" }, "data": { "items": [{ "title": "CS260 problem set", "dueAt": "2026-06-30T23:59:00.000Z" }] } },
             "right": { "widgetId": "courses", "state": "ready", "headline": "Current term", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "6m ago" }, "data": { "items": [{ "name": "CS260", "next": "Lecture 14" }] } }
@@ -640,7 +644,7 @@
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-board", "title": "Board prep review", "start": "2026-06-23T17:00:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 18, "memoryPercent": 50, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
-          "news": { "state": "ready", "headlines": [{ "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily" }] },
+          "news": { "state": "ready", "headlines": [{ "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily", "url": "https://example.com/rates-steady" }] },
           "widgets": {
             "left": { "widgetId": "stocks", "state": "ready", "headline": "Markets up modestly", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" }, "data": { "items": [{ "symbol": "SPY", "price": 543.21, "change": 3.24, "changePercent": 0.6 }] } },
             "right": { "widgetId": "projects", "state": "ready", "headline": "2 active", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" }, "data": { "items": [{ "name": "Quarterly planning", "status": "in-progress" }] } }
@@ -667,7 +671,7 @@
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-standup", "title": "Team standup", "start": "2026-06-23T16:30:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 22, "memoryPercent": 58, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
-          "news": { "state": "ready", "headlines": [{ "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums" }] },
+          "news": { "state": "ready", "headlines": [{ "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums", "url": "https://example.com/swift-windows" }] },
           "widgets": {
             "left": { "widgetId": "project-git-status", "state": "ready", "headline": "dev · checks passing", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "branch": "dev", "checks": "passing" } },
             "right": { "widgetId": "repositories", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }] } }
@@ -694,7 +698,7 @@
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-review", "title": "PR review block", "start": "2026-06-23T19:00:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 22, "memoryPercent": 58, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
-          "news": { "state": "ready", "headlines": [{ "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest" }] },
+          "news": { "state": "ready", "headlines": [{ "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest", "url": "https://example.com/vite-5" }] },
           "widgets": {
             "left": { "widgetId": "project-git-status", "state": "ready", "headline": "dev · checks passing", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "branch": "dev", "checks": "passing" } },
             "right": { "widgetId": "repositories", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }] } }

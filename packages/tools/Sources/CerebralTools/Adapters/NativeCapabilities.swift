@@ -105,6 +105,29 @@ public struct GoogleSearchResult: Equatable, Sendable {
     }
 }
 
+// MARK: - web.open
+
+/// Opens an arbitrary https web address in the browser (NIC-127). Where ``URLCapability`` resolves
+/// a *configured* reference id and ``GoogleSearchCapability`` builds a host-fixed search URL, this
+/// opens a caller-supplied destination — a news article link. The destination is still constrained
+/// (not allow-listed): the adapter validates the scheme (https only) and a present host host-side,
+/// refusing anything else, so a malformed or non-https link from feed data is never opened. Prefers
+/// a running Google Chrome instance, falling back to the default browser.
+public protocol WebOpenCapability: Sendable {
+    func open(url: String) async throws -> WebOpenResult
+}
+
+public struct WebOpenResult: Equatable, Sendable {
+    /// The https URL that was opened.
+    public let url: String
+    public let opened: Bool
+
+    public init(url: String, opened: Bool) {
+        self.url = url
+        self.opened = opened
+    }
+}
+
 // MARK: - hook.run (process)
 
 public protocol ProcessCapability: Sendable {

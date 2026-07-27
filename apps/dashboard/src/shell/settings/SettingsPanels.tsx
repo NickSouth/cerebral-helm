@@ -677,6 +677,7 @@ function CustomizationPanelBody() {
  *  this UI agree. */
 const TMDB_SECRET_REFERENCE = "tmdb_api_key";
 const FINNHUB_SECRET_REFERENCE = "finnhub_api_key";
+const NEWSDATA_SECRET_REFERENCE = "newsdata_api_key";
 
 /**
  * A masked API-key provisioning field for a provider (generalized from the TMDB field, NIC-134;
@@ -975,6 +976,12 @@ function SetupPanelBody() {
           label="Finnhub API key"
           hint="Powers the Executive Stocks widget. Stored in your macOS Keychain — never in config or logs. Get a free key at finnhub.io."
           placeholder="Paste your Finnhub API key"
+        />
+        <ProviderKeyField
+          reference={NEWSDATA_SECRET_REFERENCE}
+          label="NewsData API key"
+          hint="Powers the News panel on every mode. Stored in your macOS Keychain — never in config or logs. Get a free key at newsdata.io."
+          placeholder="Paste your NewsData API key"
         />
         <StocksTickersField />
         <Field label="Onboarding">

@@ -546,6 +546,19 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [ConfirmationArgument(name: "query", value: query, sensitive: false)],
                 actionSummary: "Search Google for \(query)."
             )
+        case let .webOpen(url):
+            // Open an https web address in the browser (NIC-127). The descriptor's `local_write`
+            // risk (like url.open/google.search) means one-click, no confirmation; the adapter
+            // validates the scheme/host, so a non-https or malformed link is refused, not opened.
+            return make(
+                toolID: "web.open",
+                input: try? CerebralHelmWebOpenInput(url: url).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "url", value: url, sensitive: false)],
+                actionSummary: "Open \(url) in the browser."
+            )
         case let .searchNotes(query):
             return make(
                 toolID: "note.search",

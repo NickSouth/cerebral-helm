@@ -161,6 +161,12 @@ export interface DashboardNewsHeadline {
     id:     string;
     source: string;
     title:  string;
+    /**
+     * The article's navigable destination (design spec §5.4), opened on click via the web.open
+     * tool. Optional — omitted (never fabricated) when the source has no link, in which case
+     * the headline renders as non-interactive text.
+     */
+    url?: string;
 }
 
 export enum DashboardRegionState {
@@ -344,6 +350,7 @@ export enum CerebralHelmBridgeEventType {
     LayoutSessionChanged = "layout.session.changed",
     ModeQuickappsChanged = "mode.quickapps.changed",
     ModeWindowcollapseChanged = "mode.windowcollapse.changed",
+    NewsChanged = "news.changed",
     SettingsChanged = "settings.changed",
     SystemStatusChanged = "system.status.changed",
     WeatherChanged = "weather.changed",
@@ -1450,6 +1457,25 @@ export interface CerebralHelmURLOpenOutput {
     resolvedUrl: string;
     surfaced:    boolean;
     urlId:       string;
+}
+
+export interface CerebralHelmWebOpenInput {
+    /**
+     * The absolute https web address to open in the browser. The adapter validates the scheme
+     * (https only) and a present host host-side, so an unresolvable or non-https link is
+     * refused rather than opened. Unlike url.open (which resolves a configured reference id),
+     * this opens an arbitrary destination — used for news article links — so the constraint
+     * lives in the adapter, not in an allowlist.
+     */
+    url: string;
+}
+
+export interface CerebralHelmWebOpenOutput {
+    opened: boolean;
+    /**
+     * The https web address that was opened.
+     */
+    url: string;
 }
 
 /**

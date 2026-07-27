@@ -31,6 +31,7 @@ public struct DirectCommandParser: Sendable {
         "project <path>",
         "search <text>",
         "google <query>",
+        "web <url>",
         "hook <id>",
         "run <action>",
         "apps",
@@ -77,6 +78,10 @@ public struct DirectCommandParser: Sendable {
             // The remainder is the whole search query (queries contain spaces), taken verbatim
             // (NIC-134). The adapter builds the google.com search URL; only this query varies.
             return parseFreeText(verb: "google", remainder: remainder) { .googleSearch(query: $0) }
+        case "web":
+            // The remainder is the whole https URL, taken verbatim (NIC-127). The adapter
+            // validates the scheme/host; a non-https or malformed link is refused, not opened.
+            return parseFreeText(verb: "web", remainder: remainder) { .webOpen(url: $0) }
         case "apps":
             // Argument-free by design: discovery is all-or-nothing and read-only.
             return .parsed(.listApps)

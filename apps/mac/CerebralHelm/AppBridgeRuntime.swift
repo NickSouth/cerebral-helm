@@ -52,6 +52,11 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// a slow cadence. Same visibility gate as the other streams; an empty ticker list or a missing
     /// key emits an honest state rather than a fabricated quote.
     private let stocksPublisher: StocksPublisher
+    /// Streams the bottom-left `news` panel (NIC-127) — resolves the NewsData API key from the
+    /// Keychain and fetches headlines per relevance profile on a slow cadence, emitting one
+    /// `news.changed` per profile. Same visibility gate as the other streams; a missing key emits
+    /// an honest "add your key" state. Absent when the news config failed to load (no profiles).
+    private let newsPublisher: NewsPublisher?
     /// Watches display connect/disconnect/rearrange (NIC-87). Native subscribers
     /// are told first (window re-hosting), then the dashboard via one
     /// `display.topology.changed` event.
@@ -155,6 +160,22 @@ final class AppBridgeRuntime: @unchecked Sendable {
             emit: { relay.emit($0) }
         )
         releasesPublisher = releases
+        // The News producer (NIC-127): reads the NewsData key from the Keychain and fetches
+        // headlines per relevance profile declared in config/news/profiles.json. The profile →
+        // category mapping lives in that config (not hardcoded); when it can't be loaded there are
+        // no profiles to stream and the panel stays at its honest bootstrap "unavailable" state.
+        if let newsCatalog = NewsProfileCatalog.load(configDirectory: paths.configDirectory),
+           !newsCatalog.profiles.isEmpty {
+            let news = NewsPublisher(
+                profiles: newsCatalog.profiles.keys.sorted(),
+                secretStore: composition.secretStore,
+                provider: NewsDataProvider(catalog: newsCatalog),
+                emit: { relay.emit($0) }
+            )
+            newsPublisher = news
+        } else {
+            newsPublisher = nil
+        }
         displayObserver = DisplayTopologyObserver(emit: { relay.emit($0) })
         guard let runtime = try? makeCommandRuntime(paths: paths, phase: .macOS, capabilities: capabilities, onEvent: { event in
             let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
@@ -236,9 +257,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // When a provider key is stored, refresh its producer at once so the widget goes live
             // immediately instead of on its next slow tick: TMDB → releases (NIC-134), Finnhub →
             // stocks (NIC-128).
-            onSecretStored: { reference in
+            onSecretStored: { [news = newsPublisher] reference in
                 if reference == "tmdb_api_key" { Task { await releases.refresh() } }
                 if reference == "finnhub_api_key" { Task { await stocks.refresh() } }
+                if reference == "newsdata_api_key", let news { Task { await news.refresh() } }
             },
             // When the tracked-ticker list changes, refresh the stocks producer so the edited
             // list is live at once rather than on its next tick (NIC-128).
@@ -329,12 +351,14 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let weather = weatherPublisher
         let releases = releasesPublisher
         let stocks = stocksPublisher
+        let news = newsPublisher
         Task { await metrics.start() }
         Task { await repos.start() }
         Task { await projects.start() }
         Task { await weather.start() }
         Task { await releases.start() }
         Task { await stocks.start() }
+        if let news { Task { await news.start() } }
     }
 
     /// Pause/resume the live streams from the shell's visibility signal (dashboard
@@ -347,12 +371,14 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let weather = weatherPublisher
         let releases = releasesPublisher
         let stocks = stocksPublisher
+        let news = newsPublisher
         Task { await metrics.setActive(active) }
         Task { await repos.setActive(active) }
         Task { await projects.setActive(active) }
         Task { await weather.setActive(active) }
         Task { await releases.setActive(active) }
         Task { await stocks.setActive(active) }
+        if let news { Task { await news.setActive(active) } }
     }
 
     /// The persisted "Main display" id (NIC-120b) — nil when never set. A stale

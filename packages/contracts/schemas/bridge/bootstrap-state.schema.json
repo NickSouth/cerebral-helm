@@ -256,7 +256,7 @@
             },
             "headlines": {
               "type": "array",
-              "maxItems": 3,
+              "maxItems": 4,
               "items": {
                 "title": "DashboardNewsHeadline",
                 "type": "object",
@@ -265,7 +265,11 @@
                 "properties": {
                   "id": { "type": "string" },
                   "title": { "type": "string" },
-                  "source": { "type": "string" }
+                  "source": { "type": "string" },
+                  "url": {
+                    "type": "string",
+                    "description": "The article's navigable destination (design spec §5.4), opened on click via the web.open tool. Optional — omitted (never fabricated) when the source has no link, in which case the headline renders as non-interactive text."
+                  }
                 }
               }
             },

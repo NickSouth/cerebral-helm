@@ -133,6 +133,31 @@ public struct GoogleSearchHandler: ToolHandler {
     }
 }
 
+// MARK: - web.open
+
+public struct WebOpenHandler: ToolHandler {
+    public let toolID = "web.open"
+    private let capability: any WebOpenCapability
+
+    public init(capability: any WebOpenCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmWebOpenInput
+        do { decoded = try CerebralHelmWebOpenInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("web.open input does not match its contract.")
+        }
+        do {
+            let result = try await capability.open(url: decoded.url)
+            return try CerebralHelmWebOpenOutput(
+                opened: result.opened,
+                url: result.url
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 // MARK: - system.status.read
 
 public struct SystemStatusReadHandler: ToolHandler {

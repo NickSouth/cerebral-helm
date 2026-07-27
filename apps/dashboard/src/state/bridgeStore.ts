@@ -4,6 +4,7 @@ import type {
   DashboardRegions,
   DashboardStateSnapshot,
   HeimlichState,
+  NewsRegion,
   RegionState,
   SystemHealthRegion,
   WeatherChannel
@@ -215,6 +216,24 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
         return state;
       }
       return { ...state, liveWeather: weather };
+    }
+    case "news.changed": {
+      // A news producer streamed fresh headlines for one relevance profile (NIC-127). News
+      // content differs per mode, so — unlike the single machine-global `liveWeather` — it folds
+      // into a runtime-only `liveNews` map keyed by `newsProfile`. The News panel resolves
+      // `liveNews[activeMode.newsProfile]` over the bootstrap `regions.news` (live wins). The map
+      // lives OUTSIDE `regions`, so it survives `config.changed` mode switches by construction
+      // (same reasoning as `liveWidgets`). A payload missing a non-empty profile or a well-formed
+      // region (`state` string) is ignored — no fabricated update.
+      const payload = event.payload as { profile?: string; news?: NewsRegion };
+      const news = payload.news;
+      if (!payload.profile || !news || typeof news.state !== "string") {
+        return state;
+      }
+      if (state.liveNews?.[payload.profile] === news) {
+        return state;
+      }
+      return { ...state, liveNews: { ...state.liveNews, [payload.profile]: news } };
     }
     case "command.lifecycle.transition": {
       const status = String((event.payload as { currentStatus?: unknown }).currentStatus ?? "");

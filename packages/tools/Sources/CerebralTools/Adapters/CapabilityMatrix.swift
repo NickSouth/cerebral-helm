@@ -29,8 +29,9 @@ public struct CapabilityMatrix: Sendable {
         public static let appsList = "apps.list"
         public static let applicationLifecycle = "application.lifecycle"
         public static let googleSearch = "google.search"
+        public static let webOpen = "web.open"
 
-        public static let all: Set<String> = [appOpen, projectOpen, urlOpen, hookRun, systemStatusRead, networkSpeedTest, secret, window, workspaceWindows, appsList, applicationLifecycle, googleSearch]
+        public static let all: Set<String> = [appOpen, projectOpen, urlOpen, hookRun, systemStatusRead, networkSpeedTest, secret, window, workspaceWindows, appsList, applicationLifecycle, googleSearch, webOpen]
     }
 
     /// Every mock capability available — the contract-suite default.

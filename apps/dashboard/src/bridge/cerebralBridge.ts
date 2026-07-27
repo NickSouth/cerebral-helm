@@ -22,7 +22,8 @@ export type BridgeEventType =
   | "layout.session.changed"
   | "mode.windowcollapse.changed"
   | "widget.data.changed"
-  | "weather.changed";
+  | "weather.changed"
+  | "news.changed";
 
 export interface BridgeEvent {
   readonly eventId: string;

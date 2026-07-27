@@ -82,6 +82,7 @@ public enum MacToolCapabilities {
                 applicationLifecycle: MacApplicationLifecycleCapability(),
                 appWindows: MacAppWindowsCapability(),
                 googleSearch: NSWorkspaceGoogleSearchCapability(workspace: workspace),
+                webOpen: NSWorkspaceWebOpenCapability(workspace: workspace),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,
                     CapabilityMatrix.Capability.projectOpen,
@@ -94,6 +95,7 @@ public enum MacToolCapabilities {
                     CapabilityMatrix.Capability.window,
                     CapabilityMatrix.Capability.appsList,
                     CapabilityMatrix.Capability.googleSearch,
+                    CapabilityMatrix.Capability.webOpen,
                 ]
             ),
             systemStatus: systemStatus,

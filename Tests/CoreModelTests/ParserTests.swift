@@ -68,6 +68,21 @@ func googleGrammar() {
     }
 }
 
+@Test("web takes the whole remainder as the url and requires an argument (NIC-127)")
+func webGrammar() {
+    let parser = sampleParser()
+
+    // The whole remainder is the url (may carry query params with `?`/`&`).
+    #expect(
+        parser.parse("web https://news.example.com/story?id=42&ref=home")
+            == .parsed(.webOpen(url: "https://news.example.com/story?id=42&ref=home"))
+    )
+    // An argument-less `web` never executes.
+    if case .parsed = parser.parse("web") {
+        Issue.record("argument-less web must not execute")
+    }
+}
+
 @Test("an unresolved workflow id is unrecognized and suggests configured actions")
 func unresolvedWorkflowIsRejected() {
     let result = sampleParser().parse("run banana")

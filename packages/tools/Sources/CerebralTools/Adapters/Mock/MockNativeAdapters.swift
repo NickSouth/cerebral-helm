@@ -219,6 +219,21 @@ public struct MockGoogleSearchCapability: GoogleSearchCapability {
     }
 }
 
+public struct MockWebOpenCapability: WebOpenCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(url: String) async throws -> WebOpenResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.webOpen, matrix: matrix, fault: fault, subject: url)
+        return WebOpenResult(url: url, opened: true)
+    }
+}
+
 public struct MockWindowCapability: WindowCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault

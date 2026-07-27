@@ -80,9 +80,10 @@
     "news": {
       "state": "ready",
       "headlines": [
-        { "id": "news-market", "title": "Markets edge higher into the close", "source": "Market Wire" },
-        { "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily" },
-        { "id": "news-earnings", "title": "Quarterly earnings season opens", "source": "Briefing" }
+        { "id": "news-market", "title": "Markets edge higher into the close as investors weigh fresh inflation data", "source": "Market Wire", "url": "https://example.com/markets-edge-higher" },
+        { "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily", "url": "https://example.com/rates-steady" },
+        { "id": "news-earnings", "title": "Quarterly earnings season opens", "source": "Briefing", "url": "https://example.com/earnings-season" },
+        { "id": "news-ma", "title": "Tech giant announces major acquisition to expand cloud portfolio", "source": "Deal Book", "url": "https://example.com/tech-acquisition" }
       ]
     },
     "widgets": {

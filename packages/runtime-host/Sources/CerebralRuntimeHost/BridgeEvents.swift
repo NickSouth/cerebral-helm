@@ -250,6 +250,65 @@ public enum BridgeEventFactory {
         }
     }
 
+    // MARK: - News (NIC-127)
+
+    /// A `news.changed` event carrying one relevance profile's headlines (NIC-127). The dashboard
+    /// folds `payload.news` into its runtime-only `liveNews` map keyed by `payload.profile`; the
+    /// News panel resolves `liveNews[activeMode.newsProfile]` over the per-mode bootstrap
+    /// `regions.news` (live wins) and it survives mode switches by construction (the map lives
+    /// outside the mode snapshot). Unlike weather, news content differs per mode, so the event
+    /// carries the profile it is for. Emitted per distinct profile by the ``NewsPublisher``
+    /// (Increment 7).
+    public static func newsChangedEvent(
+        region: DashboardNewsRegion, profile: String, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Payload: Encodable {
+            let profile: String
+            let news: DashboardNewsRegion
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Payload(profile: profile, news: region)),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .newsChanged
+        )
+    }
+
+    /// Maps a news-provider result into the `DashboardNewsRegion` for the News panel (NIC-127). A
+    /// missing credential is an honest `unavailable` that guides the user to add their key; any
+    /// other failure is a generic `unavailable` (the raw diagnostic is never surfaced); an empty
+    /// result is `empty`; otherwise `ready` with at most four headlines (design spec §5.4 says
+    /// three; the owner raised it to four so the left-rail panel fills without dead space).
+    /// Nothing is fabricated — a headline without a link simply omits its `url`.
+    public static func news(
+        from result: Swift.Result<[NewsHeadline], Error>, now _: Date
+    ) -> DashboardNewsRegion {
+        switch result {
+        case let .failure(error):
+            let credentialsMissing = (error as? NewsError).map { $0 == .credentialsMissing } ?? false
+            return DashboardNewsRegion(
+                emptyMessage: credentialsMissing
+                    ? "Add your NewsData API key in Settings → Setup to see news."
+                    : "News isn't available right now.",
+                headlines: [],
+                state: .unavailable
+            )
+        case let .success(headlines) where headlines.isEmpty:
+            return DashboardNewsRegion(
+                emptyMessage: "No headlines right now.", headlines: [], state: .empty
+            )
+        case let .success(headlines):
+            // Up to four headlines (owner-raised from the spec's three) — cap, never pad. `url` is
+            // the article's navigable destination (opened via web.open); nil is omitted, never
+            // fabricated.
+            let items = headlines.prefix(4).map {
+                DashboardNewsHeadline(id: $0.id, source: $0.source, title: $0.title, url: $0.url)
+            }
+            return DashboardNewsRegion(emptyMessage: nil, headlines: items, state: .ready)
+        }
+    }
+
     // MARK: - Projects widget (NIC-129)
 
     /// The `projects` widget's live envelope — the Swift mirror of the web `WidgetData` for

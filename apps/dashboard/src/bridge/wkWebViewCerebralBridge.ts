@@ -74,7 +74,8 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "layout.session.changed",
   "mode.windowcollapse.changed",
   "widget.data.changed",
-  "weather.changed"
+  "weather.changed",
+  "news.changed"
 ]);
 
 /** True when running inside the native shell (the message handler is registered). */

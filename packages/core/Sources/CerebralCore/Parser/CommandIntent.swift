@@ -15,6 +15,9 @@ public enum CommandIntent: Equatable, Sendable {
     /// Open a Google search for the query in the browser (NIC-134) — a single `google.search`
     /// tool call. The host is fixed to google.com by the adapter; only the query varies.
     case googleSearch(query: String)
+    /// Open an https web address in the browser (NIC-127) — a single `web.open` tool call, used
+    /// for news article links. The adapter validates the scheme/host; a non-https link is refused.
+    case webOpen(url: String)
     case runHook(ReferenceEntry)
     /// Measure current internet download/upload capacity on request (NIC-135) —
     /// a single read-only `network.speed.test` tool call.

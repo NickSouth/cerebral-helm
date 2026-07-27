@@ -87,6 +87,86 @@ describe("reduceDashboardState", () => {
     expect(reduceDashboardState(base, { ...malformed, payload: {} })).toBe(base);
   });
 
+  it("folds live news into a per-profile liveNews map that survives a mode switch (NIC-127)", () => {
+    const base = loadBootstrapState();
+    const region = {
+      state: "ready",
+      headlines: [
+        { id: "n1", title: "Markets steady as earnings open", source: "Reuters" },
+        { id: "n2", title: "Central bank holds rates", source: "Bloomberg" },
+        { id: "n3", title: "Cloud provider unveils AI tooling", source: "The Verge" }
+      ]
+    } as const;
+    const newsEvent: BridgeEvent = {
+      eventId: "brevt_news00000001",
+      type: "news.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T16:00:00.000Z",
+      payload: { profile: "broad", news: region }
+    };
+
+    const withNews = reduceDashboardState(base, newsEvent);
+    expect(withNews.liveNews?.broad).toEqual(region);
+    // An identical re-emit for the same profile is a no-op (no needless re-render).
+    expect(reduceDashboardState(withNews, newsEvent)).toBe(withNews);
+
+    // A second profile lands alongside the first — the map is keyed, not replaced.
+    const engineering = { ...region, headlines: [region.headlines[0]] } as const;
+    const withBoth = reduceDashboardState(withNews, {
+      ...newsEvent,
+      eventId: "brevt_news00000002",
+      payload: { profile: "engineering", news: engineering }
+    });
+    expect(withBoth.liveNews?.broad).toEqual(region);
+    expect(withBoth.liveNews?.engineering).toEqual(engineering);
+
+    // A mode switch swaps the mode-scoped bootstrap `news`, but the runtime-only `liveNews` lives
+    // outside the snapshot, so it survives with no flash (NIC-136).
+    const switched = reduceDashboardState(withBoth, {
+      eventId: "brevt_newscfg00001",
+      type: "config.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T16:00:01.000Z",
+      payload: { snapshot: getDashboardFixture("mode.developer.ready") }
+    });
+    expect(switched.mode).toBe("Developer");
+    expect(switched.liveNews?.broad).toEqual(region);
+    expect(switched.liveNews?.engineering).toEqual(engineering);
+  });
+
+  it("ignores a malformed news.changed payload (no fabricated update)", () => {
+    const base = loadBootstrapState();
+    const region = { state: "ready", headlines: [] } as const;
+    // Missing profile, missing region, and a region without a `state` string are all ignored.
+    expect(
+      reduceDashboardState(base, {
+        eventId: "brevt_newsbad00001",
+        type: "news.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-27T16:00:00.000Z",
+        payload: { news: region }
+      })
+    ).toBe(base);
+    expect(
+      reduceDashboardState(base, {
+        eventId: "brevt_newsbad00002",
+        type: "news.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-27T16:00:00.000Z",
+        payload: { profile: "broad", news: { headlines: [] } }
+      })
+    ).toBe(base);
+    expect(
+      reduceDashboardState(base, {
+        eventId: "brevt_newsbad00003",
+        type: "news.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-27T16:00:00.000Z",
+        payload: {}
+      })
+    ).toBe(base);
+  });
+
   it("folds mode.windowcollapse.changed into a per-mode collapse map (NIC-143)", () => {
     const base = loadBootstrapState();
     const collapse = (modeId: string, collapsed: boolean): BridgeEvent => ({
