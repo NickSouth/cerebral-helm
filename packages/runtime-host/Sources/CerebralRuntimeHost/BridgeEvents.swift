@@ -525,6 +525,189 @@ public enum BridgeEventFactory {
         }
     }
 
+    // MARK: - Project Git Status widget (NIC-130)
+
+    /// The per-repo inputs the Project Git Status producer assembles for one repository (NIC-130):
+    /// the local `branch`/`sync` (always available, from ``GitSyncReader``), the resolved GitHub
+    /// `remote` (nil when `origin` isn't GitHub), and the GitHub `github` result (nil when there is
+    /// no remote; a `.failure` when a remote exists but the fetch or credential failed). Not
+    /// `Sendable` — it is built and consumed synchronously by the producer, and `github` carries a
+    /// non-Sendable `Error`.
+    public struct ProjectGitStatusInput {
+        public let id: String
+        public let name: String
+        public let branch: String?
+        public let sync: GitSyncState?
+        public let remote: GitRemote?
+        public let github: Swift.Result<GitHubRepoReport, Error>?
+
+        public init(
+            id: String, name: String, branch: String?, sync: GitSyncState?,
+            remote: GitRemote?, github: Swift.Result<GitHubRepoReport, Error>?
+        ) {
+            self.id = id
+            self.name = name
+            self.branch = branch
+            self.sync = sync
+            self.remote = remote
+            self.github = github
+        }
+    }
+
+    /// The `project-git-status` widget's live envelope — the Swift mirror of the web `WidgetData`
+    /// for the Developer left slot (NIC-130). Optional fields are omitted (not encoded as null)
+    /// when nil by the synthesized encoding, matching the envelope the dashboard renders.
+    public struct ProjectGitStatusWidget: Encodable, Sendable {
+        public let widgetId: String
+        public let state: String
+        public let headline: String?
+        public let emptyMessage: String?
+        public let freshness: WidgetFreshnessPayload?
+        public let data: ProjectGitStatusWidgetData?
+    }
+
+    public struct ProjectGitStatusWidgetData: Encodable, Sendable {
+        public let repositories: [ProjectGitStatusItemPayload]
+    }
+
+    /// One repository's report. `branch`/`sync` are the local state (omitted when unresolved);
+    /// `remote` is the GitHub `owner/repo` (omitted when `origin` isn't GitHub — the web then shows
+    /// "Not a GitHub repository"); `github` carries the read-only GitHub report or an honest
+    /// unavailable/rate-limited sub-state (omitted when there is no remote).
+    public struct ProjectGitStatusItemPayload: Encodable, Sendable {
+        public let id: String
+        public let name: String
+        public let branch: String?
+        public let sync: String?
+        public let remote: GitHubRemotePayload?
+        public let github: ProjectGitHubReportPayload?
+    }
+
+    public struct GitHubRemotePayload: Encodable, Sendable {
+        public let owner: String
+        public let repo: String
+    }
+
+    /// The GitHub half of a repo's report. When `state` is `ready` the PR/checks/commit fields are
+    /// populated; otherwise `message` carries the honest unavailable/rate-limited text and the rest
+    /// are omitted. `checks.state` may be `none` (no CI) — a first-class tidy state the web renders
+    /// by omitting the CI line, distinct from the section being unavailable.
+    public struct ProjectGitHubReportPayload: Encodable, Sendable {
+        public let state: String
+        public let openPullRequests: OpenPullRequestsPayload?
+        public let checks: ChecksPayload?
+        public let recentCommits: [CommitPayload]?
+        public let message: String?
+    }
+
+    public struct OpenPullRequestsPayload: Encodable, Sendable {
+        public let count: Int
+        public let titles: [String]
+    }
+
+    public struct ChecksPayload: Encodable, Sendable {
+        public let state: String
+    }
+
+    public struct CommitPayload: Encodable, Sendable {
+        public let message: String
+        public let shortSha: String
+    }
+
+    /// Maps the per-repo inputs into the `project-git-status` widget envelope (NIC-130). A read
+    /// failure (the projects root is unavailable) is an honest `unavailable`; a readable-but-empty
+    /// root is `empty`; otherwise `ready` with one report per repo. The local branch/sync always
+    /// render — the GitHub half degrades independently per repo via ``gitHubReportPayload``.
+    public static func projectGitStatusWidget(
+        from result: Swift.Result<[ProjectGitStatusInput], Error>, now: Date
+    ) -> ProjectGitStatusWidget {
+        switch result {
+        case .failure:
+            return ProjectGitStatusWidget(
+                widgetId: "project-git-status", state: "unavailable", headline: nil,
+                emptyMessage: "Your projects folder isn't available.", freshness: nil, data: nil
+            )
+        case let .success(inputs) where inputs.isEmpty:
+            return ProjectGitStatusWidget(
+                widgetId: "project-git-status", state: "empty", headline: nil,
+                emptyMessage: "No repositories in your projects folder yet.", freshness: nil, data: nil
+            )
+        case let .success(inputs):
+            let repositories = inputs.map { input in
+                ProjectGitStatusItemPayload(
+                    id: input.id,
+                    name: input.name,
+                    branch: input.branch,
+                    sync: input.sync?.rawValue,
+                    remote: input.remote.map { GitHubRemotePayload(owner: $0.owner, repo: $0.repo) },
+                    github: gitHubReportPayload(remote: input.remote, result: input.github)
+                )
+            }
+            return ProjectGitStatusWidget(
+                widgetId: "project-git-status", state: "ready",
+                headline: inputs.count == 1 ? "1 repository" : "\(inputs.count) repositories",
+                emptyMessage: nil,
+                freshness: WidgetFreshnessPayload(observedAt: now, label: "just now"),
+                data: ProjectGitStatusWidgetData(repositories: repositories)
+            )
+        }
+    }
+
+    /// Maps one repo's GitHub result into the payload's `github` field (NIC-130). No remote → nil
+    /// (the web shows "Not a GitHub repository"). A ready report carries PRs, CI state, and commits;
+    /// a missing credential guides the user to add their token; a rate limit is surfaced distinctly;
+    /// any other failure is a generic unavailable — the raw diagnostic is never leaked.
+    private static func gitHubReportPayload(
+        remote: GitRemote?, result: Swift.Result<GitHubRepoReport, Error>?
+    ) -> ProjectGitHubReportPayload? {
+        guard remote != nil else { return nil }
+        switch result {
+        case let .success(report):
+            return ProjectGitHubReportPayload(
+                state: "ready",
+                openPullRequests: OpenPullRequestsPayload(
+                    count: report.openPullRequests.count, titles: report.openPullRequests.titles
+                ),
+                checks: ChecksPayload(state: report.checks.rawValue),
+                recentCommits: report.recentCommits.map {
+                    CommitPayload(message: $0.message, shortSha: $0.shortSha)
+                },
+                message: nil
+            )
+        case let .failure(error):
+            return failureReportPayload(error)
+        case .none:
+            // A remote exists but no fetch was performed — an honest generic unavailable.
+            return ProjectGitHubReportPayload(
+                state: "unavailable", openPullRequests: nil, checks: nil, recentCommits: nil,
+                message: "GitHub is unavailable right now."
+            )
+        }
+    }
+
+    private static func failureReportPayload(_ error: Error) -> ProjectGitHubReportPayload {
+        if let status = error as? GitHubStatusError {
+            switch status {
+            case .credentialsMissing:
+                return ProjectGitHubReportPayload(
+                    state: "unavailable", openPullRequests: nil, checks: nil, recentCommits: nil,
+                    message: "Add your GitHub token in Settings → Setup to see repo status."
+                )
+            case .rateLimited:
+                return ProjectGitHubReportPayload(
+                    state: "rate-limited", openPullRequests: nil, checks: nil, recentCommits: nil,
+                    message: "GitHub is rate-limited. Try again shortly."
+                )
+            case .providerFailed:
+                break // fall through to the generic message; the raw diagnostic is never surfaced
+            }
+        }
+        return ProjectGitHubReportPayload(
+            state: "unavailable", openPullRequests: nil, checks: nil, recentCommits: nil,
+            message: "GitHub is unavailable right now."
+        )
+    }
+
     /// A `settings.changed` event (live cross-webview sync): the durable settings were
     /// updated through `updateSettings`, so every surface — the dashboard and the
     /// separate native settings window — reflects the new assistant name, mode colors,

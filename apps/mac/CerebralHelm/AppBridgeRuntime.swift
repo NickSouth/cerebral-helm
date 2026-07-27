@@ -57,6 +57,12 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// `news.changed` per profile. Same visibility gate as the other streams; a missing key emits
     /// an honest "add your key" state. Absent when the news config failed to load (no profiles).
     private let newsPublisher: NewsPublisher?
+    /// Streams the Developer `project-git-status` widget (NIC-130) — enumerates the local repos,
+    /// reads each one's branch/sync from `.git` and GitHub remote from `origin`, and fetches the
+    /// read-only GitHub report (PRs, Actions CI, commits) using the Keychain-resolved token. Same
+    /// visibility gate as the other streams; local branch/sync always render while the GitHub half
+    /// degrades honestly when there's no remote, no token, or a fetch failure.
+    private let projectGitStatusPublisher: ProjectGitStatusPublisher
     /// Watches display connect/disconnect/rearrange (NIC-87). Native subscribers
     /// are told first (window re-hosting), then the dashboard via one
     /// `display.topology.changed` event.
@@ -160,6 +166,16 @@ final class AppBridgeRuntime: @unchecked Sendable {
             emit: { relay.emit($0) }
         )
         releasesPublisher = releases
+        // The Project Git Status producer (NIC-130): enumerates local repos under ~/Projects,
+        // resolves each one's branch/sync + GitHub remote directly from `.git`, and fetches the
+        // read-only GitHub report with the Keychain-resolved token (the same KeychainSecretCapability
+        // the storeSecret op writes). Local branch/sync render even without a token.
+        let projectGitStatus = ProjectGitStatusPublisher(
+            secretStore: composition.secretStore,
+            github: GitHubAPIStatusProvider(),
+            emit: { relay.emit($0) }
+        )
+        projectGitStatusPublisher = projectGitStatus
         // The News producer (NIC-127): reads the NewsData key from the Keychain and fetches
         // headlines per relevance profile declared in config/news/profiles.json. The profile →
         // category mapping lives in that config (not hardcoded); when it can't be loaded there are
@@ -261,6 +277,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 if reference == "tmdb_api_key" { Task { await releases.refresh() } }
                 if reference == "finnhub_api_key" { Task { await stocks.refresh() } }
                 if reference == "newsdata_api_key", let news { Task { await news.refresh() } }
+                if reference == "github_api_token" { Task { await projectGitStatus.refresh() } }
             },
             // When the tracked-ticker list changes, refresh the stocks producer so the edited
             // list is live at once rather than on its next tick (NIC-128).
@@ -352,6 +369,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let releases = releasesPublisher
         let stocks = stocksPublisher
         let news = newsPublisher
+        let projectGitStatus = projectGitStatusPublisher
         Task { await metrics.start() }
         Task { await repos.start() }
         Task { await projects.start() }
@@ -359,6 +377,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         Task { await releases.start() }
         Task { await stocks.start() }
         if let news { Task { await news.start() } }
+        Task { await projectGitStatus.start() }
     }
 
     /// Pause/resume the live streams from the shell's visibility signal (dashboard
@@ -372,6 +391,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let releases = releasesPublisher
         let stocks = stocksPublisher
         let news = newsPublisher
+        let projectGitStatus = projectGitStatusPublisher
         Task { await metrics.setActive(active) }
         Task { await repos.setActive(active) }
         Task { await projects.setActive(active) }
@@ -379,6 +399,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         Task { await releases.setActive(active) }
         Task { await stocks.setActive(active) }
         if let news { Task { await news.setActive(active) } }
+        Task { await projectGitStatus.setActive(active) }
     }
 
     /// The persisted "Main display" id (NIC-120b) — nil when never set. A stale

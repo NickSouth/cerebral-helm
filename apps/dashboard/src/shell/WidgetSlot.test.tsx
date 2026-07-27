@@ -414,3 +414,172 @@ describe("WidgetSlot stocks (NIC-128)", () => {
     expect(screen.getByText("Add tickers in Settings → Setup to track them here.")).toBeTruthy();
   });
 });
+
+/** NIC-130 Increment 1: the Developer "Project Git Status" widget renders a per-repo report one
+ *  repo at a time (arrows swap between repos): local branch + remote-sync (always shown) plus the
+ *  read-only GitHub sections (open PRs, CI, recent commits). A repo with no CI omits the CI line;
+ *  a non-GitHub remote or unreachable GitHub degrades to an honest note. Fixture-backed here (the
+ *  live GitHub producer lands in a later increment). */
+
+const gitStatusReady: WidgetData = {
+  widgetId: "project-git-status",
+  state: "ready",
+  headline: "3 repositories",
+  freshness: { observedAt: "2026-07-27T16:00:00.000Z", label: "just now" },
+  data: {
+    repositories: [
+      {
+        id: "cerebral-helm",
+        name: "cerebral-helm",
+        branch: "mvp-polish/integrations",
+        sync: "diverged",
+        remote: { owner: "NickSouth", repo: "cerebral-helm" },
+        github: {
+          state: "ready",
+          openPullRequests: { count: 2, titles: ["Repo status widget", "Weather integration"] },
+          checks: { state: "passing" },
+          recentCommits: [
+            { shortSha: "320ac4c", message: "fix: news formatting" },
+            { shortSha: "c1a4f7e", message: "feat: news widget" }
+          ]
+        }
+      },
+      {
+        id: "notes",
+        name: "notes",
+        branch: "main",
+        sync: "synced",
+        remote: { owner: "NickSouth", repo: "notes" },
+        github: {
+          state: "ready",
+          openPullRequests: { count: 0, titles: [] },
+          checks: { state: "none" },
+          recentCommits: [{ shortSha: "a1b2c3d", message: "Add reading list" }]
+        }
+      },
+      { id: "scratchpad", name: "scratchpad", branch: "wip", sync: "no-upstream" }
+    ]
+  }
+};
+
+function gitRepoName(): string | null | undefined {
+  return document.querySelector(".gitstatus__repo .repo-row__label")?.textContent;
+}
+
+function nextRepo(): void {
+  fireEvent.click(screen.getByRole("button", { name: "Next repository" }));
+}
+
+describe("WidgetSlot project-git-status (NIC-130)", () => {
+  it("renders the active repo with its branch, sync state, open PRs, CI, and recent commits", () => {
+    renderSlot(gitStatusReady);
+    expect(gitRepoName()).toBe("cerebral-helm");
+    expect(document.querySelector(".gitstatus__repo .repo-row__branch")?.textContent).toBe(
+      "mvp-polish/integrations"
+    );
+    expect(document.querySelector(".gitstatus__sync")?.textContent).toBe("Diverged from origin");
+    // Open PRs: the count and each title.
+    expect(document.querySelector(".gitstatus__value")?.textContent).toBe("2");
+    const prTitles = Array.from(document.querySelectorAll(".gitstatus__pr")).map(
+      (el) => el.textContent
+    );
+    expect(prTitles).toEqual(["Repo status widget", "Weather integration"]);
+    // CI is shown as passing.
+    expect(document.querySelector(".gitstatus__checks")?.textContent).toBe("Passing");
+    // Recent commits: message + short SHA.
+    const commits = Array.from(document.querySelectorAll(".gitstatus__msg")).map(
+      (el) => el.textContent
+    );
+    expect(commits).toEqual(["fix: news formatting", "feat: news widget"]);
+    expect(document.querySelector(".gitstatus__sha")?.textContent).toBe("320ac4c");
+  });
+
+  it("omits the CI line entirely for a repo with no CI, but still shows the rest", () => {
+    renderSlot(gitStatusReady);
+    nextRepo(); // → notes: checks state "none"
+    expect(gitRepoName()).toBe("notes");
+    expect(document.querySelector(".gitstatus__checks")).toBeNull(); // no CI row at all
+    expect(document.querySelector(".gitstatus__sync")?.textContent).toBe("In sync with origin");
+    expect(document.querySelector(".gitstatus__value")?.textContent).toBe("0"); // 0 open PRs
+  });
+
+  it("shows a quiet note for a non-GitHub repo while still showing local branch and sync", () => {
+    renderSlot(gitStatusReady);
+    nextRepo();
+    nextRepo(); // → scratchpad: no remote
+    expect(gitRepoName()).toBe("scratchpad");
+    expect(document.querySelector(".gitstatus__note")?.textContent).toBe("Not a GitHub repository");
+    expect(document.querySelector(".gitstatus__repo .repo-row__branch")?.textContent).toBe("wip");
+    expect(document.querySelector(".gitstatus__sync")?.textContent).toBe("No upstream branch");
+    // No GitHub sections for a local-only repo.
+    expect(document.querySelector(".gitstatus__value")).toBeNull();
+    expect(document.querySelector(".gitstatus__checks")).toBeNull();
+  });
+
+  it("degrades to an honest note when GitHub is unavailable, keeping local branch and sync", () => {
+    renderSlot({
+      widgetId: "project-git-status",
+      state: "ready",
+      headline: "1 repository",
+      data: {
+        repositories: [
+          {
+            id: "cerebral-helm",
+            name: "cerebral-helm",
+            branch: "main",
+            sync: "synced",
+            remote: { owner: "NickSouth", repo: "cerebral-helm" },
+            github: { state: "unavailable", message: "Add your GitHub token in Settings → Setup." }
+          }
+        ]
+      }
+    });
+    expect(document.querySelector(".gitstatus__note")?.textContent).toBe(
+      "Add your GitHub token in Settings → Setup."
+    );
+    expect(document.querySelector(".gitstatus__sync")?.textContent).toBe("In sync with origin");
+    expect(document.querySelector(".gitstatus__value")).toBeNull();
+  });
+
+  it("degrades to an honest note when GitHub is rate-limited", () => {
+    renderSlot({
+      widgetId: "project-git-status",
+      state: "ready",
+      headline: "1 repository",
+      data: {
+        repositories: [
+          {
+            id: "cerebral-helm",
+            name: "cerebral-helm",
+            branch: "main",
+            sync: "synced",
+            remote: { owner: "NickSouth", repo: "cerebral-helm" },
+            github: { state: "rate-limited", message: "GitHub is rate-limited until 16:30." }
+          }
+        ]
+      }
+    });
+    expect(document.querySelector(".gitstatus__note")?.textContent).toBe(
+      "GitHub is rate-limited until 16:30."
+    );
+  });
+
+  it("pages between repositories with the arrows, one repo at a time", () => {
+    renderSlot(gitStatusReady);
+    expect(gitRepoName()).toBe("cerebral-helm");
+    nextRepo();
+    expect(gitRepoName()).toBe("notes");
+    fireEvent.click(screen.getByRole("button", { name: "Previous repository" }));
+    expect(gitRepoName()).toBe("cerebral-helm");
+  });
+
+  it("renders an honest empty state with no report", () => {
+    renderSlot({
+      widgetId: "project-git-status",
+      state: "empty",
+      emptyMessage: "No repositories in your projects folder yet."
+    });
+    expect(document.querySelector(".gitstatus")).toBeNull();
+    expect(screen.getByText("No repositories in your projects folder yet.")).toBeTruthy();
+  });
+});

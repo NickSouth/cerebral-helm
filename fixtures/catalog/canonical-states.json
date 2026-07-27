@@ -107,10 +107,45 @@
             "left": {
               "widgetId": "project-git-status",
               "state": "ready",
-              "headline": "dev · checks passing",
+              "headline": "3 repositories",
               "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
-              "data": { "branch": "dev", "ahead": 2, "behind": 0, "checks": "passing", "openPullRequests": 1 },
-              "action": { "id": "git-status", "label": "View status" }
+              "data": {
+                "repositories": [
+                  {
+                    "id": "cerebral-helm",
+                    "name": "cerebral-helm",
+                    "branch": "mvp-polish/integrations-and-widgets",
+                    "sync": "diverged",
+                    "remote": { "owner": "NickSouth", "repo": "cerebral-helm" },
+                    "github": {
+                      "state": "ready",
+                      "openPullRequests": { "count": 2, "titles": ["Repo status widget (GitHub)", "Weather integration"] },
+                      "checks": { "state": "passing" },
+                      "recentCommits": [
+                        { "shortSha": "320ac4c", "message": "fix: news formatting" },
+                        { "shortSha": "c1a4f7e", "message": "feat: news widget" },
+                        { "shortSha": "8b6720d", "message": "feat: stocks widget" },
+                        { "shortSha": "db3c9db", "message": "feat: full releases widget" },
+                        { "shortSha": "da85cf1", "message": "feat: entertainment widget outline and secret provisioning" }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "notes",
+                    "name": "notes",
+                    "branch": "main",
+                    "sync": "synced",
+                    "remote": { "owner": "NickSouth", "repo": "notes" },
+                    "github": {
+                      "state": "ready",
+                      "openPullRequests": { "count": 0, "titles": [] },
+                      "checks": { "state": "none" },
+                      "recentCommits": [{ "shortSha": "a1b2c3d", "message": "Add reading list" }]
+                    }
+                  },
+                  { "id": "scratchpad", "name": "scratchpad", "branch": "wip", "sync": "no-upstream" }
+                ]
+              }
             },
             "right": {
               "widgetId": "repositories",
@@ -442,9 +477,25 @@
             "left": {
               "widgetId": "project-git-status",
               "state": "stale",
-              "headline": "dev · last known",
+              "headline": "3 repositories",
               "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "offline" },
-              "data": { "branch": "dev", "checks": "passing" }
+              "data": {
+                "repositories": [
+                  {
+                    "id": "cerebral-helm",
+                    "name": "cerebral-helm",
+                    "branch": "mvp-polish/integrations-and-widgets",
+                    "sync": "diverged",
+                    "remote": { "owner": "NickSouth", "repo": "cerebral-helm" },
+                    "github": {
+                      "state": "ready",
+                      "openPullRequests": { "count": 2, "titles": ["Repo status widget (GitHub)", "Weather integration"] },
+                      "checks": { "state": "passing" },
+                      "recentCommits": [{ "shortSha": "320ac4c", "message": "fix: news formatting" }]
+                    }
+                  }
+                ]
+              }
             },
             "right": {
               "widgetId": "repositories",
@@ -673,7 +724,7 @@
           "systemHealth": { "state": "ready", "cpuPercent": 22, "memoryPercent": 58, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
           "news": { "state": "ready", "headlines": [{ "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums", "url": "https://example.com/swift-windows" }] },
           "widgets": {
-            "left": { "widgetId": "project-git-status", "state": "ready", "headline": "dev · checks passing", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "branch": "dev", "checks": "passing" } },
+            "left": { "widgetId": "project-git-status", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "repositories": [{ "id": "cerebral-helm", "name": "cerebral-helm", "branch": "dev", "sync": "synced", "remote": { "owner": "NickSouth", "repo": "cerebral-helm" }, "github": { "state": "ready", "openPullRequests": { "count": 1, "titles": ["Repo status widget (GitHub)"] }, "checks": { "state": "passing" }, "recentCommits": [{ "shortSha": "320ac4c", "message": "fix: news formatting" }] } }] } },
             "right": { "widgetId": "repositories", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }] } }
           }
         }
@@ -700,7 +751,7 @@
           "systemHealth": { "state": "ready", "cpuPercent": 22, "memoryPercent": 58, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
           "news": { "state": "ready", "headlines": [{ "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest", "url": "https://example.com/vite-5" }] },
           "widgets": {
-            "left": { "widgetId": "project-git-status", "state": "ready", "headline": "dev · checks passing", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "branch": "dev", "checks": "passing" } },
+            "left": { "widgetId": "project-git-status", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "repositories": [{ "id": "cerebral-helm", "name": "cerebral-helm", "branch": "dev", "sync": "synced", "remote": { "owner": "NickSouth", "repo": "cerebral-helm" }, "github": { "state": "ready", "openPullRequests": { "count": 1, "titles": ["Repo status widget (GitHub)"] }, "checks": { "state": "passing" }, "recentCommits": [{ "shortSha": "320ac4c", "message": "fix: news formatting" }] } }] } },
             "right": { "widgetId": "repositories", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }] } }
           }
         }
@@ -766,7 +817,7 @@
           },
           "news": { "state": "unavailable", "headlines": [], "emptyMessage": "News is unavailable after the error." },
           "widgets": {
-            "left": { "widgetId": "project-git-status", "state": "stale", "headline": "dev · last known", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "before the error" }, "data": { "branch": "dev", "checks": "passing" } },
+            "left": { "widgetId": "project-git-status", "state": "stale", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "before the error" }, "data": { "repositories": [{ "id": "cerebral-helm", "name": "cerebral-helm", "branch": "dev", "sync": "synced", "remote": { "owner": "NickSouth", "repo": "cerebral-helm" }, "github": { "state": "ready", "openPullRequests": { "count": 1, "titles": ["Repo status widget (GitHub)"] }, "checks": { "state": "passing" }, "recentCommits": [{ "shortSha": "320ac4c", "message": "fix: news formatting" }] } }] } },
             "right": { "widgetId": "repositories", "state": "unavailable", "emptyMessage": "Repository data is unavailable after the error." }
           }
         }

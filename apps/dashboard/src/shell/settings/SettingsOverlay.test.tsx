@@ -259,6 +259,31 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(input).toHaveValue("");
   });
 
+  it("stores the GitHub personal access token under its own reference (NIC-130)", async () => {
+    const { bridge } = renderApp();
+    const stored: Array<{ reference: string; value: string }> = [];
+    const realStore = bridge.storeSecret.bind(bridge);
+    bridge.storeSecret = (input) => {
+      stored.push({ reference: input.reference, value: input.value });
+      return realStore(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const input = await within(dialog).findByLabelText("GitHub personal access token");
+    const field = input.closest(".settings-field") as HTMLElement;
+    expect(await within(field).findByText("Not set")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "ghp_secret_token" } });
+    fireEvent.click(within(field).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(stored).toHaveLength(1));
+    expect(stored[0]).toEqual({ reference: "github_api_token", value: "ghp_secret_token" });
+    expect(await within(field).findByText("Key set")).toBeInTheDocument();
+    // The token is never echoed back into the field.
+    expect(input).toHaveValue("");
+  });
+
   it("disables Save until a key is entered (NIC-134)", async () => {
     renderApp();
     const dialog = openSettings();

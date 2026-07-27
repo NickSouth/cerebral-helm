@@ -1855,6 +1855,210 @@
   color: var(--ch-text-muted);
 }
 
+/* Project Git Status widget (NIC-130): a per-repo report shown one repo at a time, with a pager to
+   swap between repos. The local branch/sync always renders; the GitHub sections (PRs, CI, commits)
+   appear when the repo has a GitHub remote and a token is set, and degrade to a quiet note
+   otherwise. A repo with no CI simply omits its CI line. Info-dense, so the pager has no autoplay. */
+.gitstatus {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  /* Fill the rail panel's height and clip our own overflow, so a long report (many commits) is
+     cut off cleanly at the bottom rather than bleeding over the freshness label below it (the
+     freshness is a sibling in `.widget`, outside this box). NIC-130. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gitstatus__pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+  flex: 0 0 auto;
+}
+
+.gitstatus__arrow {
+  margin: 0;
+  padding: 0 var(--ch-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gitstatus__arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.gitstatus__arrow:not(:disabled):hover {
+  color: var(--ch-text-primary);
+}
+
+.gitstatus__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.gitstatus__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ch-text-muted);
+  opacity: 0.4;
+}
+
+.gitstatus__dot--active {
+  background: var(--ch-accent-primary);
+  opacity: 1;
+}
+
+.gitstatus__repo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  /* Fill the widget and clip: the branch/sync/PRs/CI rows stay fixed while the commit list (the
+     last child) absorbs the leftover height and clips gracefully under pressure (NIC-130). */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The report's fixed rows always render; only the commit list gives way when the panel is short. */
+.gitstatus__head,
+.gitstatus__sync,
+.gitstatus__line,
+.gitstatus__section,
+.gitstatus__note {
+  flex: 0 0 auto;
+}
+
+/* The commit list is the shrink/clip tail: it shows as many whole-ish rows as fit and hides the
+   rest, so a tall report never overflows onto the freshness label below the widget. */
+.gitstatus__commits {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gitstatus__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+}
+
+.gitstatus__sync {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.gitstatus__sync--synced {
+  color: var(--ch-status-success);
+}
+
+.gitstatus__sync--diverged {
+  color: var(--ch-status-warning);
+}
+
+.gitstatus__sync--no-upstream {
+  color: var(--ch-text-faint);
+}
+
+.gitstatus__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.gitstatus__line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+}
+
+.gitstatus__label {
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-label);
+}
+
+.gitstatus__value {
+  color: var(--ch-text-primary);
+}
+
+.gitstatus__checks {
+  font-size: var(--ch-font-size-label);
+}
+
+.gitstatus__checks--passing {
+  color: var(--ch-status-success);
+}
+
+.gitstatus__checks--failing {
+  color: var(--ch-status-error);
+}
+
+.gitstatus__checks--pending {
+  color: var(--ch-status-warning);
+}
+
+.gitstatus__prs,
+.gitstatus__commits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gitstatus__pr {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gitstatus__commit {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ch-space-1);
+  min-width: 0;
+  font-size: var(--ch-font-size-sm);
+}
+
+.gitstatus__sha {
+  flex: 0 0 auto;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.gitstatus__msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gitstatus__note {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-faint);
+}
+
 /* Required source attribution for a data provider (e.g. TMDB, NIC-134): a quiet footnote
    that must stay visible whenever the widget shows that provider's data. */
 /* Releases widget (NIC-134): a 2×2 grid of poster cards (2 movies + 2 shows) that fills the

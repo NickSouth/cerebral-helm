@@ -6,6 +6,9 @@ import { Unavailable } from "../components/Unavailable";
 import { EmptyState } from "../components/EmptyState";
 import { WIDGET_REGISTRY } from "../widgets/widgets";
 import type {
+  GitHubChecksState,
+  GitSyncState,
+  ProjectGitStatusItem,
   ProjectWidgetItem,
   ReleaseWidgetItem,
   RepositoryWidgetItem,
@@ -73,16 +76,6 @@ function list(children: ReactNode) {
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const WIDGET_BODIES: Readonly<Record<string, (data: any) => ReactNode>> = {
-  "project-git-status": (data) =>
-    list(
-      <>
-        {row("Branch", data.branch, "branch")}
-        {row("Checks", data.checks, "checks")}
-        {typeof data.openPullRequests === "number"
-          ? row("Open PRs", data.openPullRequests, "prs")
-          : null}
-      </>
-    ),
   deadlines: (data) =>
     list(
       (data.items ?? []).map((item: any, index: number) =>
@@ -481,6 +474,160 @@ function StocksBody({ items }: { items: readonly StockQuoteWidgetItem[] }) {
   );
 }
 
+/** Human label for the local branch's relationship to its `origin` remote-tracking ref. */
+const GIT_SYNC_LABELS: Readonly<Record<GitSyncState, string>> = {
+  synced: "In sync with origin",
+  diverged: "Diverged from origin",
+  "no-upstream": "No upstream branch"
+};
+
+/** Human label for a CI state (`none` never reaches here — that line is omitted, not labelled). */
+const GITHUB_CHECKS_LABELS: Readonly<Record<Exclude<GitHubChecksState, "none">, string>> = {
+  passing: "Passing",
+  failing: "Failing",
+  pending: "Pending"
+};
+
+/**
+ * The GitHub half of a repo's report (NIC-130): open PRs, CI state, and recent commits, read-only.
+ * Present only for a GitHub remote — a non-GitHub `origin` shows a quiet note while the local
+ * branch/sync above still stands. GitHub being unreachable or rate-limited degrades to an honest
+ * line rather than a fabricated success. A repo with no CI (`checks.state === "none"`) omits the CI
+ * line entirely, so a repo without CI reads as complete rather than broken.
+ */
+function GitHubReport({ repo }: { repo: ProjectGitStatusItem }) {
+  if (!repo.remote) {
+    return <p className="gitstatus__note">Not a GitHub repository</p>;
+  }
+  const github = repo.github;
+  if (!github || github.state === "unavailable") {
+    return <p className="gitstatus__note">{github?.message ?? "GitHub is unavailable."}</p>;
+  }
+  if (github.state === "rate-limited") {
+    return <p className="gitstatus__note">{github.message ?? "GitHub is rate-limited."}</p>;
+  }
+
+  const prs = github.openPullRequests;
+  const checks = github.checks;
+  // Cap the commit list so the dense report fits its rail panel — three is glanceable and keeps
+  // the list from overflowing onto the freshness label below it (NIC-130).
+  const commits = (github.recentCommits ?? []).slice(0, 3);
+
+  return (
+    <>
+      <div className="gitstatus__section">
+        <p className="gitstatus__line">
+          <span className="gitstatus__label">Open PRs</span>
+          <span className="gitstatus__value">{prs?.count ?? 0}</span>
+        </p>
+        {prs && prs.count > 0 ? (
+          <ul className="gitstatus__prs">
+            {prs.titles.map((title, index) => (
+              <li key={index} className="gitstatus__pr">
+                {title}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+      {checks && checks.state !== "none" ? (
+        <p className="gitstatus__line">
+          <span className="gitstatus__label">CI</span>
+          <span className={`gitstatus__checks gitstatus__checks--${checks.state}`}>
+            {GITHUB_CHECKS_LABELS[checks.state]}
+          </span>
+        </p>
+      ) : null}
+      {commits.length > 0 ? (
+        // The commit list is the report's flexible tail: it shows as many rows as fit and clips the
+        // rest cleanly (branch/sync/PRs/CI above always stay visible). No header — the SHA chips make
+        // the rows self-evidently commits, and dropping it reclaims a line in the dense rail panel.
+        <ul className="gitstatus__commits">
+          {commits.map((commit) => (
+            <li key={commit.shortSha} className="gitstatus__commit">
+              <code className="gitstatus__sha">{commit.shortSha}</code>
+              <span className="gitstatus__msg">{commit.message}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The Developer "Project Git Status" widget body (NIC-130): a per-repo report shown one repo at a
+ * time, with arrows to swap between repos. The local branch + remote-sync state is read from `.git`
+ * and always renders; the GitHub sections come from `GitHubReport`. This is information-dense, so
+ * the pager has no autoplay (unlike the releases/stocks carousels). It owns pager state, so it is a
+ * component rather than a static `WIDGET_BODIES` entry.
+ */
+function ProjectGitStatusBody({ items }: { items: readonly ProjectGitStatusItem[] }) {
+  const [page, setPage] = useState(0);
+
+  const repoCount = items.length;
+  const safePage = Math.min(page, Math.max(0, repoCount - 1));
+  const repo = items[safePage];
+  if (!repo) return null; // the empty widget state is handled at the slot level; guard anyway
+
+  return (
+    <div className="gitstatus">
+      {repoCount > 1 ? (
+        <div className="gitstatus__pager">
+          <button
+            type="button"
+            className="gitstatus__arrow"
+            disabled={safePage === 0}
+            aria-label="Previous repository"
+            onClick={() => setPage(safePage - 1)}
+          >
+            ‹
+          </button>
+          <span className="gitstatus__dots">
+            {Array.from({ length: repoCount }).map((_, index) => (
+              <span
+                key={index}
+                className={`gitstatus__dot${index === safePage ? " gitstatus__dot--active" : ""}`}
+                aria-hidden="true"
+              />
+            ))}
+          </span>
+          <button
+            type="button"
+            className="gitstatus__arrow"
+            disabled={safePage >= repoCount - 1}
+            aria-label="Next repository"
+            onClick={() => setPage(safePage + 1)}
+          >
+            ›
+          </button>
+        </div>
+      ) : null}
+      <div className="gitstatus__repo">
+        <div className="gitstatus__head">
+          <span className="repo-row__name">
+            <FolderGlyph />
+            <span className="repo-row__label">{repo.name}</span>
+          </span>
+          {repo.branch ? (
+            <code className="repo-row__branch">{repo.branch}</code>
+          ) : (
+            <span className="repo-row__branch repo-row__branch--none" aria-label="no branch">
+              —
+            </span>
+          )}
+        </div>
+        {repo.sync ? (
+          <p className={`gitstatus__sync gitstatus__sync--${repo.sync}`}>
+            {GIT_SYNC_LABELS[repo.sync]}
+          </p>
+        ) : null}
+        <GitHubReport repo={repo} />
+      </div>
+    </div>
+  );
+}
+
 function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
   // The stocks widget renders a paginated tile grid and owns the reduced-motion hook, so it is
   // dispatched to its own component instead of a pure static renderer (NIC-128).
@@ -503,6 +650,12 @@ function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
   if (widgetId === "releases") {
     const items = (data as { items?: readonly ReleaseWidgetItem[] })?.items ?? [];
     return <ReleasesBody items={items} />;
+  }
+  // The project-git-status widget renders a per-repo report with a repo pager (NIC-130).
+  if (widgetId === "project-git-status") {
+    const repositories =
+      (data as { repositories?: readonly ProjectGitStatusItem[] })?.repositories ?? [];
+    return <ProjectGitStatusBody items={repositories} />;
   }
   const render = WIDGET_BODIES[widgetId];
   return render ? <>{render((data ?? {}) as Record<string, unknown>)}</> : <Unavailable />;

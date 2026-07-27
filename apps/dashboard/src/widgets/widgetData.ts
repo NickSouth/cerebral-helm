@@ -125,6 +125,70 @@ export interface ReleasesWidgetPayload {
 }
 
 /**
+ * The local branch's relationship to its `origin` remote-tracking ref (NIC-130), derived from
+ * comparing ref SHAs in `.git` — never a numeric count. `synced` = the local tip equals
+ * `origin/<branch>`; `diverged` = they differ (direction is deliberately not claimed, since that
+ * needs a commit-graph walk); `no-upstream` = there is no `origin/<branch>` (an unpushed branch).
+ * This reflects the last local fetch, not the live remote.
+ */
+export type GitSyncState = "synced" | "diverged" | "no-upstream";
+
+/**
+ * The collapsed CI state for a repo's latest commit (NIC-130). `none` is a first-class, tidy
+ * state — the repo simply has no CI — and the widget omits the CI line entirely rather than
+ * showing an error or an empty slot. It is distinct from the GitHub section being `unavailable`
+ * or `rate-limited` (a reachability problem), which is surfaced honestly instead.
+ */
+export type GitHubChecksState = "passing" | "failing" | "pending" | "none";
+
+/** Whether the GitHub half of a repo's report could be read (NIC-130). `ready` = the PR/CI/commit
+ *  fields are populated; `unavailable`/`rate-limited` carry an honest `message` instead. */
+export type ProjectGitHubState = "ready" | "unavailable" | "rate-limited";
+
+/** One recent commit line in a repo's GitHub report (NIC-130). */
+export interface ProjectGitCommit {
+  readonly message: string;
+  readonly shortSha: string;
+}
+
+/**
+ * The GitHub half of a repo's report (NIC-130), present only when the repo has a GitHub remote.
+ * When `state` is `ready`, the PR/checks/commit fields are populated (each omitted, never
+ * fabricated, when GitHub returned nothing for it); otherwise `message` explains the honest
+ * unavailable/rate-limited state.
+ */
+export interface ProjectGitHubReport {
+  readonly state: ProjectGitHubState;
+  readonly openPullRequests?: { readonly count: number; readonly titles: readonly string[] };
+  readonly checks?: { readonly state: GitHubChecksState };
+  readonly recentCommits?: readonly ProjectGitCommit[];
+  /** Shown when `state` is `unavailable` or `rate-limited` — an honest, specific message. */
+  readonly message?: string;
+}
+
+/**
+ * One repository in the `project-git-status` widget's payload (NIC-130, Developer left slot). The
+ * local fields (`branch`, `sync`) are read directly from `.git` and always render; `remote` is the
+ * resolved GitHub `owner/repo` (omitted when `origin` is not a GitHub remote — the repo then shows
+ * local data only); `github` is the read-only GitHub REST report (omitted when there is no remote,
+ * and carrying its own honest state when GitHub is unreachable). The widget shows one repo at a
+ * time, and the render dispatch pages between them.
+ */
+export interface ProjectGitStatusItem {
+  readonly id: string;
+  readonly name: string;
+  readonly branch?: string;
+  readonly sync?: GitSyncState;
+  readonly remote?: { readonly owner: string; readonly repo: string };
+  readonly github?: ProjectGitHubReport;
+}
+
+/** The `project-git-status` widget's `data` payload (documented shape for `WidgetData.data`). */
+export interface ProjectGitStatusWidgetPayload {
+  readonly repositories: readonly ProjectGitStatusItem[];
+}
+
+/**
  * Resolve the WidgetData a rail slot renders: the live-streamed value for `widgetId`
  * (NIC-131 blueprint) when a producer has delivered one, else the bootstrap/config value.
  * `liveWidgets` is runtime-only state keyed by widget id and lives outside `regions`, so

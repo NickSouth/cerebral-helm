@@ -678,6 +678,7 @@ function CustomizationPanelBody() {
 const TMDB_SECRET_REFERENCE = "tmdb_api_key";
 const FINNHUB_SECRET_REFERENCE = "finnhub_api_key";
 const NEWSDATA_SECRET_REFERENCE = "newsdata_api_key";
+const GITHUB_SECRET_REFERENCE = "github_api_token";
 
 /**
  * A masked API-key provisioning field for a provider (generalized from the TMDB field, NIC-134;
@@ -982,6 +983,12 @@ function SetupPanelBody() {
           label="NewsData API key"
           hint="Powers the News panel on every mode. Stored in your macOS Keychain — never in config or logs. Get a free key at newsdata.io."
           placeholder="Paste your NewsData API key"
+        />
+        <ProviderKeyField
+          reference={GITHUB_SECRET_REFERENCE}
+          label="GitHub personal access token"
+          hint="Powers the Developer Project Git Status widget (read-only: pull requests, Actions, commits). Stored in your macOS Keychain — never in config or logs. Create a fine-grained token at github.com/settings/tokens."
+          placeholder="Paste your GitHub token"
         />
         <StocksTickersField />
         <Field label="Onboarding">
