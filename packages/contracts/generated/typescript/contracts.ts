@@ -550,6 +550,7 @@ export interface CerebralHelmSettingsSnapshot {
      */
     modeColors:    { [key: string]: string };
     schemaVersion: string;
+    stocks:        SettingsSnapshotStocks;
     workspace:     SettingsSnapshotWorkspace;
 }
 
@@ -571,6 +572,16 @@ export interface SettingsSnapshotKnowledge {
      * meaningful unset state, unlike the other fields).
      */
     rootReference: null | string;
+}
+
+export interface SettingsSnapshotStocks {
+    /**
+     * The user's tracked stock symbols for the Executive Stocks widget (NIC-128), in display
+     * order. Fully resolved: the stored list when set, otherwise the shipped starter list. An
+     * empty array is a meaningful state — the user cleared their tickers — and renders the
+     * widget's empty prompt.
+     */
+    tickers: string[];
 }
 
 export interface SettingsSnapshotWorkspace {
@@ -892,6 +903,7 @@ export interface Changes {
     hotkeys?:           Hotkeys;
     knowledge?:         Knowledge;
     modeColors?:        { [key: string]: string };
+    stocks?:            Stocks;
     workspace?:         Workspace;
 }
 
@@ -912,6 +924,15 @@ export interface Hotkeys {
 
 export interface Knowledge {
     rootReference?: string;
+}
+
+export interface Stocks {
+    /**
+     * The user's tracked stock symbols for the Executive Stocks widget (NIC-128). When present,
+     * replaces the stored list wholesale — an empty array clears it. Capped so a refresh stays
+     * within the provider's rate limit.
+     */
+    tickers?: string[];
 }
 
 export interface Workspace {

@@ -126,6 +126,10 @@ export interface SettingsSnapshot {
    *  `#rrggbb`. Sparse: a key is present only when customized; the client fills palette
    *  defaults for every un-overridden channel. */
   readonly modeColors: Readonly<Record<string, string>>;
+  /** The user's tracked stock symbols for the Executive Stocks widget (NIC-128), in
+   *  display order. Fully resolved: the stored list, else the shipped starter list. An
+   *  empty array is a meaningful "cleared" state (the widget shows its empty prompt). */
+  readonly stocks: { readonly tickers: readonly string[] };
 }
 
 export interface RecentActivityQuery {

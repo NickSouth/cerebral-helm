@@ -17,7 +17,7 @@
       "theme": { "accentPrimary": "executive.primary", "accentSecondary": "executive.secondary" },
       "quickApps": ["chrome", "gmail", "finder", "claude-desktop"],
       "quickActions": ["daily-brief", "open-calendar", "capture-note", "review-projects", "check-system-status", "open-mail", "start-focus-block", "open-news-brief"],
-      "widgets": { "left": "market-brief", "right": "projects" },
+      "widgets": { "left": "stocks", "right": "projects" },
       "greeting": { "persona": "Friendly Assistant", "directive": "Greet by time of day and surface today's priorities.", "fallback": "Good day." },
       "calendarProfile": "all",
       "newsProfile": "broad"
@@ -87,12 +87,11 @@
     },
     "widgets": {
       "left": {
-        "widgetId": "market-brief",
+        "widgetId": "stocks",
         "state": "ready",
         "headline": "Markets up modestly",
         "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" },
-        "data": { "tickers": [{ "symbol": "SPX", "changePct": 0.6 }, { "symbol": "AAPL", "changePct": -0.3 }, { "symbol": "NVDA", "changePct": 1.4 }] },
-        "action": { "id": "open-market-brief", "label": "Open market brief" }
+        "data": { "items": [{ "symbol": "SPY", "price": 543.21, "change": 3.24, "changePercent": 0.6, "history": [531.2, 528.6, 533.4, 535.1, 537.8, 539.2, 540.1, 541.9, 538.4, 543.21] }, { "symbol": "AAPL", "price": 227.15, "change": -0.68, "changePercent": -0.3, "history": [231.2, 228.9, 227.8, 229.6, 226.4, 228.1, 227.0, 228.7, 226.9, 227.15] }, { "symbol": "NVDA", "price": 131.4, "change": 1.81, "changePercent": 1.4, "history": [124.0, 121.6, 125.9, 127.2, 128.6, 129.9, 130.1, 132.0, 129.4, 131.4] }, { "symbol": "VTI", "price": 268.9, "change": 1.07, "changePercent": 0.4, "history": [266.2, 263.7, 267.1, 268.0, 269.2, 270.1, 268.8, 270.3, 267.9, 268.9] }] }
       },
       "right": {
         "widgetId": "projects",

@@ -383,6 +383,89 @@ public enum BridgeEventFactory {
         }
     }
 
+    // MARK: - Stocks widget (NIC-128)
+
+    /// The `stocks` widget's live envelope — the Swift mirror of the web `WidgetData` for the
+    /// Executive left slot (NIC-128). Optional fields are omitted (not encoded as null) when nil,
+    /// matching the envelope the dashboard renders.
+    public struct StocksWidget: Encodable, Sendable {
+        public let widgetId: String
+        public let state: String
+        public let headline: String?
+        public let emptyMessage: String?
+        public let freshness: WidgetFreshnessPayload?
+        public let data: StocksWidgetData?
+    }
+
+    public struct StocksWidgetData: Encodable, Sendable {
+        public let items: [StockQuoteWidgetItem]
+    }
+
+    /// One ticker row. `symbol` is always present; `price`/`change`/`changePercent` are omitted
+    /// (never fabricated) when the symbol couldn't be resolved, so the web tile shows a muted "—".
+    public struct StockQuoteWidgetItem: Encodable, Sendable {
+        public let symbol: String
+        public let price: Double?
+        public let change: Double?
+        public let changePercent: Double?
+        /// Recent daily closes (oldest → newest) for the tile sparkline, omitted (not null) when
+        /// no history was resolved — the tile then shows no line.
+        public let history: [Double]?
+    }
+
+    /// Maps a batch of per-symbol quote results into the `stocks` widget envelope (NIC-128). A
+    /// whole-widget failure degrades honestly: a missing credential guides the user to add their
+    /// Finnhub key; any other failure is a generic `unavailable`. An empty batch (no tickers
+    /// configured) is `empty`. A batch where *every* symbol failed is also `unavailable` — a grid
+    /// of dashes under "ready" would misrepresent a total outage. Otherwise `ready` with one row
+    /// per ticker, each carrying its figures or omitting them for an unresolved symbol. The
+    /// headline is a plain count ("N tickers"), never a fabricated market-sentiment phrase.
+    public static func stocksWidget(
+        from result: Swift.Result<[StockQuoteResult], Error>, now: Date
+    ) -> StocksWidget {
+        switch result {
+        case let .failure(error):
+            let credentialsMissing = (error as? StockQuoteError).map { $0 == .credentialsMissing } ?? false
+            return StocksWidget(
+                widgetId: "stocks", state: "unavailable", headline: nil,
+                emptyMessage: credentialsMissing
+                    ? "Add your Finnhub API key in Settings → Setup to track stocks."
+                    : "Stocks aren't available right now.",
+                freshness: nil, data: nil
+            )
+        case let .success(rows) where rows.isEmpty:
+            return StocksWidget(
+                widgetId: "stocks", state: "empty", headline: nil,
+                emptyMessage: "Add tickers in Settings → Setup to track them here.",
+                freshness: nil, data: nil
+            )
+        case let .success(rows) where rows.allSatisfy({ $0.quote == nil }):
+            return StocksWidget(
+                widgetId: "stocks", state: "unavailable", headline: nil,
+                emptyMessage: "Stocks aren't available right now.", freshness: nil, data: nil
+            )
+        case let .success(rows):
+            let items = rows.map { row in
+                StockQuoteWidgetItem(
+                    symbol: row.symbol,
+                    price: row.quote?.price,
+                    change: row.quote?.change,
+                    changePercent: row.quote?.changePercent,
+                    // A sparkline needs at least two points to draw a line; anything shorter is
+                    // dropped so the tile omits the line rather than rendering a degenerate one.
+                    history: (row.history?.count ?? 0) >= 2 ? row.history : nil
+                )
+            }
+            return StocksWidget(
+                widgetId: "stocks", state: "ready",
+                headline: rows.count == 1 ? "1 ticker" : "\(rows.count) tickers",
+                emptyMessage: nil,
+                freshness: WidgetFreshnessPayload(observedAt: now, label: "just now"),
+                data: StocksWidgetData(items: items)
+            )
+        }
+    }
+
     /// A `settings.changed` event (live cross-webview sync): the durable settings were
     /// updated through `updateSettings`, so every surface — the dashboard and the
     /// separate native settings window — reflects the new assistant name, mode colors,

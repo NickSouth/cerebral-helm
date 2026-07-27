@@ -9,6 +9,7 @@ import type {
   ProjectWidgetItem,
   ReleaseWidgetItem,
   RepositoryWidgetItem,
+  StockQuoteWidgetItem,
   WidgetData
 } from "../widgets/widgetData";
 import { useBridge } from "../state/BridgeProvider";
@@ -26,7 +27,7 @@ const WIDGET_LABELS: ReadonlyMap<string, string> = new Map(
 
 /** Icon-first annotation per widget id (visual reference); unknown ids fall back to a generic glyph. */
 const WIDGET_ICONS: Readonly<Record<string, PanelGlyphName>> = {
-  "market-brief": "market",
+  stocks: "market",
   "project-git-status": "git",
   repositories: "git",
   projects: "projects",
@@ -72,12 +73,6 @@ function list(children: ReactNode) {
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const WIDGET_BODIES: Readonly<Record<string, (data: any) => ReactNode>> = {
-  "market-brief": (data) =>
-    list(
-      (data.tickers ?? []).map((ticker: any, index: number) =>
-        row(ticker.symbol, `${ticker.changePct > 0 ? "+" : ""}${ticker.changePct}%`, index)
-      )
-    ),
   "project-git-status": (data) =>
     list(
       <>
@@ -341,7 +336,158 @@ function ReleasesBody({ items }: { items: readonly ReleaseWidgetItem[] }) {
   );
 }
 
+/**
+ * The Executive "Stocks" widget body (NIC-128): a configured list of tickers, each shown as a
+ * compact tile with its price and day movement (absolute + percent), up/down coloured. Tiles
+ * fill a 2×2 grid (4 per page); adding more paginates through pages with arrows + dots and a
+ * 30s auto-advance (paused under reduced motion, mirroring the releases carousel). Missing
+ * figures render as a muted "—" — an unresolved symbol is honest, never a fabricated $0. This
+ * widget is read-only (no click-through), but it owns pager state and the reduced-motion hook,
+ * so it is a component rather than a static `WIDGET_BODIES` entry.
+ */
+const STOCKS_PER_PAGE = 4;
+const STOCKS_AUTOPLAY_MS = 30_000;
+
+/** "543.21" with two decimals; a muted em-dash when the price couldn't be resolved. */
+function formatStockPrice(price: number | undefined): string {
+  return typeof price === "number"
+    ? price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : "—";
+}
+
+/** The colour/direction cue for a day change (paired with the signed text so colour is never the
+ *  only signal): positive → up, negative → down, zero/unknown → flat. */
+function stockDirection(change: number | undefined): "up" | "down" | "flat" {
+  if (typeof change !== "number" || change === 0) return "flat";
+  return change > 0 ? "up" : "down";
+}
+
+/** "+3.24 (+0.60%)" / "-0.68 (-0.30%)"; a muted em-dash when either figure is unknown. */
+function formatStockChange(item: StockQuoteWidgetItem): string {
+  if (typeof item.change !== "number" || typeof item.changePercent !== "number") return "—";
+  const sign = item.change > 0 ? "+" : ""; // a negative value already carries its own "-"
+  return `${sign}${item.change.toFixed(2)} (${sign}${item.changePercent.toFixed(2)}%)`;
+}
+
+/**
+ * A tiny month-trend sparkline for a stock tile (NIC-128): a single `<polyline>`, no axes or
+ * dots, coloured by the day's direction (green up / red down / muted flat — matching the change
+ * chip). The closes are mapped to a fixed 0–100 × 0–100 viewBox and the SVG stretches to fill the
+ * tile with `preserveAspectRatio="none"`; the stroke stays crisp via `vector-effect`. Renders
+ * nothing when there are fewer than two points (never a degenerate line).
+ */
+function StockSparkline({
+  history,
+  direction
+}: {
+  history: readonly number[];
+  direction: "up" | "down" | "flat";
+}) {
+  if (history.length < 2) return null;
+  const min = Math.min(...history);
+  const max = Math.max(...history);
+  const span = max - min || 1; // a flat series maps to a centered horizontal line, not NaN
+  const stepX = 100 / (history.length - 1);
+  const points = history
+    .map((value, index) => {
+      const x = index * stepX;
+      const y = 100 - ((value - min) / span) * 100; // SVG y grows downward
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+
+  return (
+    <svg
+      className={`stock-card__spark stock-card__spark--${direction}`}
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <polyline points={points} fill="none" vectorEffect="non-scaling-stroke" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function StocksBody({ items }: { items: readonly StockQuoteWidgetItem[] }) {
+  const { reducedMotion } = useAppearance();
+  const [page, setPage] = useState(0);
+
+  const pageCount = Math.max(1, Math.ceil(items.length / STOCKS_PER_PAGE));
+  const safePage = Math.min(page, pageCount - 1);
+  const start = safePage * STOCKS_PER_PAGE;
+  const pageItems = items.slice(start, start + STOCKS_PER_PAGE);
+
+  // Auto-advance to the next page every 30s, wrapping. Keyed on `safePage`, so a manual arrow
+  // press resets the countdown. Disabled when there is only one page or the user prefers reduced
+  // motion (matching the releases carousel).
+  useEffect(() => {
+    if (pageCount <= 1 || reducedMotion) return;
+    const id = window.setInterval(() => {
+      setPage((current) => (current + 1) % pageCount);
+    }, STOCKS_AUTOPLAY_MS);
+    return () => window.clearInterval(id);
+  }, [pageCount, reducedMotion, safePage]);
+
+  return (
+    <div className="stocks">
+      {pageCount > 1 ? (
+        <div className="stocks__pager">
+          <button
+            type="button"
+            className="stocks__arrow"
+            disabled={safePage === 0}
+            aria-label="Previous tickers"
+            onClick={() => setPage(safePage - 1)}
+          >
+            ‹
+          </button>
+          <span className="stocks__dots">
+            {Array.from({ length: pageCount }).map((_, index) => (
+              <span
+                key={index}
+                className={`stocks__dot${index === safePage ? " stocks__dot--active" : ""}`}
+                aria-hidden="true"
+              />
+            ))}
+          </span>
+          <button
+            type="button"
+            className="stocks__arrow"
+            disabled={safePage >= pageCount - 1}
+            aria-label="More tickers"
+            onClick={() => setPage(safePage + 1)}
+          >
+            ›
+          </button>
+        </div>
+      ) : null}
+      <ul className="stocks__grid">
+        {pageItems.map((item, index) => {
+          const direction = stockDirection(item.change);
+          return (
+            <li key={item.symbol ?? index} className={`stock-card stock-card--${direction}`}>
+              <span className="stock-card__symbol">{item.symbol}</span>
+              <span className="stock-card__price">{formatStockPrice(item.price)}</span>
+              <span className="stock-card__change">{formatStockChange(item)}</span>
+              {item.history && item.history.length >= 2 ? (
+                <StockSparkline history={item.history} direction={direction} />
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
+  // The stocks widget renders a paginated tile grid and owns the reduced-motion hook, so it is
+  // dispatched to its own component instead of a pure static renderer (NIC-128).
+  if (widgetId === "stocks") {
+    const items = (data as { items?: readonly StockQuoteWidgetItem[] })?.items ?? [];
+    return <StocksBody items={items} />;
+  }
   // The repositories widget renders interactive rows (click-to-open), so it needs runtime
   // hooks and is dispatched to its own component instead of a pure static renderer (NIC-131).
   if (widgetId === "repositories") {

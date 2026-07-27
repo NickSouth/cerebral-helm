@@ -28,4 +28,17 @@ describe("validateSettingsChanges (NIC-63 — the shared config validation path)
     expect(patch.patchId).toMatch(/^set_[A-Za-z0-9_-]{8,64}$/);
     expect(patch.changes).toEqual({ defaultModeId: "school" });
   });
+
+  it("accepts a valid stocks ticker list, including an empty (cleared) one (NIC-128)", () => {
+    expect(validateSettingsChanges({ stocks: { tickers: ["SPY", "AAPL", "BRK.B"] } }).valid).toBe(true);
+    expect(validateSettingsChanges({ stocks: { tickers: [] } }).valid).toBe(true);
+  });
+
+  it("rejects a malformed ticker symbol, an over-cap list, and an unknown stocks key (NIC-128)", () => {
+    expect(validateSettingsChanges({ stocks: { tickers: ["not a symbol"] } }).valid).toBe(false);
+    expect(validateSettingsChanges({ stocks: { tickers: ["1BAD"] } }).valid).toBe(false);
+    const overCap = Array.from({ length: 21 }, (_, i) => `T${i}`);
+    expect(validateSettingsChanges({ stocks: { tickers: overCap } }).valid).toBe(false);
+    expect(validateSettingsChanges({ stocks: { watchlist: ["SPY"] } }).valid).toBe(false);
+  });
 });

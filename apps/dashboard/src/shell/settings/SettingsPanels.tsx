@@ -672,17 +672,30 @@ function CustomizationPanelBody() {
 
 // --- Setup ----------------------------------------------------------------
 
-/** The logical Keychain reference for the TMDB API key (NIC-134). Matches the descriptor
- *  reference pattern `^[a-z][a-z0-9_]*$` so config, keychain, and this UI agree. */
+/** The logical Keychain references for the provider API keys (NIC-134 TMDB, NIC-128 Finnhub).
+ *  Each matches the descriptor reference pattern `^[a-z][a-z0-9_]*$` so config, keychain, and
+ *  this UI agree. */
 const TMDB_SECRET_REFERENCE = "tmdb_api_key";
+const FINNHUB_SECRET_REFERENCE = "finnhub_api_key";
 
 /**
- * The TMDB API-key provisioning field (NIC-134): stores the key in the Keychain through the
- * `storeSecret` bridge op and shows whether one is set via `getSecretStatus` — presence only,
- * the value is never read back into the field. The value the user types is sent once on Save and
- * then cleared; it never lands in config or a log (FR-CFG-03, FR-OBS-03).
+ * A masked API-key provisioning field for a provider (generalized from the TMDB field, NIC-134;
+ * NIC-128 adds Finnhub): stores the key in the Keychain through the `storeSecret` bridge op and
+ * shows whether one is set via `getSecretStatus` — presence only, the value is never read back
+ * into the field. The value the user types is sent once on Save and then cleared; it never lands
+ * in config or a log (FR-CFG-03, FR-OBS-03).
  */
-function IntegrationsProvidersField() {
+function ProviderKeyField({
+  reference,
+  label,
+  hint,
+  placeholder
+}: {
+  reference: string;
+  label: string;
+  hint: string;
+  placeholder: string;
+}) {
   const bridge = useBridge();
   const [bound, setBound] = useState<boolean | null>(null); // null while the status read settles
   const [draft, setDraft] = useState("");
@@ -691,7 +704,7 @@ function IntegrationsProvidersField() {
   useEffect(() => {
     let active = true;
     void bridge
-      .getSecretStatus({ reference: TMDB_SECRET_REFERENCE })
+      .getSecretStatus({ reference })
       .then((result) => {
         if (active) setBound(result.bound);
       })
@@ -701,7 +714,7 @@ function IntegrationsProvidersField() {
     return () => {
       active = false;
     };
-  }, [bridge]);
+  }, [bridge, reference]);
 
   const canSave = draft.trim().length > 0 && phase !== "saving";
 
@@ -710,7 +723,7 @@ function IntegrationsProvidersField() {
     if (!value) return;
     setPhase("saving");
     void bridge
-      .storeSecret({ reference: TMDB_SECRET_REFERENCE, value })
+      .storeSecret({ reference, value })
       .then((result) => {
         if (result.stored) {
           setBound(true);
@@ -726,10 +739,7 @@ function IntegrationsProvidersField() {
   const statusLabel = bound === null ? "Checking…" : bound ? "Key set" : "Not set";
 
   return (
-    <Field
-      label="TMDB API key"
-      hint="Powers the Entertainment Releases widget. Stored in your macOS Keychain — never in config or logs. Get a free key at themoviedb.org."
-    >
+    <Field label={label} hint={hint}>
       <div className="settings-secret">
         <span className="settings-secret__status" data-bound={bound === true}>
           {statusLabel}
@@ -738,8 +748,8 @@ function IntegrationsProvidersField() {
           type="password"
           className="settings-input"
           value={draft}
-          placeholder={bound ? "Enter a new key to replace it" : "Paste your TMDB API key"}
-          aria-label="TMDB API key"
+          placeholder={bound ? "Enter a new key to replace it" : placeholder}
+          aria-label={label}
           autoComplete="off"
           onChange={(event) => setDraft(event.target.value)}
         />
@@ -757,6 +767,121 @@ function IntegrationsProvidersField() {
           That key couldn't be saved. Check it and try again.
         </p>
       ) : null}
+    </Field>
+  );
+}
+
+/** The logical name pattern a ticker symbol must match (NIC-128) — mirrors the settings-patch
+ *  contract. Uppercased on entry; the store normalizes again on write. */
+const TICKER_INPUT_PATTERN = /^[A-Za-z][A-Za-z0-9.-]{0,9}$/;
+const TICKERS_MAX = 20;
+
+function tickersEqual(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((symbol, index) => symbol === b[index]);
+}
+
+/**
+ * The Executive Stocks widget's ticker list (NIC-128): the user's tracked symbols, edited as
+ * add/remove chips and persisted through the validated settings path (`stocks.tickers`). Seeds
+ * from the resolved snapshot (the shipped starter list until the user changes it); an empty list
+ * is a real state — the widget then shows its "add tickers" prompt. Symbols are uppercased and
+ * deduped on entry (the store normalizes again on write), and the contract caps the list at 20.
+ */
+function StocksTickersField() {
+  const { snapshot } = useSettingsSnapshot();
+  const updateSettings = useUpdateSettings();
+
+  const [baseline, setBaseline] = useState<readonly string[]>(snapshot?.stocks?.tickers ?? []);
+  const [draft, setDraft] = useState<string[]>([...(snapshot?.stocks?.tickers ?? [])]);
+  const [input, setInput] = useState("");
+
+  const candidate = input.trim().toUpperCase();
+  const canAdd =
+    TICKER_INPUT_PATTERN.test(candidate) && !draft.includes(candidate) && draft.length < TICKERS_MAX;
+  const dirty = !tickersEqual(draft, baseline);
+
+  function add() {
+    if (!canAdd) return;
+    setDraft((prev) => [...prev, candidate]);
+    setInput("");
+  }
+  function remove(symbol: string) {
+    setDraft((prev) => prev.filter((entry) => entry !== symbol));
+  }
+  function save() {
+    void updateSettings({ stocks: { tickers: draft } });
+    setBaseline([...draft]);
+  }
+  function cancel() {
+    setDraft([...baseline]);
+    setInput("");
+  }
+
+  return (
+    <Field
+      label="Tracked tickers"
+      hint="Symbols shown in the Executive Stocks widget, four to a page. Uppercased automatically; up to 20."
+    >
+      <div className="settings-tickers">
+        <ul className="settings-tickers__list">
+          {draft.length === 0 ? (
+            <li className="settings-tickers__empty">No tickers yet — the widget shows an add prompt.</li>
+          ) : (
+            draft.map((symbol) => (
+              <li key={symbol} className="settings-tickers__chip">
+                <span>{symbol}</span>
+                <button
+                  type="button"
+                  className="settings-tickers__remove"
+                  aria-label={`Remove ${symbol}`}
+                  onClick={() => remove(symbol)}
+                >
+                  ×
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+        <div className="settings-tickers__add">
+          <input
+            type="text"
+            className="settings-input"
+            value={input}
+            placeholder="Add a symbol, e.g. TSLA"
+            aria-label="Add a stock ticker"
+            autoComplete="off"
+            maxLength={10}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                add();
+              }
+            }}
+          />
+          <button type="button" className="settings-button" disabled={!canAdd} onClick={add}>
+            Add
+          </button>
+        </div>
+        <div className="settings-tickers__actions">
+          <button
+            type="button"
+            className="settings-button settings-button--ghost"
+            disabled={!dirty}
+            onClick={cancel}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="settings-button settings-button--primary"
+            disabled={!dirty}
+            onClick={save}
+          >
+            Save
+          </button>
+        </div>
+      </div>
     </Field>
   );
 }
@@ -839,7 +964,19 @@ function SetupPanelBody() {
         </Field>
       </Section>
       <Section title="Integrations & onboarding">
-        <IntegrationsProvidersField />
+        <ProviderKeyField
+          reference={TMDB_SECRET_REFERENCE}
+          label="TMDB API key"
+          hint="Powers the Entertainment Releases widget. Stored in your macOS Keychain — never in config or logs. Get a free key at themoviedb.org."
+          placeholder="Paste your TMDB API key"
+        />
+        <ProviderKeyField
+          reference={FINNHUB_SECRET_REFERENCE}
+          label="Finnhub API key"
+          hint="Powers the Executive Stocks widget. Stored in your macOS Keychain — never in config or logs. Get a free key at finnhub.io."
+          placeholder="Paste your Finnhub API key"
+        />
+        <StocksTickersField />
         <Field label="Onboarding">
           <Unavailable label="Requires the macOS host" />
         </Field>

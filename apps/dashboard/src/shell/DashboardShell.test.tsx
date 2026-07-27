@@ -211,7 +211,7 @@ describe("DashboardShell config-driven content (one view, four modes, no per-mod
   it("renders Executive purely from config — no Developer content leaks", () => {
     renderShell("mode.executive.ready");
     expect(screen.getByText("Good day.")).toBeInTheDocument();
-    expect(screen.getByText("Market Brief")).toBeInTheDocument();
+    expect(screen.getByText("Stocks")).toBeInTheDocument();
     expect(screen.getByText("Markets up modestly")).toBeInTheDocument();
     expect(screen.queryByText("Ready to build.")).toBeNull();
   });

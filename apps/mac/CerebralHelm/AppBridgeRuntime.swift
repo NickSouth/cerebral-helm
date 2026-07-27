@@ -47,6 +47,11 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// the Keychain and fetches trending movies + TV on a slow cadence. Runs on the same
     /// visibility gate as the other streams; a missing key emits an honest "add your key" state.
     private let releasesPublisher: ReleasesPublisher
+    /// Streams the Executive `stocks` widget (NIC-128) — resolves the user's tracked tickers from
+    /// the settings store and the Finnhub API key from the Keychain, fetching a quote per symbol on
+    /// a slow cadence. Same visibility gate as the other streams; an empty ticker list or a missing
+    /// key emits an honest state rather than a fabricated quote.
+    private let stocksPublisher: StocksPublisher
     /// Watches display connect/disconnect/rearrange (NIC-87). Native subscribers
     /// are told first (window re-hosting), then the dashboard via one
     /// `display.topology.changed` event.
@@ -174,6 +179,23 @@ final class AppBridgeRuntime: @unchecked Sendable {
             Self.log.error("Settings store failed to open; settings changes will not persist.")
         }
         self.settingsStore = settingsStore
+        // The Stocks producer (NIC-128): reads the tracked tickers from the settings store and the
+        // Finnhub key from the Keychain each tick, so a Settings edit applies on the next sample.
+        // Resolving through `EffectiveSettings` means an unset list falls back to the starter list
+        // while an explicitly cleared list stays empty.
+        let stocks = StocksPublisher(
+            tickers: {
+                let stored = (try? settingsStore?.load()).flatMap { $0 } ?? StoredSettings()
+                return EffectiveSettings.resolveStockTickers(stored: stored)
+            },
+            secretStore: composition.secretStore,
+            provider: FinnhubStockProvider(),
+            // Best-effort, keyless ~1-month daily closes for the tile sparkline (NIC-128); a
+            // failure just omits the line — the Finnhub price/change are unaffected.
+            history: YahooStockHistoryProvider(),
+            emit: { relay.emit($0) }
+        )
+        stocksPublisher = stocks
         // Feed the layout-display resolver its persisted ids (captured directly, not
         // through `self`, so no not-yet-initialized capture) — the layout arrange
         // reads it live at open time (NIC-142).
@@ -211,11 +233,18 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // writes the value, getSecretStatus reports presence — the value never
             // enters config or a log (FR-CFG-03).
             secretStore: composition.secretStore,
-            // When the TMDB key is stored, refresh the releases producer at once so the
-            // widget goes live immediately instead of on its next 30-min tick (NIC-134).
+            // When a provider key is stored, refresh its producer at once so the widget goes live
+            // immediately instead of on its next slow tick: TMDB → releases (NIC-134), Finnhub →
+            // stocks (NIC-128).
             onSecretStored: { reference in
-                guard reference == "tmdb_api_key" else { return }
-                Task { await releases.refresh() }
+                if reference == "tmdb_api_key" { Task { await releases.refresh() } }
+                if reference == "finnhub_api_key" { Task { await stocks.refresh() } }
+            },
+            // When the tracked-ticker list changes, refresh the stocks producer so the edited
+            // list is live at once rather than on its next tick (NIC-128).
+            onSettingsChanged: { changes in
+                guard changes.stockTickersJSON != nil else { return }
+                Task { await stocks.refresh() }
             },
             // Hides a layout's app windows on closeLayout (NIC-142) — the same
             // permission-free primitive "Windows Stored by Mode" uses.
@@ -299,11 +328,13 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let projects = projectsPublisher
         let weather = weatherPublisher
         let releases = releasesPublisher
+        let stocks = stocksPublisher
         Task { await metrics.start() }
         Task { await repos.start() }
         Task { await projects.start() }
         Task { await weather.start() }
         Task { await releases.start() }
+        Task { await stocks.start() }
     }
 
     /// Pause/resume the live streams from the shell's visibility signal (dashboard
@@ -315,11 +346,13 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let projects = projectsPublisher
         let weather = weatherPublisher
         let releases = releasesPublisher
+        let stocks = stocksPublisher
         Task { await metrics.setActive(active) }
         Task { await repos.setActive(active) }
         Task { await projects.setActive(active) }
         Task { await weather.setActive(active) }
         Task { await releases.setActive(active) }
+        Task { await stocks.setActive(active) }
     }
 
     /// The persisted "Main display" id (NIC-120b) — nil when never set. A stale

@@ -21,7 +21,7 @@
         "open-news-brief"
       ],
       "widgets": {
-        "left": "market-brief",
+        "left": "stocks",
         "right": "projects"
       },
       "greeting": {

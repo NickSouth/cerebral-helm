@@ -37,6 +37,10 @@ public struct StoredSettings: Equatable, Sendable {
     /// The raw JSON of the patch's `extensions` object, preserved verbatim so
     /// unknown-but-safe user fields survive updates (FR-CFG-05).
     public var extensionsJSON: String?
+    /// The raw JSON array of the user's tracked stock tickers (NIC-128), preserved
+    /// verbatim. `nil`/absent = never set, so the shipped starter list applies; an
+    /// explicit `[]` is a meaningful "cleared" state (distinct from unset).
+    public var stockTickersJSON: String?
 
     public init(
         defaultModeID: String? = nil,
@@ -50,7 +54,8 @@ public struct StoredSettings: Equatable, Sendable {
         mainDisplayID: String? = nil,
         layoutDisplayID: String? = nil,
         modeColorsJSON: String? = nil,
-        extensionsJSON: String? = nil
+        extensionsJSON: String? = nil,
+        stockTickersJSON: String? = nil
     ) {
         self.defaultModeID = defaultModeID
         self.confirmAllActions = confirmAllActions
@@ -64,6 +69,7 @@ public struct StoredSettings: Equatable, Sendable {
         self.layoutDisplayID = layoutDisplayID
         self.modeColorsJSON = modeColorsJSON
         self.extensionsJSON = extensionsJSON
+        self.stockTickersJSON = stockTickersJSON
     }
 }
 
@@ -87,6 +93,9 @@ public struct SettingsChanges: Equatable, Sendable {
     public var modeColorsJSON: String?
     /// When present, replaces the stored `extensions` object wholesale.
     public var extensionsJSON: String?
+    /// When present, replaces the stored ticker list wholesale (NIC-128). A JSON array
+    /// string of normalized (uppercased, deduped) symbols; `"[]"` clears the list.
+    public var stockTickersJSON: String?
 
     public init(
         defaultModeID: String? = nil,
@@ -100,7 +109,8 @@ public struct SettingsChanges: Equatable, Sendable {
         mainDisplayID: String? = nil,
         layoutDisplayID: String? = nil,
         modeColorsJSON: String? = nil,
-        extensionsJSON: String? = nil
+        extensionsJSON: String? = nil,
+        stockTickersJSON: String? = nil
     ) {
         self.defaultModeID = defaultModeID
         self.confirmAllActions = confirmAllActions
@@ -114,6 +124,7 @@ public struct SettingsChanges: Equatable, Sendable {
         self.layoutDisplayID = layoutDisplayID
         self.modeColorsJSON = modeColorsJSON
         self.extensionsJSON = extensionsJSON
+        self.stockTickersJSON = stockTickersJSON
     }
 
     /// Extracts the known contract fields from a validated `changes` dictionary.
@@ -146,6 +157,20 @@ public struct SettingsChanges: Equatable, Sendable {
            let data = try? JSONSerialization.data(withJSONObject: extensions, options: [.sortedKeys]) {
             extensionsJSON = String(decoding: data, as: UTF8.self)
         }
+        if let stocks = changes["stocks"] as? [String: Any],
+           let rawTickers = stocks["tickers"] as? [Any] {
+            // Normalize once at the write boundary so the stored value is clean regardless of
+            // client: uppercase, trim, drop blanks, and dedupe (order-preserving). An empty
+            // (or all-blank) list serializes to "[]" — a meaningful "cleared" state, not unset.
+            var seen: Set<String> = []
+            let normalized = rawTickers
+                .compactMap { $0 as? String }
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
+                .filter { !$0.isEmpty && seen.insert($0).inserted }
+            if let data = try? JSONSerialization.data(withJSONObject: normalized, options: []) {
+                stockTickersJSON = String(decoding: data, as: UTF8.self)
+            }
+        }
     }
 
     /// Whether the patch carries any persistable field.
@@ -154,7 +179,7 @@ public struct SettingsChanges: Equatable, Sendable {
             && appearanceReducedMotion == nil && appearanceAssistantName == nil
             && commandPaletteHotkey == nil && knowledgeRootReference == nil
             && windowsStoredByMode == nil && mainDisplayID == nil && layoutDisplayID == nil
-            && modeColorsJSON == nil && extensionsJSON == nil
+            && modeColorsJSON == nil && extensionsJSON == nil && stockTickersJSON == nil
     }
 }
 

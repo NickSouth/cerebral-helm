@@ -217,6 +217,11 @@
   flex: 1 1 0;
   min-height: 0;
   overflow: hidden;
+  /* Flex column (matching the right rail) so an inner widget with `flex: 1` can fill the panel to
+     a definite height — without this the widget stays content-height and the Stocks sparkline
+     falls back to its SVG intrinsic (square) size and overflows (NIC-128). */
+  display: flex;
+  flex-direction: column;
 }
 
 .shell-right {
@@ -1953,9 +1958,166 @@
   color: var(--ch-text-muted);
 }
 
+/* Stocks widget (NIC-128, Executive left): a 2×2 grid of compact ticker tiles (4 per page),
+   with a pager to page through more — mirroring the releases carousel but with intrinsic-height
+   tiles (never flex-fill, which collapses to 0 in the stacked <1440px layout). */
+.stocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  min-height: 0;
+  flex: 1 1 auto; /* fill the widget so the 2×2 grid reaches the panel's full height */
+}
+
+.stocks__pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+  flex: 0 0 auto;
+}
+
+.stocks__arrow {
+  margin: 0;
+  padding: 0 var(--ch-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stocks__arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.stocks__arrow:not(:disabled):hover {
+  color: var(--ch-text-primary);
+}
+
+.stocks__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.stocks__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ch-text-muted);
+  opacity: 0.4;
+}
+
+.stocks__dot--active {
+  background: var(--ch-accent-primary);
+  opacity: 1;
+}
+
+.stocks__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  /* Each row is at least its content (symbol/price/change) height so the text is never squeezed
+     and clipped, and grows to an equal 1fr share to fill a tall widget — so the sparkline gets
+     the leftover height when there's room, and yields to zero when there isn't (NIC-128). */
+  grid-template-rows: repeat(2, minmax(min-content, 1fr));
+  gap: var(--ch-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.stock-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: color-mix(in srgb, var(--ch-text-muted) 6%, transparent);
+}
+
+.stock-card__symbol {
+  flex: 0 0 auto; /* the text rows keep their height; only the sparkline yields when space is tight */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ch-text-muted);
+}
+
+.stock-card__price {
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ch-text-primary);
+}
+
+.stock-card__change {
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--ch-text-muted);
+}
+
+.stock-card--up .stock-card__change {
+  color: var(--ch-status-success);
+}
+
+.stock-card--down .stock-card__change {
+  color: var(--ch-status-error);
+}
+
+/* Month-trend sparkline: a single line filling the rest of the tile, coloured by the day's
+   direction. `stroke` is inherited by the polyline; a min-height keeps the line visible even in
+   the content-height (stacked, <1440px) layout where flex-fill would otherwise collapse it. */
+.stock-card__spark {
+  display: block;
+  width: 100%;
+  /* basis 0 so the line takes only the leftover tile height as a definite flex length — never the
+     SVG's intrinsic (square, viewBox 1:1) size, which would balloon the tile and clip the grid.
+     min-height 0 so on a short tile the line yields all the way to nothing rather than forcing the
+     symbol/price/change to overflow and clip — the text always wins. */
+  flex: 1 1 0;
+  min-height: 0;
+  margin-top: 2px;
+  stroke: var(--ch-text-muted); /* flat / unknown direction */
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.stock-card__spark--up {
+  stroke: var(--ch-status-success);
+}
+
+.stock-card__spark--down {
+  stroke: var(--ch-status-error);
+}
+
 /* Right-rail widget (e.g. Projects): fills its half of the rail, and each list row is a
    clickable stacked-rectangle card (design reference). */
 .shell-right .widget {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Left-rail widget (Stocks, NIC-128): likewise fills its half of the rail so the 2×2 ticker
+   grid reaches the panel's full height instead of packing to intrinsic content height. */
+.shell-left .widget {
   flex: 1 1 auto;
   min-height: 0;
 }

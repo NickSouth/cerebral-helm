@@ -12,6 +12,11 @@
 First blueprint widget: **NIC-131 Active Repos** (`repositories`). It is the reference
 implementation for everything below — when in doubt, read how `repositories` does it.
 
+Second reference: **NIC-134 Releases** (`releases`, Entertainment). It extends the blueprint to
+the harder cases — an **external HTTP API** behind a replaceable adapter, a **Keychain-provisioned
+API key**, **poster images**, and a **paged/auto-advancing card layout**. When your widget needs an
+API key, network data, or images, read how `releases` does it.
+
 ---
 
 ## 1. The widget roster (source of truth)
@@ -22,17 +27,25 @@ The registered widget ids live in [`apps/dashboard/src/widgets/widgets.ts`](../a
 
 | id | side | mode(s) | status |
 |---|---|---|---|
-| `market-brief` | left | Executive | fixture-backed (not live) |
+| `stocks` | left | Executive | **LIVE (NIC-128)** — Finnhub quotes + Keychain key + user-editable ticker-list setting + 2×2 grid/pager (renamed from `market-brief`) |
 | `project-git-status` | left | Developer | fixture-backed |
 | `deadlines` | left | School | fixture-backed |
 | `spotify` | left | Entertainment | fixture-backed |
-| `projects` | right | Executive | fixture-backed |
+| `projects` | right | Executive | **LIVE (NIC-129)** |
 | `repositories` | right | Developer | **LIVE (NIC-131) — blueprint** |
 | `courses` | right | School | fixture-backed |
-| `media-list` | right | Entertainment | fixture-backed |
+| `releases` | right | Entertainment | **LIVE (NIC-134)** — API + key + images + carousel |
 
 "fixture-backed" = the slot renders from the bootstrap/fixture `WidgetData`; there is no live
 producer yet. Making one live = following §4.
+
+> The Entertainment right slot was renamed `media-list` → `releases` in NIC-134 (registry,
+> manifest, mode config, `validate-config` gate — move them in lockstep).
+>
+> **Not in this roster but also live:** the bottom-bar **weather** channel (NIC-169) is a live
+> producer too, but it streams a dedicated `weather.changed` event into a bottom-bar channel, not
+> a rail `widgetId`. It predates the poster/secret patterns; use `releases` as the model for rail
+> widgets, `weather` only for the CoreLocation-permission-gated producer shape.
 
 ---
 
@@ -63,6 +76,17 @@ Key properties:
   The bootstrap value is the fallback until a producer streams.
 - **Producers mirror `SystemStatusPublisher`**: an actor with a fixed cadence, an immediate
   first tick, and an occlusion pause driven by dashboard visibility.
+- **Cadence matches how fast the data changes AND its cost.** Local filesystem reads are cheap →
+  fast (repos 5 s, metrics 2 s). A **network fetch is slow-cadence** — weather 15 min, releases
+  30 min — so it doesn't hammer the API or the battery.
+- **Producers that depend on a secret read it per tick** (see §4a), so a just-entered key is
+  picked up on the next tick without a relaunch. Because a tick only fires on cadence or an
+  occlusion flip, entering a key mid-session also fires an **immediate refresh** via the
+  `onSecretStored` hook (§4a) — otherwise the widget would sit stale until the (long) next tick.
+- **A widget needs a capability flag only if something gates on it.** `repositories`/`projects`/
+  `releases` have no permission gate and nothing on the web checks a capability for them, so they
+  add **no** flag — the producer's honest states carry availability. Weather is the exception: it
+  gates on the Location permission, so it composes a `weather` flag (see `CompositionCapabilities`).
 
 ---
 
@@ -94,11 +118,15 @@ Key properties:
 ### Native / core
 | Concern | File |
 |---|---|
-| Portable domain reader (example) | `packages/core/Sources/CerebralCore/Repos/ActiveReposProvider.swift` |
+| Portable domain reader — local (example) | `packages/core/Sources/CerebralCore/Repos/ActiveReposProvider.swift` |
+| Portable domain port — external API (example) | `packages/core/Sources/CerebralCore/Releases/ReleaseProvider.swift` |
 | Default user-content paths (e.g. `~/Projects`) | `packages/core/Sources/CerebralCore/Workspace/WorkspacePaths.swift` |
 | Envelope mapping + `widget.data.changed` factory | `packages/runtime-host/Sources/CerebralRuntimeHost/BridgeEvents.swift` |
 | Bootstrap composition | `packages/runtime-host/Sources/CerebralRuntimeHost/BootstrapComposer.swift` |
-| Producer actor (example) + the one it mirrors | `apps/mac/Sources/CerebralMacAdapters/ActiveReposPublisher.swift`, `SystemStatusPublisher.swift` |
+| Producer actor — local (example) + the one it mirrors | `apps/mac/Sources/CerebralMacAdapters/ActiveReposPublisher.swift`, `SystemStatusPublisher.swift` |
+| Producer actor — API + secret + images (example) | `apps/mac/Sources/CerebralMacAdapters/ReleasesPublisher.swift`, `TMDBReleasesProvider.swift` |
+| Secret provisioning (ops + store) | `BridgeSession.swift` (`storeSecret`/`getSecretStatus`, `onSecretStored`), `packages/tools/Sources/CerebralTools/Adapters/SecretStoreManaging.swift` (`SecretManaging`), `apps/mac/Sources/CerebralMacAdapters/KeychainSecretCapability.swift` |
+| Secret-key Settings field | `apps/dashboard/src/shell/settings/SettingsPanels.tsx` (`IntegrationsProvidersField`) |
 | App wiring (start/pause the producers) | `apps/mac/CerebralHelm/AppBridgeRuntime.swift` |
 
 ### Tools (for a widget that triggers an action)
@@ -115,7 +143,7 @@ Key properties:
 | Mac adapters | `apps/mac/Sources/CerebralMacAdapters/NSWorkspaceCapabilities.swift`, `WorkspaceOpening.swift` |
 | Mac composition (+ `nativeCapabilityIDs`) | `apps/mac/Sources/CerebralMacAdapters/MacToolCapabilities.swift` |
 | Command grammar → tool call | `packages/core/Sources/CerebralCore/Parser/{CommandIntent,DirectCommandParser}.swift`, `Runtime/CommandRuntime.swift` |
-| Typed web dispatch helper (example) | `apps/dashboard/src/shell/openProject.ts` |
+| Typed web dispatch helper (examples) | `apps/dashboard/src/shell/openProject.ts`, `googleSearch.ts` |
 
 ---
 
@@ -150,6 +178,51 @@ The bootstrap seed is currently left as the honest `unavailable` stub — the pr
 first tick populates the slot. A mode-aware bootstrap seed (skeleton instead of the brief flash)
 is a **deferred, optional** improvement (§9); don't blanket-seed all slots or non-live widgets
 will look like they're loading forever.
+
+### 4a. Variant: external API + a Keychain-provisioned key (NIC-134 `releases`)
+
+For a widget whose data comes from a **third-party HTTP API** needing an **API key**:
+
+1. **Portable provider protocol (core).** Define a provider-neutral port + model + coarse error in
+   `packages/core` (e.g. `ReleaseProvider`/`ReleaseItem`/`ReleaseError`, mirroring
+   `WeatherProvider`). The port is **credential-driven, not secret-aware**: it takes the token as a
+   parameter (`trending(apiToken:)`) so it never touches the Keychain — the *publisher* resolves
+   the secret and passes it in. Ship a fixed-outcome `Mock…Provider`. Foundation only (passes
+   `RepositoryBoundaryTests`).
+2. **Real adapter (mac).** Implement the port over an ephemeral `URLSession`
+   (`TMDBReleasesProvider`, mirroring `OpenMeteoWeatherProvider`). **Send the key in an
+   `Authorization: Bearer` header, never the URL/query** — a key in a logged/cached URL violates
+   FR-OBS-03. Keep parsing/URL-building/normalization in `static` pure helpers and unit-test them;
+   smoke the live shape with `curl` (token from a gitignored `.env`, kept out of all output).
+3. **Secret provisioning (bridge + settings).** Secrets never ride config (FR-CFG-03), so a value
+   cannot go through `updateSettings`. Use the dedicated ops: **`storeSecret({reference,value})`**
+   (writes the Keychain via `SecretManaging.store`, trims the value, **never echoes it** in the
+   response) and **`getSecretStatus({reference})`** (presence only, via `SecretCapability.resolve`).
+   Both are wired on `BridgeSession` and driven directly (like `favicon`/`chromeProfiles`). The
+   Settings field lives under **Setup → Integrations**, is a masked `type=password` input, shows
+   *Set / Not set* from `getSecretStatus`, and clears itself on save. Reference names match the
+   descriptor pattern `^[a-z][a-z0-9_]*$` (e.g. `tmdb_api_key`).
+4. **Secret-keyed producer.** The publisher reads the token **per tick**
+   (`secretStore.readValue(reference)`), so replacing the key applies next tick. Map a
+   keychain-`notFound` to a distinct "add your key" state (an honest `unavailable` with guidance),
+   any other failure to a generic `unavailable`. Wire an **`onSecretStored`** callback
+   (`BridgeSession` → `AppBridgeRuntime`) that calls the producer's `refresh()` when *its* reference
+   is stored, so the widget goes live the instant the user saves the key (see §2).
+
+### 4b. Variant: images in a widget (NIC-134 posters)
+
+The dashboard's `cerebral://` origin **does not load external image URLs** — every image in the
+app is a self-contained `data:` URI (this is why favicons are fetched natively). So a widget that
+shows remote art (posters, thumbnails) must **fetch the image in the producer and embed base64**:
+
+- Add an optional `…Image: String?` (a full `data:` URI) to the core model, the runtime-host
+  envelope item, and the web `WidgetData` payload type. Absent → the card shows a placeholder,
+  never a broken image.
+- Fetch bytes over the same `URLSession`; **validate** them (`NSImage(data:)` decodes) and **sniff
+  the MIME** (JPEG `FF D8` / PNG `89 50`) before building `data:<mime>;base64,<…>`; cap the byte
+  size (posters use w185 ≈ 12 KB). Garbage/oversize → `nil`, not a bad image. See
+  `TMDBReleasesProvider.posterDataURI`.
+- Payload cost is real (base64 ≈ +33 %); fetch only the items you show (8), not the whole feed.
 
 ---
 
@@ -186,13 +259,36 @@ From `RepositoriesBody` in `WidgetSlot.tsx`:
 - Use design tokens (`--ch-space-*`, `--ch-font-*`, `--ch-radius-*`, `--ch-accent-primary`,
   `color-mix(...)` for accent tints) — never per-mode literals; the accent re-themes for free.
 
+### Card / poster / carousel layout (learned on `releases`)
+- **Mind the rail-height budget — it's small.** The right rail (`.shell-right`) splits the Agents
+  panel and the widget panel **equally** (`.shell-right > .shell-panel:nth-child(2),(3) { flex: 1 1 0 }`)
+  with `overflow: hidden`. The widget gets **~324 px** at a real (≥1440 px) window — enough for a
+  short list or **2 full 2:3 poster cards**, but **not 4** (four came out as ~101×58 crops).
+  Measure before assuming a grid fits; making the widget taller than Agents is a cross-mode rail
+  change, out of scope for one widget.
+- **Don't rely on `flex: 1` to fill the panel.** At <1440 px the canvas stacks to one column and
+  the rail becomes content-height, so a `flex: 1; min-height: 0` grid collapses to **0**. Give
+  cards **intrinsic** height instead — a poster with `aspect-ratio: 2 / 3` + `object-fit: cover` —
+  so they render in both the definite-height (≥1440) and content-height (<1440) layouts.
+- **Paginate, don't overflow.** When more items exist than fit, show a page and add a pager
+  (`‹ ›` arrows + dots), not a scrollbar or clipped rows (the original complaint was "cut off at
+  the bottom"). `releases` shows 2/page and pages through 8.
+- **Auto-advance respects reduced motion.** A `setInterval` carousel must bail when
+  `useAppearance().reducedMotion` is set (users still page manually). Key the effect on the current
+  page so a manual arrow resets the countdown. Cover it with `vi.useFakeTimers()`.
+- **A component using `useAppearance()`/`useBridge()` etc. needs those providers in its test.**
+  `WidgetSlot.test.tsx`'s `renderSlot` wraps `AppearanceProvider` — `useAppearance` throws without
+  it. Add any provider a new widget-body hook depends on.
+
 ---
 
 ## 6. Adding a tool (for widget actions)
 
 Tools are the typed, permission-aware way a widget acts on the platform. `project.open` (open a
-repo path in the editor) is the reference. **Descriptors are authoritative (ADR-003);
-`config/tools/*.json` may only tighten, never weaken.**
+repo path in the editor) is the reference; `google.search` (open a Google search for a query,
+NIC-134) is a second, reusable one — any "search the web for X" affordance can call it. **The
+tool set is 13 as of NIC-134**; the count guards in step 6 must match. **Descriptors are
+authoritative (ADR-003); `config/tools/*.json` may only tighten, never weaken.**
 
 Checklist for a new tool:
 1. **I/O schemas** in `packages/contracts/schemas/tools/`, then `node scripts/generate-contracts.mjs`.
@@ -219,6 +315,15 @@ Checklist for a new tool:
   action opens immediately; don't design a per-click confirmation for it.
 - Risk classification and confirmation policy are deterministic and **outside models** — never
   bypass them for convenience.
+
+### Constrain the destination in the adapter (don't accept an arbitrary target)
+Where `project.open` constrains a path to the projects root, `google.search` **builds the URL
+host-side with the host fixed as a literal** (`https://www.google.com/search?q=…` via
+`URLComponents`, which percent-encodes the query) — the tool input is only the *query*, so
+untrusted data (a release title, a note) can never choose the destination host. Prefer this
+"constrain the target, take only the variable part" shape over a tool that opens an arbitrary URL.
+`google.search` also **prefers a running Google Chrome** (`open(paths:withApplicationAt:)` reuses
+the open instance as a new tab, else launches it), falling back to the default browser.
 
 ### Registering a new bridge **event** type (4 coordinated edits)
 1. Add the string to `event.schema.json`'s `type` enum.
@@ -276,6 +381,24 @@ Conventions established by the blueprint — reuse unless a ticket says otherwis
   reader scans depth 2; a project folder is never itself treated as a repo. Default root
   `~/Projects` via `WorkspacePaths.defaultProjectsRoot()`.
 
+Added by NIC-134 (`releases` — external API + key + images + carousel):
+- **External-API widget = portable provider port (core) + `URLSession` adapter (mac)**, key
+  passed to the port as a parameter (§4a). Key in the **`Authorization` header, never the URL**.
+- **Secrets are provisioned via `storeSecret`/`getSecretStatus` bridge ops, never `updateSettings`**
+  (FR-CFG-03). The store op never echoes the value (FR-OBS-03). UI = a masked field under
+  Setup → Integrations showing presence only.
+- **Secret-keyed producers read the key per tick and refresh on `onSecretStored`** so a
+  just-saved key goes live immediately (§2, §4a).
+- **Remote images are native-fetched → base64 `data:` URIs** (the `cerebral://` origin can't load
+  external image URLs) — same pattern as favicons (§4b).
+- **Network producers use a slow cadence** (releases 30 min, weather 15 min).
+- **Image/card widgets: measure the ~324 px rail budget; use intrinsic `aspect-ratio`, paginate
+  instead of overflow, auto-advance respects reduced motion** (§5).
+- **Reusable web search = the `google.search` tool**; destination host is fixed in the adapter, so
+  data never chooses the target (§6). Prefers a running Chrome.
+- **TMDB attribution note removed at the owner's request** (personal, non-distributed use). If the
+  app is ever distributed, TMDB's terms require restoring it.
+
 **Deferred / open (decide before relying on them):**
 - Durable, user-editable **projects-root setting** — not built. Storage form (raw path vs a
   reference like `knowledgeRootReference`) is undecided. Readers take the root as a constructor
@@ -321,4 +444,5 @@ When you finish a widget or make a reusable decision:
 3. If you added a gate, count assertion, or gotcha, note it in §6/§8 so the next person doesn't
    trip on it.
 
-_Last updated: 2026-07-22 — after NIC-131 (repositories) shipped as the blueprint._
+_Last updated: 2026-07-26 — after NIC-129 (projects) and NIC-134 (releases: external API + Keychain
+key + poster images + auto-advancing carousel + the reusable `google.search` tool) shipped._

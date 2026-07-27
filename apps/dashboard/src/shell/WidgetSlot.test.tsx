@@ -299,3 +299,118 @@ describe("WidgetSlot releases (NIC-134)", () => {
     }
   });
 });
+
+/** NIC-128 Increment 1: the Executive "Stocks" widget renders a configured list of tickers as
+ *  compact tiles with price + day movement (up/down coloured), 4 to a 2×2 page, paging through
+ *  more. Fixture-backed in this increment (the live Finnhub producer lands later). */
+
+const stocksReady: WidgetData = {
+  widgetId: "stocks",
+  state: "ready",
+  headline: "Markets up modestly",
+  freshness: { observedAt: "2026-07-26T16:00:00.000Z", label: "2m ago" },
+  data: {
+    items: [
+      { symbol: "SPY", price: 543.21, change: 3.24, changePercent: 0.6, history: [530, 535, 532, 540, 543.21] },
+      { symbol: "AAPL", price: 227.15, change: -0.68, changePercent: -0.3, history: [231, 229, 228, 227.15] },
+      // A symbol the provider couldn't resolve: figures omitted, never fabricated.
+      { symbol: "???" }
+    ]
+  }
+};
+
+/** Six tickers so the widget pages 4-at-a-time (page 1 = 4 tiles, page 2 = 2 tiles). */
+const stocksTwoPages: WidgetData = {
+  widgetId: "stocks",
+  state: "ready",
+  headline: "Markets",
+  data: {
+    items: Array.from({ length: 6 }).map((_, i) => ({
+      symbol: `T${i}`,
+      price: 100 + i,
+      change: 1,
+      changePercent: 1
+    }))
+  }
+};
+
+function stockCards(): HTMLLIElement[] {
+  return Array.from(document.querySelectorAll<HTMLLIElement>("li.stock-card"));
+}
+
+function stockSymbols(): (string | null | undefined)[] {
+  return stockCards().map((c) => c.querySelector(".stock-card__symbol")?.textContent);
+}
+
+describe("WidgetSlot stocks (NIC-128)", () => {
+  it("renders each ticker with its symbol, price, and signed change/percent", () => {
+    renderSlot(stocksReady);
+    const cards = stockCards();
+    expect(cards).toHaveLength(3);
+    expect(cards[0].textContent).toContain("SPY");
+    expect(cards[0].textContent).toContain("543.21");
+    expect(cards[0].textContent).toContain("+3.24 (+0.60%)");
+    expect(cards[1].textContent).toContain("-0.68 (-0.30%)");
+  });
+
+  it("colours a gainer up and a loser down via the tile modifier class", () => {
+    renderSlot(stocksReady);
+    const cards = stockCards();
+    expect(cards[0].className).toContain("stock-card--up"); // SPY +3.24
+    expect(cards[1].className).toContain("stock-card--down"); // AAPL -0.68
+  });
+
+  it("shows a muted em-dash for an unresolved symbol, never a fabricated 0", () => {
+    renderSlot(stocksReady);
+    const card = stockCards()[2]; // "???" — no price/change
+    expect(card.querySelector(".stock-card__price")?.textContent).toBe("—");
+    expect(card.querySelector(".stock-card__change")?.textContent).toBe("—");
+    expect(card.className).toContain("stock-card--flat");
+  });
+
+  it("draws a month-trend sparkline coloured by direction, and omits it when there is no history", () => {
+    renderSlot(stocksReady);
+    const cards = stockCards();
+    // SPY gained → an up-coloured sparkline whose polyline has one point per close.
+    const spy = cards[0].querySelector("svg.stock-card__spark");
+    expect(spy?.getAttribute("class")).toContain("stock-card__spark--up");
+    expect(spy?.querySelector("polyline")?.getAttribute("points")?.split(" ")).toHaveLength(5);
+    // AAPL fell → a down-coloured sparkline.
+    expect(cards[1].querySelector("svg.stock-card__spark")?.getAttribute("class")).toContain(
+      "stock-card__spark--down"
+    );
+    // The unresolved "???" tile has no history → no sparkline.
+    expect(cards[2].querySelector("svg.stock-card__spark")).toBeNull();
+  });
+
+  it("shows four tickers per page and pages to the rest with the arrow", () => {
+    renderSlot(stocksTwoPages);
+    expect(stockSymbols()).toEqual(["T0", "T1", "T2", "T3"]);
+    fireEvent.click(screen.getByRole("button", { name: "More tickers" }));
+    expect(stockSymbols()).toEqual(["T4", "T5"]);
+  });
+
+  it("auto-advances to the next page on the autoplay interval, wrapping (NIC-128)", () => {
+    vi.useFakeTimers();
+    try {
+      renderSlot(stocksTwoPages); // 6 items → 2 pages
+      expect(stockSymbols()).toEqual(["T0", "T1", "T2", "T3"]);
+      act(() => {
+        vi.advanceTimersByTime(30_000);
+      });
+      expect(stockSymbols()).toEqual(["T4", "T5"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders an honest empty state with no tiles", () => {
+    renderSlot({
+      widgetId: "stocks",
+      state: "empty",
+      emptyMessage: "Add tickers in Settings → Setup to track them here."
+    });
+    expect(stockCards()).toHaveLength(0);
+    expect(screen.getByText("Add tickers in Settings → Setup to track them here.")).toBeTruthy();
+  });
+});

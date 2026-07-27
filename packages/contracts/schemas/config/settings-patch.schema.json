@@ -90,6 +90,22 @@
             "pattern": "^#[0-9a-fA-F]{6}$"
           }
         },
+        "stocks": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tickers": {
+              "description": "The user's tracked stock symbols for the Executive Stocks widget (NIC-128). When present, replaces the stored list wholesale — an empty array clears it. Capped so a refresh stays within the provider's rate limit.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9.-]{0,9}$"
+              },
+              "maxItems": 20,
+              "uniqueItems": true
+            }
+          }
+        },
         "extensions": {
           "type": "object",
           "propertyNames": {

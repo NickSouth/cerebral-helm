@@ -1388,6 +1388,33 @@ func updateSettingsRequiresPatch() async throws {
     #expect(response.error?.category == .invalidInput)
 }
 
+/// Records the changes handed to `onSettingsChanged` from a `@Sendable` closure (NIC-128).
+private final class SettingsChangeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last: SettingsChanges?
+    func record(_ changes: SettingsChanges) { lock.lock(); last = changes; lock.unlock() }
+    var tickersChanged: Bool { lock.lock(); defer { lock.unlock() }; return last?.stockTickersJSON != nil }
+    var fired: Bool { lock.lock(); defer { lock.unlock() }; return last != nil }
+}
+
+@Test("updateSettings fires onSettingsChanged with the applied changes so a producer can refresh (NIC-128)")
+func updateSettingsFiresOnSettingsChanged() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let box = SettingsChangeBox()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        settingsStore: try makeSettingsStore(paths),
+        onSettingsChanged: { box.record($0) }
+    )
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_stocks03","changes":{"stocks":{"tickers":["SPY","QQQ"]}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+    #expect(box.tickersChanged) // the hook saw the ticker change, so the producer can re-sample
+}
+
 // MARK: - getSettings (NIC-141)
 
 /// A settings snapshot decoded from the getSettings response payload.
@@ -1395,6 +1422,7 @@ private struct SettingsSnapshot: Decodable {
     struct Appearance: Decodable { let reducedMotion: Bool; let assistantName: String }
     struct Knowledge: Decodable { let rootReference: String? }
     struct Workspace: Decodable { let windowsStoredByMode: Bool; let mainDisplayId: String }
+    struct Stocks: Decodable { let tickers: [String] }
     let schemaVersion: String
     let defaultModeId: String
     let confirmAllActions: Bool
@@ -1402,6 +1430,7 @@ private struct SettingsSnapshot: Decodable {
     let knowledge: Knowledge
     let workspace: Workspace
     let modeColors: [String: String]
+    let stocks: Stocks
 }
 
 @Test("getSettings reflects the persisted values written through updateSettings")
@@ -1445,6 +1474,40 @@ func getSettingsResolvesDefaults() async throws {
     #expect(snapshot.knowledge.rootReference == nil)
     #expect(snapshot.workspace.windowsStoredByMode == false)
     #expect(snapshot.workspace.mainDisplayId == "system-primary")
+    #expect(snapshot.stocks.tickers == ["SPY", "AAPL", "NVDA", "VTI"]) // the shipped starter list
+}
+
+@Test("a stocks-tickers patch round-trips through getSettings, normalized to uppercase and deduped")
+func stocksTickersPatchRoundTrips() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    // Mixed case + a duplicate + surrounding whitespace: the store normalizes on write.
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_stocks01","changes":{"stocks":{"tickers":["tsla","AAPL","tsla","brk.b"]}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    let reopened = try makeSessionWithSettings(paths)
+    let response = await reopened.execute(operationRequest(.getSettings, "{}"))
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.stocks.tickers == ["TSLA", "AAPL", "BRK.B"]) // uppercased, order-preserving, deduped
+}
+
+@Test("an explicitly cleared ticker list stays empty rather than reverting to the starter list")
+func stocksTickersClearedStaysEmpty() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_stocks02","changes":{"stocks":{"tickers":[]}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    let reopened = try makeSessionWithSettings(paths)
+    let response = await reopened.execute(operationRequest(.getSettings, "{}"))
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.stocks.tickers.isEmpty) // cleared is a real state, not "unset"
 }
 
 @Test("getSettings is the default-mode setting, not the currently active mode")

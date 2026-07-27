@@ -43,12 +43,11 @@
           },
           "widgets": {
             "left": {
-              "widgetId": "market-brief",
+              "widgetId": "stocks",
               "state": "ready",
               "headline": "Markets up modestly",
               "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" },
-              "data": { "tickers": [{ "symbol": "SPX", "changePct": 0.6 }, { "symbol": "AAPL", "changePct": -0.3 }, { "symbol": "NVDA", "changePct": 1.4 }] },
-              "action": { "id": "open-market-brief", "label": "Open market brief" }
+              "data": { "items": [{ "symbol": "SPY", "price": 543.21, "change": 3.24, "changePercent": 0.6, "history": [525.1, 527.3, 524.8, 529.0, 531.2, 528.6, 533.4, 535.1, 532.9, 537.8, 539.2, 536.7, 540.1, 541.9, 538.4, 543.21] }, { "symbol": "AAPL", "price": 227.15, "change": -0.68, "changePercent": -0.3, "history": [232.4, 231.0, 233.1, 230.2, 229.5, 231.2, 228.9, 227.8, 229.6, 226.4, 228.1, 227.0, 228.7, 226.9, 227.9, 227.15] }, { "symbol": "NVDA", "price": 131.4, "change": 1.81, "changePercent": 1.4, "history": [118.2, 120.5, 119.1, 122.8, 124.0, 121.6, 125.9, 127.2, 124.8, 128.6, 129.9, 127.3, 130.1, 132.0, 129.4, 131.4] }, { "symbol": "VTI", "price": 268.9, "change": 1.07, "changePercent": 0.4, "history": [262.1, 263.4, 261.8, 264.9, 266.2, 263.7, 267.1, 268.0, 265.6, 269.2, 270.1, 267.4, 268.8, 270.3, 267.9, 268.9] }] }
             },
             "right": {
               "widgetId": "projects",
@@ -643,7 +642,7 @@
           "systemHealth": { "state": "ready", "cpuPercent": 18, "memoryPercent": 50, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
           "news": { "state": "ready", "headlines": [{ "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily" }] },
           "widgets": {
-            "left": { "widgetId": "market-brief", "state": "ready", "headline": "Markets up modestly", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" }, "data": { "tickers": [{ "symbol": "SPX", "changePct": 0.6 }] } },
+            "left": { "widgetId": "stocks", "state": "ready", "headline": "Markets up modestly", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" }, "data": { "items": [{ "symbol": "SPY", "price": 543.21, "change": 3.24, "changePercent": 0.6 }] } },
             "right": { "widgetId": "projects", "state": "ready", "headline": "2 active", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" }, "data": { "items": [{ "name": "Quarterly planning", "status": "in-progress" }] } }
           }
         }
@@ -728,7 +727,7 @@
           },
           "news": { "state": "unavailable", "headlines": [], "emptyMessage": "Loading headlines…" },
           "widgets": {
-            "left": { "widgetId": "market-brief", "state": "unavailable", "emptyMessage": "Loading…" },
+            "left": { "widgetId": "stocks", "state": "unavailable", "emptyMessage": "Loading…" },
             "right": { "widgetId": "projects", "state": "unavailable", "emptyMessage": "Loading…" }
           }
         }

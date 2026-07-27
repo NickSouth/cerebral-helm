@@ -39,6 +39,31 @@ export interface WidgetData<TPayload = unknown> {
 }
 
 /**
+ * One ticker in the `stocks` widget's payload (NIC-128, Executive left slot). `price`,
+ * `change`, and `changePercent` are the day-status figures the tile shows; each is omitted
+ * (never fabricated) when the provider can't resolve the symbol — the tile then renders a
+ * muted "—" for that field. `symbol` is the stable row key. This documents the shape the
+ * live producer will stream (a later increment); pre-bridge it backs the fixture tiles.
+ */
+export interface StockQuoteWidgetItem {
+  readonly symbol: string;
+  /** Current price. Omitted when the quote couldn't be resolved. */
+  readonly price?: number;
+  /** Absolute price change on the day (vs previous close). Omitted when unknown. */
+  readonly change?: number;
+  /** Percent price change on the day. Omitted when unknown. */
+  readonly changePercent?: number;
+  /** Recent daily closes (oldest → newest, ~1 month) for the tile's sparkline. Best-effort and
+   *  decorative — omitted when no history was resolved, and the tile then shows no line. */
+  readonly history?: readonly number[];
+}
+
+/** The `stocks` widget's `data` payload (documented shape for `WidgetData.data`). */
+export interface StocksWidgetPayload {
+  readonly items: readonly StockQuoteWidgetItem[];
+}
+
+/**
  * One repository row in the `repositories` widget's payload (NIC-131). `branch` is omitted
  * when the local repo's HEAD can't be resolved (never fabricated); `path` is the absolute
  * repo directory the click-to-open action targets (Increment 6). This documents the shape

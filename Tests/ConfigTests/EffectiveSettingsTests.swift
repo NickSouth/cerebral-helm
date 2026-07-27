@@ -22,7 +22,8 @@ func storedValuesWin() {
         windowsStoredByMode: true,
         mainDisplayID: "37D8832A-2D66-02CA-B9F7-8F30A301B230",
         layoutDisplayID: "cgid-secondary-4k",
-        modeColorsJSON: ##"{"executive.primary":"#ffd166","developer.secondary":"#7fc4dc"}"##
+        modeColorsJSON: ##"{"executive.primary":"#ffd166","developer.secondary":"#7fc4dc"}"##,
+        stockTickersJSON: ##"["MSFT","GOOG"]"##
     )
 
     let snapshot = EffectiveSettings.resolve(stored: stored, configDefaultModeID: "executive")
@@ -33,6 +34,7 @@ func storedValuesWin() {
     #expect(snapshot.appearance.assistantName == "Aria")
     #expect(snapshot.modeColors["executive.primary"] == "#ffd166")
     #expect(snapshot.modeColors["developer.secondary"] == "#7fc4dc")
+    #expect(snapshot.stocks.tickers == ["MSFT", "GOOG"]) // the stored list wins over the starter
     #expect(snapshot.knowledge.rootReference == "primary-vault")
     #expect(snapshot.workspace.windowsStoredByMode == true)
     #expect(snapshot.workspace.mainDisplayID == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
@@ -49,11 +51,22 @@ func unsetResolvesToDefaults() {
     #expect(snapshot.appearance.reducedMotion == false)
     #expect(snapshot.appearance.assistantName == "Heimlich")  // the default identity
     #expect(snapshot.modeColors.isEmpty)                      // no overrides → shipped palette
+    #expect(snapshot.stocks.tickers == ["SPY", "AAPL", "NVDA", "VTI"])  // shipped starter list
 
     #expect(snapshot.knowledge.rootReference == nil)          // meaningful "no root chosen"
     #expect(snapshot.workspace.windowsStoredByMode == false)
     #expect(snapshot.workspace.mainDisplayID == "system-primary")
     #expect(snapshot.workspace.layoutDisplayID == "system-primary")  // unset → same as main
+}
+
+@Test("an explicitly cleared ticker list resolves to empty, not the starter default (NIC-128)")
+func clearedTickersStayEmpty() {
+    // A stored "[]" is the user having removed every ticker — distinct from never-set (nil),
+    // which would fall back to the starter list. The widget then shows its add prompt.
+    let snapshot = EffectiveSettings.resolve(
+        stored: StoredSettings(stockTickersJSON: "[]"), configDefaultModeID: "executive"
+    )
+    #expect(snapshot.stocks.tickers.isEmpty)
 }
 
 @Test("the effective knowledge root re-points to an override path, else the default (NIC-138)")

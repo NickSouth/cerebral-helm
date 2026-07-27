@@ -19,6 +19,7 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0008_mode_colors", sql: modeColorsSQL),
         SchemaMigration(id: "0009_confirm_all_actions", sql: confirmAllActionsSQL),
         SchemaMigration(id: "0010_layout_display", sql: layoutDisplaySQL),
+        SchemaMigration(id: "0011_stock_tickers", sql: stockTickersSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -232,5 +233,13 @@ public enum SchemaMigrations {
     /// the main display, then the system primary — the shell never errors on it.
     public static let layoutDisplaySQL = """
     ALTER TABLE settings ADD COLUMN layout_display_id TEXT;
+    """
+
+    /// Migration 0011: the "Stocks tickers" setting (NIC-128). The settings singleton
+    /// gains a JSON array of the user's tracked stock symbols for the Executive Stocks
+    /// widget; NULL means never set, so the shipped starter list applies, while an
+    /// explicit `[]` is a meaningful "cleared" state.
+    public static let stockTickersSQL = """
+    ALTER TABLE settings ADD COLUMN stock_tickers TEXT;
     """
 }

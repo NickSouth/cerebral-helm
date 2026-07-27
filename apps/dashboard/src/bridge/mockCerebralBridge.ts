@@ -107,7 +107,13 @@ function mergeSettingsChanges(
     modeColors:
       changes.modeColors && typeof changes.modeColors === "object"
         ? (changes.modeColors as Record<string, string>)
-        : prev.modeColors
+        : prev.modeColors,
+    stocks:
+      changes.stocks &&
+      typeof changes.stocks === "object" &&
+      Array.isArray((changes.stocks as { tickers?: unknown }).tickers)
+        ? { tickers: (changes.stocks as { tickers: string[] }).tickers }
+        : prev.stocks
   };
 }
 
@@ -260,7 +266,8 @@ export function createMockCerebralBridge(
     appearance: { reducedMotion: false, assistantName: "Heimlich" },
     knowledge: { rootReference: "knowledge-root" },
     workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
-    modeColors: {}
+    modeColors: {},
+    stocks: { tickers: ["SPY", "AAPL", "NVDA", "VTI"] }
   };
   let settingsEventSeq = 0;
   // The bound secret references (NIC-134), held mutably so storeSecret visibly binds one and

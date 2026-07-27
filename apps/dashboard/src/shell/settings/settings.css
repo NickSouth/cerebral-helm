@@ -430,6 +430,66 @@
   color: var(--ch-accent-primary);
 }
 
+/* Stocks widget ticker editor (NIC-128): add/remove chips + an add row. */
+.settings-tickers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.settings-tickers__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-tickers__empty {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.settings-tickers__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-1);
+  padding: 2px var(--ch-space-1) 2px var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-primary);
+}
+
+.settings-tickers__remove {
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.settings-tickers__remove:hover {
+  color: var(--ch-status-error);
+}
+
+.settings-tickers__add {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.settings-tickers__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+}
+
 /* Per-mode layout authoring editor (NIC-142). */
 .settings-layout-editor {
   display: flex;

@@ -29,12 +29,12 @@ test("the widget manifest registers exactly the eight design-spec widget slots",
     [
       "courses",
       "deadlines",
-      "market-brief",
       "project-git-status",
       "projects",
       "releases",
       "repositories",
-      "spotify"
+      "spotify",
+      "stocks"
     ]
   );
 });

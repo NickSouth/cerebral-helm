@@ -80,6 +80,12 @@ public final class BridgeSession: @unchecked Sendable {
     /// leaves it nil.
     private let onSecretStored: (@Sendable (String) -> Void)?
 
+    /// Invoked after a settings patch is durably applied, carrying the applied changes, so a
+    /// host can refresh a live producer that depends on a setting (e.g. the Stocks producer
+    /// re-samples when the ticker list changes, NIC-128) instead of waiting out its slow
+    /// cadence. Optional; a host with no settings-driven producers leaves it nil.
+    private let onSettingsChanged: (@Sendable (SettingsChanges) -> Void)?
+
     /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
     /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
     /// uses. Optional: a host without it (pre-Mac, tests) still ends the session
@@ -135,6 +141,7 @@ public final class BridgeSession: @unchecked Sendable {
         chromeProfiles: (any ChromeProfileDiscoveryCapability)? = nil,
         secretStore: (any SecretManaging)? = nil,
         onSecretStored: (@Sendable (String) -> Void)? = nil,
+        onSettingsChanged: (@Sendable (SettingsChanges) -> Void)? = nil,
         workspaceWindows: (any WorkspaceWindowsCapability)? = nil,
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
@@ -152,6 +159,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.chromeProfiles = chromeProfiles
         self.secretStore = secretStore
         self.onSecretStored = onSecretStored
+        self.onSettingsChanged = onSettingsChanged
         self.workspaceWindows = workspaceWindows
         self.app = app
         self.url = url
@@ -1531,6 +1539,10 @@ public final class BridgeSession: @unchecked Sendable {
             if let confirmAll = settingsChanges.confirmAllActions {
                 runtime.updateConfirmAllActions(confirmAll)
             }
+            // Let a settings-driven producer re-sample now (NIC-128): the Stocks producer
+            // refreshes when the ticker list changes, so an edit is live at once rather than
+            // on its next slow tick.
+            onSettingsChanged?(settingsChanges)
             // Live cross-webview sync: every surface (dashboard + the separate native
             // settings window) reflects the new assistant name, mode colors, and motion
             // preference immediately, not just on next launch.
