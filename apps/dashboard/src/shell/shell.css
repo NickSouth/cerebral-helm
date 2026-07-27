@@ -1359,6 +1359,12 @@
   padding: 0;
   display: flex;
   flex-direction: column;
+  /* Fill the panel's remaining height and spread the headlines evenly down it, so the four items
+     reach the bottom of the widget instead of clustering under the header (NIC-127). The gap is the
+     minimum spacing; space-between distributes the leftover height between the rows. */
+  flex: 1 1 auto;
+  min-height: 0;
+  justify-content: space-between;
   gap: var(--ch-space-1);
 }
 

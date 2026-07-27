@@ -72,6 +72,9 @@ public struct NewsDataProvider: NewsProvider {
         components.queryItems = [
             URLQueryItem(name: "category", value: category),
             URLQueryItem(name: "language", value: language),
+            // Restrict to NewsData's top-priority (major, reputable) domains — a source-quality
+            // filter that keeps the low-quality aggregator blogs out of the panel (owner request).
+            URLQueryItem(name: "prioritydomain", value: "top"),
         ]
         guard let url = components.url else { return nil }
         var request = URLRequest(url: url)
@@ -114,10 +117,14 @@ public struct NewsDataProvider: NewsProvider {
         }
 
         var items: [NewsHeadline] = []
+        var seenTitles = Set<String>()
         for entry in decoded.results {
             guard let id = entry.articleId, !id.isEmpty else { continue }
             let title = entry.title?.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let title, !title.isEmpty else { continue }
+            // Drop syndicated duplicates — the same story from several sources shares a title but
+            // has distinct article ids, and showing it twice looks broken (case-insensitive).
+            guard seenTitles.insert(title.lowercased()).inserted else { continue }
             let source = (entry.sourceName ?? entry.sourceId)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let link = entry.link?.trimmingCharacters(in: .whitespacesAndNewlines)

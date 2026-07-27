@@ -17,6 +17,7 @@ func newsDataRequestKeyInHeaderNotURL() throws {
     #expect(url.contains("/api/1/latest"))
     #expect(url.contains("category=technology"))
     #expect(url.contains("language=en"))
+    #expect(url.contains("prioritydomain=top")) // top-domain source-quality filter
     // The key is in the header, and NOT anywhere in the URL.
     #expect(!url.contains("SECRET_KEY"))
     #expect(request.value(forHTTPHeaderField: "X-ACCESS-KEY") == "SECRET_KEY")
@@ -74,6 +75,24 @@ func newsDataSourceFallback() throws {
     let headlines = try NewsDataProvider.parse(json)
     #expect(headlines.first?.source == "only_id")
     #expect(headlines.last?.source == "")
+}
+
+@Test("syndicated duplicate titles are dropped (case-insensitive), keeping the first")
+func newsDataDedupesTitles() throws {
+    let json = Data("""
+    {
+      "status": "success",
+      "results": [
+        { "article_id": "a1", "title": "Spacetime Crystal Built", "link": "https://ex.com/a", "source_name": "Reuters" },
+        { "article_id": "a2", "title": "spacetime crystal built", "link": "https://ex.com/b", "source_name": "AP" },
+        { "article_id": "a3", "title": "A different story", "link": "https://ex.com/c", "source_name": "Wire" }
+      ]
+    }
+    """.utf8)
+    let headlines = try NewsDataProvider.parse(json)
+    #expect(headlines.count == 2)
+    #expect(headlines.map(\.id) == ["a1", "a3"]) // the first of the dupes is kept
+    #expect(headlines.first?.source == "Reuters")
 }
 
 @Test("a malformed payload throws providerFailed, never a fabricated list")
