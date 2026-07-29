@@ -227,6 +227,60 @@ export interface ProjectGitStatusWidgetPayload {
 }
 
 /**
+ * One course row in the `courses` widget's payload (NIC-132, School right slot), scraped from the
+ * Canvas dashboard. `percent` (0–100) drives the grade ring's fill and is omitted when the course
+ * has no computed score yet (the ring renders empty). `letterGrade` is Canvas's OWN letter when it
+ * provides one — shown in the ring centre (else the percent, else "N/A") and never derived from the
+ * percentage (owner decision). `gradeHidden` marks a grade the user has hidden in Canvas, shown
+ * honestly as hidden rather than as a missing score. `code` is the short course code under the name;
+ * `url` is the course's Canvas home, backing the click-to-open added in a later increment. This
+ * documents the shape the live producer streams under `WidgetData.data`.
+ */
+export interface CourseGradeWidgetItem {
+  readonly id: string;
+  readonly name: string;
+  readonly code?: string;
+  /** Computed course score, 0–100. Omitted when Canvas has no score yet (ring renders empty). */
+  readonly percent?: number;
+  /** Canvas's own letter grade, shown in the ring centre. Omitted when Canvas shows none; never derived. */
+  readonly letterGrade?: string;
+  /** True when the user has hidden this grade in Canvas — shown honestly as hidden. */
+  readonly gradeHidden?: boolean;
+  /** The course's Canvas home URL, opened on click in a later increment. Omitted when unknown. */
+  readonly url?: string;
+}
+
+/** The `courses` widget's `data` payload (documented shape for `WidgetData.data`). */
+export interface CoursesWidgetPayload {
+  readonly items: readonly CourseGradeWidgetItem[];
+}
+
+/**
+ * One upcoming assignment in the `deadlines` widget's payload (NIC-132, School left slot), scraped
+ * from the Canvas dashboard's course-work list. The producer delivers them already filtered to
+ * exclude submitted/completed work and sorted by due date (soonest first). `dueAt` is a local
+ * wall-clock ISO string the row formats directly (never a UTC instant — the web formatters slice
+ * components, per NIC-126), omitted for an assignment with no due time. `courseName` is the owning
+ * course (secondary context), `url` the assignment's Canvas URL backing the later click-to-open;
+ * both omitted when unknown. This documents the shape the live producer streams under
+ * `WidgetData.data`.
+ */
+export interface DeadlineWidgetItem {
+  readonly id: string;
+  readonly title: string;
+  /** Local wall-clock ISO of the due date/time. Omitted when the assignment has no due date. */
+  readonly dueAt?: string;
+  readonly courseName?: string;
+  /** The assignment's Canvas URL, opened on click in a later increment. Omitted when unknown. */
+  readonly url?: string;
+}
+
+/** The `deadlines` widget's `data` payload (documented shape for `WidgetData.data`). */
+export interface DeadlinesWidgetPayload {
+  readonly items: readonly DeadlineWidgetItem[];
+}
+
+/**
  * Resolve the WidgetData a rail slot renders: the live-streamed value for `widgetId`
  * (NIC-131 blueprint) when a producer has delivered one, else the bootstrap/config value.
  * `liveWidgets` is runtime-only state keyed by widget id and lives outside `regions`, so

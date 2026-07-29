@@ -798,3 +798,187 @@ describe("WidgetSlot spotify (NIC-133)", () => {
     expect(submissions).toHaveLength(0);
   });
 });
+
+/** NIC-132 Increment 1: the School "Courses" widget renders each current course with its name,
+ *  code, and a grade ring — the ring fills to the percentage and shows Canvas's own letter grade in
+ *  the centre (else the percent, else N/A; a letter is never derived). Fixture-backed in this
+ *  increment; click-to-open (the course's Canvas home) lands in a later increment. */
+
+const coursesReady: WidgetData = {
+  widgetId: "courses",
+  state: "ready",
+  headline: "3 courses",
+  freshness: { observedAt: "2026-09-14T16:00:00.000Z", label: "4m ago" },
+  data: {
+    items: [
+      // Percent + Canvas letter: the letter wins the ring centre.
+      { id: "37331", name: "Theory of Computation", code: "COMPSCI 250", percent: 92.4, letterGrade: "A-" },
+      // Percent, no letter: the centre shows the rounded percent.
+      { id: "40010", name: "Linear Algebra", code: "MATH 545", percent: 88 },
+      // No score yet: an honest N/A with an empty ring — never a fabricated grade.
+      { id: "40222", name: "College Writing", code: "ENGLWRIT 112" }
+    ]
+  }
+};
+
+function courseRows(): HTMLLIElement[] {
+  return Array.from(document.querySelectorAll<HTMLLIElement>("li.course-row"));
+}
+
+function ringLabels(): (string | null | undefined)[] {
+  return courseRows().map((r) => r.querySelector(".grade-ring__label")?.textContent);
+}
+
+describe("WidgetSlot courses (NIC-132)", () => {
+  it("renders each course with its name and code", () => {
+    renderSlot(coursesReady);
+    const rows = courseRows();
+    expect(rows).toHaveLength(3);
+    expect(rows[0].querySelector(".course-row__name")?.textContent).toBe("Theory of Computation");
+    expect(rows[0].querySelector(".course-row__code")?.textContent).toBe("COMPSCI 250");
+  });
+
+  it("shows Canvas's letter grade in the ring centre when it has one, with a filled arc", () => {
+    renderSlot(coursesReady);
+    const rows = courseRows();
+    expect(rows[0].querySelector(".grade-ring__label")?.textContent).toBe("A-");
+    // The arc is present and offset to reflect 92.4% (< full circumference).
+    const arc = rows[0].querySelector<SVGCircleElement>("circle.grade-ring__arc");
+    expect(arc).not.toBeNull();
+    expect(parseFloat(arc!.style.strokeDashoffset)).toBeGreaterThan(0);
+  });
+
+  it("shows the rounded percentage in the centre when Canvas gives a percent but no letter", () => {
+    renderSlot(coursesReady);
+    expect(ringLabels()[1]).toBe("88%");
+    expect(courseRows()[1].querySelector("circle.grade-ring__arc")).not.toBeNull();
+  });
+
+  it("shows an honest N/A with an empty ring when there is no score yet", () => {
+    renderSlot(coursesReady);
+    const row = courseRows()[2];
+    expect(row.querySelector(".grade-ring__label")?.textContent).toBe("N/A");
+    // No arc is drawn for a course with no percentage — the ring is empty, not fabricated.
+    expect(row.querySelector("circle.grade-ring__arc")).toBeNull();
+    expect(row.querySelector(".grade-ring--na")).not.toBeNull();
+  });
+
+  it("shows a letter-only grade as a neutral full ring (no percent to fill to)", () => {
+    renderSlot({
+      widgetId: "courses",
+      state: "ready",
+      data: { items: [{ id: "1", name: "Seminar", code: "HON 391", letterGrade: "A" }] }
+    });
+    expect(ringLabels()).toEqual(["A"]);
+    const ring = courseRows()[0].querySelector(".grade-ring");
+    expect(ring?.className).toContain("grade-ring--neutral");
+    expect(ring?.querySelector("circle.grade-ring__arc")).not.toBeNull(); // full, muted
+  });
+
+  it("shows a hidden grade honestly and never leaks the hidden score via the ring", () => {
+    // The grade is hidden in Canvas but a percent is still present in the payload — the ring must
+    // NOT fill to it (that would reveal the score the user hid).
+    renderSlot({
+      widgetId: "courses",
+      state: "ready",
+      data: { items: [{ id: "1", name: "Statistics", code: "STAT 240", percent: 80, gradeHidden: true }] }
+    });
+    const ring = courseRows()[0].querySelector(".grade-ring");
+    expect(ring?.querySelector(".grade-ring__label")?.textContent).toBe("—");
+    expect(ring?.getAttribute("title")).toBe("Grade hidden in Canvas");
+    expect(ring?.querySelector("circle.grade-ring__arc")).toBeNull(); // empty ring, score not leaked
+  });
+
+  it("renders an honest empty state with no course rows", () => {
+    renderSlot({
+      widgetId: "courses",
+      state: "empty",
+      emptyMessage: "No current courses — open Canvas in Chrome to sync."
+    });
+    expect(courseRows()).toHaveLength(0);
+    expect(screen.getByText("No current courses — open Canvas in Chrome to sync.")).toBeTruthy();
+  });
+});
+
+/** NIC-132 Increment 1: the School "Deadlines" widget renders upcoming assignments in due order
+ *  (soonest first, submitted/completed excluded by the producer), up to five per page, paging
+ *  through the rest with arrows. Fixture-backed; click-to-open lands in a later increment. */
+
+const deadlinesReady: WidgetData = {
+  widgetId: "deadlines",
+  state: "ready",
+  headline: "6 due soon",
+  freshness: { observedAt: "2026-09-14T16:00:00.000Z", label: "4m ago" },
+  data: {
+    items: Array.from({ length: 6 }).map((_, i) => ({
+      id: `a${i}`,
+      title: `Assignment ${i}`,
+      dueAt: `2026-09-1${i}T23:59:00`,
+      courseName: "COMPSCI 250"
+    }))
+  }
+};
+
+function deadlineRows(): HTMLLIElement[] {
+  return Array.from(document.querySelectorAll<HTMLLIElement>("li.deadline-row"));
+}
+
+function deadlineTitles(): (string | null | undefined)[] {
+  return deadlineRows().map((r) => r.querySelector(".deadline-row__title")?.textContent);
+}
+
+describe("WidgetSlot deadlines (NIC-132)", () => {
+  it("shows an assignment's title and its formatted due date", () => {
+    renderSlot({
+      widgetId: "deadlines",
+      state: "ready",
+      data: { items: [{ id: "a1", title: "Problem Set 7", dueAt: "2026-09-14T23:59:00" }] }
+    });
+    const row = deadlineRows()[0];
+    expect(row.querySelector(".deadline-row__title")?.textContent).toBe("Problem Set 7");
+    expect(row.querySelector(".deadline-row__due")?.textContent).toBe("Sep 14 · 11:59 PM");
+  });
+
+  it("omits the due line for an assignment with no due date, never fabricating one", () => {
+    renderSlot({
+      widgetId: "deadlines",
+      state: "ready",
+      data: { items: [{ id: "a1", title: "Reading (no due date)" }] }
+    });
+    expect(deadlineRows()[0].querySelector(".deadline-row__due")).toBeNull();
+  });
+
+  it("shows five per page and pages to the rest with the arrow, in the streamed due order", () => {
+    renderSlot(deadlinesReady);
+    expect(deadlineTitles()).toEqual([
+      "Assignment 0",
+      "Assignment 1",
+      "Assignment 2",
+      "Assignment 3",
+      "Assignment 4"
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "More deadlines" }));
+    expect(deadlineTitles()).toEqual(["Assignment 5"]);
+    fireEvent.click(screen.getByRole("button", { name: "Previous deadlines" }));
+    expect(deadlineTitles()[0]).toBe("Assignment 0");
+  });
+
+  it("shows no pager when everything fits on one page", () => {
+    renderSlot({
+      widgetId: "deadlines",
+      state: "ready",
+      data: { items: [{ id: "a1", title: "Only one", dueAt: "2026-09-14T09:00:00" }] }
+    });
+    expect(screen.queryByRole("button", { name: "More deadlines" })).toBeNull();
+  });
+
+  it("renders an honest empty state with no deadline rows", () => {
+    renderSlot({
+      widgetId: "deadlines",
+      state: "empty",
+      emptyMessage: "Nothing due soon."
+    });
+    expect(deadlineRows()).toHaveLength(0);
+    expect(screen.getByText("Nothing due soon.")).toBeTruthy();
+  });
+});

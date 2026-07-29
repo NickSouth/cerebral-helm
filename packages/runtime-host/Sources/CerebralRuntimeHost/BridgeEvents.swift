@@ -201,6 +201,182 @@ public enum BridgeEventFactory {
         }
     }
 
+    // MARK: - Canvas School widgets (NIC-132)
+
+    /// The `courses` widget's live envelope (NIC-132, School right slot) — the Swift mirror of the
+    /// web `WidgetData` for this widget. Optional fields are omitted (not encoded as null) when nil.
+    public struct CanvasCoursesWidget: Encodable, Sendable {
+        public let widgetId: String
+        public let state: String
+        public let headline: String?
+        public let emptyMessage: String?
+        public let freshness: WidgetFreshnessPayload?
+        public let data: CanvasCoursesWidgetData?
+    }
+
+    public struct CanvasCoursesWidgetData: Encodable, Sendable {
+        public let items: [CanvasCourseItem]
+    }
+
+    /// One course row. `percent`/`letterGrade` are omitted when Canvas has none — and are omitted
+    /// entirely for a hidden grade, so a score the user hid in Canvas never crosses the bridge.
+    public struct CanvasCourseItem: Encodable, Sendable {
+        public let id: String
+        public let name: String
+        public let code: String?
+        public let percent: Double?
+        public let letterGrade: String?
+        public let gradeHidden: Bool?
+        public let url: String?
+    }
+
+    /// The `deadlines` widget's live envelope (NIC-132, School left slot).
+    public struct CanvasDeadlinesWidget: Encodable, Sendable {
+        public let widgetId: String
+        public let state: String
+        public let headline: String?
+        public let emptyMessage: String?
+        public let freshness: WidgetFreshnessPayload?
+        public let data: CanvasDeadlinesWidgetData?
+    }
+
+    public struct CanvasDeadlinesWidgetData: Encodable, Sendable {
+        public let items: [CanvasDeadlineItem]
+    }
+
+    /// One upcoming assignment row. `dueAt` (local wall-clock ISO) is omitted when the assignment is
+    /// undated; `courseName`/`url` are omitted when unknown.
+    public struct CanvasDeadlineItem: Encodable, Sendable {
+        public let id: String
+        public let title: String
+        public let dueAt: String?
+        public let courseName: String?
+        public let url: String?
+    }
+
+    /// Maps the latest Canvas scrape into the `courses` widget envelope (NIC-132). A read failure or
+    /// a never-scraped store is an honest `unavailable` (connect the extension); a scrape with no
+    /// courses is `empty`; otherwise `ready` — or `stale`, still showing the courses with a data-age
+    /// label, when the scrape is older than `staleAfter`. A hidden grade never fabricates a score and
+    /// its percent/letter never cross the bridge.
+    public static func canvasCoursesWidget(
+        from result: Swift.Result<CanvasScrapeSnapshot?, Error>, now: Date, staleAfter: TimeInterval
+    ) -> CanvasCoursesWidget {
+        switch canvasResolution(from: result, now: now, staleAfter: staleAfter) {
+        case .unavailable:
+            return CanvasCoursesWidget(
+                widgetId: "courses", state: "unavailable", headline: nil,
+                emptyMessage: "Open Canvas in Chrome to sync your courses.", freshness: nil, data: nil
+            )
+        case let .ready(snapshot, state, freshness) where !snapshot.courses.isEmpty:
+            let items = snapshot.courses.map { course -> CanvasCourseItem in
+                let hidden = course.gradeHidden
+                return CanvasCourseItem(
+                    id: course.id, name: course.name, code: course.code,
+                    percent: hidden ? nil : course.percent,
+                    letterGrade: hidden ? nil : course.letterGrade,
+                    gradeHidden: hidden ? true : nil,
+                    url: course.url
+                )
+            }
+            return CanvasCoursesWidget(
+                widgetId: "courses", state: state,
+                headline: snapshot.courses.count == 1 ? "1 course" : "\(snapshot.courses.count) courses",
+                emptyMessage: nil, freshness: freshness,
+                data: CanvasCoursesWidgetData(items: items)
+            )
+        case .ready:
+            return CanvasCoursesWidget(
+                widgetId: "courses", state: "empty", headline: nil,
+                emptyMessage: "No current courses — open Canvas in Chrome to sync.", freshness: nil, data: nil
+            )
+        }
+    }
+
+    /// Maps the latest Canvas scrape into the `deadlines` widget envelope (NIC-132). Assignments are
+    /// sorted soonest-first (undated last); the scrape has already excluded submitted/completed work.
+    /// Failure/never-scraped → `unavailable`; no upcoming work → `empty`; otherwise `ready`/`stale`
+    /// with a data-age label.
+    public static func canvasDeadlinesWidget(
+        from result: Swift.Result<CanvasScrapeSnapshot?, Error>, now: Date, staleAfter: TimeInterval
+    ) -> CanvasDeadlinesWidget {
+        switch canvasResolution(from: result, now: now, staleAfter: staleAfter) {
+        case .unavailable:
+            return CanvasDeadlinesWidget(
+                widgetId: "deadlines", state: "unavailable", headline: nil,
+                emptyMessage: "Open Canvas in Chrome to sync your deadlines.", freshness: nil, data: nil
+            )
+        case let .ready(snapshot, state, freshness) where !snapshot.deadlines.isEmpty:
+            let sorted = snapshot.deadlines.sorted(by: canvasDeadlineOrder)
+            let items = sorted.map {
+                CanvasDeadlineItem(
+                    id: $0.id, title: $0.title, dueAt: $0.dueAt, courseName: $0.courseName, url: $0.url
+                )
+            }
+            return CanvasDeadlinesWidget(
+                widgetId: "deadlines", state: state,
+                headline: sorted.count == 1 ? "1 due soon" : "\(sorted.count) due soon",
+                emptyMessage: nil, freshness: freshness,
+                data: CanvasDeadlinesWidgetData(items: items)
+            )
+        case .ready:
+            return CanvasDeadlinesWidget(
+                widgetId: "deadlines", state: "empty", headline: nil,
+                emptyMessage: "Nothing due soon.", freshness: nil, data: nil
+            )
+        }
+    }
+
+    // MARK: Canvas mapping helpers
+
+    /// The shared resolution of a Canvas scrape result into a widget state, independent of which
+    /// widget renders it: a failure or a never-scraped store is `unavailable`; otherwise the
+    /// snapshot is `ready`, tagged `stale` when older than `staleAfter`, carrying its data-age stamp.
+    private enum CanvasResolution {
+        case unavailable
+        case ready(CanvasScrapeSnapshot, state: String, freshness: WidgetFreshnessPayload)
+    }
+
+    private static func canvasResolution(
+        from result: Swift.Result<CanvasScrapeSnapshot?, Error>, now: Date, staleAfter: TimeInterval
+    ) -> CanvasResolution {
+        switch result {
+        case .failure:
+            return .unavailable
+        case .success(nil):
+            return .unavailable
+        case let .success(snapshot?):
+            let age = now.timeIntervalSince(snapshot.scrapedAt)
+            let state = age > staleAfter ? "stale" : "ready"
+            let freshness = WidgetFreshnessPayload(observedAt: snapshot.scrapedAt, label: canvasAgeLabel(age))
+            return .ready(snapshot, state: state, freshness: freshness)
+        }
+    }
+
+    /// Sort order for upcoming assignments: soonest `dueAt` first, undated last, `id` as a stable
+    /// tiebreak. `dueAt` is a fixed-format local ISO string, so a lexicographic compare is
+    /// chronological.
+    private static func canvasDeadlineOrder(_ a: CanvasDeadline, _ b: CanvasDeadline) -> Bool {
+        switch (a.dueAt, b.dueAt) {
+        case let (x?, y?): return x == y ? a.id < b.id : x < y
+        case (nil, _?): return false // an undated assignment sorts after any dated one
+        case (_?, nil): return true
+        case (nil, nil): return a.id < b.id
+        }
+    }
+
+    /// A coarse "data age" label from an interval: "just now" (<1m), "Nm ago" (<1h), "Nh ago" (<1d),
+    /// else "Nd ago". Deterministic — derived from the injected `now` and the scrape time.
+    private static func canvasAgeLabel(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval))
+        if seconds < 60 { return "just now" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h ago" }
+        return "\(hours / 24)d ago"
+    }
+
     // MARK: - Weather (NIC-169)
 
     /// A `weather.changed` event carrying the bottom bar's ambient weather channel (NIC-169).

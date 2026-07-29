@@ -406,6 +406,25 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(patches[0]).toEqual({ calendarModeMap: { "cal-work": "developer" } });
   });
 
+  it("shows the Canvas pairing token + last-scrape status and disconnects (NIC-132)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    // Scope to the Canvas card by its label so its Disconnect doesn't clash with other cards.
+    const label = await within(dialog).findByText("Canvas (School widgets)");
+    const canvas = within(label.closest(".settings-field") as HTMLElement);
+
+    // The pairing token and the last-scrape summary are shown (mock: 4 courses, 7 deadlines).
+    expect(await canvas.findByText("mock-canvas-token")).toBeInTheDocument();
+    expect(canvas.getByText(/4 courses, 7 deadlines/)).toBeInTheDocument();
+
+    // Disconnect rotates the token and clears the scrape summary (purge + rotate).
+    fireEvent.click(canvas.getByRole("button", { name: "Disconnect" }));
+    expect(await canvas.findByText("mock-canvas-token-rotated")).toBeInTheDocument();
+    expect(canvas.getByText(/No scrape received yet/)).toBeInTheDocument();
+  });
+
   it("applies persisted reduced motion app-wide at startup, before settings is opened (NIC-141)", async () => {
     const bridge = createMockCerebralBridge();
     bridge.getSettings = () =>

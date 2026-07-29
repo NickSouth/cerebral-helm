@@ -56,7 +56,9 @@ const bridgeOperations = new Set([
   "listCalendars",
   "minimizeWindow",
   "surfaceWindow",
-  "closeWindow"
+  "closeWindow",
+  "getCanvasStatus",
+  "resetCanvas"
 ]);
 
 function readJson(filePath) {

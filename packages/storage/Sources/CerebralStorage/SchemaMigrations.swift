@@ -21,6 +21,7 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0010_layout_display", sql: layoutDisplaySQL),
         SchemaMigration(id: "0011_stock_tickers", sql: stockTickersSQL),
         SchemaMigration(id: "0012_calendar_mode_map", sql: calendarModeMapSQL),
+        SchemaMigration(id: "0013_canvas_scrape", sql: canvasScrapeSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -250,5 +251,18 @@ public enum SchemaMigrations {
     /// so every calendar's events fall to the default mode (Executive) at the resolver.
     public static let calendarModeMapSQL = """
     ALTER TABLE settings ADD COLUMN calendar_mode_map TEXT;
+    """
+
+    /// Migration 0013: the Canvas scrape snapshot (NIC-132). A single-row table holding the latest
+    /// scrape of the School dashboard's courses/grades and upcoming deadlines as one inspectable
+    /// JSON blob; the newest scrape replaces it wholesale. Scraped grade data is personal and stays
+    /// local (ADR-006 operational state under the state root). Absent row means "no scrape yet", so
+    /// the widgets show their honest unavailable state until the Chrome extension posts one.
+    public static let canvasScrapeSQL = """
+    CREATE TABLE canvas_snapshot (
+        id            INTEGER PRIMARY KEY CHECK (id = 1),
+        snapshot_json TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+    );
     """
 }

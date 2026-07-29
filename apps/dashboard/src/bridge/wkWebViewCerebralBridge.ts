@@ -15,6 +15,7 @@ import type {
   CaptureLayoutResult,
   ListAppsResult,
   ListCalendarsResult,
+  CanvasStatus,
   ListUrlsResult,
   OpenLayoutResult,
   PinLayoutWindowResult,
@@ -288,6 +289,12 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     listApps() {
       return operation<ListAppsResult>("listApps", {});
+    },
+    getCanvasStatus() {
+      return operation<CanvasStatus>("getCanvasStatus", {});
+    },
+    resetCanvas() {
+      return operation<CanvasStatus>("resetCanvas", {});
     },
     listCalendars() {
       return operation<ListCalendarsResult>("listCalendars", {});

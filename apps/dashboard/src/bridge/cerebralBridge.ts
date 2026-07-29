@@ -172,6 +172,19 @@ export interface ListCalendarsResult {
   readonly calendars: readonly CalendarInfo[];
 }
 
+/** The Canvas ingest connection state (NIC-132) for the Settings connect card. `available` is false
+ *  only off the macOS host (the card then shows "requires the macOS host"). Otherwise `endpoint` and
+ *  `token` are what the Chrome extension pairs with, and `lastScrapedAt` (ISO-8601, null until the
+ *  first scrape) + the counts summarise the latest scrape. `token` is a local pairing secret. */
+export interface CanvasStatus {
+  readonly available: boolean;
+  readonly endpoint: string;
+  readonly token: string | null;
+  readonly lastScrapedAt: string | null;
+  readonly courseCount: number;
+  readonly deadlineCount: number;
+}
+
 /** On-demand internet speed test result (NIC-135). `status` is "ok" (both
  *  directions), "partial" (one), or "unavailable" (the test could not run);
  *  figures are Mbps and present per `status`. */
@@ -508,6 +521,12 @@ export interface CerebralBridge {
   /** List the user's calendars for the Settings calendar→mode mapping (NIC-126). Requests
    *  Calendar access at point of use; a denied grant returns `authorized: false` + no calendars. */
   listCalendars(): Promise<ListCalendarsResult>;
+  /** The Canvas ingest connection state for the Settings connect card (NIC-132) — the pairing
+   *  endpoint/token (minted on demand) plus the last scrape's age/counts. */
+  getCanvasStatus(): Promise<CanvasStatus>;
+  /** Disconnect Canvas (NIC-132): purge the scraped data and rotate the ingest token, returning the
+   *  fresh (empty) state. The old token stops working, so the extension must be re-paired. */
+  resetCanvas(): Promise<CanvasStatus>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */
   updateQuickApps(input: UpdateQuickAppsInput): Promise<UpdateQuickAppsResult>;
   /** Mint a user URL reference (NIC-146) so a typed URL can be pinned as a quick app,

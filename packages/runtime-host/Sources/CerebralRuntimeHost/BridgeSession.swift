@@ -13,6 +13,32 @@ public struct SpotifyConnectionInfo: Sendable, Equatable {
     }
 }
 
+/// The Canvas ingest connection state (NIC-132), returned by the host's status/reset closures to the
+/// `getCanvasStatus`/`resetCanvas` ops. `endpoint` and `token` are what the user pairs the Chrome
+/// extension with; `lastScrapedAt` (ISO-8601, nil when never) and the counts describe the last
+/// scrape. The token is a local pairing secret shown once in Settings — never logged.
+public struct CanvasStatusInfo: Sendable, Equatable {
+    public let endpoint: String
+    public let token: String?
+    public let lastScrapedAt: String?
+    public let courseCount: Int
+    public let deadlineCount: Int
+
+    public init(
+        endpoint: String,
+        token: String?,
+        lastScrapedAt: String?,
+        courseCount: Int,
+        deadlineCount: Int
+    ) {
+        self.endpoint = endpoint
+        self.token = token
+        self.lastScrapedAt = lastScrapedAt
+        self.courseCount = courseCount
+        self.deadlineCount = deadlineCount
+    }
+}
+
 /// Executes versioned bridge operation requests against the live ``CommandRuntime``
 /// (NIC-74b, ADR-004). Transport-agnostic: the WKWebView transport (or a test) hands
 /// it a decoded operation request and forwards the response it returns.
@@ -107,6 +133,13 @@ public final class BridgeSession: @unchecked Sendable {
     /// The tokens never cross back through here; only the granted scope does.
     private let spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)?
 
+    /// Reads the Canvas ingest connection state for `getCanvasStatus` (NIC-132) — the pairing
+    /// endpoint/token plus the last-scrape summary. Optional: a host without the Mac ingest store
+    /// reports the surface unavailable. `canvasReset` purges the scraped data and rotates the token
+    /// (the disconnect path), returning the fresh state.
+    private let canvasStatus: (@Sendable () async -> CanvasStatusInfo)?
+    private let canvasReset: (@Sendable () async -> CanvasStatusInfo)?
+
     /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
     /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
     /// uses. Optional: a host without it (pre-Mac, tests) still ends the session
@@ -165,6 +198,8 @@ public final class BridgeSession: @unchecked Sendable {
         onSecretStored: (@Sendable (String) -> Void)? = nil,
         onSettingsChanged: (@Sendable (SettingsChanges) -> Void)? = nil,
         spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil,
+        canvasStatus: (@Sendable () async -> CanvasStatusInfo)? = nil,
+        canvasReset: (@Sendable () async -> CanvasStatusInfo)? = nil,
         workspaceWindows: (any WorkspaceWindowsCapability)? = nil,
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
@@ -185,6 +220,8 @@ public final class BridgeSession: @unchecked Sendable {
         self.onSecretStored = onSecretStored
         self.onSettingsChanged = onSettingsChanged
         self.spotifyConnect = spotifyConnect
+        self.canvasStatus = canvasStatus
+        self.canvasReset = canvasReset
         self.workspaceWindows = workspaceWindows
         self.app = app
         self.url = url
@@ -296,6 +333,10 @@ public final class BridgeSession: @unchecked Sendable {
             return await listWindows(request)
         case .listCalendars:
             return await listCalendars(request)
+        case .getCanvasStatus:
+            return await getCanvasStatus(request)
+        case .resetCanvas:
+            return await resetCanvas(request)
         case .minimizeWindow:
             return await windowAction(request) { try await $0.minimize(windowID: $1) }
         case .surfaceWindow:
@@ -1462,6 +1503,30 @@ public final class BridgeSession: @unchecked Sendable {
         }
     }
 
+    /// Reports the Canvas ingest connection state (NIC-132): the loopback endpoint + pairing token to
+    /// paste into the Chrome extension, and the last scrape's age/counts. A host without the Mac
+    /// ingest store reports `available: false`, so the settings surface shows "requires the macOS
+    /// host" rather than a broken pairing panel.
+    private func getCanvasStatus(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let canvasStatus else {
+            return ok(request, payload: CanvasStatusResult.unavailable)
+        }
+        return ok(request, payload: CanvasStatusResult(await canvasStatus()))
+    }
+
+    /// Disconnects Canvas (NIC-132): purges the scraped data and rotates the ingest token, so the old
+    /// token stops working and the extension must be re-paired. Returns the fresh (empty) state.
+    private func resetCanvas(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let canvasReset else {
+            return ok(request, payload: CanvasStatusResult.unavailable)
+        }
+        return ok(request, payload: CanvasStatusResult(await canvasReset()))
+    }
+
     /// Mints an app reference that opens Google Chrome in a specific profile (NIC-151),
     /// so a Chrome profile can be pinned as a quick app the same way any app is. The
     /// minted reference targets `com.google.Chrome` and carries the profile directory,
@@ -1971,6 +2036,37 @@ public final class BridgeSession: @unchecked Sendable {
         /// Whether Calendar access is granted; false → the UI shows "grant Calendar access".
         let authorized: Bool
         let calendars: [CalendarDTO]
+    }
+    /// The Canvas ingest status wire shape (NIC-132). `available` is false only when the host has no
+    /// ingest store (pre-Mac/tests) — the UI then shows "requires the macOS host". Otherwise it
+    /// carries the pairing endpoint/token and the last scrape's age/counts.
+    private struct CanvasStatusResult: Encodable {
+        let available: Bool
+        let endpoint: String
+        let token: String?
+        let lastScrapedAt: String?
+        let courseCount: Int
+        let deadlineCount: Int
+
+        init(_ info: CanvasStatusInfo) {
+            available = true
+            endpoint = info.endpoint
+            token = info.token
+            lastScrapedAt = info.lastScrapedAt
+            courseCount = info.courseCount
+            deadlineCount = info.deadlineCount
+        }
+
+        private init() {
+            available = false
+            endpoint = ""
+            token = nil
+            lastScrapedAt = nil
+            courseCount = 0
+            deadlineCount = 0
+        }
+
+        static let unavailable = CanvasStatusResult()
     }
     private struct ChromeProfilesResult: Encodable {
         let profiles: [ChromeProfileDTO]

@@ -139,6 +139,12 @@ public func makeModeStateStore(_ paths: WorkspacePaths) throws -> any ModeStateS
     SQLiteModeStateStore(database: try operationalDatabase(paths))
 }
 
+/// The durable Canvas scrape store over the operational database (NIC-132), for
+/// hosts that run the Canvas ingest endpoint + School widgets.
+public func makeCanvasSnapshotStore(_ paths: WorkspacePaths) throws -> any CanvasSnapshotStore {
+    SQLiteCanvasSnapshotStore(database: try operationalDatabase(paths))
+}
+
 /// Writes the command row from its envelope before any event references it (FK
 /// ordering). The raw command text is deliberately not persisted — it can contain
 /// secrets (the NIC-34 leak class); only non-sensitive envelope metadata is stored.

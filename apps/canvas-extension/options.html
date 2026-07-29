@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CerebralHelm Canvas Sync</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #14161c;
+        --panel: #1b1e27;
+        --line: rgba(255, 255, 255, 0.1);
+        --ink: #eef1f7;
+        --dim: #9aa3b4;
+        --gold: #f4c65a;
+      }
+      body {
+        margin: 0;
+        padding: 2rem;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      main {
+        max-width: 40rem;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.15rem;
+        margin: 0 0 0.25rem;
+      }
+      p.lead {
+        color: var(--dim);
+        margin: 0 0 1.5rem;
+        line-height: 1.5;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 1.25rem;
+      }
+      label {
+        display: block;
+        font-size: 0.85rem;
+        color: var(--dim);
+        margin-bottom: 0.4rem;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.55rem 0.7rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.85rem;
+        color: var(--ink);
+        background: #0f1116;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      .row {
+        display: flex;
+        gap: 0.6rem;
+        margin-top: 0.9rem;
+        flex-wrap: wrap;
+      }
+      button {
+        padding: 0.5rem 0.9rem;
+        font-size: 0.85rem;
+        color: var(--ink);
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      button.primary {
+        background: color-mix(in srgb, var(--gold) 20%, transparent);
+        border-color: color-mix(in srgb, var(--gold) 40%, var(--line));
+      }
+      #status {
+        margin-top: 1rem;
+        min-height: 1.2rem;
+        font-size: 0.85rem;
+        color: var(--dim);
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--gold);
+      }
+      ol {
+        color: var(--dim);
+        line-height: 1.6;
+        padding-left: 1.2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CerebralHelm Canvas Sync</h1>
+      <p class="lead">
+        Pairs this extension with your local CerebralHelm app so your School dashboard shows your
+        courses, grades, and upcoming deadlines. Everything stays on your Mac.
+      </p>
+      <div class="card">
+        <label for="token">Pairing token</label>
+        <input id="token" type="text" spellcheck="false" autocomplete="off"
+               placeholder="Paste the token from CerebralHelm → Settings → Setup → Canvas" />
+        <div class="row">
+          <button id="save" class="primary" type="button">Save token</button>
+          <button id="test" type="button">Send test scrape</button>
+        </div>
+        <p id="status"></p>
+      </div>
+      <ol>
+        <li>In CerebralHelm, open <code>Settings → Setup → Canvas</code> and copy the token.</li>
+        <li>Paste it above and click <strong>Save token</strong>.</li>
+        <li>Click <strong>Send test scrape</strong> — CerebralHelm's School widgets should fill in.</li>
+      </ol>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

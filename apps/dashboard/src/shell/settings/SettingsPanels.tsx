@@ -12,7 +12,7 @@ import { postShellControl, isShellControlAvailable } from "../shellControl";
 import { PERMISSION_TOOLS } from "./permissionsCatalog";
 import wiredManifest from "../quickActions.manifest.json";
 import type { SettingsCategoryId } from "./categories";
-import type { CalendarInfo } from "../../bridge/cerebralBridge";
+import type { CalendarInfo, CanvasStatus } from "../../bridge/cerebralBridge";
 
 /** A titled group within a panel. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -1071,6 +1071,113 @@ function CalendarModeMapField() {
   );
 }
 
+/** A coarse "data age" label from an ISO instant: "just now" / "Nm ago" / "Nh ago" / "Nd ago". */
+function formatScrapeAge(iso: string): string {
+  const elapsedMs = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 60_000) return "just now";
+  const minutes = Math.floor(elapsedMs / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+/** "4 courses, 7 deadlines" — singular/plural, never a fabricated count. */
+function scrapeCountsLabel(status: CanvasStatus): string {
+  const courses = `${status.courseCount} ${status.courseCount === 1 ? "course" : "courses"}`;
+  const deadlines = `${status.deadlineCount} ${status.deadlineCount === 1 ? "deadline" : "deadlines"}`;
+  return `${courses}, ${deadlines}`;
+}
+
+/**
+ * The Canvas connect card (NIC-132): pairs the Chrome extension with the local ingest endpoint. The
+ * School Deadlines/Courses widgets are fed by a scrape the extension posts here on Canvas visits, so
+ * this shows the endpoint + token to paste into the extension, the last scrape's age/counts, and a
+ * Disconnect that purges the scraped data and rotates the token (the old token stops working). Off
+ * the macOS host the surface reports unavailable rather than a broken pairing panel.
+ */
+function CanvasConnectField() {
+  const bridge = useBridge();
+  const [status, setStatus] = useState<CanvasStatus | null>(null); // null while loading
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      .getCanvasStatus()
+      .then((result) => {
+        if (active) setStatus(result);
+      })
+      .catch(() => {
+        if (active) {
+          setStatus({
+            available: false, endpoint: "", token: null, lastScrapedAt: null, courseCount: 0, deadlineCount: 0
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
+  function disconnect() {
+    void bridge
+      .resetCanvas()
+      .then((result) => setStatus(result))
+      .catch(() => {
+        // Leave the state as-is; the next status read reconciles it.
+      });
+  }
+
+  function copyToken() {
+    if (!status?.token) return;
+    void navigator.clipboard
+      ?.writeText(status.token)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {
+        // Clipboard denied — the token is still shown for manual copy.
+      });
+  }
+
+  return (
+    <Field
+      label="Canvas (School widgets)"
+      hint="The School Deadlines & Courses widgets are fed by a Chrome extension that scrapes Canvas on your visits and posts to this local endpoint. Pair the extension with the endpoint and token below. Scraped data stays on this Mac. Disconnect clears it and rotates the token — you'll need to re-pair."
+    >
+      {status === null ? (
+        <span className="settings-secret__status">Checking…</span>
+      ) : !status.available ? (
+        <Unavailable label="Requires the macOS host" />
+      ) : (
+        <div className="settings-canvas">
+          <div className="settings-canvas__pair">
+            <span className="settings-canvas__label">Endpoint</span>
+            <code className="settings-canvas__value">{status.endpoint}</code>
+          </div>
+          <div className="settings-canvas__pair">
+            <span className="settings-canvas__label">Token</span>
+            <code className="settings-canvas__value settings-canvas__token">{status.token ?? "—"}</code>
+            <button type="button" className="settings-button" onClick={copyToken} disabled={!status.token}>
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className="settings-canvas__status">
+            {status.lastScrapedAt
+              ? `Last synced ${formatScrapeAge(status.lastScrapedAt)} · ${scrapeCountsLabel(status)}`
+              : "No scrape received yet — open Canvas in Chrome with the extension installed."}
+          </p>
+          <button type="button" className="settings-button" onClick={disconnect}>
+            Disconnect
+          </button>
+        </div>
+      )}
+    </Field>
+  );
+}
+
 function SetupPanel() {
   // The knowledge-root control seeds from the persisted read (NIC-141).
   const { status } = useSettingsSnapshot();
@@ -1182,6 +1289,7 @@ function SetupPanelBody() {
         <SpotifyConnectField />
         <StocksTickersField />
         <CalendarModeMapField />
+        <CanvasConnectField />
         <Field label="Onboarding">
           <Unavailable label="Requires the macOS host" />
         </Field>

@@ -435,6 +435,51 @@
   color: var(--ch-text-secondary);
 }
 
+/* Canvas connect card (NIC-132): the pairing endpoint + token to paste into the Chrome extension,
+   the last-scrape status line, and a Disconnect button. */
+.settings-canvas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  align-items: flex-start;
+}
+.settings-canvas__pair {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  width: 100%;
+  min-width: 0;
+}
+.settings-canvas__label {
+  flex: 0 0 auto;
+  width: 4.5rem;
+  color: var(--ch-text-secondary);
+  font-size: var(--ch-font-size-label);
+}
+.settings-canvas__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-primary);
+  padding: 2px var(--ch-space-2);
+  background: color-mix(in srgb, var(--ch-accent-primary) 8%, transparent);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+}
+.settings-canvas__token {
+  /* The token is long — let it scroll rather than stretch the row. */
+  overflow-x: auto;
+}
+.settings-canvas__status {
+  margin: 0;
+  color: var(--ch-text-secondary);
+  font-size: var(--ch-font-size-label);
+}
+
 /* Knowledge-root picker: text field + native Finder "Browse…" button. */
 .settings-root-picker {
   display: flex;

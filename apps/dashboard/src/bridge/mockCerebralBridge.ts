@@ -498,6 +498,29 @@ export function createMockCerebralBridge(
         ]
       });
     },
+    getCanvasStatus() {
+      // A representative paired state for browser previews of the Settings Canvas card (NIC-132):
+      // an endpoint + token to pair the extension, and a recent scrape summary.
+      return Promise.resolve({
+        available: true,
+        endpoint: "http://127.0.0.1:8899/canvas/ingest",
+        token: "mock-canvas-token",
+        lastScrapedAt: "2026-07-29T12:00:00Z",
+        courseCount: 4,
+        deadlineCount: 7
+      });
+    },
+    resetCanvas() {
+      // Disconnect: the token rotates (a new value) and the scrape summary clears.
+      return Promise.resolve({
+        available: true,
+        endpoint: "http://127.0.0.1:8899/canvas/ingest",
+        token: "mock-canvas-token-rotated",
+        lastScrapedAt: null,
+        courseCount: 0,
+        deadlineCount: 0
+      });
+    },
     updateQuickApps(input) {
       // Stand in for the validated override path (NIC-119c): the same
       // reference-existence check the bridge applies, accepted otherwise. A pinned

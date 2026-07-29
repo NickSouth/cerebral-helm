@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Panel } from "./Panel";
 import { PanelGlyph, type PanelGlyphName } from "./PanelGlyph";
 import { StaleMarker } from "../components/StaleMarker";
@@ -7,6 +7,8 @@ import { Unavailable } from "../components/Unavailable";
 import { EmptyState } from "../components/EmptyState";
 import { WIDGET_REGISTRY } from "../widgets/widgets";
 import type {
+  CourseGradeWidgetItem,
+  DeadlineWidgetItem,
   GitHubChecksState,
   GitSyncState,
   ProjectGitStatusItem,
@@ -27,7 +29,7 @@ import { submitOpenProjectDetail } from "./openProjectDetail";
 import { submitGoogleSearch } from "./googleSearch";
 import { submitSpotifyControl, type SpotifyControlAction } from "./spotifyControl";
 import { submitOpenApp } from "./openApp";
-import { formatDay } from "./format";
+import { formatDay, formatEventTime } from "./format";
 
 const WIDGET_LABELS: ReadonlyMap<string, string> = new Map(
   WIDGET_REGISTRY.map((widget) => [widget.id, widget.label])
@@ -56,41 +58,147 @@ function releaseMeta(item: { mediaType?: unknown; year?: unknown }): string {
   return typeof item.year === "number" ? `${kind} · ${item.year}` : kind;
 }
 
-function row(primary: ReactNode, secondary: ReactNode, key: string | number) {
+/**
+ * The grade ring for a School "Courses" row (NIC-132): an SVG donut whose arc fills to the course's
+ * percentage, with the grade in the centre. Per the owner decision the centre shows Canvas's own
+ * letter grade when it provides one, else the percentage, else "N/A" — a letter is NEVER derived
+ * from the percentage. The arc fills to the percent when known; a course that has only a letter (no
+ * percent) shows a neutral full ring; an "N/A" or hidden grade shows an empty ring. A grade the user
+ * has hidden in Canvas is shown honestly (an em-dash + a hover title), never as a fabricated score.
+ */
+const GRADE_RING_CIRCUMFERENCE = 2 * Math.PI * 20; // r = 20 in the 48×48 viewBox
+
+function GradeRing({ item }: { item: CourseGradeWidgetItem }) {
+  const hasPercent = typeof item.percent === "number";
+  const clamped = hasPercent ? Math.max(0, Math.min(100, item.percent as number)) : 0;
+  const na = !item.gradeHidden && !item.letterGrade && !hasPercent;
+  // Centre text: hidden → em-dash (title explains), else letter, else rounded percent, else N/A.
+  const label = item.gradeHidden
+    ? "—"
+    : (item.letterGrade ?? (hasPercent ? `${Math.round(clamped)}%` : "N/A"));
+  // A letter-only grade (no percent) shows a neutral full ring rather than an empty one.
+  const neutralFull = !hasPercent && !item.gradeHidden && Boolean(item.letterGrade);
+  // A hidden grade never fills the arc — filling to a hidden percent would leak the score the
+  // user chose to hide, so it renders an empty ring like N/A.
+  const filled = item.gradeHidden ? 0 : hasPercent ? clamped : neutralFull ? 100 : 0;
+  const title = item.gradeHidden
+    ? "Grade hidden in Canvas"
+    : hasPercent
+      ? `${clamped}%${item.letterGrade ? ` (${item.letterGrade})` : ""}`
+      : (item.letterGrade ?? "No grade yet");
+
   return (
-    <li key={key} className="widget-list__item">
-      <span className="widget-list__primary">{primary}</span>
-      <span className="widget-list__secondary">{secondary}</span>
-    </li>
+    <span
+      className={`grade-ring${na || item.gradeHidden ? " grade-ring--na" : ""}${neutralFull ? " grade-ring--neutral" : ""}`}
+      title={title}
+    >
+      <svg viewBox="0 0 48 48" width="46" height="46" aria-hidden="true" focusable="false">
+        <circle className="grade-ring__track" cx="24" cy="24" r="20" />
+        {filled > 0 ? (
+          <circle
+            className="grade-ring__arc"
+            cx="24"
+            cy="24"
+            r="20"
+            style={{
+              strokeDasharray: GRADE_RING_CIRCUMFERENCE,
+              strokeDashoffset: GRADE_RING_CIRCUMFERENCE * (1 - filled / 100)
+            }}
+          />
+        ) : null}
+      </svg>
+      <span className="grade-ring__label">{label}</span>
+    </span>
   );
 }
 
-function list(children: ReactNode) {
-  return <ul className="widget-list">{children}</ul>;
+/**
+ * The School "Courses" widget body (NIC-132, right slot): one row per current course — its name and
+ * code on the left, a grade ring on the right. Fixture-backed in this increment; click-to-open (the
+ * course's Canvas home in the school Chrome window) lands in a later increment.
+ */
+function CoursesBody({ items }: { items: readonly CourseGradeWidgetItem[] }) {
+  return (
+    <ul className="courses">
+      {items.map((item, index) => (
+        <li key={item.id ?? index} className="course-row">
+          <span className="course-row__meta">
+            <span className="course-row__name">{item.name}</span>
+            {item.code ? <span className="course-row__code">{item.code}</span> : null}
+          </span>
+          <GradeRing item={item} />
+        </li>
+      ))}
+    </ul>
+  );
 }
 
+/** Up to five upcoming assignments show per page, soonest first; arrows page through the rest.
+ *  No autoplay — a deadline list is a to-do, not a carousel. */
+const DEADLINES_PER_PAGE = 5;
+
 /**
- * Per-widget body renderers, keyed by widget id — the registry-driven slot (design spec
- * §5.3): a widget id resolves to its own renderer, never a per-mode conditional. Each reads
- * its slice of the WidgetData payload.
- *
- * The payload is intentionally heterogeneous: each renderer knows only its own widget's
- * shape, so `data` is untyped at this dispatch boundary (WidgetBody hands it in as an
- * unknown-derived record). Typed per-widget payloads are deferred to the widget-data
- * contract work; the explicit-any allowance is scoped to this registry only.
+ * The School "Deadlines" widget body (NIC-132, left slot): upcoming assignments in due order
+ * (soonest first), already filtered by the producer to exclude submitted/completed work. Each row
+ * shows the assignment title and its due date; more than a page paginates with arrows + dots.
+ * Fixture-backed here; click-to-open (the assignment in the school Chrome window) lands later.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-const WIDGET_BODIES: Readonly<Record<string, (data: any) => ReactNode>> = {
-  deadlines: (data) =>
-    list(
-      (data.items ?? []).map((item: any, index: number) =>
-        row(item.title, formatDay(item.dueAt), index)
-      )
-    ),
-  courses: (data) =>
-    list((data.items ?? []).map((item: any, index: number) => row(item.name, item.next, index)))
-};
-/* eslint-enable @typescript-eslint/no-explicit-any */
+function DeadlinesBody({ items }: { items: readonly DeadlineWidgetItem[] }) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(items.length / DEADLINES_PER_PAGE));
+  const safePage = Math.min(page, pageCount - 1);
+  const start = safePage * DEADLINES_PER_PAGE;
+  const pageItems = items.slice(start, start + DEADLINES_PER_PAGE);
+
+  return (
+    <div className="deadlines">
+      {pageCount > 1 ? (
+        <div className="deadlines__pager">
+          <button
+            type="button"
+            className="deadlines__arrow"
+            disabled={safePage === 0}
+            aria-label="Previous deadlines"
+            onClick={() => setPage(safePage - 1)}
+          >
+            ‹
+          </button>
+          <span className="deadlines__dots">
+            {Array.from({ length: pageCount }).map((_, index) => (
+              <span
+                key={index}
+                className={`deadlines__dot${index === safePage ? " deadlines__dot--active" : ""}`}
+                aria-hidden="true"
+              />
+            ))}
+          </span>
+          <button
+            type="button"
+            className="deadlines__arrow"
+            disabled={safePage >= pageCount - 1}
+            aria-label="More deadlines"
+            onClick={() => setPage(safePage + 1)}
+          >
+            ›
+          </button>
+        </div>
+      ) : null}
+      <ul className="deadlines__list">
+        {pageItems.map((item, index) => {
+          const day = formatDay(item.dueAt);
+          const time = formatEventTime(item.dueAt);
+          const due = day ? (time ? `${day} · ${time}` : day) : "";
+          return (
+            <li key={item.id ?? index} className="deadline-row">
+              <span className="deadline-row__title">{item.title}</span>
+              {due ? <span className="deadline-row__due">{due}</span> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 /** A small line-icon folder mark for a repo row (matches the PanelGlyph line-icon convention). */
 function FolderGlyph() {
@@ -1023,8 +1131,17 @@ function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
       (data as { repositories?: readonly ProjectGitStatusItem[] })?.repositories ?? [];
     return <ProjectGitStatusBody items={repositories} />;
   }
-  const render = WIDGET_BODIES[widgetId];
-  return render ? <>{render((data ?? {}) as Record<string, unknown>)}</> : <Unavailable />;
+  // The School "Deadlines" widget (NIC-132, left slot): upcoming assignments paged by due date.
+  if (widgetId === "deadlines") {
+    const items = (data as { items?: readonly DeadlineWidgetItem[] })?.items ?? [];
+    return <DeadlinesBody items={items} />;
+  }
+  // The School "Courses" widget (NIC-132, right slot): current courses with a grade ring.
+  if (widgetId === "courses") {
+    const items = (data as { items?: readonly CourseGradeWidgetItem[] })?.items ?? [];
+    return <CoursesBody items={items} />;
+  }
+  return <Unavailable />;
 }
 
 /**

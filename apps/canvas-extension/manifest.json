@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "CerebralHelm Canvas Sync",
+  "version": "0.1.0",
+  "description": "Reads your Canvas dashboard (current courses + grades and upcoming assignments) and posts it to your local CerebralHelm app for the School widgets. Data stays on your Mac.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://umamherst.instructure.com/*",
+    "http://127.0.0.1:8899/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://umamherst.instructure.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}

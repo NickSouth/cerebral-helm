@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000062",
+  "type": "bridge.operation.response",
+  "operation": "getCanvasStatus",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "available": true,
+    "endpoint": "http://127.0.0.1:8899/canvas/ingest",
+    "token": "aGVsbG8td29ybGQtdG9rZW4tcGxhY2Vob2xkZXI",
+    "lastScrapedAt": "2026-07-29T12:00:00Z",
+    "courseCount": 4,
+    "deadlineCount": 7
+  }
+}

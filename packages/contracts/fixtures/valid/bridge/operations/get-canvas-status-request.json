@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000061",
+  "type": "bridge.operation.request",
+  "operation": "getCanvasStatus",
+  "payload": {}
+}

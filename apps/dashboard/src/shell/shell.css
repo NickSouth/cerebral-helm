@@ -2118,6 +2118,185 @@
   opacity: 1;
 }
 
+/* School Courses widget (NIC-132): one row per current course — name + code on the left, a grade
+   ring on the right. The arc fills to the course's percentage (School accent); a letter-only grade
+   shows a neutral full ring, and an N/A or hidden grade an empty ring. The grade sits in the
+   centre. Click-to-open (the course's Canvas home) lands in a later increment. */
+.courses {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.course-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+}
+
+.course-row__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0; /* lets the name/code truncate rather than push the ring off-row */
+  flex: 1 1 auto;
+}
+
+.course-row__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+}
+
+.course-row__code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-faint);
+  font-size: var(--ch-font-size-label);
+}
+
+.grade-ring {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+}
+
+/* Start the arc at 12 o'clock rather than 3 o'clock. */
+.grade-ring svg {
+  transform: rotate(-90deg);
+}
+
+.grade-ring__track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ch-text-muted) 30%, transparent);
+  stroke-width: 4;
+}
+
+.grade-ring__arc {
+  fill: none;
+  stroke: var(--ch-accent-primary);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s ease;
+}
+
+/* A letter-only grade (no percent to fill to) shows a muted full ring, not the accent. */
+.grade-ring--neutral .grade-ring__arc {
+  stroke: color-mix(in srgb, var(--ch-text-muted) 55%, transparent);
+}
+
+.grade-ring__label {
+  position: absolute;
+  font-size: var(--ch-font-size-label);
+  font-weight: 600;
+  color: var(--ch-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.grade-ring--na .grade-ring__label {
+  color: var(--ch-text-faint);
+  font-weight: 500;
+}
+
+/* School Deadlines widget (NIC-132): upcoming assignments in due order, up to five per page, with an
+   arrow pager (no autoplay — a to-do list, not a carousel). Submitted/completed work is excluded by
+   the producer. Click-to-open (the assignment in Canvas) lands in a later increment. */
+.deadlines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.deadlines__pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+  flex: 0 0 auto;
+}
+
+.deadlines__arrow {
+  margin: 0;
+  padding: 0 var(--ch-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.deadlines__arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.deadlines__arrow:not(:disabled):hover {
+  color: var(--ch-text-primary);
+}
+
+.deadlines__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.deadlines__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ch-text-muted);
+  opacity: 0.4;
+}
+
+.deadlines__dot--active {
+  background: var(--ch-accent-primary);
+  opacity: 1;
+}
+
+.deadlines__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.deadline-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+  font-size: var(--ch-font-size-sm);
+}
+
+.deadline-row__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+}
+
+.deadline-row__due {
+  flex: 0 0 auto;
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-label);
+  font-variant-numeric: tabular-nums;
+}
+
 .releases__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

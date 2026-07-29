@@ -72,6 +72,11 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// a fast cadence. Same visibility gate as the other streams; not-connected/nothing-playing
     /// degrade honestly. Refreshed immediately after a successful connect.
     private let spotifyPublisher: SpotifyPublisher
+    /// Streams the School `courses`/`deadlines` widgets (NIC-132) from the local Canvas scrape store,
+    /// and the loopback endpoint the Chrome extension POSTs scrapes to. Both are absent when the store
+    /// can't open — the widgets then stay at their honest bootstrap/unavailable state.
+    private let canvasPublisher: CanvasWidgetPublisher?
+    private let canvasIngestServer: CanvasIngestServer?
     /// Watches display connect/disconnect/rearrange (NIC-87). Native subscribers
     /// are told first (window re-hosting), then the dashboard via one
     /// `display.topology.changed` event.
@@ -292,6 +297,57 @@ final class AppBridgeRuntime: @unchecked Sendable {
         } else {
             calendarChangeObserver = nil
         }
+        // The School Canvas widgets + local ingest endpoint (NIC-132): the Chrome extension POSTs
+        // scraped courses/deadlines to the loopback endpoint (bearer-authenticated, loopback-only),
+        // which persists them; the publisher reads the store and streams the two widgets, refreshing
+        // the instant a scrape lands. All Canvas surfaces are nil when the store can't open, so the
+        // widgets fall back to their honest bootstrap state rather than erroring.
+        let canvasStore = try? makeCanvasSnapshotStore(paths)
+        let canvasSecretStore = composition.secretStore
+        let canvasPort: UInt16 = 8899
+        let canvasEndpoint = "http://127.0.0.1:\(canvasPort)/canvas/ingest"
+        if let canvasStore {
+            let canvas = CanvasWidgetPublisher(store: canvasStore, emit: { relay.emit($0) })
+            canvasPublisher = canvas
+            canvasIngestServer = CanvasIngestServer(
+                port: canvasPort,
+                store: canvasStore,
+                token: { await CanvasIngestToken.load(from: canvasSecretStore) },
+                onIngest: { Task { await canvas.refresh() } }
+            )
+            // Mint the ingest token once (idempotent) so the extension can be paired via the token the
+            // settings surface shows (Increment 6); a live secret, never logged.
+            Task { _ = try? await CanvasIngestToken.ensure(in: canvasSecretStore) }
+        } else {
+            canvasPublisher = nil
+            canvasIngestServer = nil
+            Self.log.error("Canvas scrape store failed to open; School widgets + ingest disabled.")
+        }
+        // The Canvas connect/status surface (NIC-132): `getCanvasStatus` reports the pairing
+        // endpoint/token (minting it if needed) + the last scrape's age/counts; `resetCanvas` purges
+        // the scraped data and rotates the token (disconnect). Both nil when there's no store.
+        let canvasStatusClosure: (@Sendable () async -> CanvasStatusInfo)? = canvasStore.map { store in
+            { @Sendable in
+                let token = try? await CanvasIngestToken.ensure(in: canvasSecretStore)
+                let snapshot = (try? store.load()).flatMap { $0 }
+                return CanvasStatusInfo(
+                    endpoint: canvasEndpoint,
+                    token: token,
+                    lastScrapedAt: snapshot.map { ISO8601DateFormatter().string(from: $0.scrapedAt) },
+                    courseCount: snapshot?.courses.count ?? 0,
+                    deadlineCount: snapshot?.deadlines.count ?? 0
+                )
+            }
+        }
+        let canvasResetClosure: (@Sendable () async -> CanvasStatusInfo)? = canvasStore.map { store in
+            { @Sendable in
+                try? store.clear()
+                let token = try? await CanvasIngestToken.rotate(in: canvasSecretStore)
+                return CanvasStatusInfo(
+                    endpoint: canvasEndpoint, token: token, lastScrapedAt: nil, courseCount: 0, deadlineCount: 0
+                )
+            }
+        }
         // Feed the layout-display resolver its persisted ids (captured directly, not
         // through `self`, so no not-yet-initialized capture) — the layout arrange
         // reads it live at open time (NIC-142).
@@ -373,6 +429,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 await spotify.refresh()
                 return SpotifyConnectionInfo(scope: connection.scope)
             },
+            // The Canvas connect/status surface (NIC-132): getCanvasStatus shows the pairing
+            // endpoint/token + last-scrape summary; resetCanvas purges the scrape and rotates the token.
+            canvasStatus: canvasStatusClosure,
+            canvasReset: canvasResetClosure,
             // Hides a layout's app windows on closeLayout (NIC-142) — the same
             // permission-free primitive "Windows Stored by Mode" uses.
             workspaceWindows: composition.capabilities.workspaceWindows,
@@ -470,6 +530,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
         if let calendar { Task { await calendar.start() } }
         Task { await projectGitStatus.start() }
         Task { await spotify.start() }
+        if let canvas = canvasPublisher { Task { await canvas.start() } }
+        // Bind the Canvas ingest endpoint (NIC-132) once the app is up. Failing to bind (e.g. the
+        // port is taken) disables ingest without affecting the rest of the bridge.
+        if let canvasServer = canvasIngestServer { Task { _ = try? await canvasServer.start() } }
     }
 
     /// Pause/resume the live streams from the shell's visibility signal (dashboard
@@ -496,6 +560,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         if let calendar { Task { await calendar.setActive(active) } }
         Task { await projectGitStatus.setActive(active) }
         Task { await spotify.setActive(active) }
+        if let canvas = canvasPublisher { Task { await canvas.setActive(active) } }
     }
 
     /// The persisted "Main display" id (NIC-120b) — nil when never set. A stale

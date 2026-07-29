@@ -55,7 +55,9 @@
         "minimizeWindow",
         "surfaceWindow",
         "closeWindow",
-        "listCalendars"
+        "listCalendars",
+        "getCanvasStatus",
+        "resetCanvas"
       ]
     },
     "payload": {

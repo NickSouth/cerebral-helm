@@ -1944,3 +1944,71 @@ func windowActionsReportEffect() async throws {
         as: WindowActionResult.self
     ).ok)
 }
+
+// MARK: - Canvas connect/status (NIC-132)
+
+private struct CanvasStatusDecode: Decodable {
+    let available: Bool
+    let endpoint: String
+    let token: String?
+    let lastScrapedAt: String?
+    let courseCount: Int
+    let deadlineCount: Int
+}
+
+@Test("getCanvasStatus reports the pairing endpoint/token and last-scrape summary")
+func getCanvasStatusReportsPairing() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        canvasStatus: {
+            CanvasStatusInfo(
+                endpoint: "http://127.0.0.1:8899/canvas/ingest",
+                token: "tok-123", lastScrapedAt: "2026-07-29T12:00:00Z",
+                courseCount: 4, deadlineCount: 7
+            )
+        }
+    )
+    let response = await session.execute(operationRequest(.getCanvasStatus, "{}"))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.available)
+    #expect(status.endpoint == "http://127.0.0.1:8899/canvas/ingest")
+    #expect(status.token == "tok-123")
+    #expect(status.lastScrapedAt == "2026-07-29T12:00:00Z")
+    #expect(status.courseCount == 4)
+    #expect(status.deadlineCount == 7)
+}
+
+@Test("getCanvasStatus reports unavailable off the macOS host (no ingest store)")
+func getCanvasStatusUnavailableWithoutHost() async throws {
+    let session = try makeSession() // no canvasStatus closure injected
+    let response = await session.execute(operationRequest(.getCanvasStatus, "{}"))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.available == false)
+    #expect(status.token == nil)
+}
+
+@Test("resetCanvas rotates the token and returns the fresh, empty state")
+func resetCanvasReturnsFreshState() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        canvasReset: {
+            CanvasStatusInfo(
+                endpoint: "http://127.0.0.1:8899/canvas/ingest",
+                token: "rotated-456", lastScrapedAt: nil, courseCount: 0, deadlineCount: 0
+            )
+        }
+    )
+    let response = await session.execute(operationRequest(.resetCanvas, "{}"))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.token == "rotated-456")
+    #expect(status.lastScrapedAt == nil)
+    #expect(status.courseCount == 0)
+    #expect(status.deadlineCount == 0)
+}
