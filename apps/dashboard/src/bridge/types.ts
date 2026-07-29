@@ -73,6 +73,9 @@ export interface ScheduleItem {
   readonly id: string;
   readonly title: string;
   readonly start?: string;
+  /** The event's location, shown as a hover tooltip on the row (NIC-126); omitted when the event
+   *  has no location. */
+  readonly location?: string;
   readonly kind: "today" | "tonight";
 }
 

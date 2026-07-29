@@ -6,6 +6,7 @@ import type {
   HeimlichState,
   NewsRegion,
   RegionState,
+  ScheduleRegion,
   SystemHealthRegion,
   WeatherChannel
 } from "../bridge/types";
@@ -234,6 +235,28 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
         return state;
       }
       return { ...state, liveNews: { ...state.liveNews, [payload.profile]: news } };
+    }
+    case "schedule.changed": {
+      // A calendar producer streamed a fresh schedule for one relevance profile (NIC-126). Calendar
+      // relevance differs per mode, so — like `liveNews`, and unlike the single machine-global
+      // `liveWeather` — it folds into a runtime-only `liveSchedule` map keyed by `calendarProfile`.
+      // The Today panel resolves `liveSchedule[activeMode.calendarProfile]` over the bootstrap
+      // `regions.schedule` (live wins). The map lives OUTSIDE `regions`, so it survives
+      // `config.changed` mode switches by construction (same reasoning as `liveWidgets`). A payload
+      // missing a non-empty profile or a well-formed region (`state` string) is ignored — no
+      // fabricated update.
+      const payload = event.payload as { profile?: string; schedule?: ScheduleRegion };
+      const schedule = payload.schedule;
+      if (!payload.profile || !schedule || typeof schedule.state !== "string") {
+        return state;
+      }
+      if (state.liveSchedule?.[payload.profile] === schedule) {
+        return state;
+      }
+      return {
+        ...state,
+        liveSchedule: { ...state.liveSchedule, [payload.profile]: schedule }
+      };
     }
     case "command.lifecycle.transition": {
       const status = String((event.payload as { currentStatus?: unknown }).currentStatus ?? "");

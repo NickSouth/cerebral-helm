@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "brevt_000000000000000000000012",
+  "type": "schedule.changed",
+  "timestamp": "2026-07-27T16:00:00.050Z",
+  "payload": {
+    "profile": "all",
+    "schedule": {
+      "state": "ready",
+      "items": [
+        { "id": "s1", "title": "Quarterly planning review", "start": "2026-07-27T14:00:00Z", "kind": "today" },
+        { "id": "s2", "title": "1:1 with design lead", "start": "2026-07-27T16:30:00Z", "kind": "today" },
+        { "id": "s3", "title": "Release retrospective", "start": "2026-07-27T23:00:00Z", "kind": "tonight" }
+      ]
+    }
+  }
+}

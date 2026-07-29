@@ -77,6 +77,10 @@ public final class BridgeSession: @unchecked Sendable {
     /// badges (NIC-151). Optional: a host without it (tests, non-Mac) serves an
     /// empty profile list, so the UI simply offers no profile choices.
     private let chromeProfiles: (any ChromeProfileDiscoveryCapability)?
+    /// Lists the user's calendars for the Settings calendar→mode mapping (NIC-126). Optional: a
+    /// host without it (tests, non-Mac) serves an unauthorized/empty list, so the UI shows its
+    /// honest "grant Calendar access" state.
+    private let calendarProvider: (any CalendarProvider)?
     /// Provisions and answers presence for logical secret references (NIC-134): the
     /// `storeSecret`/`getSecretStatus` ops drive it directly, like `secretStore` on the Mac
     /// composition. Optional — a host without it (tests without secrets, pre-Mac) reports the
@@ -156,6 +160,7 @@ public final class BridgeSession: @unchecked Sendable {
         modeStateStore: (any ModeStateStore)? = nil,
         faviconCapability: (any FaviconCapability)? = nil,
         chromeProfiles: (any ChromeProfileDiscoveryCapability)? = nil,
+        calendarProvider: (any CalendarProvider)? = nil,
         secretStore: (any SecretManaging)? = nil,
         onSecretStored: (@Sendable (String) -> Void)? = nil,
         onSettingsChanged: (@Sendable (SettingsChanges) -> Void)? = nil,
@@ -175,6 +180,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.modeStateStore = modeStateStore
         self.faviconCapability = faviconCapability
         self.chromeProfiles = chromeProfiles
+        self.calendarProvider = calendarProvider
         self.secretStore = secretStore
         self.onSecretStored = onSecretStored
         self.onSettingsChanged = onSettingsChanged
@@ -288,6 +294,8 @@ public final class BridgeSession: @unchecked Sendable {
             return await closeAllWindows(request)
         case .listWindows:
             return await listWindows(request)
+        case .listCalendars:
+            return await listCalendars(request)
         case .minimizeWindow:
             return await windowAction(request) { try await $0.minimize(windowID: $1) }
         case .surfaceWindow:
@@ -1433,6 +1441,27 @@ public final class BridgeSession: @unchecked Sendable {
         ))
     }
 
+    /// Lists the user's calendars for the Settings calendar→mode mapping (NIC-126). Requests
+    /// Calendar access at point of use; a denied grant (or any read failure, or no provider) is an
+    /// honest `authorized: false` with an empty list, which the Settings UI turns into a "grant
+    /// Calendar access" prompt rather than a fabricated set of calendars.
+    private func listCalendars(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let calendarProvider else {
+            return ok(request, payload: CalendarsResult(authorized: false, calendars: []))
+        }
+        do {
+            let calendars = try await calendarProvider.calendars()
+            return ok(request, payload: CalendarsResult(
+                authorized: true,
+                calendars: calendars.map { CalendarDTO(id: $0.id, title: $0.title, colorHex: $0.colorHex) }
+            ))
+        } catch {
+            return ok(request, payload: CalendarsResult(authorized: false, calendars: []))
+        }
+    }
+
     /// Mints an app reference that opens Google Chrome in a specific profile (NIC-151),
     /// so a Chrome profile can be pinned as a quick app the same way any app is. The
     /// minted reference targets `com.google.Chrome` and carries the profile directory,
@@ -1932,6 +1961,16 @@ public final class BridgeSession: @unchecked Sendable {
         let directory: String
         let name: String
         let iconPng: String?
+    }
+    private struct CalendarDTO: Encodable {
+        let id: String
+        let title: String
+        let colorHex: String?
+    }
+    private struct CalendarsResult: Encodable {
+        /// Whether Calendar access is granted; false → the UI shows "grant Calendar access".
+        let authorized: Bool
+        let calendars: [CalendarDTO]
     }
     private struct ChromeProfilesResult: Encodable {
         let profiles: [ChromeProfileDTO]

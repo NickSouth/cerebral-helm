@@ -226,6 +226,7 @@ describe("MockCerebralBridge", () => {
     expect(settings.appearance.assistantName).toBe("Heimlich");
     expect(settings.confirmAllActions).toBe(false);
     expect(settings.modeColors).toEqual({});
+    expect(settings.calendarModeMap).toEqual({});
     expect(settings.workspace.mainDisplayId).toBe("system-primary");
     expect(settings.schemaVersion).toBe("1.0.0");
   });

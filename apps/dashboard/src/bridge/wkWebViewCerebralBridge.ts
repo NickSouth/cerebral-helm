@@ -14,6 +14,7 @@ import type {
   DecideConfirmationResult,
   CaptureLayoutResult,
   ListAppsResult,
+  ListCalendarsResult,
   ListUrlsResult,
   OpenLayoutResult,
   PinLayoutWindowResult,
@@ -77,7 +78,8 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "mode.windowcollapse.changed",
   "widget.data.changed",
   "weather.changed",
-  "news.changed"
+  "news.changed",
+  "schedule.changed"
 ]);
 
 /** True when running inside the native shell (the message handler is registered). */
@@ -286,6 +288,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     listApps() {
       return operation<ListAppsResult>("listApps", {});
+    },
+    listCalendars() {
+      return operation<ListCalendarsResult>("listCalendars", {});
     },
     updateQuickApps(input) {
       return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });

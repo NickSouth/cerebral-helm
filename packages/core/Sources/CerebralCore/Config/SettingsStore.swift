@@ -41,6 +41,10 @@ public struct StoredSettings: Equatable, Sendable {
     /// verbatim. `nil`/absent = never set, so the shipped starter list applies; an
     /// explicit `[]` is a meaningful "cleared" state (distinct from unset).
     public var stockTickersJSON: String?
+    /// The raw JSON of the patch's `calendarModeMap` (calendar id → mode id),
+    /// preserved verbatim. `nil`/absent = no mappings, so every calendar's events
+    /// fall to the default mode (Executive) at the resolver (NIC-126).
+    public var calendarModeMapJSON: String?
 
     public init(
         defaultModeID: String? = nil,
@@ -55,7 +59,8 @@ public struct StoredSettings: Equatable, Sendable {
         layoutDisplayID: String? = nil,
         modeColorsJSON: String? = nil,
         extensionsJSON: String? = nil,
-        stockTickersJSON: String? = nil
+        stockTickersJSON: String? = nil,
+        calendarModeMapJSON: String? = nil
     ) {
         self.defaultModeID = defaultModeID
         self.confirmAllActions = confirmAllActions
@@ -70,6 +75,7 @@ public struct StoredSettings: Equatable, Sendable {
         self.modeColorsJSON = modeColorsJSON
         self.extensionsJSON = extensionsJSON
         self.stockTickersJSON = stockTickersJSON
+        self.calendarModeMapJSON = calendarModeMapJSON
     }
 }
 
@@ -96,6 +102,9 @@ public struct SettingsChanges: Equatable, Sendable {
     /// When present, replaces the stored ticker list wholesale (NIC-128). A JSON array
     /// string of normalized (uppercased, deduped) symbols; `"[]"` clears the list.
     public var stockTickersJSON: String?
+    /// When present, replaces the stored calendar→mode map wholesale (NIC-126). A JSON
+    /// object string (calendar id → mode id); `"{}"` clears the mappings.
+    public var calendarModeMapJSON: String?
 
     public init(
         defaultModeID: String? = nil,
@@ -110,7 +119,8 @@ public struct SettingsChanges: Equatable, Sendable {
         layoutDisplayID: String? = nil,
         modeColorsJSON: String? = nil,
         extensionsJSON: String? = nil,
-        stockTickersJSON: String? = nil
+        stockTickersJSON: String? = nil,
+        calendarModeMapJSON: String? = nil
     ) {
         self.defaultModeID = defaultModeID
         self.confirmAllActions = confirmAllActions
@@ -125,6 +135,7 @@ public struct SettingsChanges: Equatable, Sendable {
         self.modeColorsJSON = modeColorsJSON
         self.extensionsJSON = extensionsJSON
         self.stockTickersJSON = stockTickersJSON
+        self.calendarModeMapJSON = calendarModeMapJSON
     }
 
     /// Extracts the known contract fields from a validated `changes` dictionary.
@@ -157,6 +168,11 @@ public struct SettingsChanges: Equatable, Sendable {
            let data = try? JSONSerialization.data(withJSONObject: extensions, options: [.sortedKeys]) {
             extensionsJSON = String(decoding: data, as: UTF8.self)
         }
+        if let calendarModeMap = changes["calendarModeMap"] as? [String: Any],
+           let data = try? JSONSerialization.data(withJSONObject: calendarModeMap, options: [.sortedKeys]) {
+            // Serialized with sorted keys so an unchanged map round-trips to identical bytes.
+            calendarModeMapJSON = String(decoding: data, as: UTF8.self)
+        }
         if let stocks = changes["stocks"] as? [String: Any],
            let rawTickers = stocks["tickers"] as? [Any] {
             // Normalize once at the write boundary so the stored value is clean regardless of
@@ -180,6 +196,7 @@ public struct SettingsChanges: Equatable, Sendable {
             && commandPaletteHotkey == nil && knowledgeRootReference == nil
             && windowsStoredByMode == nil && mainDisplayID == nil && layoutDisplayID == nil
             && modeColorsJSON == nil && extensionsJSON == nil && stockTickersJSON == nil
+            && calendarModeMapJSON == nil
     }
 }
 

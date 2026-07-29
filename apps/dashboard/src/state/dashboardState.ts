@@ -3,6 +3,7 @@ import type {
   DashboardBootstrapState,
   DashboardMode,
   NewsRegion,
+  ScheduleRegion,
   WeatherChannel
 } from "../bridge/types";
 import type { WidgetData } from "../widgets/widgetData";
@@ -123,6 +124,14 @@ export type DashboardState = DashboardBootstrapState & {
    *  `config.changed` mode switches by construction (same reasoning as `liveWidgets`) and never
    *  disturbs the per-mode mock `news` fixtures. */
   readonly liveNews?: Readonly<Record<string, NewsRegion>>;
+  /** Live per-mode schedule (NIC-126), folded from `schedule.changed` and keyed by the mode's
+   *  `calendarProfile`. Runtime-only and sparse: a profile is absent until its producer streams
+   *  events. Like `liveNews`, calendar relevance differs per mode, so it is a map — the Today
+   *  panel resolves `liveSchedule[activeMode.calendarProfile]` over the bootstrap `regions.schedule`
+   *  (live wins). Lives OUTSIDE `regions`, so it survives `config.changed` mode switches by
+   *  construction (same reasoning as `liveWidgets`) and never disturbs the per-mode mock `schedule`
+   *  fixtures. */
+  readonly liveSchedule?: Readonly<Record<string, ScheduleRegion>>;
 };
 
 /**

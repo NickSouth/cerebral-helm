@@ -26,6 +26,8 @@ export interface SettingsPatchChanges {
   readonly modeColors?: Readonly<Record<string, string>>;
   /** The user's tracked stock symbols for the Executive Stocks widget (NIC-128). */
   readonly stocks?: { readonly tickers?: readonly string[] };
+  /** The user's calendar→mode mapping keyed by calendar identifier → mode id (NIC-126). */
+  readonly calendarModeMap?: Readonly<Record<string, string>>;
   readonly extensions?: Readonly<Record<string, unknown>>;
 }
 
@@ -52,6 +54,7 @@ const ALLOWED_CHANGE_KEYS = new Set([
   "workspace",
   "modeColors",
   "stocks",
+  "calendarModeMap",
   "extensions"
 ]);
 const ALLOWED_APPEARANCE_KEYS = new Set(["density", "reducedMotion", "assistantName"]);
@@ -60,6 +63,8 @@ const MODE_COLOR_KEY_PATTERN = /^(executive|developer|school|entertainment)\.(pr
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const TICKER_SYMBOL_PATTERN = /^[A-Za-z][A-Za-z0-9.-]{0,9}$/;
 const TICKERS_MAX_COUNT = 20;
+const CALENDAR_MODE_VALUE_PATTERN = /^(executive|developer|school|entertainment)$/;
+const CALENDAR_MODE_MAP_KEY_MAX_LENGTH = 512;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -200,6 +205,22 @@ export function validateSettingsChanges(changes: unknown): PatchValidation {
               errors.push(`stocks.tickers entry "${String(symbol)}" is not a valid ticker symbol`);
             }
           }
+        }
+      }
+    }
+  }
+
+  if ("calendarModeMap" in changes) {
+    const calendarModeMap = changes.calendarModeMap;
+    if (!isPlainObject(calendarModeMap)) {
+      errors.push("calendarModeMap must be an object");
+    } else {
+      for (const [key, value] of Object.entries(calendarModeMap)) {
+        if (key.length === 0 || key.length > CALENDAR_MODE_MAP_KEY_MAX_LENGTH) {
+          errors.push(`calendarModeMap key "${key}" must be a non-empty calendar identifier`);
+        }
+        if (typeof value !== "string" || !CALENDAR_MODE_VALUE_PATTERN.test(value)) {
+          errors.push(`calendarModeMap.${key} must map to a known mode id`);
         }
       }
     }

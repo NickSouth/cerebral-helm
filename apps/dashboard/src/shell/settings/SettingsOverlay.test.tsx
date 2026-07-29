@@ -385,6 +385,27 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(patches[0]).toEqual({ stocks: { tickers: ["SPY", "NVDA", "VTI", "TSLA"] } });
   });
 
+  it("maps a calendar to a mode and saves it through the settings path (NIC-126)", async () => {
+    const { bridge } = renderApp();
+    const patches: Array<Record<string, unknown>> = [];
+    const realUpdate = bridge.updateSettings.bind(bridge);
+    bridge.updateSettings = (input) => {
+      patches.push(input.patch.changes as Record<string, unknown>);
+      return realUpdate(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    // The mapping field lists the host's calendars (mock: Work / Personal / School / Family).
+    const workSelect = await within(dialog).findByLabelText("Mode for Work");
+    fireEvent.change(workSelect, { target: { value: "developer" } });
+
+    // The change writes the whole calendar→mode map through the settings path.
+    await waitFor(() => expect(patches).toHaveLength(1));
+    expect(patches[0]).toEqual({ calendarModeMap: { "cal-work": "developer" } });
+  });
+
   it("applies persisted reduced motion app-wide at startup, before settings is opened (NIC-141)", async () => {
     const bridge = createMockCerebralBridge();
     bridge.getSettings = () =>

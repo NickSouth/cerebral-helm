@@ -183,10 +183,11 @@ export interface DashboardScheduleRegion {
 }
 
 export interface DashboardScheduleItem {
-    id:     string;
-    kind:   DashboardScheduleKind;
-    start?: string;
-    title:  string;
+    id:        string;
+    kind:      DashboardScheduleKind;
+    location?: string;
+    start?:    string;
+    title:     string;
 }
 
 export enum DashboardScheduleKind {
@@ -351,6 +352,7 @@ export enum CerebralHelmBridgeEventType {
     ModeQuickappsChanged = "mode.quickapps.changed",
     ModeWindowcollapseChanged = "mode.windowcollapse.changed",
     NewsChanged = "news.changed",
+    ScheduleChanged = "schedule.changed",
     SettingsChanged = "settings.changed",
     SystemStatusChanged = "system.status.changed",
     WeatherChanged = "weather.changed",
@@ -459,6 +461,7 @@ export enum Operation {
     GetSecretStatus = "getSecretStatus",
     GetSettings = "getSettings",
     ListApps = "listApps",
+    ListCalendars = "listCalendars",
     ListChromeProfiles = "listChromeProfiles",
     ListUrls = "listUrls",
     ListWindows = "listWindows",
@@ -536,6 +539,14 @@ export enum CerebralHelmBridgeOperationResponseType {
  */
 export interface CerebralHelmSettingsSnapshot {
     appearance: SettingsSnapshotAppearance;
+    /**
+     * The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+     * (NIC-126), keyed by calendar identifier with a mode-id value. Sparse: a calendar is
+     * present only when the user has mapped it — an unmapped calendar's events fall to the
+     * default mode (Executive) at the resolver. Like `modeColors`, this is not fully resolved
+     * but a meaningful-unset map (empty when the user has mapped nothing).
+     */
+    calendarModeMap: { [key: string]: string };
     /**
      * When true, policy raises every non-read-only action to require confirmation (the 'Ask
      * before all actions' tightening; stricter-only, never weakens descriptor policy). Defaults
@@ -905,7 +916,13 @@ export interface CerebralHelmSettingsPatch {
 }
 
 export interface Changes {
-    appearance?:        Appearance;
+    appearance?: Appearance;
+    /**
+     * The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+     * (NIC-126), keyed by the calendar's stable identifier with a mode-id value. When present,
+     * replaces the stored map wholesale — an empty object clears it.
+     */
+    calendarModeMap?:   { [key: string]: string };
     confirmAllActions?: boolean;
     defaultModeId?:     string;
     extensions?:        { [key: string]: any };

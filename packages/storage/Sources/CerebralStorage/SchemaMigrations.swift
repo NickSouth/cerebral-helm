@@ -20,6 +20,7 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0009_confirm_all_actions", sql: confirmAllActionsSQL),
         SchemaMigration(id: "0010_layout_display", sql: layoutDisplaySQL),
         SchemaMigration(id: "0011_stock_tickers", sql: stockTickersSQL),
+        SchemaMigration(id: "0012_calendar_mode_map", sql: calendarModeMapSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -241,5 +242,13 @@ public enum SchemaMigrations {
     /// explicit `[]` is a meaningful "cleared" state.
     public static let stockTickersSQL = """
     ALTER TABLE settings ADD COLUMN stock_tickers TEXT;
+    """
+
+    /// Migration 0012: the calendar→mode mapping setting (NIC-126). The settings singleton
+    /// gains a JSON object mapping each of the user's calendars (by identifier) to a mode,
+    /// driving the Today panel's per-mode relevance filtering; NULL/absent means no mappings,
+    /// so every calendar's events fall to the default mode (Executive) at the resolver.
+    public static let calendarModeMapSQL = """
+    ALTER TABLE settings ADD COLUMN calendar_mode_map TEXT;
     """
 }

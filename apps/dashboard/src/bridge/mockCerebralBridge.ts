@@ -113,7 +113,11 @@ function mergeSettingsChanges(
       typeof changes.stocks === "object" &&
       Array.isArray((changes.stocks as { tickers?: unknown }).tickers)
         ? { tickers: (changes.stocks as { tickers: string[] }).tickers }
-        : prev.stocks
+        : prev.stocks,
+    calendarModeMap:
+      changes.calendarModeMap && typeof changes.calendarModeMap === "object"
+        ? (changes.calendarModeMap as Record<string, string>)
+        : prev.calendarModeMap
   };
 }
 
@@ -267,7 +271,8 @@ export function createMockCerebralBridge(
     knowledge: { rootReference: "knowledge-root" },
     workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
     modeColors: {},
-    stocks: { tickers: ["SPY", "AAPL", "NVDA", "VTI"] }
+    stocks: { tickers: ["SPY", "AAPL", "NVDA", "VTI"] },
+    calendarModeMap: {}
   };
   let settingsEventSeq = 0;
   // The bound secret references (NIC-134), held mutably so storeSecret visibly binds one and
@@ -477,6 +482,20 @@ export function createMockCerebralBridge(
           { bundleId: "com.anthropic.claudefordesktop", name: "Claude", referenceId: "claude-desktop" }
         ],
         truncated: false
+      });
+    },
+    listCalendars() {
+      // A representative calendar set for browser previews of the Settings calendar→mode mapping
+      // (NIC-126). `authorized: true` so the mapping UI renders its rows rather than the
+      // grant-access prompt.
+      return Promise.resolve({
+        authorized: true,
+        calendars: [
+          { id: "cal-work", title: "Work", colorHex: "#3366cc" },
+          { id: "cal-personal", title: "Personal", colorHex: "#e8590c" },
+          { id: "cal-school", title: "School", colorHex: "#2f9e44" },
+          { id: "cal-family", title: "Family" }
+        ]
       });
     },
     updateQuickApps(input) {

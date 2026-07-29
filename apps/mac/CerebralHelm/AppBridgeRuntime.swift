@@ -57,6 +57,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// `news.changed` per profile. Same visibility gate as the other streams; a missing key emits
     /// an honest "add your key" state. Absent when the news config failed to load (no profiles).
     private let newsPublisher: NewsPublisher?
+    private let calendarPublisher: CalendarPublisher?
+    /// Retained so it keeps observing EventKit's store-changed notification for the lifetime of the
+    /// runtime (NIC-126); dropping it would stop live calendar refreshes.
+    private let calendarChangeObserver: CalendarChangeObserver?
     /// Streams the Developer `project-git-status` widget (NIC-130) — enumerates the local repos,
     /// reads each one's branch/sync from `.git` and GitHub remote from `origin`, and fetches the
     /// read-only GitHub report (PRs, Actions CI, commits) using the Keychain-resolved token. Same
@@ -258,6 +262,36 @@ final class AppBridgeRuntime: @unchecked Sendable {
             emit: { relay.emit($0) }
         )
         stocksPublisher = stocks
+        // The Schedule producer (NIC-126): reads the day's events from EventKit and the user's
+        // calendar→mode map from the settings store each tick, resolves each event to a mode (a
+        // `#[mode]` tag → the mapped calendar → the default mode), and emits one schedule.changed
+        // per relevance profile. The profile config (config/calendar/profiles.json) is not
+        // hardcoded; when it can't be loaded there are no profiles to stream and the Today panel
+        // stays at its honest bootstrap state.
+        let calendar: CalendarPublisher?
+        if let calendarCatalog = CalendarProfileCatalog.load(configDirectory: paths.configDirectory),
+           !calendarCatalog.distinctProfiles.isEmpty {
+            calendar = CalendarPublisher(
+                catalog: calendarCatalog,
+                calendarModeMap: {
+                    let stored = (try? settingsStore?.load()).flatMap { $0 } ?? StoredSettings()
+                    return EffectiveSettings.resolveCalendarModeMap(stored: stored)
+                },
+                provider: EventKitCalendarProvider(),
+                emit: { relay.emit($0) }
+            )
+        } else {
+            calendar = nil
+        }
+        calendarPublisher = calendar
+        // Refresh the schedule the moment the calendar store changes (an event created/edited in
+        // Calendar.app, or synced in from Google/iCloud) so it doesn't wait out the poll cadence
+        // (NIC-126). Only wired when there's a producer to refresh.
+        if let calendar {
+            calendarChangeObserver = CalendarChangeObserver(onChange: { Task { await calendar.refresh() } })
+        } else {
+            calendarChangeObserver = nil
+        }
         // Feed the layout-display resolver its persisted ids (captured directly, not
         // through `self`, so no not-yet-initialized capture) — the layout arrange
         // reads it live at open time (NIC-142).
@@ -298,6 +332,9 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // Enumerates Chrome profiles for the profile dropdown + avatar badges
             // (NIC-151), driven off listChromeProfiles.
             chromeProfiles: composition.chromeProfiles,
+            // Lists the user's calendars for the Settings calendar→mode mapping (NIC-126),
+            // driven off listCalendars — the read side of the mapping the schedule producer uses.
+            calendarProvider: EventKitCalendarProvider(),
             // Provisions/reads API credentials in the Keychain (NIC-134): storeSecret
             // writes the value, getSecretStatus reports presence — the value never
             // enters config or a log (FR-CFG-03).
@@ -311,11 +348,12 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 if reference == "newsdata_api_key", let news { Task { await news.refresh() } }
                 if reference == "github_api_token" { Task { await projectGitStatus.refresh() } }
             },
-            // When the tracked-ticker list changes, refresh the stocks producer so the edited
-            // list is live at once rather than on its next tick (NIC-128).
-            onSettingsChanged: { changes in
-                guard changes.stockTickersJSON != nil else { return }
-                Task { await stocks.refresh() }
+            // When a settings field changes, refresh the producer it drives so the edit is live at
+            // once rather than on its next tick: the tracked-ticker list → stocks (NIC-128), the
+            // calendar→mode map → the schedule (NIC-126).
+            onSettingsChanged: { [calendar = calendarPublisher] changes in
+                if changes.stockTickersJSON != nil { Task { await stocks.refresh() } }
+                if changes.calendarModeMapJSON != nil, let calendar { Task { await calendar.refresh() } }
             },
             // Runs the Spotify OAuth connect flow for the `connectSpotify` op (NIC-133): reads the
             // public Client ID from the Keychain, then drives the coordinator's browser round trip.
@@ -419,6 +457,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let releases = releasesPublisher
         let stocks = stocksPublisher
         let news = newsPublisher
+        let calendar = calendarPublisher
         let projectGitStatus = projectGitStatusPublisher
         let spotify = spotifyPublisher
         Task { await metrics.start() }
@@ -428,6 +467,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         Task { await releases.start() }
         Task { await stocks.start() }
         if let news { Task { await news.start() } }
+        if let calendar { Task { await calendar.start() } }
         Task { await projectGitStatus.start() }
         Task { await spotify.start() }
     }
@@ -443,6 +483,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let releases = releasesPublisher
         let stocks = stocksPublisher
         let news = newsPublisher
+        let calendar = calendarPublisher
         let projectGitStatus = projectGitStatusPublisher
         let spotify = spotifyPublisher
         Task { await metrics.setActive(active) }
@@ -452,6 +493,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         Task { await releases.setActive(active) }
         Task { await stocks.setActive(active) }
         if let news { Task { await news.setActive(active) } }
+        if let calendar { Task { await calendar.setActive(active) } }
         Task { await projectGitStatus.setActive(active) }
         Task { await spotify.setActive(active) }
     }

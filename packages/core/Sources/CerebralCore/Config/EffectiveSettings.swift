@@ -53,6 +53,9 @@ public enum EffectiveSettings {
                 assistantName: stored.appearanceAssistantName ?? defaultAssistantName,
                 reducedMotion: stored.appearanceReducedMotion ?? false
             ),
+            // Sparse pass-through, like modeColors: the calendar→mode map is empty until the user
+            // maps a calendar; a malformed stored blob degrades to "no mappings" rather than erroring.
+            calendarModeMap: decodeCalendarModeMap(stored.calendarModeMapJSON),
             confirmAllActions: stored.confirmAllActions ?? false,
             defaultModeID: stored.defaultModeID ?? configDefaultModeID ?? fallbackModeID,
             knowledge: SettingsSnapshotKnowledge(
@@ -104,6 +107,23 @@ public enum EffectiveSettings {
     /// The ``StocksPublisher`` reads this each tick so a Settings edit applies on the next sample.
     public static func resolveStockTickers(stored: StoredSettings) -> [String] {
         decodeStockTickers(stored.stockTickersJSON) ?? defaultStockTickers
+    }
+
+    /// The effective calendar→mode map for the ``CalendarProvider`` producer (NIC-126): the stored
+    /// map when set, else empty (every calendar's events fall to the default mode at the resolver).
+    /// The calendar producer reads this each tick so a Settings edit applies on the next sample.
+    public static func resolveCalendarModeMap(stored: StoredSettings) -> [String: String] {
+        decodeCalendarModeMap(stored.calendarModeMapJSON)
+    }
+
+    private static func decodeCalendarModeMap(_ json: String?) -> [String: String] {
+        guard
+            let data = json?.data(using: .utf8),
+            let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+        else {
+            return [:]
+        }
+        return decoded
     }
 
     private static func decodeModeColors(_ json: String?) -> [String: String] {

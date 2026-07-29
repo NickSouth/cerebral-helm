@@ -309,6 +309,96 @@ public enum BridgeEventFactory {
         }
     }
 
+    // MARK: - Schedule / Calendar (NIC-126)
+
+    /// A `schedule.changed` event carrying one relevance profile's events (NIC-126). The dashboard
+    /// folds `payload.schedule` into its runtime-only `liveSchedule` map keyed by `payload.profile`;
+    /// the Today panel resolves `liveSchedule[activeMode.calendarProfile]` over the per-mode bootstrap
+    /// `regions.schedule` (live wins) and it survives mode switches by construction (the map lives
+    /// outside the mode snapshot). Like news, calendar relevance differs per mode, so the event
+    /// carries the profile it is for. Emitted per distinct profile by the `CalendarPublisher`
+    /// (Increment 5).
+    public static func scheduleChangedEvent(
+        region: DashboardScheduleRegion, profile: String, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Payload: Encodable {
+            let profile: String
+            let schedule: DashboardScheduleRegion
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Payload(profile: profile, schedule: region)),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .scheduleChanged
+        )
+    }
+
+    /// Maps a calendar-provider result into the `DashboardScheduleRegion` for the Today panel
+    /// (NIC-126). A denied permission is an honest `unavailable` that guides the user to grant
+    /// Calendar access; any other failure is a generic `unavailable` (the raw diagnostic is never
+    /// surfaced); an empty result is `empty`; otherwise `ready` with the earliest four events
+    /// (the panel reserves four rows). Nothing is fabricated.
+    ///
+    /// Events are ordered by start ascending before the cap so the panel shows the next four. Each
+    /// item's `kind` is `tonight` for a timed event starting at or after 18:00 local, else `today`;
+    /// an all-day event is always `today` (owner rule) and carries no time. `start` is a local
+    /// wall-clock `yyyy-MM-ddTHH:mm:ss` string so the panel's naive `HH:mm` slice reads the event's
+    /// local time; `calendar` is injectable so the mapping is deterministic in tests.
+    public static func schedule(
+        from result: Swift.Result<[CalendarEvent], Error>, calendar: Calendar = .current
+    ) -> DashboardScheduleRegion {
+        switch result {
+        case let .failure(error):
+            let denied = (error as? CalendarError).map { $0 == .permissionDenied } ?? false
+            return DashboardScheduleRegion(
+                emptyMessage: denied
+                    ? "Grant Calendar access in Settings → Setup to see your schedule."
+                    : "Your schedule isn't available right now.",
+                items: [],
+                state: .unavailable
+            )
+        case let .success(events) where events.isEmpty:
+            return DashboardScheduleRegion(
+                emptyMessage: "Nothing scheduled.", items: [], state: .empty
+            )
+        case let .success(events):
+            let items = events
+                .sorted { $0.start < $1.start }
+                .prefix(4)
+                .map { event in
+                    DashboardScheduleItem(
+                        id: event.id,
+                        kind: scheduleKind(for: event, calendar: calendar),
+                        location: event.location,
+                        start: event.isAllDay ? nil : localClockString(for: event.start, calendar: calendar),
+                        title: event.title
+                    )
+                }
+            return DashboardScheduleRegion(emptyMessage: nil, items: Array(items), state: .ready)
+        }
+    }
+
+    /// `tonight` for a timed event at or after 18:00 local, else `today`; an all-day event is always
+    /// `today` (owner rule — it has no meaningful hour).
+    private static func scheduleKind(for event: CalendarEvent, calendar: Calendar) -> DashboardScheduleKind {
+        if event.isAllDay {
+            return .today
+        }
+        let hour = calendar.component(.hour, from: event.start)
+        return hour >= 18 ? .tonight : .today
+    }
+
+    /// A `yyyy-MM-ddTHH:mm:ss` string of the instant's local wall-clock components, so the panel's
+    /// naive `slice(11, 16)` reads the event's local time (the panel does not convert time zones).
+    private static func localClockString(for date: Date, calendar: Calendar) -> String {
+        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        return String(
+            format: "%04d-%02d-%02dT%02d:%02d:00",
+            c.year ?? 0, c.month ?? 0, c.day ?? 0, c.hour ?? 0, c.minute ?? 0
+        )
+    }
+
     // MARK: - Projects widget (NIC-129)
 
     /// The `projects` widget's live envelope — the Swift mirror of the web `WidgetData` for

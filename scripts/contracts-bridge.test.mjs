@@ -53,6 +53,7 @@ const bridgeOperations = new Set([
   "toggleModeCollapse",
   "closeAllWindows",
   "listWindows",
+  "listCalendars",
   "minimizeWindow",
   "surfaceWindow",
   "closeWindow"

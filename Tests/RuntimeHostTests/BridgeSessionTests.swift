@@ -1431,6 +1431,13 @@ private struct SettingsSnapshot: Decodable {
     let workspace: Workspace
     let modeColors: [String: String]
     let stocks: Stocks
+    let calendarModeMap: [String: String]
+}
+
+private struct CalendarsListResult: Decodable {
+    struct Calendar: Decodable { let id: String; let title: String; let colorHex: String? }
+    let authorized: Bool
+    let calendars: [Calendar]
 }
 
 @Test("getSettings reflects the persisted values written through updateSettings")
@@ -1492,6 +1499,58 @@ func stocksTickersPatchRoundTrips() async throws {
     let response = await reopened.execute(operationRequest(.getSettings, "{}"))
     let snapshot = try decode(response, as: SettingsSnapshot.self)
     #expect(snapshot.stocks.tickers == ["TSLA", "AAPL", "BRK.B"]) // uppercased, order-preserving, deduped
+}
+
+@Test("a calendar→mode-map patch round-trips through getSettings; an invalid mode value is rejected (NIC-126)")
+func calendarModeMapPatchRoundTrips() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_calmap01","changes":{"calendarModeMap":{"cal-work":"executive","cal-dev":"developer"}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    let reopened = try makeSessionWithSettings(paths)
+    let response = await reopened.execute(operationRequest(.getSettings, "{}"))
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.calendarModeMap == ["cal-work": "executive", "cal-dev": "developer"])
+
+    // A value that is not a known mode id is rejected — settings can never invent a mode.
+    let rejected = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_calmap02","changes":{"calendarModeMap":{"cal-x":"cosmic"}}}}"##
+    ))
+    #expect(try decode(rejected, as: Accepted.self).accepted == false)
+}
+
+@Test("listCalendars returns the host's calendars as authorized; a denied provider is unauthorized+empty (NIC-126)")
+func listCalendarsReportsAuthorization() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        calendarProvider: MockCalendarProvider(events: [], calendars: [
+            CalendarInfo(id: "cal-work", title: "Work", colorHex: "#3366cc"),
+            CalendarInfo(id: "cal-personal", title: "Personal"),
+        ])
+    )
+    let response = await session.execute(operationRequest(.listCalendars, "{}"))
+    let result = try decode(response, as: CalendarsListResult.self)
+    #expect(result.authorized)
+    #expect(result.calendars.map(\.id) == ["cal-work", "cal-personal"])
+    #expect(result.calendars.first?.colorHex == "#3366cc")
+
+    // A denied grant → unauthorized + empty; the Settings UI shows a grant-access prompt.
+    let denied = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        calendarProvider: MockCalendarProvider(error: .permissionDenied)
+    )
+    let deniedResponse = await denied.execute(operationRequest(.listCalendars, "{}"))
+    let deniedResult = try decode(deniedResponse, as: CalendarsListResult.self)
+    #expect(deniedResult.authorized == false)
+    #expect(deniedResult.calendars.isEmpty)
 }
 
 @Test("an explicitly cleared ticker list stays empty rather than reverting to the starter list")

@@ -12,6 +12,7 @@ import { postShellControl, isShellControlAvailable } from "../shellControl";
 import { PERMISSION_TOOLS } from "./permissionsCatalog";
 import wiredManifest from "../quickActions.manifest.json";
 import type { SettingsCategoryId } from "./categories";
+import type { CalendarInfo } from "../../bridge/cerebralBridge";
 
 /** A titled group within a panel. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -986,6 +987,90 @@ function StocksTickersField() {
   );
 }
 
+/** Maps each of the user's calendars to a mode (NIC-126), so the Today panel shows the right events
+ *  per mode. Reads the calendar list from the host (requesting Calendar access at point of use) and
+ *  the current map from the settings snapshot; a change writes the whole `calendarModeMap` through
+ *  the settings path. "Unassigned" removes the mapping — those events fall under Executive. */
+function CalendarModeMapField() {
+  const bridge = useBridge();
+  const { snapshot } = useSettingsSnapshot();
+  const updateSettings = useUpdateSettings();
+  const [calendars, setCalendars] = useState<readonly CalendarInfo[] | null>(null); // null while loading
+  const [authorized, setAuthorized] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      .listCalendars()
+      .then((result) => {
+        if (!active) return;
+        setCalendars(result.calendars);
+        setAuthorized(result.authorized);
+      })
+      .catch(() => {
+        if (!active) return;
+        setCalendars([]);
+        setAuthorized(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
+  const map = snapshot?.calendarModeMap ?? {};
+
+  function assign(calendarId: string, mode: string) {
+    const next: Record<string, string> = { ...map };
+    if (mode === "") {
+      delete next[calendarId];
+    } else {
+      next[calendarId] = mode;
+    }
+    void updateSettings({ calendarModeMap: next });
+  }
+
+  return (
+    <Field
+      label="Calendar → mode"
+      hint="Map each calendar to a mode so the Today panel shows the right events per mode. Unmapped calendars show under Executive. Tip: add #executive, #developer, #school, or #entertainment to an event's notes to override per event."
+    >
+      {calendars === null ? (
+        <span className="settings-secret__status">Checking…</span>
+      ) : !authorized ? (
+        <Unavailable label="Grant Calendar access to map your calendars (System Settings → Privacy & Security → Calendars)." />
+      ) : calendars.length === 0 ? (
+        <span className="settings-calendars__empty">No calendars found.</span>
+      ) : (
+        <ul className="settings-calendars">
+          {calendars.map((calendar) => (
+            <li key={calendar.id} className="settings-calendars__row">
+              <span
+                className="settings-calendars__swatch"
+                style={calendar.colorHex ? { background: calendar.colorHex } : undefined}
+                aria-hidden="true"
+              />
+              <span className="settings-calendars__title">{calendar.title}</span>
+              <select
+                className="settings-select"
+                value={map[calendar.id] ?? ""}
+                onChange={(event) => assign(calendar.id, event.target.value)}
+                aria-label={`Mode for ${calendar.title}`}
+              >
+                <option value="">Unassigned</option>
+                {MODE_IDS.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {humanizeId(mode)}
+                  </option>
+                ))}
+              </select>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Field>
+  );
+}
+
 function SetupPanel() {
   // The knowledge-root control seeds from the persisted read (NIC-141).
   const { status } = useSettingsSnapshot();
@@ -1096,6 +1181,7 @@ function SetupPanelBody() {
         />
         <SpotifyConnectField />
         <StocksTickersField />
+        <CalendarModeMapField />
         <Field label="Onboarding">
           <Unavailable label="Requires the macOS host" />
         </Field>

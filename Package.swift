@@ -101,7 +101,9 @@ let package = Package(
                 // the target compiles to nothing on Linux CI.
                 .linkedFramework("CoreWLAN", .when(platforms: [.macOS])),
                 // CoreLocation backs the weather widget's location fix (NIC-169); macOS-only.
-                .linkedFramework("CoreLocation", .when(platforms: [.macOS]))
+                .linkedFramework("CoreLocation", .when(platforms: [.macOS])),
+                // EventKit backs the calendar widget's local event read (NIC-126); macOS-only.
+                .linkedFramework("EventKit", .when(platforms: [.macOS]))
             ]
         ),
         .target(

@@ -106,6 +106,19 @@
             }
           }
         },
+        "calendarModeMap": {
+          "description": "The user's calendar→mode mapping for the Today panel's per-mode relevance filtering (NIC-126), keyed by the calendar's stable identifier with a mode-id value. When present, replaces the stored map wholesale — an empty object clears it.",
+          "type": "object",
+          "propertyNames": {
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^(executive|developer|school|entertainment)$"
+          },
+          "maxProperties": 200
+        },
         "extensions": {
           "type": "object",
           "propertyNames": {

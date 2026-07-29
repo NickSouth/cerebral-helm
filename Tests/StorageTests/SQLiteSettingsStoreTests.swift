@@ -68,6 +68,22 @@ func stockTickersRoundTrip() throws {
     #expect(loaded.defaultModeID == "school")
 }
 
+@Test("the calendar→mode map round-trips and merges like every field; {} is a stored value (NIC-126)")
+func calendarModeMapRoundTrip() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(calendarModeMapJSON: ##"{"cal-work":"executive"}"##))
+    #expect(try store.load().calendarModeMapJSON == ##"{"cal-work":"executive"}"##)
+
+    // An unrelated patch preserves it (COALESCE), then a later patch replaces it — including
+    // with an explicit "{}", which clears the mappings but is a stored value, not an absence.
+    try store.apply(SettingsChanges(defaultModeID: "school"))
+    #expect(try store.load().calendarModeMapJSON == ##"{"cal-work":"executive"}"##)
+    try store.apply(SettingsChanges(calendarModeMapJSON: "{}"))
+    let loaded = try store.load()
+    #expect(loaded.calendarModeMapJSON == "{}")
+    #expect(loaded.defaultModeID == "school")
+}
+
 @Test("the windows-stored-by-mode toggle round-trips and merges like every field")
 func windowsStoredByModeRoundTrips() throws {
     let store = try makeStore()

@@ -185,6 +185,7 @@
                   "id": { "type": "string" },
                   "title": { "type": "string" },
                   "start": { "type": "string" },
+                  "location": { "type": "string" },
                   "kind": {
                     "title": "DashboardScheduleKind",
                     "type": "string",

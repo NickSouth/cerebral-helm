@@ -54,7 +54,8 @@
         "listWindows",
         "minimizeWindow",
         "surfaceWindow",
-        "closeWindow"
+        "closeWindow",
+        "listCalendars"
       ]
     },
     "payload": {

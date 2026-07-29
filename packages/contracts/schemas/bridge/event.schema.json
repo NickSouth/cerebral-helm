@@ -30,7 +30,8 @@
         "mode.windowcollapse.changed",
         "widget.data.changed",
         "weather.changed",
-        "news.changed"
+        "news.changed",
+        "schedule.changed"
       ]
     },
     "timestamp": {

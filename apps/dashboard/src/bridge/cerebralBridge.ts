@@ -23,7 +23,8 @@ export type BridgeEventType =
   | "mode.windowcollapse.changed"
   | "widget.data.changed"
   | "weather.changed"
-  | "news.changed";
+  | "news.changed"
+  | "schedule.changed";
 
 export interface BridgeEvent {
   readonly eventId: string;
@@ -131,6 +132,10 @@ export interface SettingsSnapshot {
    *  display order. Fully resolved: the stored list, else the shipped starter list. An
    *  empty array is a meaningful "cleared" state (the widget shows its empty prompt). */
   readonly stocks: { readonly tickers: readonly string[] };
+  /** The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+   *  (NIC-126), keyed by calendar identifier → mode id. Sparse: a calendar is present only when
+   *  the user has mapped it; an unmapped calendar's events fall to the default mode (Executive). */
+  readonly calendarModeMap: Readonly<Record<string, string>>;
 }
 
 export interface RecentActivityQuery {
@@ -151,6 +156,20 @@ export interface DiscoveredApp {
 export interface ListAppsResult {
   readonly apps: readonly DiscoveredApp[];
   readonly truncated: boolean;
+}
+
+/** One of the user's calendars (NIC-126) for the Settings calendar→mode mapping. `colorHex` is the
+ *  calendar's colour for a swatch when known. */
+export interface CalendarInfo {
+  readonly id: string;
+  readonly title: string;
+  readonly colorHex?: string;
+}
+export interface ListCalendarsResult {
+  /** Whether Calendar access is granted; false → the UI shows a "grant Calendar access" prompt
+   *  and `calendars` is empty (never fabricated). */
+  readonly authorized: boolean;
+  readonly calendars: readonly CalendarInfo[];
 }
 
 /** On-demand internet speed test result (NIC-135). `status` is "ok" (both
@@ -486,6 +505,9 @@ export interface CerebralBridge {
   connectSpotify(): Promise<ConnectSpotifyResult>;
   /** Read-only application discovery for the More Apps picker (NIC-119). */
   listApps(): Promise<ListAppsResult>;
+  /** List the user's calendars for the Settings calendar→mode mapping (NIC-126). Requests
+   *  Calendar access at point of use; a denied grant returns `authorized: false` + no calendars. */
+  listCalendars(): Promise<ListCalendarsResult>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */
   updateQuickApps(input: UpdateQuickAppsInput): Promise<UpdateQuickAppsResult>;
   /** Mint a user URL reference (NIC-146) so a typed URL can be pinned as a quick app,

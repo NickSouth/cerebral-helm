@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Per-mode calendar relevance configuration (NIC-126). `modeProfiles` maps each mode to the `calendarProfile` its dashboard resolves live schedule by (the same values the mode configs carry). `defaultMode` is where an event lands when it has neither a `#[mode]` tag in its notes nor a mapped calendar — Executive, whose profile `all` is the catch-all that shows every event. `tagAliases` are the `#[mode]` tag tokens a user (or the future create-event tool) can write in an event's description; a raw mode id (e.g. `#developer`) also resolves directly. Source configuration lives here, not hardcoded in the resolver (FR-CFG).",
+  "defaultMode": "executive",
+  "modeProfiles": {
+    "executive": "all",
+    "developer": "engineering",
+    "school": "academic",
+    "entertainment": "leisure"
+  },
+  "tagAliases": {
+    "exec": "executive",
+    "work": "executive",
+    "dev": "developer",
+    "code": "developer",
+    "coding": "developer",
+    "study": "school",
+    "class": "school",
+    "uni": "school",
+    "ent": "entertainment",
+    "fun": "entertainment",
+    "leisure": "entertainment"
+  }
+}

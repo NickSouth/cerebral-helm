@@ -41,4 +41,16 @@ describe("validateSettingsChanges (NIC-63 — the shared config validation path)
     expect(validateSettingsChanges({ stocks: { tickers: overCap } }).valid).toBe(false);
     expect(validateSettingsChanges({ stocks: { watchlist: ["SPY"] } }).valid).toBe(false);
   });
+
+  it("accepts a valid calendar→mode map, including an empty (cleared) one (NIC-126)", () => {
+    expect(
+      validateSettingsChanges({ calendarModeMap: { "cal-work": "executive", "cal-dev": "developer" } }).valid
+    ).toBe(true);
+    expect(validateSettingsChanges({ calendarModeMap: {} }).valid).toBe(true);
+  });
+
+  it("rejects a calendar mapped to an unknown mode, and a non-string value (NIC-126)", () => {
+    expect(validateSettingsChanges({ calendarModeMap: { "cal-x": "cosmic" } }).valid).toBe(false);
+    expect(validateSettingsChanges({ calendarModeMap: { "cal-x": 3 as unknown as string } }).valid).toBe(false);
+  });
 });

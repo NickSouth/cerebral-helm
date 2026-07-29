@@ -813,12 +813,13 @@ public extension DashboardScheduleRegion {
 public struct DashboardScheduleItem: Codable {
     public let id: String
     public let kind: DashboardScheduleKind
-    public let start: String?
+    public let location, start: String?
     public let title: String
 
-    public init(id: String, kind: DashboardScheduleKind, start: String?, title: String) {
+    public init(id: String, kind: DashboardScheduleKind, location: String?, start: String?, title: String) {
         self.id = id
         self.kind = kind
+        self.location = location
         self.start = start
         self.title = title
     }
@@ -845,12 +846,14 @@ public extension DashboardScheduleItem {
     func with(
         id: String? = nil,
         kind: DashboardScheduleKind? = nil,
+        location: String?? = nil,
         start: String?? = nil,
         title: String? = nil
     ) -> DashboardScheduleItem {
         return DashboardScheduleItem(
             id: id ?? self.id,
             kind: kind ?? self.kind,
+            location: location ?? self.location,
             start: start ?? self.start,
             title: title ?? self.title
         )
@@ -1703,6 +1706,7 @@ public enum CerebralHelmBridgeEventType: String, Codable {
     case modeQuickappsChanged = "mode.quickapps.changed"
     case modeWindowcollapseChanged = "mode.windowcollapse.changed"
     case newsChanged = "news.changed"
+    case scheduleChanged = "schedule.changed"
     case settingsChanged = "settings.changed"
     case systemStatusChanged = "system.status.changed"
     case weatherChanged = "weather.changed"
@@ -2179,6 +2183,7 @@ public enum Operation: String, Codable {
     case getSecretStatus = "getSecretStatus"
     case getSettings = "getSettings"
     case listApps = "listApps"
+    case listCalendars = "listCalendars"
     case listChromeProfiles = "listChromeProfiles"
     case listUrls = "listUrls"
     case listWindows = "listWindows"
@@ -2383,6 +2388,12 @@ public enum CerebralHelmBridgeOperationResponseType: String, Codable {
 // MARK: - CerebralHelmSettingsSnapshot
 public struct CerebralHelmSettingsSnapshot: Codable {
     public let appearance: SettingsSnapshotAppearance
+    /// The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+    /// (NIC-126), keyed by calendar identifier with a mode-id value. Sparse: a calendar is
+    /// present only when the user has mapped it — an unmapped calendar's events fall to the
+    /// default mode (Executive) at the resolver. Like `modeColors`, this is not fully resolved
+    /// but a meaningful-unset map (empty when the user has mapped nothing).
+    public let calendarModeMap: [String: String]
     /// When true, policy raises every non-read-only action to require confirmation (the 'Ask
     /// before all actions' tightening; stricter-only, never weakens descriptor policy). Defaults
     /// to false. Enforced when the command runtime is composed.
@@ -2404,13 +2415,14 @@ public struct CerebralHelmSettingsSnapshot: Codable {
     public let workspace: SettingsSnapshotWorkspace
 
     public enum CodingKeys: String, CodingKey {
-        case appearance, confirmAllActions
+        case appearance, calendarModeMap, confirmAllActions
         case defaultModeID = "defaultModeId"
         case knowledge, modeColors, schemaVersion, stocks, workspace
     }
 
-    public init(appearance: SettingsSnapshotAppearance, confirmAllActions: Bool, defaultModeID: String, knowledge: SettingsSnapshotKnowledge, modeColors: [String: String], schemaVersion: String, stocks: SettingsSnapshotStocks, workspace: SettingsSnapshotWorkspace) {
+    public init(appearance: SettingsSnapshotAppearance, calendarModeMap: [String: String], confirmAllActions: Bool, defaultModeID: String, knowledge: SettingsSnapshotKnowledge, modeColors: [String: String], schemaVersion: String, stocks: SettingsSnapshotStocks, workspace: SettingsSnapshotWorkspace) {
         self.appearance = appearance
+        self.calendarModeMap = calendarModeMap
         self.confirmAllActions = confirmAllActions
         self.defaultModeID = defaultModeID
         self.knowledge = knowledge
@@ -2441,6 +2453,7 @@ public extension CerebralHelmSettingsSnapshot {
 
     func with(
         appearance: SettingsSnapshotAppearance? = nil,
+        calendarModeMap: [String: String]? = nil,
         confirmAllActions: Bool? = nil,
         defaultModeID: String? = nil,
         knowledge: SettingsSnapshotKnowledge? = nil,
@@ -2451,6 +2464,7 @@ public extension CerebralHelmSettingsSnapshot {
     ) -> CerebralHelmSettingsSnapshot {
         return CerebralHelmSettingsSnapshot(
             appearance: appearance ?? self.appearance,
+            calendarModeMap: calendarModeMap ?? self.calendarModeMap,
             confirmAllActions: confirmAllActions ?? self.confirmAllActions,
             defaultModeID: defaultModeID ?? self.defaultModeID,
             knowledge: knowledge ?? self.knowledge,
@@ -4132,6 +4146,10 @@ public extension CerebralHelmSettingsPatch {
 // MARK: - Changes
 public struct Changes: Codable {
     public let appearance: Appearance?
+    /// The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+    /// (NIC-126), keyed by the calendar's stable identifier with a mode-id value. When present,
+    /// replaces the stored map wholesale — an empty object clears it.
+    public let calendarModeMap: [String: String]?
     public let confirmAllActions: Bool?
     public let defaultModeID: String?
     public let extensions: [String: JSONAny]?
@@ -4142,13 +4160,14 @@ public struct Changes: Codable {
     public let workspace: Workspace?
 
     public enum CodingKeys: String, CodingKey {
-        case appearance, confirmAllActions
+        case appearance, calendarModeMap, confirmAllActions
         case defaultModeID = "defaultModeId"
         case extensions, hotkeys, knowledge, modeColors, stocks, workspace
     }
 
-    public init(appearance: Appearance?, confirmAllActions: Bool?, defaultModeID: String?, extensions: [String: JSONAny]?, hotkeys: Hotkeys?, knowledge: Knowledge?, modeColors: [String: String]?, stocks: Stocks?, workspace: Workspace?) {
+    public init(appearance: Appearance?, calendarModeMap: [String: String]?, confirmAllActions: Bool?, defaultModeID: String?, extensions: [String: JSONAny]?, hotkeys: Hotkeys?, knowledge: Knowledge?, modeColors: [String: String]?, stocks: Stocks?, workspace: Workspace?) {
         self.appearance = appearance
+        self.calendarModeMap = calendarModeMap
         self.confirmAllActions = confirmAllActions
         self.defaultModeID = defaultModeID
         self.extensions = extensions
@@ -4180,6 +4199,7 @@ public extension Changes {
 
     func with(
         appearance: Appearance?? = nil,
+        calendarModeMap: [String: String]?? = nil,
         confirmAllActions: Bool?? = nil,
         defaultModeID: String?? = nil,
         extensions: [String: JSONAny]?? = nil,
@@ -4191,6 +4211,7 @@ public extension Changes {
     ) -> Changes {
         return Changes(
             appearance: appearance ?? self.appearance,
+            calendarModeMap: calendarModeMap ?? self.calendarModeMap,
             confirmAllActions: confirmAllActions ?? self.confirmAllActions,
             defaultModeID: defaultModeID ?? self.defaultModeID,
             extensions: extensions ?? self.extensions,
