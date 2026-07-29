@@ -2632,6 +2632,32 @@ button.deadline-row__open:not(:disabled):hover {
   color: var(--ch-text-muted);
 }
 
+/* Spotify idle/empty body (NIC-133 polish): the big mark + honest state line + Open button,
+   so the slot reads as a deliberate resting state instead of a bare text label. */
+.spotify-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-4) var(--ch-space-2) var(--ch-space-2);
+  text-align: center;
+  min-height: 6rem;
+  height: 100%;
+}
+
+.spotify-empty__logo {
+  display: block;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 18px color-mix(in srgb, #1db954 35%, transparent));
+}
+
+.spotify-empty__message {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-secondary);
+}
+
 /* Optimistic skip skeleton (NIC-133): shown for the beat between a skip and the new track landing. */
 .nowplaying__art-bone {
   display: block;

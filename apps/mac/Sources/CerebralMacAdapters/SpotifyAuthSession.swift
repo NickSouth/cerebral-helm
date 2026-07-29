@@ -109,5 +109,15 @@ public actor SpotifyAuthSession {
         try await SpotifyTokenBlob.save(refreshed, to: secretStore)
         return refreshed.accessToken
     }
+
+    /// The scope string of the stored grant, or nil when nothing is stored or the grant didn't
+    /// echo one. A refresh never widens a grant, so a token stored before a scope was added to
+    /// ``SpotifyTokenExchange/playbackScopes`` lacks it until the user reconnects — the publisher
+    /// uses this to word the idle state honestly ("reconnect to see recent tracks") instead of
+    /// letting the recently-played call fail silently into a plain empty.
+    public func grantedScope() async -> String? {
+        guard let tokens = try? await SpotifyTokenBlob.load(from: secretStore) else { return nil }
+        return tokens.scope
+    }
 }
 #endif

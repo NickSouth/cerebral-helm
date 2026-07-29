@@ -50,6 +50,12 @@ public actor ActiveReposPublisher {
         loop = nil
     }
 
+    /// Emit a fresh snapshot now, regardless of cadence — used when the mode owning this
+    /// widget is entered, so it shows current data on entry rather than the last tick.
+    public func refresh() async {
+        await tick()
+    }
+
     /// Pause/resume from the shell's visibility signal. Resuming emits a fresh snapshot
     /// immediately instead of waiting out the current interval.
     public func setActive(_ nowActive: Bool) async {

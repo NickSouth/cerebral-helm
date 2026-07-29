@@ -868,14 +868,21 @@ function PauseIcon() {
   );
 }
 
-/** The Spotify mark (green circle + sound waves) — a small brand cue on the now-playing card. */
-function SpotifyLogo() {
+/** The Spotify mark (green circle + sound waves) — a small brand cue on the now-playing card,
+ *  or scaled up as the idle state's anchor. */
+function SpotifyLogo({
+  className = "nowplaying__logo",
+  size = 16
+}: {
+  className?: string;
+  size?: number;
+}) {
   return (
     <svg
-      className="nowplaying__logo"
+      className={className}
       viewBox="0 0 24 24"
-      width="16"
-      height="16"
+      width={size}
+      height={size}
       aria-label="Spotify"
       role="img"
     >
@@ -1169,6 +1176,49 @@ function SpotifyRecentBody({ items }: { items: readonly SpotifyRecentTrack[] }) 
   );
 }
 
+/**
+ * The Spotify widget's idle body (NIC-133 polish): shown instead of the generic empty/unavailable
+ * text whenever there's no current track and no recently-played list — a large Spotify mark, the
+ * honest state line (nothing playing / connect / reconnect guidance), and the "Open in Spotify"
+ * button, so the slot reads as a deliberate resting state rather than a hole. Read-only recovery
+ * disables the button; a rejected open is announced honestly, never a fabricated success.
+ */
+function SpotifyIdleEmpty({ message }: { message: string }) {
+  const bridge = useBridge();
+  const { announce } = useActionStatus();
+  const { readOnly } = useUiPosture();
+
+  const openSpotify = () => {
+    void submitOpenApp(bridge, "spotify")
+      .then((receipt) => {
+        if (!receipt.accepted) {
+          announce("I couldn't open Spotify — the command wasn't accepted.", "error");
+        }
+      })
+      .catch(() => {
+        announce("Opening Spotify failed — the bridge did not accept it.", "error");
+      });
+  };
+
+  return (
+    <div className="spotify-empty">
+      <SpotifyLogo className="spotify-empty__logo" size={64} />
+      <p className="spotify-empty__message">{message}</p>
+      <button
+        type="button"
+        className="nowplaying__open"
+        disabled={readOnly}
+        aria-disabled={readOnly || undefined}
+        title={readOnly ? "Opening Spotify is paused while the dashboard is read-only" : "Open Spotify"}
+        onClick={openSpotify}
+      >
+        <SpotifyLogo />
+        <span>Open in Spotify</span>
+      </button>
+    </div>
+  );
+}
+
 function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
   // The stocks widget renders a paginated tile grid and owns the reduced-motion hook, so it is
   // dispatched to its own component instead of a pure static renderer (NIC-128).
@@ -1386,6 +1436,10 @@ export function WidgetSlot({
         </div>
       ) : isCanvasWidget ? (
         <CanvasSeasonalEmpty />
+      ) : widgetId === "spotify" ? (
+        // The Spotify slot never shows the bare empty/unavailable text — the idle body keeps
+        // the Spotify mark + Open button visible around the honest state line (NIC-133 polish).
+        <SpotifyIdleEmpty message={data.emptyMessage ?? "Nothing playing right now."} />
       ) : data.state === "empty" ? (
         // Resolved with no data — a healthy zero-result, not a missing capability.
         <EmptyState label={data.emptyMessage ?? "Nothing to show yet"} />

@@ -32,11 +32,11 @@ private struct SpotifyUnusedRefresher: SpotifyTokenRefreshing {
 }
 
 /// A store holding a valid (far-future) token blob + a Client ID, so the session returns the access
-/// token without refreshing.
-private func spotifyConnectedStore() throws -> MockSecretStore {
+/// token without refreshing. `scope` seeds the stored grant's scope string (nil = grant echoed none).
+private func spotifyConnectedStore(scope: String? = nil) throws -> MockSecretStore {
     let tokens = SpotifyTokens(
         accessToken: "at-secret", refreshToken: "rt",
-        expiresAt: Date().addingTimeInterval(3600), scope: nil
+        expiresAt: Date().addingTimeInterval(3600), scope: scope
     )
     return MockSecretStore(values: [
         SpotifyTokenBlob.reference: try SpotifyTokenBlob.encode(tokens),
@@ -94,6 +94,55 @@ func spotifyPublisherEmitsConnect() async throws {
 func spotifyPublisherEmitsNothingPlaying() async throws {
     let collector = SpotifyEventCollector()
     let session = SpotifyAuthSession(secretStore: try spotifyConnectedStore(), refresher: SpotifyUnusedRefresher())
+    let publisher = SpotifyPublisher(
+        session: session,
+        provider: MockSpotifyPlaybackProvider(nowPlaying: nil),
+        playingIntervalMs: 50, idleIntervalMs: 50,
+        emit: { collector.collect($0) }
+    )
+    await publisher.start()
+    await waitForSpotify(3000) { collector.count >= 1 }
+    await publisher.stop()
+
+    #expect(collector.count >= 1)
+    #expect(collector.all[0].contains("\"state\":\"empty\""))
+    #expect(collector.all[0].contains("Nothing playing"))
+}
+
+@Test("a grant that predates the recently-played scope words the idle state as a reconnect")
+func spotifyPublisherNamesStaleScope() async throws {
+    // The stored grant has a scope string that lacks user-read-recently-played (stored before
+    // the scope was requested) — a refresh never widens it, so history can never load and the
+    // idle state must say "reconnect" rather than a misleading plain empty.
+    let store = try spotifyConnectedStore(
+        scope: "user-read-playback-state user-read-currently-playing user-modify-playback-state"
+    )
+    let collector = SpotifyEventCollector()
+    let session = SpotifyAuthSession(secretStore: store, refresher: SpotifyUnusedRefresher())
+    let publisher = SpotifyPublisher(
+        session: session,
+        provider: MockSpotifyPlaybackProvider(nowPlaying: nil),
+        playingIntervalMs: 50, idleIntervalMs: 50,
+        emit: { collector.collect($0) }
+    )
+    await publisher.start()
+    await waitForSpotify(3000) { collector.count >= 1 }
+    await publisher.stop()
+
+    #expect(collector.count >= 1)
+    #expect(collector.all[0].contains("\"state\":\"empty\""))
+    #expect(collector.all[0].contains("Reconnect Spotify"))
+    #expect(collector.all[0].contains("recent tracks"))
+}
+
+@Test("a full grant with nothing playing and no history stays a plain healthy empty")
+func spotifyPublisherFullScopePlainEmpty() async throws {
+    let store = try spotifyConnectedStore(
+        scope: "user-read-playback-state user-read-currently-playing "
+            + "user-modify-playback-state user-read-recently-played"
+    )
+    let collector = SpotifyEventCollector()
+    let session = SpotifyAuthSession(secretStore: store, refresher: SpotifyUnusedRefresher())
     let publisher = SpotifyPublisher(
         session: session,
         provider: MockSpotifyPlaybackProvider(nowPlaying: nil),

@@ -765,6 +765,7 @@ public enum BridgeEventFactory {
     public static func spotifyWidget(
         from result: Swift.Result<SpotifyNowPlaying?, Error>,
         recent: [SpotifyRecentTrack] = [],
+        idleMessage: String? = nil,
         now: Date
     ) -> SpotifyWidget {
         switch result {
@@ -784,11 +785,13 @@ public enum BridgeEventFactory {
             )
         case .success(.none):
             // Nothing playing: offer the recently-played "jump back in" list when we have one,
-            // otherwise a plain empty state.
+            // otherwise an empty state — worded by the caller's `idleMessage` when it knows
+            // *why* there's no history (e.g. a stored grant that predates the recently-played
+            // scope needs a reconnect), else the plain healthy empty.
             guard !recent.isEmpty else {
                 return SpotifyWidget(
                     widgetId: "spotify", state: "empty", headline: nil,
-                    emptyMessage: "Nothing playing right now.", freshness: nil, data: nil
+                    emptyMessage: idleMessage ?? "Nothing playing right now.", freshness: nil, data: nil
                 )
             }
             return SpotifyWidget(

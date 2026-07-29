@@ -148,6 +148,12 @@ public final class BridgeSession: @unchecked Sendable {
     /// cadence. Optional; a host with no settings-driven producers leaves it nil.
     private let onSettingsChanged: (@Sendable (SettingsChanges) -> Void)?
 
+    /// Invoked with the entered mode id after a successful mode switch (either the `applyMode`
+    /// operation or a raw `mode <id>` command), so a host can refresh the entered mode's live
+    /// widget producers at once — the dashboard shows fresh data on entry instead of each
+    /// producer's last cadence tick. Optional; a host without live producers leaves it nil.
+    private let onModeApplied: (@Sendable (String) -> Void)?
+
     /// Runs the Spotify OAuth connect flow (NIC-133): the `connectSpotify` op awaits it, and it
     /// resolves once the browser round trip completes (tokens are persisted to the Keychain by the
     /// coordinator) or throws honestly (no Client ID, user cancelled, Spotify rejected). Optional —
@@ -222,6 +228,7 @@ public final class BridgeSession: @unchecked Sendable {
         secretStore: (any SecretManaging)? = nil,
         onSecretStored: (@Sendable (String) -> Void)? = nil,
         onSettingsChanged: (@Sendable (SettingsChanges) -> Void)? = nil,
+        onModeApplied: (@Sendable (String) -> Void)? = nil,
         spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil,
         canvasStatus: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasReset: (@Sendable () async -> CanvasStatusInfo)? = nil,
@@ -245,6 +252,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.secretStore = secretStore
         self.onSecretStored = onSecretStored
         self.onSettingsChanged = onSettingsChanged
+        self.onModeApplied = onModeApplied
         self.spotifyConnect = spotifyConnect
         self.canvasStatus = canvasStatus
         self.canvasReset = canvasReset
@@ -416,6 +424,9 @@ public final class BridgeSession: @unchecked Sendable {
             snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
         await reapplyCollapseBucket(enteredModeID: decoded.modeID)
+        // The entered mode's live widget producers refresh at once, so its widgets show
+        // fresh data on entry rather than their last cadence tick.
+        onModeApplied?(decoded.modeID)
     }
 
     private func applyMode(
@@ -440,6 +451,9 @@ public final class BridgeSession: @unchecked Sendable {
             snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
         await reapplyCollapseBucket(enteredModeID: input.modeId)
+        // The entered mode's live widget producers refresh at once, so its widgets show
+        // fresh data on entry rather than their last cadence tick.
+        onModeApplied?(input.modeId)
         return ok(request, payload: ApplyModeResult(modeId: input.modeId, status: "ok"))
     }
 

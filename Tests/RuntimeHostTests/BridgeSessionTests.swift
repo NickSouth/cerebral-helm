@@ -179,6 +179,41 @@ func applyModeValidatesMode() async throws {
     #expect(try decode(unknown, as: ApplyModeResult.self).status == "error")
 }
 
+@Test("a mode switch fires onModeApplied with the entered mode id — from both switch paths")
+func modeSwitchFiresOnModeApplied() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let applied = EmittedEvents() // reused as a thread-safe string recorder
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        onModeApplied: { applied.emit($0) }
+    )
+
+    // The applyMode operation path…
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"developer"}"#))
+    #expect(applied.all() == ["developer"])
+
+    // …and the raw `mode <id>` command path both notify, so the host can refresh
+    // the entered mode's widget producers regardless of which surface switched.
+    _ = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"mode school","source":"dashboard"}"#)
+    )
+    #expect(applied.all() == ["developer", "school"])
+}
+
+@Test("a rejected mode switch never fires onModeApplied")
+func rejectedModeSwitchDoesNotFireOnModeApplied() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let applied = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        onModeApplied: { applied.emit($0) }
+    )
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"nope"}"#))
+    #expect(applied.all().isEmpty)
+}
+
 // MARK: - getBootstrapState
 
 @Test("getBootstrapState composes the four mode views and agent roster from real config")

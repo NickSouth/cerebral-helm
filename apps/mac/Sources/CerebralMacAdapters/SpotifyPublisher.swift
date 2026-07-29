@@ -91,13 +91,21 @@ public actor SpotifyPublisher {
     private func tick() async -> Bool {
         let result: Swift.Result<SpotifyNowPlaying?, Error>
         var recent: [SpotifyRecentTrack] = []
+        var idleMessage: String?
         do {
             let token = try await session.accessToken()
             let nowPlaying = try await provider.nowPlaying(accessToken: token)
-            // Nothing playing → fetch the recently-played "jump back in" list (best-effort; a token
-            // without the recently-played scope just yields none, and the widget stays a plain empty).
+            // Nothing playing → fetch the recently-played "jump back in" list (best-effort).
             if nowPlaying == nil {
                 recent = (try? await provider.recentlyPlayed(accessToken: token)) ?? []
+                // A refresh never widens a grant, so tokens stored before the recently-played
+                // scope was requested can never return history — only a reconnect (a fresh
+                // grant) fixes it. Name that honestly instead of a misleading plain empty.
+                if recent.isEmpty,
+                   let scope = await session.grantedScope(),
+                   !scope.contains("user-read-recently-played") {
+                    idleMessage = "Reconnect Spotify in Settings → Setup to see recent tracks."
+                }
             }
             result = .success(nowPlaying)
         } catch {
@@ -106,7 +114,9 @@ public actor SpotifyPublisher {
             result = .failure(error)
         }
 
-        let widget = BridgeEventFactory.spotifyWidget(from: result, recent: recent, now: Date())
+        let widget = BridgeEventFactory.spotifyWidget(
+            from: result, recent: recent, idleMessage: idleMessage, now: Date()
+        )
         let event = BridgeEventFactory.widgetDataChangedEvent(
             widgetId: "spotify",
             widget: widget,

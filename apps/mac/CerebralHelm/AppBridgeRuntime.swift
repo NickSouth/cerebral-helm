@@ -165,9 +165,11 @@ final class AppBridgeRuntime: @unchecked Sendable {
         requiredPermissions = CompositionCapabilities.requiredPermissionsByCapability(descriptors)
         statusPublisher = SystemStatusPublisher(status: composition.systemStatus, emit: { relay.emit($0) })
         // The active-repos widget producer (NIC-131): default provider scans ~/Projects.
-        reposPublisher = ActiveReposPublisher(emit: { relay.emit($0) })
+        let repos = ActiveReposPublisher(emit: { relay.emit($0) })
+        reposPublisher = repos
         // The active-projects widget producer (NIC-129): default provider scans ~/Projects.
-        projectsPublisher = ActiveProjectsPublisher(emit: { relay.emit($0) })
+        let projects = ActiveProjectsPublisher(emit: { relay.emit($0) })
+        projectsPublisher = projects
         // The weather producer (NIC-169): CoreLocationProvider is @MainActor; this init runs on
         // the main thread (AppDelegate.applicationDidFinishLaunching), so assumeIsolated is safe.
         weatherPublisher = MainActor.assumeIsolated {
@@ -386,6 +388,19 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // Client ID". The tokens never cross back through the bridge; only the granted scope does.
         let spotifyCoordinator = SpotifyAuthCoordinator(secretStore: composition.secretStore)
         let spotifySecretStore = composition.secretStore
+        // Which widget ids each mode's left/right slots show (config/modes, through the same
+        // layered loader bootstrap composes from) — drives the mode-entry widget refresh below.
+        let modeWidgetSlots: [String: Set<String>] = {
+            let modes = {
+                switch ConfigLoader(workspace: paths).load() {
+                case let .activated(config): return config.modes
+                case let .rejected(_, lastKnownGood): return lastKnownGood?.modes ?? []
+                }
+            }()
+            return Dictionary(uniqueKeysWithValues: modes.map {
+                ($0.id, Set([$0.widgets.widgetsLeft, $0.widgets.widgetsRight]))
+            })
+        }()
         session = BridgeSession(
             runtime: runtime,
             configDirectory: paths.configDirectory,
@@ -434,6 +449,26 @@ final class AppBridgeRuntime: @unchecked Sendable {
             onSettingsChanged: { [calendar = calendarPublisher] changes in
                 if changes.stockTickersJSON != nil { Task { await stocks.refresh() } }
                 if changes.calendarModeMapJSON != nil, let calendar { Task { await calendar.refresh() } }
+            },
+            // A mode switch refreshes the entered mode's widget producers at once (its
+            // widgets.left/right slots from config/modes), so the rail shows fresh data on
+            // entry — e.g. Developer re-pulls GitHub, Entertainment re-polls Spotify —
+            // rather than each producer's last cadence tick. The all-mode regions
+            // (schedule, news, weather, system health) keep their own cadences: they are
+            // already streaming on every mode, and re-fetching metered providers on every
+            // switch would burn API quota for no fresher data.
+            onModeApplied: { [canvas = canvasPub] modeID in
+                let slots = modeWidgetSlots[modeID] ?? []
+                if slots.contains("project-git-status") { Task { await projectGitStatus.refresh() } }
+                if slots.contains("repositories") { Task { await repos.refresh() } }
+                if slots.contains("projects") { Task { await projects.refresh() } }
+                if slots.contains("stocks") { Task { await stocks.refresh() } }
+                if slots.contains("spotify") { Task { await spotify.refresh() } }
+                if slots.contains("releases") { Task { await releases.refresh() } }
+                // One refresh covers both School widgets — the Canvas producer emits both.
+                if let canvas, !slots.isDisjoint(with: ["deadlines", "courses"]) {
+                    Task { await canvas.refresh() }
+                }
             },
             // Runs the Spotify OAuth connect flow for the `connectSpotify` op (NIC-133): reads the
             // public Client ID from the Keychain, then drives the coordinator's browser round trip.

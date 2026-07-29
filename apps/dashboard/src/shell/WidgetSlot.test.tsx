@@ -689,6 +689,32 @@ describe("WidgetSlot spotify (NIC-133)", () => {
     expect(screen.getByText("Spotify isn't connected yet.")).toBeTruthy();
   });
 
+  it("dresses the empty state: Spotify mark + Open button around the message, never bare text", () => {
+    const { submissions } = renderSlot({
+      widgetId: "spotify",
+      state: "empty",
+      emptyMessage: "Nothing playing right now."
+    });
+    // The idle body replaces the generic empty label: the big mark, the honest line, and the
+    // Open button all render, so the slot looks deliberate rather than hollow (NIC-133 polish).
+    const idle = document.querySelector(".spotify-empty");
+    expect(idle).not.toBeNull();
+    expect(idle?.querySelector(".spotify-empty__logo")).not.toBeNull();
+    expect(screen.getByText("Nothing playing right now.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Open in Spotify/ }));
+    expect(submissions).toEqual(["open spotify"]);
+  });
+
+  it("dresses the connect/unavailable states with the same idle body (mark + Open button)", () => {
+    renderSlot({
+      widgetId: "spotify",
+      state: "unavailable",
+      emptyMessage: "Connect Spotify in Settings → Setup to see what's playing."
+    });
+    expect(document.querySelector(".spotify-empty")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Open in Spotify/ })).toBeTruthy();
+  });
+
   it("shows the active device and a progress bar with time labels (NIC-133 polish)", () => {
     renderSlot({
       widgetId: "spotify",
