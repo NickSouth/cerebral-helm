@@ -8,7 +8,7 @@
   "payload": {
     "available": true,
     "endpoint": "http://127.0.0.1:8899/canvas/ingest",
-    "token": "CANARY-canvas-ingest-token",
+    "token": "example-canvas-ingest-token",
     "lastScrapedAt": "2026-07-29T12:00:00Z",
     "courseCount": 3,
     "deadlineCount": 7,
