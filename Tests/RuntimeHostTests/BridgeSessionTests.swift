@@ -1948,12 +1948,19 @@ func windowActionsReportEffect() async throws {
 // MARK: - Canvas connect/status (NIC-132)
 
 private struct CanvasStatusDecode: Decodable {
+    struct Item: Decodable {
+        let id: String
+        let label: String
+        let hidden: Bool
+    }
     let available: Bool
     let endpoint: String
     let token: String?
     let lastScrapedAt: String?
     let courseCount: Int
     let deadlineCount: Int
+    let courses: [Item]
+    let deadlines: [Item]
 }
 
 @Test("getCanvasStatus reports the pairing endpoint/token and last-scrape summary")
@@ -1989,6 +1996,36 @@ func getCanvasStatusUnavailableWithoutHost() async throws {
     let status = try decode(response, as: CanvasStatusDecode.self)
     #expect(status.available == false)
     #expect(status.token == nil)
+}
+
+@Test("setCanvasItemHidden hides an item and returns the fresh status carrying the flag")
+func setCanvasItemHiddenReturnsStatus() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        canvasSetHidden: { id, hidden in
+            CanvasStatusInfo(
+                endpoint: "http://127.0.0.1:8899/canvas/ingest", token: "t",
+                lastScrapedAt: "2026-07-29T12:00:00Z", courseCount: 0, deadlineCount: 0,
+                courses: [CanvasStatusItem(id: id, label: "Theory of Computation", hidden: hidden)],
+                deadlines: []
+            )
+        }
+    )
+    let response = await session.execute(operationRequest(.setCanvasItemHidden, #"{"id":"37331","hidden":true}"#))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.courses.first?.id == "37331")
+    #expect(status.courses.first?.hidden == true)
+}
+
+@Test("setCanvasItemHidden reports unavailable off the macOS host")
+func setCanvasItemHiddenUnavailableWithoutHost() async throws {
+    let session = try makeSession() // no canvasSetHidden closure
+    let response = await session.execute(operationRequest(.setCanvasItemHidden, #"{"id":"1","hidden":true}"#))
+    #expect(response.status == .ok)
+    #expect(try decode(response, as: CanvasStatusDecode.self).available == false)
 }
 
 @Test("resetCanvas rotates the token and returns the fresh, empty state")

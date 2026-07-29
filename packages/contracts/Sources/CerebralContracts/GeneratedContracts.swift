@@ -2194,6 +2194,7 @@ public enum Operation: String, Codable {
     case resetCanvas = "resetCanvas"
     case runSpeedTest = "runSpeedTest"
     case searchNotes = "searchNotes"
+    case setCanvasItemHidden = "setCanvasItemHidden"
     case storeSecret = "storeSecret"
     case submitCommand = "submitCommand"
     case subscribe = "subscribe"

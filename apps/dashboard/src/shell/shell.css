@@ -2133,9 +2133,40 @@
 
 .course-row {
   display: flex;
+}
+
+/* The clickable (or static) row body: name + code on the left, grade ring on the right. As a button
+   it is a full-bleed reset that opens the course in Canvas; the static variant drops the hover/cursor. */
+.course-row__open {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--ch-space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 3px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  border-radius: var(--ch-radius-sm);
+}
+
+button.course-row__open {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+button.course-row__open:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+button.course-row__open:not(:disabled):hover {
+  background: color-mix(in srgb, var(--ch-accent-primary) 8%, transparent);
 }
 
 .course-row__meta {
@@ -2275,10 +2306,41 @@
 
 .deadline-row {
   display: flex;
+}
+
+/* The clickable (or static) assignment row: title + due date. As a button it opens the assignment in
+   Canvas; the static variant drops the hover/cursor. */
+.deadline-row__open {
+  display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--ch-space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 3px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  border-radius: var(--ch-radius-sm);
   font-size: var(--ch-font-size-sm);
+}
+
+button.deadline-row__open {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+button.deadline-row__open:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+button.deadline-row__open:not(:disabled):hover {
+  background: color-mix(in srgb, var(--ch-accent-primary) 8%, transparent);
 }
 
 .deadline-row__title {
@@ -2295,6 +2357,55 @@
   color: var(--ch-text-muted);
   font-size: var(--ch-font-size-label);
   font-variant-numeric: tabular-nums;
+}
+
+/* School widgets' date-aware empty/unavailable state (NIC-132): a big Canvas mark + a seasonal line
+   (summer/winter greeting; a "sync now" nudge during term whose logo opens Canvas). */
+.canvas-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-4) var(--ch-space-2);
+  text-align: center;
+  min-height: 6rem;
+}
+
+.canvas-empty__logo {
+  display: block;
+  transition: transform 0.12s ease;
+}
+
+.canvas-empty__logo-button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.canvas-empty__logo-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.canvas-empty__logo-button:not(:disabled):hover .canvas-empty__logo {
+  transform: scale(1.06);
+}
+
+.canvas-empty__message {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-secondary);
+}
+
+.canvas-empty__season-icon {
+  flex: 0 0 auto;
 }
 
 .releases__grid {

@@ -22,6 +22,7 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0011_stock_tickers", sql: stockTickersSQL),
         SchemaMigration(id: "0012_calendar_mode_map", sql: calendarModeMapSQL),
         SchemaMigration(id: "0013_canvas_scrape", sql: canvasScrapeSQL),
+        SchemaMigration(id: "0014_canvas_hidden", sql: canvasHiddenSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -263,6 +264,18 @@ public enum SchemaMigrations {
         id            INTEGER PRIMARY KEY CHECK (id = 1),
         snapshot_json TEXT NOT NULL,
         updated_at    TEXT NOT NULL
+    );
+    """
+
+    /// Migration 0014: the Canvas hidden-item list (NIC-132). A single-row table holding the JSON
+    /// array of course/assignment ids the user has manually hidden from the School widgets; it
+    /// persists across scrapes (a hidden item stays hidden after re-syncing) and is kept separate
+    /// from the wholesale-replaced snapshot. Absent/empty means nothing is hidden.
+    public static let canvasHiddenSQL = """
+    CREATE TABLE canvas_hidden (
+        id         INTEGER PRIMARY KEY CHECK (id = 1),
+        ids_json   TEXT NOT NULL,
+        updated_at TEXT NOT NULL
     );
     """
 }

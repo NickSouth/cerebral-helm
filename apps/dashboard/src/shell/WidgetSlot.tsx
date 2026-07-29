@@ -29,6 +29,8 @@ import { submitOpenProjectDetail } from "./openProjectDetail";
 import { submitGoogleSearch } from "./googleSearch";
 import { submitSpotifyControl, type SpotifyControlAction } from "./spotifyControl";
 import { submitOpenApp } from "./openApp";
+import { submitWebOpen } from "./webOpen";
+import { CANVAS_LOGO_DATA_URI } from "./canvasLogo";
 import { formatDay, formatEventTime } from "./format";
 
 const WIDGET_LABELS: ReadonlyMap<string, string> = new Map(
@@ -114,21 +116,58 @@ function GradeRing({ item }: { item: CourseGradeWidgetItem }) {
 
 /**
  * The School "Courses" widget body (NIC-132, right slot): one row per current course — its name and
- * code on the left, a grade ring on the right. Fixture-backed in this increment; click-to-open (the
- * course's Canvas home in the school Chrome window) lands in a later increment.
+ * code on the left, a grade ring on the right. A course with a URL is a button that opens its Canvas
+ * home in the browser; read-only recovery disables it, and a rejected open is surfaced honestly.
  */
 function CoursesBody({ items }: { items: readonly CourseGradeWidgetItem[] }) {
+  const bridge = useBridge();
+  const { announce } = useActionStatus();
+  const { readOnly } = useUiPosture();
+
+  const open = (item: CourseGradeWidgetItem) => {
+    if (!item.url) return;
+    void submitWebOpen(bridge, item.url)
+      .then((receipt) => {
+        if (!receipt.accepted) {
+          announce(`I couldn't open ${item.name} in Canvas — the command wasn't accepted.`, "error");
+        }
+      })
+      .catch(() => announce(`Opening ${item.name} in Canvas failed — the bridge did not accept it.`, "error"));
+  };
+
   return (
     <ul className="courses">
-      {items.map((item, index) => (
-        <li key={item.id ?? index} className="course-row">
-          <span className="course-row__meta">
-            <span className="course-row__name">{item.name}</span>
-            {item.code ? <span className="course-row__code">{item.code}</span> : null}
-          </span>
-          <GradeRing item={item} />
-        </li>
-      ))}
+      {items.map((item, index) => {
+        const body = (
+          <>
+            <span className="course-row__meta">
+              <span className="course-row__name">{item.name}</span>
+              {item.code ? <span className="course-row__code">{item.code}</span> : null}
+            </span>
+            <GradeRing item={item} />
+          </>
+        );
+        return (
+          <li key={item.id ?? index} className="course-row">
+            {item.url ? (
+              <button
+                type="button"
+                className="course-row__open"
+                disabled={readOnly}
+                aria-disabled={readOnly || undefined}
+                title={
+                  readOnly ? "Opening a course is paused while the dashboard is read-only" : `Open ${item.name} in Canvas`
+                }
+                onClick={() => open(item)}
+              >
+                {body}
+              </button>
+            ) : (
+              <div className="course-row__open course-row__open--static">{body}</div>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -140,15 +179,29 @@ const DEADLINES_PER_PAGE = 5;
 /**
  * The School "Deadlines" widget body (NIC-132, left slot): upcoming assignments in due order
  * (soonest first), already filtered by the producer to exclude submitted/completed work. Each row
- * shows the assignment title and its due date; more than a page paginates with arrows + dots.
- * Fixture-backed here; click-to-open (the assignment in the school Chrome window) lands later.
+ * shows the assignment title and its due date; a row with a URL opens the assignment in Canvas.
+ * More than a page paginates with arrows + dots.
  */
 function DeadlinesBody({ items }: { items: readonly DeadlineWidgetItem[] }) {
+  const bridge = useBridge();
+  const { announce } = useActionStatus();
+  const { readOnly } = useUiPosture();
   const [page, setPage] = useState(0);
   const pageCount = Math.max(1, Math.ceil(items.length / DEADLINES_PER_PAGE));
   const safePage = Math.min(page, pageCount - 1);
   const start = safePage * DEADLINES_PER_PAGE;
   const pageItems = items.slice(start, start + DEADLINES_PER_PAGE);
+
+  const open = (item: DeadlineWidgetItem) => {
+    if (!item.url) return;
+    void submitWebOpen(bridge, item.url)
+      .then((receipt) => {
+        if (!receipt.accepted) {
+          announce(`I couldn't open ${item.title} in Canvas — the command wasn't accepted.`, "error");
+        }
+      })
+      .catch(() => announce(`Opening ${item.title} in Canvas failed — the bridge did not accept it.`, "error"));
+  };
 
   return (
     <div className="deadlines">
@@ -188,10 +241,32 @@ function DeadlinesBody({ items }: { items: readonly DeadlineWidgetItem[] }) {
           const day = formatDay(item.dueAt);
           const time = formatEventTime(item.dueAt);
           const due = day ? (time ? `${day} · ${time}` : day) : "";
-          return (
-            <li key={item.id ?? index} className="deadline-row">
+          const body = (
+            <>
               <span className="deadline-row__title">{item.title}</span>
               {due ? <span className="deadline-row__due">{due}</span> : null}
+            </>
+          );
+          return (
+            <li key={item.id ?? index} className="deadline-row">
+              {item.url ? (
+                <button
+                  type="button"
+                  className="deadline-row__open"
+                  disabled={readOnly}
+                  aria-disabled={readOnly || undefined}
+                  title={
+                    readOnly
+                      ? "Opening an assignment is paused while the dashboard is read-only"
+                      : `Open ${item.title} in Canvas`
+                  }
+                  onClick={() => open(item)}
+                >
+                  {body}
+                </button>
+              ) : (
+                <div className="deadline-row__open deadline-row__open--static">{body}</div>
+              )}
             </li>
           );
         })}
@@ -1149,15 +1224,158 @@ function WidgetBody({ widgetId, data }: { widgetId: string; data: unknown }) {
  * renderer; degraded states (empty / stale / unavailable) render honestly with the freshness
  * indicator (design spec §5.3).
  */
-export function WidgetSlot({ data, labelId }: { data: WidgetData; labelId: string }) {
-  const label = WIDGET_LABELS.get(data.widgetId) ?? data.widgetId;
+/** The Canvas dashboard to open from the off-season "sync now" nudge — the institution host (matches
+ *  the Chrome extension's manifest scope). Opening it lets the extension post a fresh scrape. */
+const CANVAS_URL = "https://umamherst.instructure.com";
+
+export type CanvasSeason = "summer" | "winter" | "term";
+
+/**
+ * The seasonal bucket for the School widgets' empty/unavailable state (NIC-132). Date-driven on
+ * purpose: Canvas course tiles appear/disappear a little before/after term boundaries, so the
+ * calendar is a more reliable signal than an empty scrape. Summer break = May 20–Sep 1; winter break
+ * = Dec 20–Feb 1 (wraps the year end); anything else is term time.
+ */
+export function canvasSeason(now: Date): CanvasSeason {
+  const stamp = (now.getMonth() + 1) * 100 + now.getDate(); // MMDD, e.g. May 20 → 520
+  if (stamp >= 520 && stamp <= 901) return "summer";
+  if (stamp >= 1220 || stamp <= 201) return "winter";
+  return "term";
+}
+
+/** The official Canvas (Instructure) logo (NIC-132), embedded as a data URI, used to indicate the
+ *  Canvas integration in the School widgets' seasonal empty state. */
+function CanvasLogo() {
+  return (
+    <img className="canvas-empty__logo" src={CANVAS_LOGO_DATA_URI} alt="" aria-hidden="true" width={94} height={88} />
+  );
+}
+
+/** A small sun accent for the summer greeting (NIC-132 polish). */
+function SunIcon() {
+  const rays = Array.from({ length: 8 }, (_, index) => {
+    const angle = (index / 8) * 2 * Math.PI;
+    return {
+      x1: 12 + Math.cos(angle) * 6.5,
+      y1: 12 + Math.sin(angle) * 6.5,
+      x2: 12 + Math.cos(angle) * 9.5,
+      y2: 12 + Math.sin(angle) * 9.5
+    };
+  });
+  return (
+    <svg className="canvas-empty__season-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.5" fill="#f4b740" />
+      <g stroke="#f4b740" strokeWidth="1.6" strokeLinecap="round">
+        {rays.map((ray, index) => (
+          <line key={index} x1={ray.x1} y1={ray.y1} x2={ray.x2} y2={ray.y2} />
+        ))}
+      </g>
+    </svg>
+  );
+}
+
+/** A small snowflake accent for the winter greeting (NIC-132 polish). */
+function SnowflakeIcon() {
+  const spokes = Array.from({ length: 6 }, (_, index) => (index / 6) * 2 * Math.PI);
+  return (
+    <svg className="canvas-empty__season-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <g stroke="#8ec5ff" strokeWidth="1.5" strokeLinecap="round" fill="none">
+        {spokes.map((angle, index) => {
+          const x = 12 + Math.cos(angle) * 9;
+          const y = 12 + Math.sin(angle) * 9;
+          // a spoke, plus two small V-branches partway along it
+          const bx = 12 + Math.cos(angle) * 5.5;
+          const by = 12 + Math.sin(angle) * 5.5;
+          const branch = 2.6;
+          return (
+            <g key={index}>
+              <line x1="12" y1="12" x2={x} y2={y} />
+              <line x1={bx} y1={by} x2={bx + Math.cos(angle + 1) * branch} y2={by + Math.sin(angle + 1) * branch} />
+              <line x1={bx} y1={by} x2={bx + Math.cos(angle - 1) * branch} y2={by + Math.sin(angle - 1) * branch} />
+            </g>
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * The School widgets' friendly empty/unavailable state (NIC-132): a big Canvas mark and a date-aware
+ * line — a seasonal greeting over summer/winter break, and during term a "sync now" nudge whose logo
+ * opens Canvas in the browser (so the extension can post a fresh scrape). Read-only recovery disables
+ * the nudge; a rejected open is surfaced honestly, never a fabricated success.
+ */
+function CanvasSeasonalEmpty() {
+  const bridge = useBridge();
+  const { announce } = useActionStatus();
+  const { readOnly } = useUiPosture();
+  const season = canvasSeason(new Date());
+
+  const message =
+    season === "summer"
+      ? "Enjoy your summer!"
+      : season === "winter"
+        ? "Enjoy your winter!"
+        : "School's back in session – sync courses now!";
+
+  const openCanvas = () => {
+    void submitWebOpen(bridge, CANVAS_URL)
+      .then((receipt) => {
+        if (!receipt.accepted) announce("I couldn't open Canvas — the command wasn't accepted.", "error");
+      })
+      .catch(() => announce("Opening Canvas failed — the bridge did not accept it.", "error"));
+  };
+
+  return (
+    <div className="canvas-empty" data-season={season}>
+      {season === "term" ? (
+        <button
+          type="button"
+          className="canvas-empty__logo-button"
+          disabled={readOnly}
+          aria-disabled={readOnly || undefined}
+          title={readOnly ? "Opening Canvas is paused while the dashboard is read-only" : "Open Canvas to sync"}
+          onClick={openCanvas}
+        >
+          <CanvasLogo />
+        </button>
+      ) : (
+        <CanvasLogo />
+      )}
+      <p className="canvas-empty__message">
+        {season === "summer" ? <SunIcon /> : season === "winter" ? <SnowflakeIcon /> : null}
+        <span>{message}</span>
+      </p>
+    </div>
+  );
+}
+
+export function WidgetSlot({
+  data,
+  labelId,
+  slotWidgetId
+}: {
+  data: WidgetData;
+  labelId: string;
+  /** The mode's canonical widget for this slot (e.g. School left = "deadlines"). Preferred over
+   *  `data.widgetId` for the label/icon/empty-state, because the resolved data can still be the
+   *  generic bootstrap stub ("left"/"right", "Unavailable") until a producer streams. */
+  slotWidgetId?: string;
+}) {
+  const widgetId = slotWidgetId ?? data.widgetId;
+  const label = WIDGET_LABELS.get(widgetId) ?? widgetId;
   const live = data.state === "ready" || data.state === "stale";
+  // The School widgets (NIC-132) share a friendly, date-aware empty/unavailable state instead of the
+  // generic messages — a seasonal greeting over break, a "sync now" nudge during term. Keyed on the
+  // slot's widget so it shows even before the producer streams (over the "Unavailable" bootstrap stub).
+  const isCanvasWidget = widgetId === "deadlines" || widgetId === "courses";
 
   return (
     <Panel
       label={label}
       labelId={labelId}
-      icon={<PanelGlyph name={WIDGET_ICONS[data.widgetId] ?? "widget"} />}
+      icon={<PanelGlyph name={WIDGET_ICONS[widgetId] ?? "widget"} />}
     >
       {live ? (
         <div className="widget">
@@ -1166,6 +1384,8 @@ export function WidgetSlot({ data, labelId }: { data: WidgetData; labelId: strin
           <WidgetBody widgetId={data.widgetId} data={data.data} />
           {data.freshness ? <p className="widget__freshness">{data.freshness.label}</p> : null}
         </div>
+      ) : isCanvasWidget ? (
+        <CanvasSeasonalEmpty />
       ) : data.state === "empty" ? (
         // Resolved with no data — a healthy zero-result, not a missing capability.
         <EmptyState label={data.emptyMessage ?? "Nothing to show yet"} />

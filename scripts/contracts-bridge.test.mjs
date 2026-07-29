@@ -58,7 +58,8 @@ const bridgeOperations = new Set([
   "surfaceWindow",
   "closeWindow",
   "getCanvasStatus",
-  "resetCanvas"
+  "resetCanvas",
+  "setCanvasItemHidden"
 ]);
 
 function readJson(filePath) {

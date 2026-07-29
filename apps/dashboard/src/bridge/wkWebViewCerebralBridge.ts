@@ -296,6 +296,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     resetCanvas() {
       return operation<CanvasStatus>("resetCanvas", {});
     },
+    setCanvasItemHidden(id: string, hidden: boolean) {
+      return operation<CanvasStatus>("setCanvasItemHidden", { id, hidden });
+    },
     listCalendars() {
       return operation<ListCalendarsResult>("listCalendars", {});
     },

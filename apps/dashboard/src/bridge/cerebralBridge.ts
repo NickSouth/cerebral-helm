@@ -176,13 +176,25 @@ export interface ListCalendarsResult {
  *  only off the macOS host (the card then shows "requires the macOS host"). Otherwise `endpoint` and
  *  `token` are what the Chrome extension pairs with, and `lastScrapedAt` (ISO-8601, null until the
  *  first scrape) + the counts summarise the latest scrape. `token` is a local pairing secret. */
+/** One scraped Canvas item in the Settings manage-list (NIC-132): its id, a display label, and
+ *  whether the user has hidden it from the School widgets. */
+export interface CanvasStatusItem {
+  readonly id: string;
+  readonly label: string;
+  readonly hidden: boolean;
+}
+
 export interface CanvasStatus {
   readonly available: boolean;
   readonly endpoint: string;
   readonly token: string | null;
   readonly lastScrapedAt: string | null;
+  /** Visible totals (hidden items excluded). */
   readonly courseCount: number;
   readonly deadlineCount: number;
+  /** Every scraped course/assignment (hidden ones flagged) for the manage-list. */
+  readonly courses: readonly CanvasStatusItem[];
+  readonly deadlines: readonly CanvasStatusItem[];
 }
 
 /** On-demand internet speed test result (NIC-135). `status` is "ok" (both
@@ -527,6 +539,9 @@ export interface CerebralBridge {
   /** Disconnect Canvas (NIC-132): purge the scraped data and rotate the ingest token, returning the
    *  fresh (empty) state. The old token stops working, so the extension must be re-paired. */
   resetCanvas(): Promise<CanvasStatus>;
+  /** Hide or unhide a scraped Canvas course/assignment (NIC-132) from the School widgets, returning
+   *  the fresh status with each item's hidden flag. Persists across scrapes. */
+  setCanvasItemHidden(id: string, hidden: boolean): Promise<CanvasStatus>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */
   updateQuickApps(input: UpdateQuickAppsInput): Promise<UpdateQuickAppsResult>;
   /** Mint a user URL reference (NIC-146) so a typed URL can be pinned as a quick app,

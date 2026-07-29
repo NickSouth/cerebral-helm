@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { WidgetSlot } from "./WidgetSlot";
+import { WidgetSlot, canvasSeason } from "./WidgetSlot";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
 import { ActionStatusProvider } from "../state/ActionStatusProvider";
@@ -31,7 +31,11 @@ const reposReady: WidgetData = {
   }
 };
 
-function renderSlot(data: WidgetData, mutate?: (base: DashboardState) => DashboardState) {
+function renderSlot(
+  data: WidgetData,
+  mutate?: (base: DashboardState) => DashboardState,
+  slotWidgetId?: string
+) {
   const bridge = createMockCerebralBridge();
   const submissions: string[] = [];
   const spyBridge = {
@@ -48,7 +52,7 @@ function renderSlot(data: WidgetData, mutate?: (base: DashboardState) => Dashboa
       <DashboardStateProvider store={store}>
         <AppearanceProvider>
           <ActionStatusProvider>
-            <WidgetSlot data={data} labelId="region-widget-right" />
+            <WidgetSlot data={data} labelId="region-widget-right" slotWidgetId={slotWidgetId} />
           </ActionStatusProvider>
         </AppearanceProvider>
       </DashboardStateProvider>
@@ -889,14 +893,15 @@ describe("WidgetSlot courses (NIC-132)", () => {
     expect(ring?.querySelector("circle.grade-ring__arc")).toBeNull(); // empty ring, score not leaked
   });
 
-  it("renders an honest empty state with no course rows", () => {
+  it("renders the seasonal Canvas empty state with no course rows", () => {
     renderSlot({
       widgetId: "courses",
       state: "empty",
-      emptyMessage: "No current courses — open Canvas in Chrome to sync."
+      emptyMessage: "ignored by the seasonal state"
     });
     expect(courseRows()).toHaveLength(0);
-    expect(screen.getByText("No current courses — open Canvas in Chrome to sync.")).toBeTruthy();
+    // The School widgets use the date-aware Canvas greeting, not the generic empty message.
+    expect(document.querySelector(".canvas-empty")).not.toBeNull();
   });
 });
 
@@ -972,13 +977,156 @@ describe("WidgetSlot deadlines (NIC-132)", () => {
     expect(screen.queryByRole("button", { name: "More deadlines" })).toBeNull();
   });
 
-  it("renders an honest empty state with no deadline rows", () => {
+  it("renders the seasonal Canvas empty state with no deadline rows", () => {
     renderSlot({
       widgetId: "deadlines",
       state: "empty",
-      emptyMessage: "Nothing due soon."
+      emptyMessage: "ignored by the seasonal state"
     });
     expect(deadlineRows()).toHaveLength(0);
-    expect(screen.getByText("Nothing due soon.")).toBeTruthy();
+    expect(document.querySelector(".canvas-empty")).not.toBeNull();
+  });
+});
+
+/** NIC-132 polish: the School widgets' empty/unavailable state is a date-aware Canvas greeting —
+ *  a seasonal message over summer/winter break, and a "sync now" nudge (opens Canvas) during term. */
+
+describe("WidgetSlot Canvas seasonal empty (NIC-132)", () => {
+  it("shows the seasonal empty over the generic 'Unavailable' bootstrap stub, keyed by the slot id", () => {
+    // Before the producer streams, the resolved data is the generic stub (widgetId "left",
+    // "Unavailable"); the seasonal state must still show because the slot is a School widget.
+    renderSlot({ widgetId: "left", state: "unavailable", emptyMessage: "Unavailable" }, undefined, "deadlines");
+    expect(document.querySelector(".canvas-empty")).not.toBeNull();
+    expect(screen.queryByText("Unavailable")).toBeNull();
+  });
+
+  it("buckets dates into summer / winter / term", () => {
+    expect(canvasSeason(new Date(2026, 4, 20))).toBe("summer"); // May 20 (start)
+    expect(canvasSeason(new Date(2026, 8, 1))).toBe("summer"); // Sep 1 (end)
+    expect(canvasSeason(new Date(2026, 8, 2))).toBe("term"); // Sep 2
+    expect(canvasSeason(new Date(2026, 4, 19))).toBe("term"); // May 19
+    expect(canvasSeason(new Date(2026, 11, 20))).toBe("winter"); // Dec 20 (start)
+    expect(canvasSeason(new Date(2026, 0, 15))).toBe("winter"); // Jan 15
+    expect(canvasSeason(new Date(2026, 1, 1))).toBe("winter"); // Feb 1 (end)
+    expect(canvasSeason(new Date(2026, 1, 2))).toBe("term"); // Feb 2
+    expect(canvasSeason(new Date(2026, 9, 15))).toBe("term"); // Oct 15
+  });
+
+  function renderCanvasEmptyAt(
+    date: Date,
+    state: "empty" | "unavailable",
+    widgetId: "deadlines" | "courses" = "deadlines"
+  ) {
+    vi.useFakeTimers();
+    vi.setSystemTime(date);
+    try {
+      return renderSlot({ widgetId, state, emptyMessage: "ignored by the seasonal state" });
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it("shows a summer greeting over summer break, with no sync button", () => {
+    renderCanvasEmptyAt(new Date(2026, 6, 1), "empty"); // July → summer
+    expect(screen.getByText("Enjoy your summer!")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("shows a winter greeting over winter break (also for the unavailable state)", () => {
+    renderCanvasEmptyAt(new Date(2026, 0, 5), "unavailable", "courses"); // Jan → winter
+    expect(screen.getByText("Enjoy your winter!")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("nudges to sync during term and opens Canvas on click", () => {
+    const { submissions } = renderCanvasEmptyAt(new Date(2026, 9, 15), "empty"); // Oct → term
+    expect(screen.getByText("School's back in session – sync courses now!")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open Canvas to sync" }));
+    expect(submissions).toContain("web https://umamherst.instructure.com");
+  });
+
+  it("disables the sync nudge under read-only recovery and dispatches nothing", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 15)); // term
+    try {
+      const { submissions } = renderSlot(
+        { widgetId: "deadlines", state: "unavailable" },
+        (base) => ({ ...base, uiState: "offline" })
+      );
+      const button = document.querySelector<HTMLButtonElement>(".canvas-empty__logo-button");
+      expect(button?.disabled).toBe(true);
+      fireEvent.click(button as HTMLButtonElement);
+      expect(submissions).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/** NIC-132 polish: a course row opens its Canvas home, an assignment row opens the assignment —
+ *  both through the web.open path, disabled under read-only recovery. */
+
+describe("WidgetSlot Canvas click-through (NIC-132)", () => {
+  it("opens a course in Canvas on click via web.open", () => {
+    const { submissions } = renderSlot({
+      widgetId: "courses",
+      state: "ready",
+      headline: "1 course",
+      data: {
+        items: [
+          {
+            id: "37331",
+            name: "Theory of Computation",
+            code: "COMPSCI 250",
+            percent: 92,
+            url: "https://umamherst.instructure.com/courses/37331"
+          }
+        ]
+      }
+    });
+    const button = document.querySelector<HTMLButtonElement>("button.course-row__open");
+    expect(button).not.toBeNull();
+    fireEvent.click(button as HTMLButtonElement);
+    expect(submissions).toContain("web https://umamherst.instructure.com/courses/37331");
+  });
+
+  it("renders a course without a URL as a non-interactive row", () => {
+    renderSlot({ widgetId: "courses", state: "ready", data: { items: [{ id: "1", name: "Seminar" }] } });
+    expect(document.querySelector("button.course-row__open")).toBeNull();
+    expect(document.querySelector(".course-row__open--static")).not.toBeNull();
+  });
+
+  it("disables course rows under read-only recovery and dispatches nothing", () => {
+    const { submissions } = renderSlot(
+      {
+        widgetId: "courses",
+        state: "ready",
+        data: { items: [{ id: "1", name: "X", url: "https://umamherst.instructure.com/courses/1" }] }
+      },
+      (base) => ({ ...base, uiState: "offline" })
+    );
+    const button = document.querySelector<HTMLButtonElement>("button.course-row__open");
+    expect(button?.disabled).toBe(true);
+    fireEvent.click(button as HTMLButtonElement);
+    expect(submissions).toHaveLength(0);
+  });
+
+  it("opens an assignment in Canvas on click", () => {
+    const { submissions } = renderSlot({
+      widgetId: "deadlines",
+      state: "ready",
+      data: {
+        items: [
+          {
+            id: "a1",
+            title: "Problem Set 7",
+            dueAt: "2026-09-14T23:59:00",
+            url: "https://umamherst.instructure.com/courses/37331/assignments/1"
+          }
+        ]
+      }
+    });
+    fireEvent.click(document.querySelector("button.deadline-row__open") as HTMLButtonElement);
+    expect(submissions).toContain("web https://umamherst.instructure.com/courses/37331/assignments/1");
   });
 });

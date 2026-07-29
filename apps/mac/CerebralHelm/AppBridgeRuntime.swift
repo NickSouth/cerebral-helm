@@ -303,12 +303,21 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // the instant a scrape lands. All Canvas surfaces are nil when the store can't open, so the
         // widgets fall back to their honest bootstrap state rather than erroring.
         let canvasStore = try? makeCanvasSnapshotStore(paths)
+        // The hidden-item list (NIC-132): course/assignment ids the user has manually hidden. Read by
+        // the publisher each tick (to filter) and by the settings surface (to list + toggle).
+        let canvasHiddenStore = try? makeCanvasHiddenStore(paths)
         let canvasSecretStore = composition.secretStore
         let canvasPort: UInt16 = 8899
         let canvasEndpoint = "http://127.0.0.1:\(canvasPort)/canvas/ingest"
-        if let canvasStore {
-            let canvas = CanvasWidgetPublisher(store: canvasStore, emit: { relay.emit($0) })
-            canvasPublisher = canvas
+        let canvasPub: CanvasWidgetPublisher? = canvasStore.map { store in
+            CanvasWidgetPublisher(
+                store: store,
+                hiddenIds: { (try? canvasHiddenStore?.hiddenIds()).flatMap { $0 } ?? [] },
+                emit: { relay.emit($0) }
+            )
+        }
+        canvasPublisher = canvasPub
+        if let canvasStore, let canvas = canvasPub {
             canvasIngestServer = CanvasIngestServer(
                 port: canvasPort,
                 store: canvasStore,
@@ -319,34 +328,49 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // settings surface shows (Increment 6); a live secret, never logged.
             Task { _ = try? await CanvasIngestToken.ensure(in: canvasSecretStore) }
         } else {
-            canvasPublisher = nil
             canvasIngestServer = nil
             Self.log.error("Canvas scrape store failed to open; School widgets + ingest disabled.")
         }
         // The Canvas connect/status surface (NIC-132): `getCanvasStatus` reports the pairing
-        // endpoint/token (minting it if needed) + the last scrape's age/counts; `resetCanvas` purges
-        // the scraped data and rotates the token (disconnect). Both nil when there's no store.
+        // endpoint/token (minting it if needed) + the last scrape's age/counts + the item lists;
+        // `resetCanvas` purges the scraped data, clears hides, and rotates the token (disconnect);
+        // `setCanvasItemHidden` hides/unhides one item and refreshes the widgets. All nil without a store.
         let canvasStatusClosure: (@Sendable () async -> CanvasStatusInfo)? = canvasStore.map { store in
             { @Sendable in
                 let token = try? await CanvasIngestToken.ensure(in: canvasSecretStore)
                 let snapshot = (try? store.load()).flatMap { $0 }
-                return CanvasStatusInfo(
-                    endpoint: canvasEndpoint,
-                    token: token,
-                    lastScrapedAt: snapshot.map { ISO8601DateFormatter().string(from: $0.scrapedAt) },
-                    courseCount: snapshot?.courses.count ?? 0,
-                    deadlineCount: snapshot?.deadlines.count ?? 0
+                let hidden = (try? canvasHiddenStore?.hiddenIds()).flatMap { $0 } ?? []
+                return Self.canvasStatusInfo(
+                    snapshot: snapshot, hidden: hidden, endpoint: canvasEndpoint, token: token
                 )
             }
         }
         let canvasResetClosure: (@Sendable () async -> CanvasStatusInfo)? = canvasStore.map { store in
-            { @Sendable in
+            { @Sendable [canvas = canvasPub] in
                 try? store.clear()
+                try? canvasHiddenStore?.clear() // a disconnect is a clean slate
                 let token = try? await CanvasIngestToken.rotate(in: canvasSecretStore)
+                if let canvas { await canvas.refresh() }
                 return CanvasStatusInfo(
                     endpoint: canvasEndpoint, token: token, lastScrapedAt: nil, courseCount: 0, deadlineCount: 0
                 )
             }
+        }
+        let canvasSetHiddenClosure: (@Sendable (String, Bool) async -> CanvasStatusInfo)?
+        if let canvasStore, let hiddenStore = canvasHiddenStore {
+            canvasSetHiddenClosure = { [canvas = canvasPub] id, hidden in
+                var ids = (try? hiddenStore.hiddenIds()) ?? []
+                if hidden { ids.insert(id) } else { ids.remove(id) }
+                try? hiddenStore.setHiddenIds(ids)
+                if let canvas { await canvas.refresh() } // apply to the widgets immediately
+                let token = try? await CanvasIngestToken.ensure(in: canvasSecretStore)
+                let snapshot = (try? canvasStore.load()).flatMap { $0 }
+                return Self.canvasStatusInfo(
+                    snapshot: snapshot, hidden: ids, endpoint: canvasEndpoint, token: token
+                )
+            }
+        } else {
+            canvasSetHiddenClosure = nil
         }
         // Feed the layout-display resolver its persisted ids (captured directly, not
         // through `self`, so no not-yet-initialized capture) — the layout arrange
@@ -433,6 +457,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // endpoint/token + last-scrape summary; resetCanvas purges the scrape and rotates the token.
             canvasStatus: canvasStatusClosure,
             canvasReset: canvasResetClosure,
+            canvasSetHidden: canvasSetHiddenClosure,
             // Hides a layout's app windows on closeLayout (NIC-142) — the same
             // permission-free primitive "Windows Stored by Mode" uses.
             workspaceWindows: composition.capabilities.workspaceWindows,
@@ -509,6 +534,28 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// Start the live streams — system metrics (NIC-81b) and the active-repos widget
     /// (NIC-131). Call once the event sink is bound, so the first snapshot of each has a
     /// consumer.
+    /// Builds the Canvas status from the latest snapshot + hidden set (NIC-132): the item lists carry
+    /// every scraped course/assignment with its hidden flag, and the counts are the VISIBLE totals.
+    private static func canvasStatusInfo(
+        snapshot: CanvasScrapeSnapshot?, hidden: Set<String>, endpoint: String, token: String?
+    ) -> CanvasStatusInfo {
+        let courses = (snapshot?.courses ?? []).map {
+            CanvasStatusItem(id: $0.id, label: $0.name, hidden: hidden.contains($0.id))
+        }
+        let deadlines = (snapshot?.deadlines ?? []).map {
+            CanvasStatusItem(id: $0.id, label: $0.title, hidden: hidden.contains($0.id))
+        }
+        return CanvasStatusInfo(
+            endpoint: endpoint,
+            token: token,
+            lastScrapedAt: snapshot.map { ISO8601DateFormatter().string(from: $0.scrapedAt) },
+            courseCount: courses.filter { !$0.hidden }.count,
+            deadlineCount: deadlines.filter { !$0.hidden }.count,
+            courses: courses,
+            deadlines: deadlines
+        )
+    }
+
     func startStatusPublishing() {
         let metrics = statusPublisher
         let repos = reposPublisher

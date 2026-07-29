@@ -11,6 +11,8 @@
     "token": "cm90YXRlZC10b2tlbi1wbGFjZWhvbGRlci12YWx1ZQ",
     "lastScrapedAt": null,
     "courseCount": 0,
-    "deadlineCount": 0
+    "deadlineCount": 0,
+    "courses": [],
+    "deadlines": []
   }
 }

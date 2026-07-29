@@ -105,3 +105,15 @@ public protocol CanvasSnapshotStore: Sendable {
     /// Removes the stored snapshot — the disconnect purge (a later increment).
     func clear() throws
 }
+
+/// Port for the manually-hidden Canvas items (NIC-132). The user can hide stray courses/assignments
+/// from the School widgets; the ids persist across scrapes (kept separate from the wholesale-replaced
+/// snapshot), so a hidden item stays hidden after re-syncing. `clear()` backs the disconnect reset.
+public protocol CanvasHiddenStore: Sendable {
+    /// The set of hidden course/assignment ids (empty when nothing is hidden).
+    func hiddenIds() throws -> Set<String>
+    /// Replaces the hidden set wholesale.
+    func setHiddenIds(_ ids: Set<String>) throws
+    /// Removes every hidden id (the disconnect reset).
+    func clear() throws
+}

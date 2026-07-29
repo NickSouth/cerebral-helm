@@ -23,19 +23,41 @@ public struct CanvasStatusInfo: Sendable, Equatable {
     public let lastScrapedAt: String?
     public let courseCount: Int
     public let deadlineCount: Int
+    /// Every scraped course/assignment (including hidden ones, flagged), so the settings surface can
+    /// list them with a hide/unhide toggle (NIC-132). The counts above are the VISIBLE totals.
+    public let courses: [CanvasStatusItem]
+    public let deadlines: [CanvasStatusItem]
 
     public init(
         endpoint: String,
         token: String?,
         lastScrapedAt: String?,
         courseCount: Int,
-        deadlineCount: Int
+        deadlineCount: Int,
+        courses: [CanvasStatusItem] = [],
+        deadlines: [CanvasStatusItem] = []
     ) {
         self.endpoint = endpoint
         self.token = token
         self.lastScrapedAt = lastScrapedAt
         self.courseCount = courseCount
         self.deadlineCount = deadlineCount
+        self.courses = courses
+        self.deadlines = deadlines
+    }
+}
+
+/// One scraped Canvas item in the settings manage-list (NIC-132): its id, a display label, and
+/// whether the user has hidden it from the School widgets.
+public struct CanvasStatusItem: Sendable, Equatable {
+    public let id: String
+    public let label: String
+    public let hidden: Bool
+
+    public init(id: String, label: String, hidden: Bool) {
+        self.id = id
+        self.label = label
+        self.hidden = hidden
     }
 }
 
@@ -139,6 +161,9 @@ public final class BridgeSession: @unchecked Sendable {
     /// (the disconnect path), returning the fresh state.
     private let canvasStatus: (@Sendable () async -> CanvasStatusInfo)?
     private let canvasReset: (@Sendable () async -> CanvasStatusInfo)?
+    /// Hides or unhides a scraped Canvas item by id (NIC-132), returning the fresh status. Optional —
+    /// a host without the ingest store reports the surface unavailable.
+    private let canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)?
 
     /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
     /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
@@ -200,6 +225,7 @@ public final class BridgeSession: @unchecked Sendable {
         spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil,
         canvasStatus: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasReset: (@Sendable () async -> CanvasStatusInfo)? = nil,
+        canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)? = nil,
         workspaceWindows: (any WorkspaceWindowsCapability)? = nil,
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
@@ -222,6 +248,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.spotifyConnect = spotifyConnect
         self.canvasStatus = canvasStatus
         self.canvasReset = canvasReset
+        self.canvasSetHidden = canvasSetHidden
         self.workspaceWindows = workspaceWindows
         self.app = app
         self.url = url
@@ -337,6 +364,8 @@ public final class BridgeSession: @unchecked Sendable {
             return await getCanvasStatus(request)
         case .resetCanvas:
             return await resetCanvas(request)
+        case .setCanvasItemHidden:
+            return await setCanvasItemHidden(request)
         case .minimizeWindow:
             return await windowAction(request) { try await $0.minimize(windowID: $1) }
         case .surfaceWindow:
@@ -1527,6 +1556,21 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: CanvasStatusResult(await canvasReset()))
     }
 
+    /// Hides or unhides a scraped Canvas item (NIC-132): the item is filtered out of / restored to the
+    /// School widgets, and the fresh status (with each item's hidden flag) is returned so the settings
+    /// list reconciles in one round trip.
+    private func setCanvasItemHidden(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let canvasSetHidden else {
+            return ok(request, payload: CanvasStatusResult.unavailable)
+        }
+        guard let input: SetCanvasHiddenInput = decodePayload(request) else {
+            return invalidInput(request, "setCanvasItemHidden requires an item id and a hidden flag.")
+        }
+        return ok(request, payload: CanvasStatusResult(await canvasSetHidden(input.id, input.hidden)))
+    }
+
     /// Mints an app reference that opens Google Chrome in a specific profile (NIC-151),
     /// so a Chrome profile can be pinned as a quick app the same way any app is. The
     /// minted reference targets `com.google.Chrome` and carries the profile directory,
@@ -2040,6 +2084,11 @@ public final class BridgeSession: @unchecked Sendable {
     /// The Canvas ingest status wire shape (NIC-132). `available` is false only when the host has no
     /// ingest store (pre-Mac/tests) — the UI then shows "requires the macOS host". Otherwise it
     /// carries the pairing endpoint/token and the last scrape's age/counts.
+    private struct CanvasStatusItemDTO: Encodable {
+        let id: String
+        let label: String
+        let hidden: Bool
+    }
     private struct CanvasStatusResult: Encodable {
         let available: Bool
         let endpoint: String
@@ -2047,6 +2096,8 @@ public final class BridgeSession: @unchecked Sendable {
         let lastScrapedAt: String?
         let courseCount: Int
         let deadlineCount: Int
+        let courses: [CanvasStatusItemDTO]
+        let deadlines: [CanvasStatusItemDTO]
 
         init(_ info: CanvasStatusInfo) {
             available = true
@@ -2055,6 +2106,8 @@ public final class BridgeSession: @unchecked Sendable {
             lastScrapedAt = info.lastScrapedAt
             courseCount = info.courseCount
             deadlineCount = info.deadlineCount
+            courses = info.courses.map { CanvasStatusItemDTO(id: $0.id, label: $0.label, hidden: $0.hidden) }
+            deadlines = info.deadlines.map { CanvasStatusItemDTO(id: $0.id, label: $0.label, hidden: $0.hidden) }
         }
 
         private init() {
@@ -2064,9 +2117,15 @@ public final class BridgeSession: @unchecked Sendable {
             lastScrapedAt = nil
             courseCount = 0
             deadlineCount = 0
+            courses = []
+            deadlines = []
         }
 
         static let unavailable = CanvasStatusResult()
+    }
+    private struct SetCanvasHiddenInput: Decodable {
+        let id: String
+        let hidden: Bool
     }
     private struct ChromeProfilesResult: Encodable {
         let profiles: [ChromeProfileDTO]

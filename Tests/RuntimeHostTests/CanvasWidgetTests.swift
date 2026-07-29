@@ -186,3 +186,42 @@ func canvasCoursesEmitsWidgetDataChangedEvent() throws {
     #expect(decoded.type == .widgetDataChanged)
     #expect(decoded.eventID == "brevt_test00000132")
 }
+
+// MARK: - Hidden-item filtering (NIC-132)
+
+@Test("a hidden course is filtered out of the courses widget")
+func canvasCoursesHiddenFiltered() {
+    let widget = BridgeEventFactory.canvasCoursesWidget(
+        from: .success(snapshot(courses: [
+            CanvasCourse(id: "1", name: "Kept"),
+            CanvasCourse(id: "2", name: "Hidden")
+        ])),
+        now: fixedNow, staleAfter: staleAfter, hiddenIds: ["2"]
+    )
+    #expect(widget.state == "ready")
+    #expect(widget.headline == "1 course")
+    #expect(widget.data?.items.map(\.id) == ["1"])
+}
+
+@Test("hiding every course maps to an empty courses widget")
+func canvasCoursesAllHiddenEmpty() {
+    let widget = BridgeEventFactory.canvasCoursesWidget(
+        from: .success(snapshot(courses: [CanvasCourse(id: "1", name: "X")])),
+        now: fixedNow, staleAfter: staleAfter, hiddenIds: ["1"]
+    )
+    #expect(widget.state == "empty")
+    #expect(widget.data == nil)
+}
+
+@Test("a hidden assignment is filtered out of the deadlines widget")
+func canvasDeadlinesHiddenFiltered() {
+    let widget = BridgeEventFactory.canvasDeadlinesWidget(
+        from: .success(snapshot(deadlines: [
+            CanvasDeadline(id: "a1", title: "Kept", dueAt: "2026-09-14T23:59:00"),
+            CanvasDeadline(id: "a2", title: "Hidden", dueAt: "2026-09-15T23:59:00")
+        ])),
+        now: fixedNow, staleAfter: staleAfter, hiddenIds: ["a2"]
+    )
+    #expect(widget.state == "ready")
+    #expect(widget.data?.items.map(\.id) == ["a1"])
+}

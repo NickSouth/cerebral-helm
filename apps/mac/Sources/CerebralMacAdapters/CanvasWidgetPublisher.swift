@@ -16,6 +16,7 @@ import CerebralRuntimeHost
 /// fabricated one.
 public actor CanvasWidgetPublisher {
     private let store: any CanvasSnapshotStore
+    private let hiddenIds: @Sendable () -> Set<String>
     private let staleAfter: TimeInterval
     private let intervalNanos: UInt64
     private let now: @Sendable () -> Date
@@ -26,12 +27,14 @@ public actor CanvasWidgetPublisher {
 
     public init(
         store: any CanvasSnapshotStore,
+        hiddenIds: @escaping @Sendable () -> Set<String> = { [] },
         staleAfter: TimeInterval = 6 * 3600,
         intervalMs: Int = 600_000,
         now: @escaping @Sendable () -> Date = { Date() },
         emit: @escaping @Sendable (String) -> Void
     ) {
         self.store = store
+        self.hiddenIds = hiddenIds
         self.staleAfter = staleAfter
         self.intervalNanos = UInt64(intervalMs) * 1_000_000
         self.now = now
@@ -79,13 +82,18 @@ public actor CanvasWidgetPublisher {
     private func tick() async {
         let result = Swift.Result { try store.load() }
         let sampledAt = now()
+        let hidden = hiddenIds() // re-read each tick, so a hide/unhide applies on the next sample
         emitWidget(
             widgetId: "courses",
-            widget: BridgeEventFactory.canvasCoursesWidget(from: result, now: sampledAt, staleAfter: staleAfter)
+            widget: BridgeEventFactory.canvasCoursesWidget(
+                from: result, now: sampledAt, staleAfter: staleAfter, hiddenIds: hidden
+            )
         )
         emitWidget(
             widgetId: "deadlines",
-            widget: BridgeEventFactory.canvasDeadlinesWidget(from: result, now: sampledAt, staleAfter: staleAfter)
+            widget: BridgeEventFactory.canvasDeadlinesWidget(
+                from: result, now: sampledAt, staleAfter: staleAfter, hiddenIds: hidden
+            )
         )
     }
 

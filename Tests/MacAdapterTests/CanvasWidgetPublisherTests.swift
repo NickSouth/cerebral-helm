@@ -107,3 +107,22 @@ func canvasPublisherResumeEmitsImmediately() async {
     #expect(emissions.all.count == 2)
 }
 #endif
+#if canImport(AppKit)
+@Test("the publisher applies hidden ids (all courses hidden → an empty courses widget)")
+func canvasPublisherAppliesHidden() async {
+    let snapshot = CanvasScrapeSnapshot(
+        scrapedAt: fixedNow,
+        courses: [CanvasCourse(id: "1", name: "X")],
+        deadlines: []
+    )
+    let emissions = Emissions()
+    let publisher = CanvasWidgetPublisher(
+        store: StubCanvasStore(.snapshot(snapshot)),
+        hiddenIds: { ["1"] },
+        now: { fixedNow },
+        emit: { emissions.add($0) }
+    )
+    await publisher.refresh()
+    #expect(statesByWidget(emissions)["courses"] == "empty")
+}
+#endif

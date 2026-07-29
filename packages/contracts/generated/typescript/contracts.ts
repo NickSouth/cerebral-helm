@@ -472,6 +472,7 @@ export enum Operation {
     ResetCanvas = "resetCanvas",
     RunSpeedTest = "runSpeedTest",
     SearchNotes = "searchNotes",
+    SetCanvasItemHidden = "setCanvasItemHidden",
     StoreSecret = "storeSecret",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",

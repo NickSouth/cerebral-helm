@@ -480,6 +480,46 @@
   font-size: var(--ch-font-size-label);
 }
 
+/* The manage-list: hide/unhide individual scraped courses + assignments (NIC-132). */
+.settings-canvas__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  width: 100%;
+}
+.settings-canvas__group-title {
+  color: var(--ch-text-secondary);
+  font-size: var(--ch-font-size-label);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.settings-canvas__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+.settings-canvas__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+}
+.settings-canvas__item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+}
+.settings-canvas__item--hidden .settings-canvas__item-label {
+  color: var(--ch-text-faint);
+  text-decoration: line-through;
+}
+
 /* Knowledge-root picker: text field + native Finder "Browse…" button. */
 .settings-root-picker {
   display: flex;

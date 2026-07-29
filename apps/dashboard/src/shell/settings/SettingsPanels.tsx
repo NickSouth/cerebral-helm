@@ -12,7 +12,7 @@ import { postShellControl, isShellControlAvailable } from "../shellControl";
 import { PERMISSION_TOOLS } from "./permissionsCatalog";
 import wiredManifest from "../quickActions.manifest.json";
 import type { SettingsCategoryId } from "./categories";
-import type { CalendarInfo, CanvasStatus } from "../../bridge/cerebralBridge";
+import type { CalendarInfo, CanvasStatus, CanvasStatusItem } from "../../bridge/cerebralBridge";
 
 /** A titled group within a panel. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -1111,7 +1111,8 @@ function CanvasConnectField() {
       .catch(() => {
         if (active) {
           setStatus({
-            available: false, endpoint: "", token: null, lastScrapedAt: null, courseCount: 0, deadlineCount: 0
+            available: false, endpoint: "", token: null, lastScrapedAt: null,
+            courseCount: 0, deadlineCount: 0, courses: [], deadlines: []
           });
         }
       });
@@ -1128,6 +1129,40 @@ function CanvasConnectField() {
         // Leave the state as-is; the next status read reconciles it.
       });
   }
+
+  function toggleHidden(id: string, hidden: boolean) {
+    void bridge
+      .setCanvasItemHidden(id, hidden)
+      .then((result) => setStatus(result))
+      .catch(() => {
+        // Leave the state as-is; the next status read reconciles it.
+      });
+  }
+
+  const itemList = (title: string, items: readonly CanvasStatusItem[]) =>
+    items.length > 0 ? (
+      <div className="settings-canvas__group">
+        <span className="settings-canvas__group-title">{title}</span>
+        <ul className="settings-canvas__items">
+          {items.map((item) => (
+            <li
+              key={item.id}
+              className={`settings-canvas__item${item.hidden ? " settings-canvas__item--hidden" : ""}`}
+            >
+              <span className="settings-canvas__item-label">{item.label}</span>
+              <button
+                type="button"
+                className="settings-button settings-button--ghost"
+                onClick={() => toggleHidden(item.id, !item.hidden)}
+                aria-label={`${item.hidden ? "Unhide" : "Hide"} ${item.label}`}
+              >
+                {item.hidden ? "Unhide" : "Hide"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
 
   function copyToken() {
     if (!status?.token) return;
@@ -1169,6 +1204,8 @@ function CanvasConnectField() {
               ? `Last synced ${formatScrapeAge(status.lastScrapedAt)} · ${scrapeCountsLabel(status)}`
               : "No scrape received yet — open Canvas in Chrome with the extension installed."}
           </p>
+          {itemList("Courses", status.courses)}
+          {itemList("Deadlines", status.deadlines)}
           <button type="button" className="settings-button" onClick={disconnect}>
             Disconnect
           </button>

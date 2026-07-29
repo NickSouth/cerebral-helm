@@ -145,6 +145,12 @@ public func makeCanvasSnapshotStore(_ paths: WorkspacePaths) throws -> any Canva
     SQLiteCanvasSnapshotStore(database: try operationalDatabase(paths))
 }
 
+/// The durable Canvas hidden-item store over the operational database (NIC-132), for hosts that let
+/// the user hide stray School courses/assignments.
+public func makeCanvasHiddenStore(_ paths: WorkspacePaths) throws -> any CanvasHiddenStore {
+    SQLiteCanvasHiddenStore(database: try operationalDatabase(paths))
+}
+
 /// Writes the command row from its envelope before any event references it (FK
 /// ordering). The raw command text is deliberately not persisted — it can contain
 /// secrets (the NIC-34 leak class); only non-sensitive envelope metadata is stored.

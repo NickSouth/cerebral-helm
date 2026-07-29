@@ -260,7 +260,8 @@ public enum BridgeEventFactory {
     /// label, when the scrape is older than `staleAfter`. A hidden grade never fabricates a score and
     /// its percent/letter never cross the bridge.
     public static func canvasCoursesWidget(
-        from result: Swift.Result<CanvasScrapeSnapshot?, Error>, now: Date, staleAfter: TimeInterval
+        from result: Swift.Result<CanvasScrapeSnapshot?, Error>, now: Date, staleAfter: TimeInterval,
+        hiddenIds: Set<String> = []
     ) -> CanvasCoursesWidget {
         switch canvasResolution(from: result, now: now, staleAfter: staleAfter) {
         case .unavailable:
@@ -268,8 +269,17 @@ public enum BridgeEventFactory {
                 widgetId: "courses", state: "unavailable", headline: nil,
                 emptyMessage: "Open Canvas in Chrome to sync your courses.", freshness: nil, data: nil
             )
-        case let .ready(snapshot, state, freshness) where !snapshot.courses.isEmpty:
-            let items = snapshot.courses.map { course -> CanvasCourseItem in
+        case let .ready(snapshot, state, freshness):
+            // Drop courses the user has manually hidden (NIC-132) — if that leaves none, the widget is
+            // an honest empty state, not a missing capability.
+            let visible = snapshot.courses.filter { !hiddenIds.contains($0.id) }
+            guard !visible.isEmpty else {
+                return CanvasCoursesWidget(
+                    widgetId: "courses", state: "empty", headline: nil,
+                    emptyMessage: "No current courses — open Canvas in Chrome to sync.", freshness: nil, data: nil
+                )
+            }
+            let items = visible.map { course -> CanvasCourseItem in
                 let hidden = course.gradeHidden
                 return CanvasCourseItem(
                     id: course.id, name: course.name, code: course.code,
@@ -281,14 +291,9 @@ public enum BridgeEventFactory {
             }
             return CanvasCoursesWidget(
                 widgetId: "courses", state: state,
-                headline: snapshot.courses.count == 1 ? "1 course" : "\(snapshot.courses.count) courses",
+                headline: visible.count == 1 ? "1 course" : "\(visible.count) courses",
                 emptyMessage: nil, freshness: freshness,
                 data: CanvasCoursesWidgetData(items: items)
-            )
-        case .ready:
-            return CanvasCoursesWidget(
-                widgetId: "courses", state: "empty", headline: nil,
-                emptyMessage: "No current courses — open Canvas in Chrome to sync.", freshness: nil, data: nil
             )
         }
     }
@@ -298,7 +303,8 @@ public enum BridgeEventFactory {
     /// Failure/never-scraped → `unavailable`; no upcoming work → `empty`; otherwise `ready`/`stale`
     /// with a data-age label.
     public static func canvasDeadlinesWidget(
-        from result: Swift.Result<CanvasScrapeSnapshot?, Error>, now: Date, staleAfter: TimeInterval
+        from result: Swift.Result<CanvasScrapeSnapshot?, Error>, now: Date, staleAfter: TimeInterval,
+        hiddenIds: Set<String> = []
     ) -> CanvasDeadlinesWidget {
         switch canvasResolution(from: result, now: now, staleAfter: staleAfter) {
         case .unavailable:
@@ -306,8 +312,17 @@ public enum BridgeEventFactory {
                 widgetId: "deadlines", state: "unavailable", headline: nil,
                 emptyMessage: "Open Canvas in Chrome to sync your deadlines.", freshness: nil, data: nil
             )
-        case let .ready(snapshot, state, freshness) where !snapshot.deadlines.isEmpty:
-            let sorted = snapshot.deadlines.sorted(by: canvasDeadlineOrder)
+        case let .ready(snapshot, state, freshness):
+            // Drop assignments the user has manually hidden (NIC-132); none left → honest empty.
+            let sorted = snapshot.deadlines
+                .filter { !hiddenIds.contains($0.id) }
+                .sorted(by: canvasDeadlineOrder)
+            guard !sorted.isEmpty else {
+                return CanvasDeadlinesWidget(
+                    widgetId: "deadlines", state: "empty", headline: nil,
+                    emptyMessage: "Nothing due soon.", freshness: nil, data: nil
+                )
+            }
             let items = sorted.map {
                 CanvasDeadlineItem(
                     id: $0.id, title: $0.title, dueAt: $0.dueAt, courseName: $0.courseName, url: $0.url
@@ -318,11 +333,6 @@ public enum BridgeEventFactory {
                 headline: sorted.count == 1 ? "1 due soon" : "\(sorted.count) due soon",
                 emptyMessage: nil, freshness: freshness,
                 data: CanvasDeadlinesWidgetData(items: items)
-            )
-        case .ready:
-            return CanvasDeadlinesWidget(
-                widgetId: "deadlines", state: "empty", headline: nil,
-                emptyMessage: "Nothing due soon.", freshness: nil, data: nil
             )
         }
     }

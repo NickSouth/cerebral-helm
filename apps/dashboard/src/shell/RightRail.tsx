@@ -86,7 +86,7 @@ export function RightRail() {
         </ul>
       </Panel>
 
-      <WidgetSlot data={rightWidget} labelId="region-widget-right" />
+      <WidgetSlot data={rightWidget} labelId="region-widget-right" slotWidgetId={activeMode.widgets.right} />
     </aside>
   );
 }

@@ -415,14 +415,35 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     const label = await within(dialog).findByText("Canvas (School widgets)");
     const canvas = within(label.closest(".settings-field") as HTMLElement);
 
-    // The pairing token and the last-scrape summary are shown (mock: 4 courses, 7 deadlines).
+    // The pairing token and the last-scrape summary are shown (mock: 2 courses, 2 deadlines).
     expect(await canvas.findByText("mock-canvas-token")).toBeInTheDocument();
-    expect(canvas.getByText(/4 courses, 7 deadlines/)).toBeInTheDocument();
+    expect(canvas.getByText(/2 courses, 2 deadlines/)).toBeInTheDocument();
 
     // Disconnect rotates the token and clears the scrape summary (purge + rotate).
     fireEvent.click(canvas.getByRole("button", { name: "Disconnect" }));
     expect(await canvas.findByText("mock-canvas-token-rotated")).toBeInTheDocument();
     expect(canvas.getByText(/No scrape received yet/)).toBeInTheDocument();
+  });
+
+  it("hides and unhides a scraped course from the Canvas manage-list (NIC-132)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const label = await within(dialog).findByText("Canvas (School widgets)");
+    const canvas = within(label.closest(".settings-field") as HTMLElement);
+
+    // The manage-list shows each scraped course with a Hide control (mock: Theory of Computation).
+    const hide = await canvas.findByRole("button", { name: "Hide Theory of Computation" });
+    // Hiding drops it from the visible count (2 courses → 1) and flips the control to Unhide.
+    fireEvent.click(hide);
+    expect(await canvas.findByRole("button", { name: "Unhide Theory of Computation" })).toBeInTheDocument();
+    expect(canvas.getByText(/1 course, 2 deadlines/)).toBeInTheDocument();
+
+    // Unhiding restores it.
+    fireEvent.click(canvas.getByRole("button", { name: "Unhide Theory of Computation" }));
+    expect(await canvas.findByRole("button", { name: "Hide Theory of Computation" })).toBeInTheDocument();
+    expect(canvas.getByText(/2 courses, 2 deadlines/)).toBeInTheDocument();
   });
 
   it("applies persisted reduced motion app-wide at startup, before settings is opened (NIC-141)", async () => {

@@ -29,7 +29,7 @@ export function LeftRail() {
     <aside className="shell-rail shell-left" aria-label="Information" tabIndex={0}>
       <SchedulePanel />
       <SystemHealthPanel />
-      <WidgetSlot data={leftWidget} labelId="region-widget-left" />
+      <WidgetSlot data={leftWidget} labelId="region-widget-left" slotWidgetId={activeMode.widgets.left} />
       <NewsPanel />
     </aside>
   );

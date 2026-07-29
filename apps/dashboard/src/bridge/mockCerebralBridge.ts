@@ -230,6 +230,27 @@ export function createMockCerebralBridge(
   // Session-only per-mode collapse-all state (NIC-143), so a browser preview can flip
   // the bottom-bar collapse/expand icon; the real bridge hides/returns the windows.
   const collapsedModes = new Set<string>();
+  // Session-only Canvas hidden-item state (NIC-132) so a browser preview / test can hide + unhide
+  // scraped courses/deadlines; the real bridge persists the hidden ids in SQLite.
+  const canvasHidden = new Set<string>();
+  const canvasCourses = [
+    { id: "37331", label: "Theory of Computation" },
+    { id: "40010", label: "Linear Algebra" }
+  ];
+  const canvasDeadlines = [
+    { id: "a1", label: "Problem Set 7" },
+    { id: "a2", label: "Reading Response 4" }
+  ];
+  const canvasStatus = () => ({
+    available: true,
+    endpoint: "http://127.0.0.1:8899/canvas/ingest",
+    token: "mock-canvas-token",
+    lastScrapedAt: "2026-07-29T12:00:00Z",
+    courseCount: canvasCourses.filter((course) => !canvasHidden.has(course.id)).length,
+    deadlineCount: canvasDeadlines.filter((deadline) => !canvasHidden.has(deadline.id)).length,
+    courses: canvasCourses.map((course) => ({ ...course, hidden: canvasHidden.has(course.id) })),
+    deadlines: canvasDeadlines.map((deadline) => ({ ...deadline, hidden: canvasHidden.has(deadline.id) }))
+  });
   // A mutable window inventory for the navigator (NIC-143), so a browser preview can
   // minimize/surface/close and see the change on the next listWindows; the real bridge
   // enumerates and acts on live windows via Accessibility.
@@ -500,26 +521,27 @@ export function createMockCerebralBridge(
     },
     getCanvasStatus() {
       // A representative paired state for browser previews of the Settings Canvas card (NIC-132):
-      // an endpoint + token to pair the extension, and a recent scrape summary.
-      return Promise.resolve({
-        available: true,
-        endpoint: "http://127.0.0.1:8899/canvas/ingest",
-        token: "mock-canvas-token",
-        lastScrapedAt: "2026-07-29T12:00:00Z",
-        courseCount: 4,
-        deadlineCount: 7
-      });
+      // an endpoint + token to pair the extension, the scrape summary, and the item manage-list.
+      return Promise.resolve(canvasStatus());
     },
     resetCanvas() {
-      // Disconnect: the token rotates (a new value) and the scrape summary clears.
+      // Disconnect: the token rotates, the scrape summary clears, and hides reset.
+      canvasHidden.clear();
       return Promise.resolve({
         available: true,
         endpoint: "http://127.0.0.1:8899/canvas/ingest",
         token: "mock-canvas-token-rotated",
         lastScrapedAt: null,
         courseCount: 0,
-        deadlineCount: 0
+        deadlineCount: 0,
+        courses: [],
+        deadlines: []
       });
+    },
+    setCanvasItemHidden(id: string, hidden: boolean) {
+      if (hidden) canvasHidden.add(id);
+      else canvasHidden.delete(id);
+      return Promise.resolve(canvasStatus());
     },
     updateQuickApps(input) {
       // Stand in for the validated override path (NIC-119c): the same
