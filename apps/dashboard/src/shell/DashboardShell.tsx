@@ -70,6 +70,14 @@ export function DashboardShell() {
     [bridge, announce]
   );
 
+  // Ranked, capability-aware suggestions for the launcher (NIC-168): the bridge engine
+  // resolves typos and inexact input over the live catalogs; a failure inside the surface
+  // degrades to the bare input, so the command locus never depends on this call.
+  const fetchSuggestions = useCallback(
+    (query: string) => bridge.suggestCommands({ query }).then((result) => result.suggestions),
+    [bridge]
+  );
+
   // Register the native shell's intent hook so the menu bar / command palette can drive the
   // dashboard: a command submission dispatches through the bridge, and "Settings…" opens the
   // web settings overlay (NIC-76). Registered once; it calls the latest handlers via refs so
@@ -107,6 +115,7 @@ export function DashboardShell() {
               placeholder="Type a command…"
               ariaLabel="Type a command"
               onSubmit={runCommand}
+              fetchSuggestions={fetchSuggestions}
               disabled={posture.readOnly}
             />
           </div>

@@ -8,6 +8,7 @@ import type {
   LayoutSession,
   RecentActivity,
   SettingsSnapshot,
+  SuggestedCommand,
   Unsubscribe,
   UrlReference
 } from "./cerebralBridge";
@@ -331,6 +332,25 @@ export function createMockCerebralBridge(
   // visibly mints and listChromeProfiles reflects it (mirrors urlReferences).
   let chromeProfileRefs: AppReference[] = [];
 
+  // This session's submitted commands, newest first — the browser stand-in for the
+  // bridge's session-local "recent direct commands" (NIC-168 / PRD §9.4).
+  const recentCommands: string[] = [];
+
+  function recordRecentCommand(rawInput: string): void {
+    const trimmed = rawInput.trim();
+    if (!trimmed) {
+      return;
+    }
+    const existing = recentCommands.indexOf(trimmed);
+    if (existing >= 0) {
+      recentCommands.splice(existing, 1);
+    }
+    recentCommands.unshift(trimmed);
+    if (recentCommands.length > 5) {
+      recentCommands.pop();
+    }
+  }
+
   function emit(event: BridgeEvent): void {
     // Snapshot so a listener that unsubscribes mid-dispatch can't mutate the live set.
     for (const listener of [...listeners]) {
@@ -345,7 +365,74 @@ export function createMockCerebralBridge(
     getRecentActivity() {
       return Promise.resolve(RECENT_ACTIVITY);
     },
+    suggestCommands(input) {
+      // The browser stand-in for the core suggestion engine (NIC-168): grammar
+      // templates plus the mock catalogs, ranked by a naive prefix/substring
+      // score. The deterministic lexical engine lives in Swift core — this only
+      // lets the suggestion UI render and be exercised in browser previews.
+      // App/URL rows carry the honest pre-Mac unavailability (NIC-58).
+      const hostHint = "Available on the macOS host";
+      const patterns: SuggestedCommand[] = [
+        { command: "open ", label: "Open an app or URL", detail: "open <app|url>", kind: "pattern", requiresArgument: true, available: true },
+        { command: "mode ", label: "Switch mode", detail: "mode <id>", kind: "pattern", requiresArgument: true, available: true },
+        { command: "note ", label: "Capture a note", detail: "note <text>", kind: "pattern", requiresArgument: true, available: true },
+        { command: "search ", label: "Search notes", detail: "search <text>", kind: "pattern", requiresArgument: true, available: true }
+      ];
+      const apps: SuggestedCommand[] = [
+        { command: "open terminal", label: "Terminal", kind: "app", requiresArgument: false, available: false, unavailableReason: hostHint },
+        { command: "open vscode", label: "Visual Studio Code", kind: "app", requiresArgument: false, available: false, unavailableReason: hostHint },
+        { command: "open claude-desktop", label: "Claude", kind: "app", requiresArgument: false, available: false, unavailableReason: hostHint }
+      ];
+      const urls: SuggestedCommand[] = urlReferences.map((reference) => ({
+        command: `open ${reference.id}`,
+        label: reference.label,
+        kind: "url",
+        requiresArgument: false,
+        available: false,
+        unavailableReason: hostHint
+      }));
+      const modes: SuggestedCommand[] = ["executive", "developer", "school", "entertainment"].map((id) => ({
+        command: `mode ${id}`,
+        label: id.charAt(0).toUpperCase() + id.slice(1),
+        kind: "mode",
+        requiresArgument: false,
+        available: true
+      }));
+      const query = input.query.trim().toLowerCase();
+      const score = (candidate: SuggestedCommand): number => {
+        if (!query) {
+          return candidate.kind === "pattern" ? 1 : 0;
+        }
+        const label = candidate.label.toLowerCase();
+        const command = candidate.command.toLowerCase();
+        if (label.startsWith(query) || command.startsWith(query)) {
+          return 3;
+        }
+        return label.includes(query) || command.includes(query) ? 2 : 0;
+      };
+      let suggestions = [...patterns, ...apps, ...urls, ...modes]
+        .map((candidate) => ({ candidate, rank: score(candidate) }))
+        .filter((entry) => entry.rank > 0)
+        .sort((a, b) => (a.rank === b.rank ? a.candidate.label.localeCompare(b.candidate.label) : b.rank - a.rank))
+        .map((entry) => entry.candidate);
+      if (!query && recentCommands.length > 0) {
+        // An empty query leads with this session's recent commands (PRD §9.4).
+        const recents: SuggestedCommand[] = recentCommands.slice(0, 3).map((command) => ({
+          command,
+          label: command,
+          kind: "command",
+          requiresArgument: false,
+          available: true
+        }));
+        const recentSet = new Set(recents.map((recent) => recent.command));
+        suggestions = [...recents, ...suggestions.filter((entry) => !recentSet.has(entry.command))];
+      }
+      return Promise.resolve({ suggestions: suggestions.slice(0, input.limit ?? 8) });
+    },
     submitCommand(input) {
+      // The mock accepts every submission, so every one enters the recents surface
+      // (the real bridge records only accepted commands — NIC-168).
+      recordRecentCommand(input.rawInput);
       // A `run <workflowId>` submission simulates the runtime's workflow execution
       // (NIC-85): a canned two-step progress sequence bracketed by lifecycle
       // transitions, so the progress renderer and store paths are exercisable in

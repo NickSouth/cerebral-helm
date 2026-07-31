@@ -74,6 +74,13 @@ public struct CanvasStatusItem: Sendable, Equatable {
 public final class BridgeSession: @unchecked Sendable {
     private let runtime: CommandRuntime
     private let configDirectory: URL
+    /// Ranks command suggestions (NIC-168) over the runtime's live reference
+    /// store, so a reference minted mid-session is suggestible immediately.
+    private let suggestionEngine: CommandSuggestionEngine
+    /// Parses submitted input pre-bus for the layout-open re-route (unification,
+    /// 2026-07-31). Shares the runtime's live reference store, so it always agrees
+    /// with the bus parser.
+    private let directParser: DirectCommandParser
     /// The full workspace, when the host has one (the shell). Enables the
     /// user-overrides read side (bootstrap composes through `ConfigLoader`, so
     /// pinned quick apps appear — NIC-119c) and the validated override write
@@ -265,6 +272,21 @@ public final class BridgeSession: @unchecked Sendable {
         self.defaultBrowserBundleID = defaultBrowserBundleID
         self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
+        // Suggestion ranking (NIC-168) shares the parser's live reference store and
+        // adds display labels for the id-only catalogs (modes, workflows). Label
+        // loading degrades to bare ids — never blocks the session.
+        var modeLabels: [String: String] = [:]
+        if case let .valid(config) = ConfigValidator.validate(configDirectory: configDirectory) {
+            modeLabels = Dictionary(config.modes.map { ($0.id, $0.label) }, uniquingKeysWith: { first, _ in first })
+        }
+        let workflowLabels = ((try? WorkflowCatalogLoader.load(configDirectory: configDirectory)) ?? [:])
+            .mapValues(\.label)
+        self.suggestionEngine = CommandSuggestionEngine(
+            referenceStore: runtime.referenceCatalog,
+            modeLabels: modeLabels,
+            workflowLabels: workflowLabels
+        )
+        self.directParser = DirectCommandParser(referenceStore: runtime.referenceCatalog)
     }
 
     /// The one composition every snapshot/bootstrap emission uses: through the
@@ -310,6 +332,8 @@ public final class BridgeSession: @unchecked Sendable {
             return ok(request, payload: composeBootstrapState())
         case .submitCommand:
             return await submitCommand(request)
+        case .suggestCommands:
+            return await suggestCommands(request)
         case .applyMode:
             return await applyMode(request)
         case .captureNote:
@@ -398,11 +422,119 @@ public final class BridgeSession: @unchecked Sendable {
         // Honor an explicit, known source; default to `dashboard`. This keeps the
         // command bus honest about provenance (FR-CMD-01) without trusting arbitrary
         // strings.
+        // Layout-open unification (owner decision, 2026-07-31): a submitted
+        // `run open-<mode>-layout` enters the SAME layout session the bottom bar
+        // opens — override-merged frames, hotswap prep, quick-toggle in the bar —
+        // instead of replaying the shipped-config workflow through the bus. One
+        // behavior for every entry point (typed command, suggestion, quick-action
+        // tile, bottom bar). A mode without an authored layout keeps running its
+        // static workflow through the bus unchanged.
+        if case let .parsed(.runAction(actionID)) = directParser.parse(input.rawInput),
+           let modeID = layoutModeID(forWorkflowID: actionID),
+           await enterLayoutSession(modeID: modeID) {
+            recordRecentCommand(input.rawInput)
+            // The session entry is the executor-bypass path authorized at open
+            // (NIC-142 owner direction) — no bus command exists, so the receipt
+            // carries no command id.
+            return ok(request, payload: CommandReceipt(commandId: "", accepted: true))
+        }
         let source = input.source.flatMap(CommandSource.init(rawValue:)) ?? .dashboard
         let outcome = await runtime.submit(input.rawInput, source: source)
         registerAwaitingConfirmation(outcome)
         await emitConfigChangedIfModeApplied(outcome)
-        return ok(request, payload: receipt(for: outcome))
+        let commandReceipt = receipt(for: outcome)
+        if commandReceipt.accepted {
+            recordRecentCommand(input.rawInput)
+        }
+        return ok(request, payload: commandReceipt)
+    }
+
+    // MARK: - Recent direct commands (NIC-168 / PRD §9.4)
+
+    /// A bounded, session-local ring of accepted raw inputs, newest first — the
+    /// source for empty-query "recent direct commands" suggestions. Deliberately
+    /// in-memory only: durable command history persists REDACTED input (nil today,
+    /// FR-CMD-06), so re-runnable raw strings never touch storage. A fresh launch
+    /// starts empty and the surface degrades to the grammar listing.
+    private static let recentCommandsCap = 20
+    private let recentCommandsLock = NSLock()
+    private var recentRawInputs: [String] = []
+
+    private func recordRecentCommand(_ rawInput: String) {
+        let trimmed = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        recentCommandsLock.lock()
+        defer { recentCommandsLock.unlock() }
+        recentRawInputs.removeAll { $0 == trimmed }
+        recentRawInputs.insert(trimmed, at: 0)
+        if recentRawInputs.count > Self.recentCommandsCap {
+            recentRawInputs.removeLast(recentRawInputs.count - Self.recentCommandsCap)
+        }
+    }
+
+    private func snapshotRecentCommands() -> [String] {
+        recentCommandsLock.lock()
+        defer { recentCommandsLock.unlock() }
+        return recentRawInputs
+    }
+
+    /// Ranked, capability-aware command suggestions for the palette and launcher
+    /// (NIC-168). Read-only: ranking never executes anything — execution still
+    /// flows through `submitCommand`, the bus, and the policy engine. Availability
+    /// is stamped from the live capability set so a suggestion is never shown
+    /// runnable when the bridge cannot perform it (FR-UI-07). An empty query is
+    /// valid and lists the supported grammar.
+    private func suggestCommands(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: SuggestCommandsInput = decodePayload(request) else {
+            return invalidInput(request, "suggestCommands requires a query string.")
+        }
+        // Installed-app completeness (NIC-168): a throttled discovery mints every
+        // installed app into the reference catalog, so any app is matchable by
+        // name — at most one scan per TTL, and only where discovery is available.
+        await refreshAppCatalogForSuggestionsIfDue()
+        let limit = min(max(input.limit ?? CommandSuggestionEngine.defaultLimit, 1), 25)
+        var ranked = suggestionEngine.suggest(input.query, limit: limit)
+        if input.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // PRD §9.4: an empty query leads with recent direct commands (this
+            // session's accepted, still-resolvable ones), then the grammar.
+            let recents = suggestionEngine.recentSuggestions(snapshotRecentCommands())
+            let recentCommands = Set(recents.map(\.command))
+            ranked = Array((recents + ranked.filter { !recentCommands.contains($0.command) }).prefix(limit))
+        }
+        let capabilityByID = Dictionary(
+            capabilities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
+        )
+        let suggestions = ranked.map { suggestion in
+            let requirement = Self.requiredCapability(for: suggestion.kind)
+            let capability = requirement.flatMap { capabilityByID[$0] }
+            let available = requirement == nil || capability?.available == true
+            return CommandSuggestionDTO(
+                command: suggestion.command,
+                label: suggestion.label,
+                detail: suggestion.detail,
+                kind: suggestion.kind.rawValue,
+                requiresArgument: suggestion.requiresArgument,
+                available: available,
+                unavailableReason: available
+                    ? nil
+                    : (capability?.degradedReason ?? "Not available on this host yet.")
+            )
+        }
+        return ok(request, payload: SuggestCommandsResult(suggestions: suggestions))
+    }
+
+    /// The capability a suggestion kind depends on to actually execute; nil means
+    /// the kind runs everywhere the bus does (modes, notes, workflows degrade
+    /// step-by-step at execution rather than being hidden here).
+    private static func requiredCapability(for kind: CommandSuggestion.Kind) -> String? {
+        switch kind {
+        case .app: return "native.app.open"
+        case .url: return "native.url.open"
+        case .hook: return "native.hook.run"
+        case .workflow, .mode, .command, .pattern: return nil
+        }
     }
 
     /// A raw `mode <id>` command (palette, CLI-over-bridge) that succeeded also
@@ -599,29 +731,52 @@ public final class BridgeSession: @unchecked Sendable {
         guard BootstrapComposer.modeExists(input.modeId, configDirectory: configDirectory) else {
             return ok(request, payload: OpenLayoutResult(accepted: false, modeId: input.modeId))
         }
-        guard let layout = resolveLayout(modeID: input.modeId) else {
+        guard await enterLayoutSession(modeID: input.modeId) else {
             return errorResponse(
                 request, category: .unavailableCapability,
                 code: "no_layout",
                 message: "Mode \"\(input.modeId)\" has no authored layout."
             )
         }
+        return ok(request, payload: OpenLayoutResult(accepted: true, modeId: input.modeId))
+    }
 
-        let session = buildLayoutSession(modeID: input.modeId, layout: layout)
+    /// Enters layout mode for a mode with an authored layout: builds the session,
+    /// emits `layout.session.changed` (the bottom bar grows its quick-toggle), and
+    /// opens + arranges the whole layout. The single implementation behind BOTH the
+    /// `openLayout` operation and a submitted `run open-<mode>-layout` command
+    /// (unification, owner decision 2026-07-31) — every entry point produces the
+    /// identical layout-mode experience. Returns false when the mode has no
+    /// resolvable layout.
+    ///
+    /// Force the correct setup on open (NIC-142, owner direction 2026-07-15): open and
+    /// arrange EVERY static window + hotswap target from the authored (override-merged)
+    /// layout so nothing cold-starts on toggle, then hide the inactive hotswaps.
+    /// Direct capability calls (authorized once at open; the same executor bypass as
+    /// toggle/close). This supersedes the synthesized-workflow open, which read the
+    /// SHIPPED layout and so fought the override-merged session's frames.
+    private func enterLayoutSession(modeID: String) async -> Bool {
+        guard let layout = resolveLayout(modeID: modeID) else { return false }
+        let session = buildLayoutSession(modeID: modeID, layout: layout)
         setActiveLayoutSession(session)
         emit(BridgeEventFactory.layoutSessionChangedEvent(
             session: session.snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
-
-        // Force the correct setup on open (NIC-142, owner direction 2026-07-15): open and
-        // arrange EVERY static window + hotswap target from the authored (override-merged)
-        // layout so nothing cold-starts on toggle, then hide the inactive hotswaps.
-        // Direct capability calls (authorized once at open; the same executor bypass as
-        // toggle/close). This supersedes the synthesized-workflow open, which read the
-        // SHIPPED layout and so fought the override-merged session's frames.
         await openAndArrangeLayout(layout: layout, session: session)
+        return true
+    }
 
-        return ok(request, payload: OpenLayoutResult(accepted: true, modeId: input.modeId))
+    /// The mode whose authored layout a synthesized `open-<mode>-layout` workflow id
+    /// names, or nil when the id is not a layout opener — or the mode has no authored
+    /// layout, in which case its static workflow (if any) stays a plain bus workflow.
+    private func layoutModeID(forWorkflowID id: String) -> String? {
+        guard id.hasPrefix("open-"), id.hasSuffix("-layout") else { return nil }
+        let modeID = String(id.dropFirst("open-".count).dropLast("-layout".count))
+        guard !modeID.isEmpty,
+              BootstrapComposer.modeExists(modeID, configDirectory: configDirectory),
+              resolveLayout(modeID: modeID) != nil
+        else { return nil }
+        return modeID
     }
 
     /// Opens + arranges an entire layout on entry (NIC-142): every static window and
@@ -1276,13 +1431,45 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: SearchNotesResult(results: hits))
     }
 
-    /// Read-only application discovery (NIC-119): wraps the `apps` command so the
-    /// More Apps picker rides the same command bus as every other input source,
-    /// and unwraps the tool output for the dashboard. Pre-Mac (or on any tool
-    /// failure) this is a structured unavailable — the picker renders honestly.
-    private func listApps(
-        _ request: CerebralHelmBridgeOperationRequest
-    ) async -> CerebralHelmBridgeOperationResponse {
+    // MARK: - App discovery + auto-mint (NIC-119/150/168)
+
+    /// Suggestion ranking should know every installed app, not only the already
+    /// referenced ones (design spec §5.5 "best matching installed application"),
+    /// but a filesystem scan per keystroke is out of the question: at most one
+    /// discovery per TTL, claimed up front so concurrent calls never double-scan.
+    /// Minted references are durable, so the catalog stays warm across sessions.
+    private static let appDiscoveryTTL: TimeInterval = 15 * 60
+    private let appDiscoveryLock = NSLock()
+    private var lastAppDiscovery: Date?
+
+    private func claimAppDiscoverySlot() -> Bool {
+        appDiscoveryLock.lock()
+        defer { appDiscoveryLock.unlock() }
+        if let last = lastAppDiscovery, Date().timeIntervalSince(last) < Self.appDiscoveryTTL {
+            return false
+        }
+        // Claimed before the scan runs (and kept on failure), so a failing host
+        // attempts at most once per TTL instead of on every keystroke.
+        lastAppDiscovery = Date()
+        return true
+    }
+
+    /// Synchronous on purpose: `NSLock` may not be taken directly inside an async
+    /// function, so the async discovery path stamps through this helper.
+    private func stampAppDiscovery() {
+        appDiscoveryLock.lock()
+        lastAppDiscovery = Date()
+        appDiscoveryLock.unlock()
+    }
+
+    /// Runs the read-only `apps` discovery command and auto-mints references
+    /// (owner decision, 2026-07-06): any discovered app that no reference targets
+    /// gets one minted, then the shared reference catalog live-reloads so
+    /// `open <minted-id>` — and its suggestion — resolves this session too
+    /// (NIC-150): the parser and, on the macOS shell, the app.open target map
+    /// both read the runtime's reference store. Returns nil on any failure —
+    /// discovery is an enrichment, never a gate.
+    private func discoverAndMintApps() async -> CerebralHelmAppsListOutput? {
         let outcome = await runtime.submit("apps", source: .dashboard)
         guard
             case let .completed(_, status, result) = outcome,
@@ -1290,20 +1477,9 @@ public final class BridgeSession: @unchecked Sendable {
             let data = result?.output,
             let output = try? CerebralHelmAppsListOutput(data: data)
         else {
-            return errorResponse(
-                request, category: .unavailableCapability,
-                code: "apps_list_unavailable",
-                message: "Application discovery is unavailable."
-            )
+            return nil
         }
-        // Auto-mint (owner decision, 2026-07-06): any discovered app that no
-        // reference targets gets one minted now, so a mid-session install is
-        // pinnable immediately. Then live-reload the shared reference catalog so
-        // `open <minted-id>` resolves this session too (NIC-150): the parser and —
-        // on the macOS shell — the app.open target map both read the runtime's
-        // reference store, exactly as `addUrlReference` reloads after minting a
-        // URL. Without the reload a freshly installed app opened only after a
-        // relaunch (the store composes once at startup).
+        stampAppDiscovery()
         if let workspace {
             let shipped = (try? ReferenceCatalogLoader.load(configDirectory: configDirectory))
                 .map { Array($0.apps.values) } ?? []
@@ -1319,6 +1495,33 @@ public final class BridgeSession: @unchecked Sendable {
             ) {
                 runtime.updateReferences(fresh)
             }
+        }
+        return output
+    }
+
+    /// The suggestion-triggered variant (NIC-168): refresh only when this host can
+    /// actually discover (capability available), there is a workspace to mint
+    /// into, and the TTL elapsed. Pre-Mac and capability-degraded sessions skip
+    /// entirely — no doomed `apps` submissions polluting command history.
+    private func refreshAppCatalogForSuggestionsIfDue() async {
+        let discoveryAvailable = capabilities.first { $0.id == "native.apps.list" }?.available == true
+        guard workspace != nil, discoveryAvailable, claimAppDiscoverySlot() else { return }
+        _ = await discoverAndMintApps()
+    }
+
+    /// Read-only application discovery (NIC-119): wraps the `apps` command so the
+    /// More Apps picker rides the same command bus as every other input source,
+    /// and unwraps the tool output for the dashboard. Pre-Mac (or on any tool
+    /// failure) this is a structured unavailable — the picker renders honestly.
+    private func listApps(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let output = await discoverAndMintApps() else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "apps_list_unavailable",
+                message: "Application discovery is unavailable."
+            )
         }
         // Join discovered apps onto the configured app references by bundle id
         // (the reference `target`). `referenceId` is the pinnable key: only a
@@ -1877,6 +2080,22 @@ public final class BridgeSession: @unchecked Sendable {
     private struct SubmitCommandInput: Decodable {
         let rawInput: String
         let source: String?
+    }
+    private struct SuggestCommandsInput: Decodable {
+        let query: String
+        let limit: Int?
+    }
+    private struct CommandSuggestionDTO: Encodable {
+        let command: String
+        let label: String
+        let detail: String?
+        let kind: String
+        let requiresArgument: Bool
+        let available: Bool
+        let unavailableReason: String?
+    }
+    private struct SuggestCommandsResult: Encodable {
+        let suggestions: [CommandSuggestionDTO]
     }
     private struct CommandReceipt: Encodable {
         let commandId: String

@@ -2198,6 +2198,7 @@ public enum Operation: String, Codable {
     case storeSecret = "storeSecret"
     case submitCommand = "submitCommand"
     case subscribe = "subscribe"
+    case suggestCommands = "suggestCommands"
     case surfaceWindow = "surfaceWindow"
     case toggleLayout = "toggleLayout"
     case toggleModeCollapse = "toggleModeCollapse"

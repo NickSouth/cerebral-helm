@@ -48,6 +48,31 @@ export interface CommandReceipt {
   readonly accepted: boolean;
 }
 
+/** Input for {@link CerebralBridge.suggestCommands} (NIC-168). An empty query is
+ *  valid — it lists the supported grammar. */
+export interface SuggestCommandsInput {
+  readonly query: string;
+  readonly limit?: number;
+}
+/** One ranked, capability-aware candidate for the palette / launcher (NIC-168).
+ *  `command` is always an exact string in the parser's grammar: executing a
+ *  suggestion means submitting `command` verbatim — except `requiresArgument`
+ *  rows, whose `command` is a fill-in prefix (`"note "`) that completes the
+ *  input instead of executing. Unavailable rows render visibly disabled, never
+ *  fake-successful (NIC-58, FR-UI-07). */
+export interface SuggestedCommand {
+  readonly command: string;
+  readonly label: string;
+  readonly detail?: string | null;
+  readonly kind: "app" | "url" | "workflow" | "mode" | "hook" | "command" | "pattern";
+  readonly requiresArgument: boolean;
+  readonly available: boolean;
+  readonly unavailableReason?: string | null;
+}
+export interface SuggestCommandsResult {
+  readonly suggestions: readonly SuggestedCommand[];
+}
+
 export interface ApplyModeInput {
   readonly modeId: string;
 }
@@ -509,6 +534,10 @@ export interface CerebralBridge {
   getBootstrapState(): Promise<DashboardBootstrapState>;
   getRecentActivity(query?: RecentActivityQuery): Promise<RecentActivity>;
   submitCommand(input: SubmitCommandInput): Promise<CommandReceipt>;
+  /** Ranked, capability-aware command suggestions over the live catalogs
+   *  (NIC-168). Read-only — executing a suggestion still goes through
+   *  {@link submitCommand}. */
+  suggestCommands(input: SuggestCommandsInput): Promise<SuggestCommandsResult>;
   applyMode(input: ApplyModeInput): Promise<ApplyModeResult>;
   captureNote(input: CaptureNoteInput): Promise<CaptureNoteResult>;
   searchNotes(input: SearchNotesInput): Promise<SearchNotesResult>;

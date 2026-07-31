@@ -180,6 +180,11 @@ public final class CommandRuntime: @unchecked Sendable {
         referenceStore.reload(references)
     }
 
+    /// The live reference catalog store the parser resolves against, shared with
+    /// read-only consumers (the suggestion engine, NIC-168) so their view reloads
+    /// together with the parser's after ``updateReferences(_:)``.
+    public var referenceCatalog: CommandReferenceStore { referenceStore }
+
     /// Parses and runs one line of input. An allowed command executes; a
     /// confirmation-required command pauses and returns its disclosure; a denied
     /// command ends `failed` without reaching a handler.

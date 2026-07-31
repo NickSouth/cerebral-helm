@@ -288,14 +288,29 @@ describe("DashboardShell command surfaces (D3 / NIC-58, NIC-124)", () => {
     expect(await screen.findByText("Heimlich not implemented")).toBeInTheDocument();
   });
 
-  it("offers capability-aware suggestions — unavailable actions are visibly disabled", () => {
+  it("offers bridge-ranked, capability-aware suggestions — unavailable actions are visibly disabled (NIC-168)", async () => {
     renderShell();
-    fireEvent.focus(screen.getByLabelText("Type a command"));
+    const launcher = screen.getByLabelText("Type a command");
+    fireEvent.focus(launcher);
 
-    // The always-first "Ask Heimlich" row is gone (NIC-124) — only command matches remain.
-    expect(screen.queryByRole("button", { name: /Ask Heimlich/ })).toBeNull();
-    expect(screen.getByRole("button", { name: /Capture a note/ })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /Open an app/ })).toBeDisabled();
+    // An empty query lists the grammar templates; the "Ask Heimlich" row stays gone (NIC-124).
+    expect(await screen.findByRole("option", { name: /Capture a note/ })).toBeEnabled();
+    expect(screen.queryByRole("option", { name: /Ask Heimlich/ })).toBeNull();
+
+    // A typed query ranks the catalogs; app rows are honestly unavailable in the browser
+    // preview — visibly disabled, never fake-successful (NIC-58).
+    fireEvent.change(launcher, { target: { value: "ter" } });
+    expect(await screen.findByRole("option", { name: /Terminal/ })).toBeDisabled();
+  });
+
+  it("executes a clicked suggestion as its exact command string, not its label (NIC-168)", async () => {
+    const { submissions } = renderWithSubmit();
+    const launcher = screen.getByLabelText("Type a command");
+
+    fireEvent.change(launcher, { target: { value: "exec" } });
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /Executive/ }));
+
+    expect(submissions).toEqual(["mode executive"]);
   });
 });
 

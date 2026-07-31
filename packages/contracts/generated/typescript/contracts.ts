@@ -476,6 +476,7 @@ export enum Operation {
     StoreSecret = "storeSecret",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",
+    SuggestCommands = "suggestCommands",
     SurfaceWindow = "surfaceWindow",
     ToggleLayout = "toggleLayout",
     ToggleModeCollapse = "toggleModeCollapse",

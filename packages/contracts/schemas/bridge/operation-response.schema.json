@@ -58,7 +58,8 @@
         "listCalendars",
         "getCanvasStatus",
         "resetCanvas",
-        "setCanvasItemHidden"
+        "setCanvasItemHidden",
+        "suggestCommands"
       ]
     },
     "status": {

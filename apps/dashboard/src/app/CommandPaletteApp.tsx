@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from "react";
+import type { SuggestedCommand } from "../bridge/cerebralBridge";
 import "../tokens/tokens.css";
 import "../app.css";
 import "../shell/shell.css";
@@ -86,9 +87,21 @@ export function CommandPaletteApp() {
     // Route to the dashboard's command bus; the coordinator dismisses the palette, brings the
     // dashboard forward, and dispatches the command through the shared bridge (result surfaces
     // in the dashboard status line). Inline command execution without surfacing the dashboard
-    // is a later refinement (tied to reachable app-launch commands).
+    // is a later refinement (tied to reachable app-launch commands). An executed suggestion
+    // arrives here as its exact `command` grammar string (NIC-168).
     paletteControl("askHeimlich", { text });
   }, []);
+
+  // Ranked suggestions over the live catalogs (NIC-168) through the palette's own bound
+  // bridge transport. In a plain browser preview there is no bridge (and no bus behind
+  // the bar), so the palette honestly stays a bare input.
+  const fetchSuggestions = useCallback(
+    (query: string): Promise<readonly SuggestedCommand[]> =>
+      bridge
+        ? bridge.suggestCommands({ query }).then((result) => result.suggestions)
+        : Promise.resolve([]),
+    []
+  );
 
   return (
     <div className="command-palette" data-mode={mode}>
@@ -97,6 +110,7 @@ export function CommandPaletteApp() {
         placeholder="Type a command…"
         ariaLabel="Command palette"
         onSubmit={onSubmit}
+        fetchSuggestions={fetchSuggestions}
         focusOnMount
         spotlight
       />

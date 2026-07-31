@@ -34,6 +34,7 @@ import type {
   SettingsSnapshot,
   SpeedTestResult,
   StoreSecretResult,
+  SuggestCommandsResult,
   Unsubscribe,
   UpdateQuickAppsResult,
   UpdateSettingsResult
@@ -256,6 +257,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     submitCommand(input) {
       return operation<CommandReceipt>("submitCommand", { ...input });
+    },
+    suggestCommands(input) {
+      return operation<SuggestCommandsResult>("suggestCommands", { ...input });
     },
     applyMode(input) {
       return operation<ApplyModeResult>("applyMode", { ...input });

@@ -82,6 +82,205 @@ func submitCommandRequiresInput() async throws {
     #expect(response.error?.category == .invalidInput)
 }
 
+// MARK: - suggestCommands (NIC-168)
+
+private struct Suggestion: Decodable {
+    let command: String
+    let label: String
+    let detail: String?
+    let kind: String
+    let requiresArgument: Bool
+    let available: Bool
+    let unavailableReason: String?
+}
+private struct Suggestions: Decodable { let suggestions: [Suggestion] }
+
+@Test("suggestCommands resolves a typo'd app name, stamped honestly unavailable pre-Mac")
+func suggestCommandsResolvesTypo() async throws {
+    let session = try makeSession() // default capabilities: every native one unavailable
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"vscoed"}"#))
+
+    #expect(response.status == .ok)
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "open vscode")
+    #expect(top.label == "Visual Studio Code")
+    #expect(top.kind == "app")
+    #expect(top.available == false)
+    #expect(top.unavailableReason?.isEmpty == false)
+}
+
+@Test("suggestCommands marks an app runnable when native.app.open is available")
+func suggestCommandsHonorsCapabilities() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        capabilities: [CerebralContracts.Capability(
+            available: true, degradedReason: nil, id: "native.app.open", source: .native
+        )]
+    )
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"vscode"}"#))
+
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "open vscode")
+    #expect(top.available)
+    #expect(top.unavailableReason == nil)
+}
+
+@Test("suggestCommands carries mode display labels, and modes are never capability-gated")
+func suggestCommandsModeLabels() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"developer"}"#))
+
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "mode developer")
+    #expect(top.label == "Developer")
+    #expect(top.kind == "mode")
+    #expect(top.available)
+}
+
+@Test("suggestCommands with an empty query lists the grammar and honors the limit")
+func suggestCommandsEmptyQuery() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"","limit":3}"#))
+
+    let suggestions = try decode(response, as: Suggestions.self).suggestions
+    #expect(suggestions.count == 3)
+    #expect(suggestions.first?.command == "open ")
+    #expect(suggestions.first?.kind == "pattern")
+    #expect(suggestions.first?.requiresArgument == true)
+    #expect(suggestions.first?.available == true)
+}
+
+@Test("suggestCommands without a query string is an invalid-input error")
+func suggestCommandsRequiresQuery() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.suggestCommands, #"{}"#))
+
+    #expect(response.status == .error)
+    #expect(response.error?.category == .invalidInput)
+}
+
+@Test("empty-query suggestions lead with this session's recent direct commands (PRD §9.4)")
+func suggestCommandsRecentsFirst() async throws {
+    let session = try makeSession()
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"mode developer"}"#))
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"open vscode"}"#))
+    // A rejected input and a free-text capture never enter the recents surface.
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"tell me a joke"}"#))
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"note secret plans"}"#))
+
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":""}"#))
+    let suggestions = try decode(response, as: Suggestions.self).suggestions
+
+    // Newest accepted first, with its real label — and capability-stamped like
+    // any other suggestion (apps are honestly unavailable pre-Mac).
+    #expect(suggestions.first?.command == "open vscode")
+    #expect(suggestions.first?.label == "Visual Studio Code")
+    #expect(suggestions.first?.available == false)
+    #expect(suggestions.dropFirst().first?.command == "mode developer")
+    #expect(!suggestions.contains { $0.command == "note secret plans" })
+    #expect(!suggestions.contains { $0.command == "tell me a joke" })
+    // The grammar listing still follows the recents.
+    #expect(suggestions.contains { $0.command == "open " })
+}
+
+// MARK: - suggestCommands app-discovery refresh (NIC-168 installed-app completeness)
+
+/// Counts discovery scans so the suggest-triggered throttle is observable.
+private final class CountingAppDiscovery: AppDiscoveryCapability, @unchecked Sendable {
+    private let inner = MockAppDiscoveryCapability()
+    private let lock = NSLock()
+    private var count = 0
+    var scans: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+    private func recordScan() {
+        lock.lock()
+        count += 1
+        lock.unlock()
+    }
+    func listApplications(includeIcons: Bool) async throws -> AppDiscoveryResult {
+        recordScan()
+        return try await inner.listApplications(includeIcons: includeIcons)
+    }
+}
+
+/// A workspace-bound macOS-phase session whose discovery adapter counts its scans.
+/// `discoveryAvailable` drives the session capability map, not the adapter itself —
+/// exactly the gate the suggest-triggered refresh consults.
+private func makeDiscoverySession(
+    discovery: CountingAppDiscovery, discoveryAvailable: Bool = true
+) throws -> BridgeSession {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let base = ToolCapabilities.mocks()
+    let runtime = try makeCommandRuntime(
+        paths: paths,
+        phase: .macOS,
+        capabilities: ToolCapabilities(
+            app: base.app, url: base.url, process: base.process,
+            systemStatus: base.systemStatus, appDiscovery: discovery
+        )
+    )
+    return BridgeSession(
+        runtime: runtime,
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        capabilities: discoveryAvailable
+            ? [
+                CerebralContracts.Capability(
+                    available: true, degradedReason: nil, id: "native.apps.list", source: .native
+                ),
+                CerebralContracts.Capability(
+                    available: true, degradedReason: nil, id: "native.app.open", source: .native
+                ),
+            ]
+            : []
+    )
+}
+
+@Test("suggestCommands mints discovered apps so any installed app is matchable by name")
+func suggestCommandsDiscoversInstalledApps() async throws {
+    let discovery = CountingAppDiscovery()
+    let session = try makeDiscoverySession(discovery: discovery)
+
+    // Safari has no shipped reference; the first suggest query discovers, mints,
+    // and ranks it in one pass.
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"safari"}"#))
+
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "open safari")
+    #expect(top.kind == "app")
+    #expect(top.available)
+    #expect(discovery.scans == 1)
+}
+
+@Test("suggest-triggered discovery is throttled — repeated queries never rescan")
+func suggestCommandsDiscoveryThrottled() async throws {
+    let discovery = CountingAppDiscovery()
+    let session = try makeDiscoverySession(discovery: discovery)
+
+    _ = await session.execute(operationRequest(.suggestCommands, #"{"query":"saf"}"#))
+    _ = await session.execute(operationRequest(.suggestCommands, #"{"query":"safar"}"#))
+    _ = await session.execute(operationRequest(.suggestCommands, #"{"query":"mail"}"#))
+
+    #expect(discovery.scans == 1)
+}
+
+@Test("suggestCommands skips discovery entirely when the capability is unavailable")
+func suggestCommandsSkipsDiscoveryWhenUnavailable() async throws {
+    let discovery = CountingAppDiscovery()
+    let session = try makeDiscoverySession(discovery: discovery, discoveryAvailable: false)
+
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"vscode"}"#))
+
+    // Reference-catalog suggestions still flow; no doomed scan ran.
+    #expect(response.status == .ok)
+    #expect(discovery.scans == 0)
+}
+
 // MARK: - applyMode
 
 @Test("applyMode re-themes by emitting the target mode's config.changed snapshot")
@@ -404,6 +603,60 @@ func openLayoutEmitsSession() async throws {
     #expect(windows?.contains { $0["ref"] as? String == "claude-desktop" } == true)
     let toggle = sess?["quickToggle"] as? [String: Any]
     #expect(toggle?["activeRef"] as? String == "vscode")
+}
+
+@Test("a submitted `run open-<mode>-layout` enters the layout session, not the bus workflow (unification)")
+func submittedLayoutOpenEntersSession() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"run open-developer-layout"}"#)
+    )
+
+    let receipt = try decode(response, as: Receipt.self)
+    #expect(receipt.accepted)
+    // The session entry is the executor-bypass path — no bus command exists.
+    #expect(receipt.commandId.isEmpty)
+    let events = layoutSessionEvents(emitted)
+    #expect(events.count >= 1)
+    let sess = (events.first?["payload"] as? [String: Any])?["session"] as? [String: Any]
+    #expect(sess?["modeId"] as? String == "developer")
+
+    // The entry lands in the recent-commands surface like any accepted command.
+    let suggest = await session.execute(operationRequest(.suggestCommands, #"{"query":""}"#))
+    let top = try #require(try decode(suggest, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "run open-developer-layout")
+    #expect(top.label == "Open Developer Layout")
+}
+
+@Test("a layout-open workflow for a mode WITHOUT an authored layout still runs through the bus")
+func submittedLayoutOpenWithoutLayoutStaysOnBus() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // Executive ships no authored layout (NIC-142) but has a static workflow file.
+    let response = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"run open-executive-layout"}"#)
+    )
+
+    let receipt = try decode(response, as: Receipt.self)
+    #expect(receipt.accepted)
+    // The bus path minted a real command id; no layout session was started.
+    #expect(!receipt.commandId.isEmpty)
+    #expect(layoutSessionEvents(emitted).isEmpty)
 }
 
 @Test("openLayout for a mode with no authored layout is an honest error")

@@ -3080,6 +3080,70 @@ button.deadline-row__open:not(:disabled):hover {
   padding: 0 var(--ch-space-2);
 }
 
+/* Inline ghost completion (NIC-168): the selected suggestion's remainder painted after the
+   caret. Mirrors the launcher input's box exactly (border-width, padding, font) so the ghost
+   suffix lands where the typed text ends; the typed prefix is laid out but invisible. */
+.command-ghost {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  padding: var(--ch-space-3) var(--ch-space-4);
+  padding-left: calc(var(--ch-space-4) + var(--ch-space-6));
+  font-size: var(--ch-font-size-base);
+  color: var(--ch-text-muted);
+  opacity: 0.6;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.command-ghost__typed {
+  visibility: hidden;
+}
+
+/* The visible keyboard selection (design spec §5.5): the row Enter will execute. */
+.command-suggestion--selected,
+.command-suggestion--selected:hover:not(:disabled) {
+  background: var(--ch-surface-panel);
+  outline: 1px solid var(--ch-accent-primary);
+  outline-offset: -1px;
+}
+
+.command-suggestion__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Right-aligned row meta: the exact command (or grammar) plus a kind pill. */
+.command-suggestion__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.command-suggestion__command {
+  font-family: var(--ch-font-mono, ui-monospace, monospace);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-suggestion__kind {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-pill);
+  padding: 0 var(--ch-space-2);
+}
+
 .docked-input__input {
   width: 100%;
   box-sizing: border-box;
