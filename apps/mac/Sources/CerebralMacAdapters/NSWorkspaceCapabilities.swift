@@ -103,6 +103,70 @@ public struct NSWorkspaceAppCapability: AppCapability {
     }
 }
 
+/// Opens a repository directory in the configured editor (NIC-131). The editor is a
+/// configured application reference (default `vscode`), resolved to its installed
+/// application URL exactly like ``NSWorkspaceAppCapability``; the repo path is constrained
+/// to the projects root, so no arbitrary path can be opened and only the configured editor
+/// is ever launched.
+public struct NSWorkspaceProjectCapability: ProjectCapability {
+    private let editorReferenceID: String
+    private let appsProvider: @Sendable () -> [String: ReferenceEntry]
+    private let workspace: any WorkspaceOpening
+    private let projectsRoot: URL
+
+    public init(
+        editorReferenceID: String = "vscode",
+        appsProvider: @escaping @Sendable () -> [String: ReferenceEntry],
+        workspace: any WorkspaceOpening = SystemWorkspace(),
+        projectsRoot: URL = WorkspacePaths.defaultProjectsRoot()
+    ) {
+        self.editorReferenceID = editorReferenceID
+        self.appsProvider = appsProvider
+        self.workspace = workspace
+        self.projectsRoot = projectsRoot
+    }
+
+    public func open(repoPath: String) async throws -> ProjectOpenResult {
+        let repoURL = URL(fileURLWithPath: repoPath).standardizedFileURL
+        // Constrain to the projects root — the tool's core safety invariant. Whatever the
+        // caller passed, a path outside the root can never be opened.
+        let rootPath = projectsRoot.standardizedFileURL.path
+        let target = repoURL.path
+        guard target == rootPath || target.hasPrefix(rootPath + "/") else {
+            throw NativeCapabilityError.permissionDenied
+        }
+        // The repository directory must actually exist.
+        var isDirectory: ObjCBool = false
+        guard
+            FileManager.default.fileExists(atPath: target, isDirectory: &isDirectory),
+            isDirectory.boolValue
+        else {
+            throw NativeCapabilityError.notFound("No repository directory at '\(repoPath)'.")
+        }
+        // Resolve the configured editor (default VS Code) to its installed application.
+        guard let entry = appsProvider()[editorReferenceID] else {
+            throw NativeCapabilityError.notFound(
+                "Editor reference '\(editorReferenceID)' is not configured. Add it under Settings → Tools before opening a project."
+            )
+        }
+        guard let editorURL = workspace.installedApplicationURL(forBundleIdentifier: entry.target) else {
+            throw NativeCapabilityError.notFound(
+                "No installed application matches '\(entry.target)' (editor '\(editorReferenceID)'). Install it or update the reference under Settings → Tools."
+            )
+        }
+        do {
+            try await workspace.open(paths: [repoURL], withApplicationAt: editorURL)
+        } catch is CancellationError {
+            throw NativeCapabilityError.cancelled
+        } catch let error as NativeCapabilityError {
+            throw error
+        } catch {
+            throw NativeCapabilityError.adapterFailure("Opening '\(repoPath)' failed: \(error.localizedDescription)")
+        }
+        return ProjectOpenResult(repoPath: repoPath, opened: true)
+    }
+}
+
 /// Opens configured URL references with the system default handler (NIC-79).
 /// Only configured ids resolve; the tool contract carries no raw URL input.
 public struct NSWorkspaceURLCapability: URLCapability {

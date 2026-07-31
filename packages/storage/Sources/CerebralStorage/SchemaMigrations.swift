@@ -19,6 +19,10 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0008_mode_colors", sql: modeColorsSQL),
         SchemaMigration(id: "0009_confirm_all_actions", sql: confirmAllActionsSQL),
         SchemaMigration(id: "0010_layout_display", sql: layoutDisplaySQL),
+        SchemaMigration(id: "0011_stock_tickers", sql: stockTickersSQL),
+        SchemaMigration(id: "0012_calendar_mode_map", sql: calendarModeMapSQL),
+        SchemaMigration(id: "0013_canvas_scrape", sql: canvasScrapeSQL),
+        SchemaMigration(id: "0014_canvas_hidden", sql: canvasHiddenSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -232,5 +236,46 @@ public enum SchemaMigrations {
     /// the main display, then the system primary — the shell never errors on it.
     public static let layoutDisplaySQL = """
     ALTER TABLE settings ADD COLUMN layout_display_id TEXT;
+    """
+
+    /// Migration 0011: the "Stocks tickers" setting (NIC-128). The settings singleton
+    /// gains a JSON array of the user's tracked stock symbols for the Executive Stocks
+    /// widget; NULL means never set, so the shipped starter list applies, while an
+    /// explicit `[]` is a meaningful "cleared" state.
+    public static let stockTickersSQL = """
+    ALTER TABLE settings ADD COLUMN stock_tickers TEXT;
+    """
+
+    /// Migration 0012: the calendar→mode mapping setting (NIC-126). The settings singleton
+    /// gains a JSON object mapping each of the user's calendars (by identifier) to a mode,
+    /// driving the Today panel's per-mode relevance filtering; NULL/absent means no mappings,
+    /// so every calendar's events fall to the default mode (Executive) at the resolver.
+    public static let calendarModeMapSQL = """
+    ALTER TABLE settings ADD COLUMN calendar_mode_map TEXT;
+    """
+
+    /// Migration 0013: the Canvas scrape snapshot (NIC-132). A single-row table holding the latest
+    /// scrape of the School dashboard's courses/grades and upcoming deadlines as one inspectable
+    /// JSON blob; the newest scrape replaces it wholesale. Scraped grade data is personal and stays
+    /// local (ADR-006 operational state under the state root). Absent row means "no scrape yet", so
+    /// the widgets show their honest unavailable state until the Chrome extension posts one.
+    public static let canvasScrapeSQL = """
+    CREATE TABLE canvas_snapshot (
+        id            INTEGER PRIMARY KEY CHECK (id = 1),
+        snapshot_json TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+    );
+    """
+
+    /// Migration 0014: the Canvas hidden-item list (NIC-132). A single-row table holding the JSON
+    /// array of course/assignment ids the user has manually hidden from the School widgets; it
+    /// persists across scrapes (a hidden item stays hidden after re-syncing) and is kept separate
+    /// from the wholesale-replaced snapshot. Absent/empty means nothing is hidden.
+    public static let canvasHiddenSQL = """
+    CREATE TABLE canvas_hidden (
+        id         INTEGER PRIMARY KEY CHECK (id = 1),
+        ids_json   TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
     """
 }

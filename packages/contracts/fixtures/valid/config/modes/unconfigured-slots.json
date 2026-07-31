@@ -17,7 +17,7 @@
     null
   ],
   "widgets": {
-    "left": "market-brief",
+    "left": "stocks",
     "right": "projects"
   }
 }

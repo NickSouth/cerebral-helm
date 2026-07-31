@@ -3,6 +3,64 @@ import CerebralContracts
 import CerebralCore
 import CerebralTools
 
+/// The outcome of a successful Spotify connect (NIC-133), returned by the host's connect closure to
+/// the `connectSpotify` op: the granted scope only. The OAuth tokens are persisted to the Keychain
+/// by the Mac coordinator and never travel back through the bridge.
+public struct SpotifyConnectionInfo: Sendable, Equatable {
+    public let scope: String?
+    public init(scope: String?) {
+        self.scope = scope
+    }
+}
+
+/// The Canvas ingest connection state (NIC-132), returned by the host's status/reset closures to the
+/// `getCanvasStatus`/`resetCanvas` ops. `endpoint` and `token` are what the user pairs the Chrome
+/// extension with; `lastScrapedAt` (ISO-8601, nil when never) and the counts describe the last
+/// scrape. The token is a local pairing secret shown once in Settings — never logged.
+public struct CanvasStatusInfo: Sendable, Equatable {
+    public let endpoint: String
+    public let token: String?
+    public let lastScrapedAt: String?
+    public let courseCount: Int
+    public let deadlineCount: Int
+    /// Every scraped course/assignment (including hidden ones, flagged), so the settings surface can
+    /// list them with a hide/unhide toggle (NIC-132). The counts above are the VISIBLE totals.
+    public let courses: [CanvasStatusItem]
+    public let deadlines: [CanvasStatusItem]
+
+    public init(
+        endpoint: String,
+        token: String?,
+        lastScrapedAt: String?,
+        courseCount: Int,
+        deadlineCount: Int,
+        courses: [CanvasStatusItem] = [],
+        deadlines: [CanvasStatusItem] = []
+    ) {
+        self.endpoint = endpoint
+        self.token = token
+        self.lastScrapedAt = lastScrapedAt
+        self.courseCount = courseCount
+        self.deadlineCount = deadlineCount
+        self.courses = courses
+        self.deadlines = deadlines
+    }
+}
+
+/// One scraped Canvas item in the settings manage-list (NIC-132): its id, a display label, and
+/// whether the user has hidden it from the School widgets.
+public struct CanvasStatusItem: Sendable, Equatable {
+    public let id: String
+    public let label: String
+    public let hidden: Bool
+
+    public init(id: String, label: String, hidden: Bool) {
+        self.id = id
+        self.label = label
+        self.hidden = hidden
+    }
+}
+
 /// Executes versioned bridge operation requests against the live ``CommandRuntime``
 /// (NIC-74b, ADR-004). Transport-agnostic: the WKWebView transport (or a test) hands
 /// it a decoded operation request and forwards the response it returns.
@@ -67,6 +125,51 @@ public final class BridgeSession: @unchecked Sendable {
     /// badges (NIC-151). Optional: a host without it (tests, non-Mac) serves an
     /// empty profile list, so the UI simply offers no profile choices.
     private let chromeProfiles: (any ChromeProfileDiscoveryCapability)?
+    /// Lists the user's calendars for the Settings calendar→mode mapping (NIC-126). Optional: a
+    /// host without it (tests, non-Mac) serves an unauthorized/empty list, so the UI shows its
+    /// honest "grant Calendar access" state.
+    private let calendarProvider: (any CalendarProvider)?
+    /// Provisions and answers presence for logical secret references (NIC-134): the
+    /// `storeSecret`/`getSecretStatus` ops drive it directly, like `secretStore` on the Mac
+    /// composition. Optional — a host without it (tests without secrets, pre-Mac) reports the
+    /// secret surface honestly unavailable. The stored *value* never leaves this session: it is
+    /// written through `store` and its presence read through `resolve`; the response never
+    /// echoes it (FR-CFG-03, FR-OBS-03).
+    private let secretStore: (any SecretManaging)?
+    /// Invoked with the reference after a secret is successfully stored (NIC-134), so a live
+    /// consumer — e.g. the releases producer keyed on the TMDB API key — can refresh at once
+    /// rather than waiting out its slow cadence. Optional; a host without live secret consumers
+    /// leaves it nil.
+    private let onSecretStored: (@Sendable (String) -> Void)?
+
+    /// Invoked after a settings patch is durably applied, carrying the applied changes, so a
+    /// host can refresh a live producer that depends on a setting (e.g. the Stocks producer
+    /// re-samples when the ticker list changes, NIC-128) instead of waiting out its slow
+    /// cadence. Optional; a host with no settings-driven producers leaves it nil.
+    private let onSettingsChanged: (@Sendable (SettingsChanges) -> Void)?
+
+    /// Invoked with the entered mode id after a successful mode switch (either the `applyMode`
+    /// operation or a raw `mode <id>` command), so a host can refresh the entered mode's live
+    /// widget producers at once — the dashboard shows fresh data on entry instead of each
+    /// producer's last cadence tick. Optional; a host without live producers leaves it nil.
+    private let onModeApplied: (@Sendable (String) -> Void)?
+
+    /// Runs the Spotify OAuth connect flow (NIC-133): the `connectSpotify` op awaits it, and it
+    /// resolves once the browser round trip completes (tokens are persisted to the Keychain by the
+    /// coordinator) or throws honestly (no Client ID, user cancelled, Spotify rejected). Optional —
+    /// a host without the Mac coordinator (pre-Mac, tests) reports the connect surface unavailable.
+    /// The tokens never cross back through here; only the granted scope does.
+    private let spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)?
+
+    /// Reads the Canvas ingest connection state for `getCanvasStatus` (NIC-132) — the pairing
+    /// endpoint/token plus the last-scrape summary. Optional: a host without the Mac ingest store
+    /// reports the surface unavailable. `canvasReset` purges the scraped data and rotates the token
+    /// (the disconnect path), returning the fresh state.
+    private let canvasStatus: (@Sendable () async -> CanvasStatusInfo)?
+    private let canvasReset: (@Sendable () async -> CanvasStatusInfo)?
+    /// Hides or unhides a scraped Canvas item by id (NIC-132), returning the fresh status. Optional —
+    /// a host without the ingest store reports the surface unavailable.
+    private let canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)?
 
     /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
     /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
@@ -121,6 +224,15 @@ public final class BridgeSession: @unchecked Sendable {
         modeStateStore: (any ModeStateStore)? = nil,
         faviconCapability: (any FaviconCapability)? = nil,
         chromeProfiles: (any ChromeProfileDiscoveryCapability)? = nil,
+        calendarProvider: (any CalendarProvider)? = nil,
+        secretStore: (any SecretManaging)? = nil,
+        onSecretStored: (@Sendable (String) -> Void)? = nil,
+        onSettingsChanged: (@Sendable (SettingsChanges) -> Void)? = nil,
+        onModeApplied: (@Sendable (String) -> Void)? = nil,
+        spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil,
+        canvasStatus: (@Sendable () async -> CanvasStatusInfo)? = nil,
+        canvasReset: (@Sendable () async -> CanvasStatusInfo)? = nil,
+        canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)? = nil,
         workspaceWindows: (any WorkspaceWindowsCapability)? = nil,
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
@@ -136,6 +248,15 @@ public final class BridgeSession: @unchecked Sendable {
         self.modeStateStore = modeStateStore
         self.faviconCapability = faviconCapability
         self.chromeProfiles = chromeProfiles
+        self.calendarProvider = calendarProvider
+        self.secretStore = secretStore
+        self.onSecretStored = onSecretStored
+        self.onSettingsChanged = onSettingsChanged
+        self.onModeApplied = onModeApplied
+        self.spotifyConnect = spotifyConnect
+        self.canvasStatus = canvasStatus
+        self.canvasReset = canvasReset
+        self.canvasSetHidden = canvasSetHidden
         self.workspaceWindows = workspaceWindows
         self.app = app
         self.url = url
@@ -217,6 +338,14 @@ public final class BridgeSession: @unchecked Sendable {
             return await runSpeedTest(request)
         case .getSettings:
             return getSettings(request)
+        case .storeSecret:
+            return await storeSecret(request)
+        case .getSecretStatus:
+            return await getSecretStatus(request)
+        case .deleteSecret:
+            return await deleteSecret(request)
+        case .connectSpotify:
+            return await connectSpotify(request)
         case .openLayout:
             return await openLayout(request)
         case .closeLayout:
@@ -237,6 +366,14 @@ public final class BridgeSession: @unchecked Sendable {
             return await closeAllWindows(request)
         case .listWindows:
             return await listWindows(request)
+        case .listCalendars:
+            return await listCalendars(request)
+        case .getCanvasStatus:
+            return await getCanvasStatus(request)
+        case .resetCanvas:
+            return await resetCanvas(request)
+        case .setCanvasItemHidden:
+            return await setCanvasItemHidden(request)
         case .minimizeWindow:
             return await windowAction(request) { try await $0.minimize(windowID: $1) }
         case .surfaceWindow:
@@ -287,6 +424,9 @@ public final class BridgeSession: @unchecked Sendable {
             snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
         await reapplyCollapseBucket(enteredModeID: decoded.modeID)
+        // The entered mode's live widget producers refresh at once, so its widgets show
+        // fresh data on entry rather than their last cadence tick.
+        onModeApplied?(decoded.modeID)
     }
 
     private func applyMode(
@@ -311,6 +451,9 @@ public final class BridgeSession: @unchecked Sendable {
             snapshot: snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
         await reapplyCollapseBucket(enteredModeID: input.modeId)
+        // The entered mode's live widget producers refresh at once, so its widgets show
+        // fresh data on entry rather than their last cadence tick.
+        onModeApplied?(input.modeId)
         return ok(request, payload: ApplyModeResult(modeId: input.modeId, status: "ok"))
     }
 
@@ -996,6 +1139,122 @@ public final class BridgeSession: @unchecked Sendable {
         ))
     }
 
+    /// Stores an API credential in the Keychain behind a logical reference (NIC-134). The value
+    /// is trimmed of surrounding whitespace (a pasted key often carries a trailing newline) and
+    /// written through ``SecretManaging/store(reference:value:)``; the response reports presence
+    /// only — it never echoes the value, and the value never touches config or a log (FR-CFG-03,
+    /// FR-OBS-03). A store overwrites in place, so re-entering a key corrects a wrong one.
+    private func storeSecret(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: StoreSecretInput = decodePayload(request), !input.reference.isEmpty else {
+            return invalidInput(request, "storeSecret requires a reference.")
+        }
+        let value = input.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else {
+            return invalidInput(request, "Enter a value to store.")
+        }
+        guard let secretStore else {
+            return errorResponse(
+                request, category: .unavailableCapability, code: "secret_store_unavailable",
+                message: "Storing a secret requires the macOS host."
+            )
+        }
+        do {
+            try await secretStore.store(reference: input.reference, value: value)
+            // Nudge any live consumer keyed on this secret (e.g. the releases producer) so the
+            // widget reflects a just-entered key at once, not on its next slow tick (NIC-134).
+            onSecretStored?(input.reference)
+            return ok(request, payload: StoreSecretResult(reference: input.reference, stored: true))
+        } catch {
+            // Deliberately generic: never surface the value or a raw keychain diagnostic.
+            return errorResponse(
+                request, category: .unavailableCapability, code: "secret_store_failed",
+                message: "That secret couldn't be stored. Check the reference name and try again."
+            )
+        }
+    }
+
+    /// Reports whether a logical secret reference is bound, without exposing the value (NIC-134) —
+    /// so the settings field can honestly show "Set" vs "Not set" on load. A host without a secret
+    /// store, or a resolve failure, reports `bound: false` (an honest "not set") rather than an
+    /// error, so the field still renders.
+    private func getSecretStatus(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: SecretStatusInput = decodePayload(request), !input.reference.isEmpty else {
+            return invalidInput(request, "getSecretStatus requires a reference.")
+        }
+        guard let secretStore else {
+            return ok(request, payload: SecretStatusResult(reference: input.reference, bound: false))
+        }
+        let resolution = try? await secretStore.resolve(reference: input.reference)
+        return ok(request, payload: SecretStatusResult(
+            reference: input.reference, bound: resolution?.isResolved ?? false
+        ))
+    }
+
+    /// Removes a stored secret (NIC-133) — the "disconnect" path (e.g. Spotify's `spotify_oauth`
+    /// blob, or clearing a provider key). Idempotent: deleting an absent reference reports
+    /// `deleted: false` without erroring, so a disconnect on an already-disconnected account is a
+    /// clean no-op. The value is never read or echoed.
+    private func deleteSecret(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: SecretStatusInput = decodePayload(request), !input.reference.isEmpty else {
+            return invalidInput(request, "deleteSecret requires a reference.")
+        }
+        guard let secretStore else {
+            return ok(request, payload: DeleteSecretResult(reference: input.reference, deleted: false))
+        }
+        do {
+            try await secretStore.delete(reference: input.reference)
+            return ok(request, payload: DeleteSecretResult(reference: input.reference, deleted: true))
+        } catch {
+            // Absent (or an unreadable store) — nothing to remove, an honest idempotent no-op.
+            return ok(request, payload: DeleteSecretResult(reference: input.reference, deleted: false))
+        }
+    }
+
+    /// Runs the Spotify OAuth connect flow (NIC-133): opens the browser to Spotify's consent page,
+    /// captures the redirect, exchanges the code, and persists the tokens to the Keychain — all
+    /// inside the injected `spotifyConnect` closure (the Mac coordinator). The response reports only
+    /// `connected` and the granted `scope`; the tokens never cross back. Failures degrade to an
+    /// honest message and never leak a diagnostic: no Client ID / user declined → guidance; a
+    /// Spotify rejection or timeout → a generic retry message.
+    private func connectSpotify(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let spotifyConnect else {
+            return errorResponse(
+                request, category: .unavailableCapability, code: "spotify_connect_unavailable",
+                message: "Connecting Spotify requires the macOS host."
+            )
+        }
+        do {
+            let connection = try await spotifyConnect()
+            return ok(request, payload: ConnectSpotifyResult(connected: true, scope: connection.scope))
+        } catch let error as SpotifyPlaybackError {
+            let message: String
+            switch error {
+            case .credentialsMissing:
+                message = "Add your Spotify Client ID in Settings → Setup, then connect."
+            case .notConnected:
+                message = "Spotify didn't accept the connection. Please try connecting again."
+            case .providerFailed:
+                message = "Couldn't connect to Spotify. Please try again."
+            }
+            return errorResponse(
+                request, category: .unavailableCapability, code: "spotify_connect_failed", message: message
+            )
+        } catch {
+            return errorResponse(
+                request, category: .unavailableCapability, code: "spotify_connect_failed",
+                message: "Couldn't connect to Spotify. Please try again."
+            )
+        }
+    }
+
     private func searchNotes(
         _ request: CerebralHelmBridgeOperationRequest
     ) async -> CerebralHelmBridgeOperationResponse {
@@ -1266,6 +1525,66 @@ public final class BridgeSession: @unchecked Sendable {
         ))
     }
 
+    /// Lists the user's calendars for the Settings calendar→mode mapping (NIC-126). Requests
+    /// Calendar access at point of use; a denied grant (or any read failure, or no provider) is an
+    /// honest `authorized: false` with an empty list, which the Settings UI turns into a "grant
+    /// Calendar access" prompt rather than a fabricated set of calendars.
+    private func listCalendars(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let calendarProvider else {
+            return ok(request, payload: CalendarsResult(authorized: false, calendars: []))
+        }
+        do {
+            let calendars = try await calendarProvider.calendars()
+            return ok(request, payload: CalendarsResult(
+                authorized: true,
+                calendars: calendars.map { CalendarDTO(id: $0.id, title: $0.title, colorHex: $0.colorHex) }
+            ))
+        } catch {
+            return ok(request, payload: CalendarsResult(authorized: false, calendars: []))
+        }
+    }
+
+    /// Reports the Canvas ingest connection state (NIC-132): the loopback endpoint + pairing token to
+    /// paste into the Chrome extension, and the last scrape's age/counts. A host without the Mac
+    /// ingest store reports `available: false`, so the settings surface shows "requires the macOS
+    /// host" rather than a broken pairing panel.
+    private func getCanvasStatus(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let canvasStatus else {
+            return ok(request, payload: CanvasStatusResult.unavailable)
+        }
+        return ok(request, payload: CanvasStatusResult(await canvasStatus()))
+    }
+
+    /// Disconnects Canvas (NIC-132): purges the scraped data and rotates the ingest token, so the old
+    /// token stops working and the extension must be re-paired. Returns the fresh (empty) state.
+    private func resetCanvas(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let canvasReset else {
+            return ok(request, payload: CanvasStatusResult.unavailable)
+        }
+        return ok(request, payload: CanvasStatusResult(await canvasReset()))
+    }
+
+    /// Hides or unhides a scraped Canvas item (NIC-132): the item is filtered out of / restored to the
+    /// School widgets, and the fresh status (with each item's hidden flag) is returned so the settings
+    /// list reconciles in one round trip.
+    private func setCanvasItemHidden(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let canvasSetHidden else {
+            return ok(request, payload: CanvasStatusResult.unavailable)
+        }
+        guard let input: SetCanvasHiddenInput = decodePayload(request) else {
+            return invalidInput(request, "setCanvasItemHidden requires an item id and a hidden flag.")
+        }
+        return ok(request, payload: CanvasStatusResult(await canvasSetHidden(input.id, input.hidden)))
+    }
+
     /// Mints an app reference that opens Google Chrome in a specific profile (NIC-151),
     /// so a Chrome profile can be pinned as a quick app the same way any app is. The
     /// minted reference targets `com.google.Chrome` and carries the profile directory,
@@ -1456,6 +1775,10 @@ public final class BridgeSession: @unchecked Sendable {
             if let confirmAll = settingsChanges.confirmAllActions {
                 runtime.updateConfirmAllActions(confirmAll)
             }
+            // Let a settings-driven producer re-sample now (NIC-128): the Stocks producer
+            // refreshes when the ticker list changes, so an edit is live at once rather than
+            // on its next slow tick.
+            onSettingsChanged?(settingsChanges)
             // Live cross-webview sync: every surface (dashboard + the separate native
             // settings window) reflects the new assistant name, mode colors, and motion
             // preference immediately, not just on next launch.
@@ -1619,6 +1942,36 @@ public final class BridgeSession: @unchecked Sendable {
         let modeId: String
         let quickApps: [String]
     }
+    /// `{ reference, value }` — the `storeSecret` payload (NIC-134). `value` is the live secret;
+    /// it is written to the Keychain and never echoed back or logged.
+    private struct StoreSecretInput: Decodable {
+        let reference: String
+        let value: String
+    }
+    private struct StoreSecretResult: Encodable {
+        let reference: String
+        let stored: Bool
+    }
+    private struct SecretStatusInput: Decodable {
+        let reference: String
+    }
+    /// Presence only — whether the reference is bound. Never carries the value (FR-CFG-03).
+    private struct SecretStatusResult: Encodable {
+        let reference: String
+        let bound: Bool
+    }
+    /// `{ reference, deleted }` — the `deleteSecret` result (NIC-133). `deleted` is false when the
+    /// reference was already absent (an idempotent no-op), true when a stored value was removed.
+    private struct DeleteSecretResult: Encodable {
+        let reference: String
+        let deleted: Bool
+    }
+    /// `{ connected, scope? }` — the `connectSpotify` result (NIC-133). Reports success and the
+    /// granted scope only; the OAuth tokens never cross the bridge (they live in the Keychain).
+    private struct ConnectSpotifyResult: Encodable {
+        let connected: Bool
+        let scope: String?
+    }
     private struct OpenLayoutInput: Decodable {
         let modeId: String
     }
@@ -1731,6 +2084,62 @@ public final class BridgeSession: @unchecked Sendable {
         let directory: String
         let name: String
         let iconPng: String?
+    }
+    private struct CalendarDTO: Encodable {
+        let id: String
+        let title: String
+        let colorHex: String?
+    }
+    private struct CalendarsResult: Encodable {
+        /// Whether Calendar access is granted; false → the UI shows "grant Calendar access".
+        let authorized: Bool
+        let calendars: [CalendarDTO]
+    }
+    /// The Canvas ingest status wire shape (NIC-132). `available` is false only when the host has no
+    /// ingest store (pre-Mac/tests) — the UI then shows "requires the macOS host". Otherwise it
+    /// carries the pairing endpoint/token and the last scrape's age/counts.
+    private struct CanvasStatusItemDTO: Encodable {
+        let id: String
+        let label: String
+        let hidden: Bool
+    }
+    private struct CanvasStatusResult: Encodable {
+        let available: Bool
+        let endpoint: String
+        let token: String?
+        let lastScrapedAt: String?
+        let courseCount: Int
+        let deadlineCount: Int
+        let courses: [CanvasStatusItemDTO]
+        let deadlines: [CanvasStatusItemDTO]
+
+        init(_ info: CanvasStatusInfo) {
+            available = true
+            endpoint = info.endpoint
+            token = info.token
+            lastScrapedAt = info.lastScrapedAt
+            courseCount = info.courseCount
+            deadlineCount = info.deadlineCount
+            courses = info.courses.map { CanvasStatusItemDTO(id: $0.id, label: $0.label, hidden: $0.hidden) }
+            deadlines = info.deadlines.map { CanvasStatusItemDTO(id: $0.id, label: $0.label, hidden: $0.hidden) }
+        }
+
+        private init() {
+            available = false
+            endpoint = ""
+            token = nil
+            lastScrapedAt = nil
+            courseCount = 0
+            deadlineCount = 0
+            courses = []
+            deadlines = []
+        }
+
+        static let unavailable = CanvasStatusResult()
+    }
+    private struct SetCanvasHiddenInput: Decodable {
+        let id: String
+        let hidden: Bool
     }
     private struct ChromeProfilesResult: Encodable {
         let profiles: [ChromeProfileDTO]

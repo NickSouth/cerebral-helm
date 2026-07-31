@@ -37,6 +37,28 @@ public struct AppOpenResult: Equatable, Sendable {
     }
 }
 
+// MARK: - project.open
+
+/// Opens a repository *directory* in the configured editor (NIC-131). Distinct from
+/// ``AppCapability``, which launches a configured app reference by id and has no path
+/// input by construction: this takes a filesystem path, so it is a separate, path-aware
+/// capability. The adapter constrains the path to the configured projects root — a path
+/// outside it is `NativeCapabilityError.permissionDenied` — so no arbitrary path can be
+/// opened, and only the configured editor is ever launched.
+public protocol ProjectCapability: Sendable {
+    func open(repoPath: String) async throws -> ProjectOpenResult
+}
+
+public struct ProjectOpenResult: Equatable, Sendable {
+    public let repoPath: String
+    public let opened: Bool
+
+    public init(repoPath: String, opened: Bool) {
+        self.repoPath = repoPath
+        self.opened = opened
+    }
+}
+
 // MARK: - url.open
 
 public protocol URLCapability: Sendable {
@@ -56,6 +78,78 @@ public struct URLOpenResult: Equatable, Sendable {
         self.opened = opened
         self.resolvedURL = resolvedURL
         self.surfaced = surfaced
+    }
+}
+
+// MARK: - google.search
+
+/// Opens a Google search for a query in the browser (NIC-134). Like ``ProjectCapability``'s
+/// path constraint, the destination is not free-form: the adapter builds the Google search URL
+/// host-side (the host is fixed to `google.com`) and only the query varies, so untrusted data
+/// can never choose the target host. The adapter prefers a running Google Chrome instance,
+/// falling back to the default browser. Reusable by any "search the web for X" affordance.
+public protocol GoogleSearchCapability: Sendable {
+    func search(query: String) async throws -> GoogleSearchResult
+}
+
+public struct GoogleSearchResult: Equatable, Sendable {
+    public let query: String
+    public let opened: Bool
+    /// The Google search URL that was opened.
+    public let resolvedURL: String
+
+    public init(query: String, opened: Bool, resolvedURL: String) {
+        self.query = query
+        self.opened = opened
+        self.resolvedURL = resolvedURL
+    }
+}
+
+// MARK: - spotify.control
+
+/// Controls the user's Spotify playback (NIC-133): play/pause/next/previous, sent to the active
+/// device via the Spotify Web API. Requires a connected account (a valid OAuth token) — the adapter
+/// resolves it; a missing/dead authorization surfaces as ``NativeCapabilityError``. When there is no
+/// active device to act on, the result reports `activeDevice: false` rather than erroring, so the
+/// widget can guide the user honestly instead of appearing broken.
+public protocol SpotifyControlCapability: Sendable {
+    func control(action: String) async throws -> SpotifyControlResult
+}
+
+public struct SpotifyControlResult: Equatable, Sendable {
+    public let action: String
+    /// True when Spotify accepted the command; false when there was no active device.
+    public let applied: Bool
+    /// Whether there was an active Spotify device to control.
+    public let activeDevice: Bool
+
+    public init(action: String, applied: Bool, activeDevice: Bool) {
+        self.action = action
+        self.applied = applied
+        self.activeDevice = activeDevice
+    }
+}
+
+// MARK: - web.open
+
+/// Opens an arbitrary https web address in the browser (NIC-127). Where ``URLCapability`` resolves
+/// a *configured* reference id and ``GoogleSearchCapability`` builds a host-fixed search URL, this
+/// opens a caller-supplied destination — a news article link. The destination is still constrained
+/// (not allow-listed): the adapter validates the scheme (https only) and a present host host-side,
+/// refusing anything else, so a malformed or non-https link from feed data is never opened. Prefers
+/// a running Google Chrome instance, falling back to the default browser.
+public protocol WebOpenCapability: Sendable {
+    func open(url: String) async throws -> WebOpenResult
+}
+
+public struct WebOpenResult: Equatable, Sendable {
+    /// The https URL that was opened.
+    public let url: String
+    public let opened: Bool
+
+    public init(url: String, opened: Bool) {
+        self.url = url
+        self.opened = opened
     }
 }
 

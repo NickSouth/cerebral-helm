@@ -39,6 +39,214 @@ describe("reduceDashboardState", () => {
     expect(reduceDashboardState(base, lifecycleEvent("idle"))).toBe(base);
   });
 
+  it("folds live weather into liveWeather that survives a mode switch (NIC-169)", () => {
+    const base = loadBootstrapState();
+    const live = {
+      state: "ready",
+      label: "68°F · Sunny",
+      temperatureF: 68,
+      condition: "Sunny"
+    } as const;
+    const weatherEvent: BridgeEvent = {
+      eventId: "brevt_weather0001",
+      type: "weather.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-24T16:00:00.000Z",
+      payload: { weather: live }
+    };
+
+    const withWeather = reduceDashboardState(base, weatherEvent);
+    expect(withWeather.liveWeather).toEqual(live);
+    // An identical re-emit is a no-op (no needless re-render).
+    expect(reduceDashboardState(withWeather, weatherEvent)).toBe(withWeather);
+
+    // A mode switch swaps the mode-scoped bootstrap `weather`, but the runtime-only
+    // `liveWeather` lives outside the snapshot, so it survives with no flash (NIC-136).
+    const switched = reduceDashboardState(withWeather, {
+      eventId: "brevt_weathercfg001",
+      type: "config.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-24T16:00:01.000Z",
+      payload: { snapshot: getDashboardFixture("mode.developer.ready") }
+    });
+    expect(switched.mode).toBe("Developer");
+    expect(switched.weather?.temperatureF).toBe(66); // the developer bootstrap value
+    expect(switched.liveWeather).toEqual(live); // live value preserved across the switch
+  });
+
+  it("ignores a malformed weather.changed payload (no fabricated update)", () => {
+    const base = loadBootstrapState();
+    const malformed: BridgeEvent = {
+      eventId: "brevt_weatherbad01",
+      type: "weather.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-24T16:00:00.000Z",
+      payload: { weather: { label: "no state field" } }
+    };
+    expect(reduceDashboardState(base, malformed)).toBe(base);
+    expect(reduceDashboardState(base, { ...malformed, payload: {} })).toBe(base);
+  });
+
+  it("folds live news into a per-profile liveNews map that survives a mode switch (NIC-127)", () => {
+    const base = loadBootstrapState();
+    const region = {
+      state: "ready",
+      headlines: [
+        { id: "n1", title: "Markets steady as earnings open", source: "Reuters" },
+        { id: "n2", title: "Central bank holds rates", source: "Bloomberg" },
+        { id: "n3", title: "Cloud provider unveils AI tooling", source: "The Verge" }
+      ]
+    } as const;
+    const newsEvent: BridgeEvent = {
+      eventId: "brevt_news00000001",
+      type: "news.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T16:00:00.000Z",
+      payload: { profile: "broad", news: region }
+    };
+
+    const withNews = reduceDashboardState(base, newsEvent);
+    expect(withNews.liveNews?.broad).toEqual(region);
+    // An identical re-emit for the same profile is a no-op (no needless re-render).
+    expect(reduceDashboardState(withNews, newsEvent)).toBe(withNews);
+
+    // A second profile lands alongside the first — the map is keyed, not replaced.
+    const engineering = { ...region, headlines: [region.headlines[0]] } as const;
+    const withBoth = reduceDashboardState(withNews, {
+      ...newsEvent,
+      eventId: "brevt_news00000002",
+      payload: { profile: "engineering", news: engineering }
+    });
+    expect(withBoth.liveNews?.broad).toEqual(region);
+    expect(withBoth.liveNews?.engineering).toEqual(engineering);
+
+    // A mode switch swaps the mode-scoped bootstrap `news`, but the runtime-only `liveNews` lives
+    // outside the snapshot, so it survives with no flash (NIC-136).
+    const switched = reduceDashboardState(withBoth, {
+      eventId: "brevt_newscfg00001",
+      type: "config.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T16:00:01.000Z",
+      payload: { snapshot: getDashboardFixture("mode.developer.ready") }
+    });
+    expect(switched.mode).toBe("Developer");
+    expect(switched.liveNews?.broad).toEqual(region);
+    expect(switched.liveNews?.engineering).toEqual(engineering);
+  });
+
+  it("ignores a malformed news.changed payload (no fabricated update)", () => {
+    const base = loadBootstrapState();
+    const region = { state: "ready", headlines: [] } as const;
+    // Missing profile, missing region, and a region without a `state` string are all ignored.
+    expect(
+      reduceDashboardState(base, {
+        eventId: "brevt_newsbad00001",
+        type: "news.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-27T16:00:00.000Z",
+        payload: { news: region }
+      })
+    ).toBe(base);
+    expect(
+      reduceDashboardState(base, {
+        eventId: "brevt_newsbad00002",
+        type: "news.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-27T16:00:00.000Z",
+        payload: { profile: "broad", news: { headlines: [] } }
+      })
+    ).toBe(base);
+    expect(
+      reduceDashboardState(base, {
+        eventId: "brevt_newsbad00003",
+        type: "news.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-27T16:00:00.000Z",
+        payload: {}
+      })
+    ).toBe(base);
+  });
+
+  it("folds live schedule into a per-profile liveSchedule map that survives a mode switch (NIC-126)", () => {
+    const base = loadBootstrapState();
+    const region = {
+      state: "ready",
+      items: [
+        { id: "s1", title: "Quarterly planning review", start: "2026-07-27T14:00:00Z", kind: "today" },
+        { id: "s2", title: "1:1 with design lead", start: "2026-07-27T16:30:00Z", kind: "today" },
+        { id: "s3", title: "Release retrospective", start: "2026-07-27T23:00:00Z", kind: "tonight" }
+      ]
+    } as const;
+    const scheduleEvent: BridgeEvent = {
+      eventId: "brevt_sched00000001",
+      type: "schedule.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T16:00:00.000Z",
+      payload: { profile: "all", schedule: region }
+    };
+
+    const withSchedule = reduceDashboardState(base, scheduleEvent);
+    expect(withSchedule.liveSchedule?.all).toEqual(region);
+    // An identical re-emit for the same profile is a no-op (no needless re-render).
+    expect(reduceDashboardState(withSchedule, scheduleEvent)).toBe(withSchedule);
+
+    // A second profile lands alongside the first — the map is keyed, not replaced.
+    const engineering = { ...region, items: [region.items[0]] } as const;
+    const withBoth = reduceDashboardState(withSchedule, {
+      ...scheduleEvent,
+      eventId: "brevt_sched00000002",
+      payload: { profile: "engineering", schedule: engineering }
+    });
+    expect(withBoth.liveSchedule?.all).toEqual(region);
+    expect(withBoth.liveSchedule?.engineering).toEqual(engineering);
+
+    // A mode switch swaps the mode-scoped bootstrap `schedule`, but the runtime-only `liveSchedule`
+    // lives outside the snapshot, so it survives with no flash (NIC-136).
+    const switched = reduceDashboardState(withBoth, {
+      eventId: "brevt_schedcfg0001",
+      type: "config.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T16:00:01.000Z",
+      payload: { snapshot: getDashboardFixture("mode.developer.ready") }
+    });
+    expect(switched.mode).toBe("Developer");
+    expect(switched.liveSchedule?.all).toEqual(region);
+    expect(switched.liveSchedule?.engineering).toEqual(engineering);
+  });
+
+  it("ignores a malformed schedule.changed payload (no fabricated update)", () => {
+    const base = loadBootstrapState();
+    const region = { state: "ready", items: [] } as const;
+    // Missing profile, missing region, and a region without a `state` string are all ignored.
+    expect(
+      reduceDashboardState(base, {
+        eventId: "brevt_schedbad0001",
+        type: "schedule.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-27T16:00:00.000Z",
+        payload: { schedule: region }
+      })
+    ).toBe(base);
+    expect(
+      reduceDashboardState(base, {
+        eventId: "brevt_schedbad0002",
+        type: "schedule.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-27T16:00:00.000Z",
+        payload: { profile: "all", schedule: { items: [] } }
+      })
+    ).toBe(base);
+    expect(
+      reduceDashboardState(base, {
+        eventId: "brevt_schedbad0003",
+        type: "schedule.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-27T16:00:00.000Z",
+        payload: {}
+      })
+    ).toBe(base);
+  });
+
   it("folds mode.windowcollapse.changed into a per-mode collapse map (NIC-143)", () => {
     const base = loadBootstrapState();
     const collapse = (modeId: string, collapsed: boolean): BridgeEvent => ({
@@ -423,6 +631,62 @@ describe("reduceDashboardState", () => {
     expect(next.regions.systemHealth.state).toBe("ready");
     // A mode-scoped region (news) does take the snapshot's value.
     expect(next.regions.news).toBe(schoolSnapshot.regions.news);
+  });
+
+  it("folds a widget.data.changed stream into liveWidgets keyed by widget id (NIC-131)", () => {
+    const base = loadBootstrapState();
+    const widget = {
+      widgetId: "repositories",
+      state: "ready",
+      headline: "1 repository",
+      data: { items: [{ id: "cerebral-helm", name: "cerebral-helm", branch: "dev", path: "/p/cerebral-helm" }] }
+    };
+    const event: BridgeEvent = {
+      eventId: "brevt_widget0001",
+      type: "widget.data.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-19T16:00:00.000Z",
+      payload: { widgetId: "repositories", widget }
+    };
+
+    const next = reduceDashboardState(base, event);
+    expect(next.liveWidgets?.repositories).toBe(widget);
+
+    // A malformed payload — missing widget, or an envelope whose own id disagrees with the
+    // event key — is ignored (same reference, no fabricated update).
+    expect(reduceDashboardState(base, { ...event, payload: { widgetId: "repositories" } })).toBe(base);
+    expect(
+      reduceDashboardState(base, {
+        ...event,
+        payload: { widgetId: "repositories", widget: { ...widget, widgetId: "projects" } }
+      })
+    ).toBe(base);
+  });
+
+  it("carries liveWidgets across a config.changed mode switch (NIC-131 blueprint)", () => {
+    const base = loadBootstrapState(); // Executive
+    const widget = { widgetId: "repositories", state: "ready", data: { items: [] } };
+    const withLive = reduceDashboardState(base, {
+      eventId: "brevt_widget0002",
+      type: "widget.data.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-19T16:00:00.000Z",
+      payload: { widgetId: "repositories", widget }
+    });
+    expect(withLive.liveWidgets?.repositories).toBe(widget);
+
+    const snapshot = getDashboardFixture("mode.school.ready");
+    const switched = reduceDashboardState(withLive, {
+      eventId: "brevt_config_widget",
+      type: "config.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-19T16:00:00.000Z",
+      payload: { snapshot }
+    });
+
+    // The mode-scoped slice swaps, but live widget data (outside `regions`) is untouched.
+    expect(switched.mode).toBe("School");
+    expect(switched.liveWidgets?.repositories).toBe(widget);
   });
 });
 

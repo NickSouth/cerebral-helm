@@ -35,6 +35,10 @@ const bridgeOperations = new Set([
   "updateQuickApps",
   "runSpeedTest",
   "getSettings",
+  "storeSecret",
+  "getSecretStatus",
+  "deleteSecret",
+  "connectSpotify",
   "addUrlReference",
   "listUrls",
   "listChromeProfiles",
@@ -49,9 +53,13 @@ const bridgeOperations = new Set([
   "toggleModeCollapse",
   "closeAllWindows",
   "listWindows",
+  "listCalendars",
   "minimizeWindow",
   "surfaceWindow",
-  "closeWindow"
+  "closeWindow",
+  "getCanvasStatus",
+  "resetCanvas",
+  "setCanvasItemHidden"
 ]);
 
 function readJson(filePath) {

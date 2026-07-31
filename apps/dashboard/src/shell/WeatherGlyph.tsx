@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 
 /**
- * Weather glyph for the bottom bar: maps the mocked `condition` phrase to a filled line icon and a
+ * Weather glyph for the bottom bar: maps the `condition` phrase to a filled icon and a
  * `data-weather` kind. The kind drives a natural, condition-based color (yellow sun, white cloud,
- * blue rain) via CSS — NOT the mode accent. Partly cloudy is two-tone. The exact condition stays in
- * the item's title.
+ * blue rain, icy snow, grey fog, stormy thunder) via CSS — NOT the mode accent. Partly cloudy and
+ * thunder are two-tone. The exact condition phrase stays in the item's title.
  */
-type WeatherKind = "sun" | "cloud" | "partly" | "rain";
+type WeatherKind = "sun" | "cloud" | "partly" | "rain" | "snow" | "fog" | "thunder";
 
 const GLYPHS: Readonly<Record<WeatherKind, ReactNode>> = {
   sun: (
@@ -60,15 +60,57 @@ const GLYPHS: Readonly<Record<WeatherKind, ReactNode>> = {
         strokeLinecap="round"
       />
     </>
+  ),
+  snow: (
+    <>
+      {/* Filled cloud with three snow-flake discs falling below. */}
+      <path
+        d="M7.3 15.5h8.4a3.4 3.4 0 0 0 0-6.7 4.8 4.8 0 0 0-9.2-1.2A3.3 3.3 0 0 0 7.3 15.5z"
+        fill="currentColor"
+      />
+      <circle cx="8.6" cy="19" r="1.05" fill="currentColor" />
+      <circle cx="12" cy="20.5" r="1.05" fill="currentColor" />
+      <circle cx="15.4" cy="19" r="1.05" fill="currentColor" />
+    </>
+  ),
+  fog: (
+    <>
+      {/* Filled cloud over two rounded mist bars. */}
+      <path
+        d="M7.3 14h8.4a3.4 3.4 0 0 0 0-6.7 4.8 4.8 0 0 0-9.2-1.2A3.3 3.3 0 0 0 7.3 14z"
+        fill="currentColor"
+      />
+      <rect x="5.5" y="17.2" width="11" height="1.8" rx="0.9" fill="currentColor" />
+      <rect x="7.5" y="20.3" width="8" height="1.8" rx="0.9" fill="currentColor" />
+    </>
+  ),
+  thunder: (
+    <>
+      {/* Two-tone: stormy cloud behind, warm bolt in front (colored per sub-element in CSS). */}
+      <path
+        className="weather-glyph__thundercloud"
+        d="M7.3 13.5h8.4a3.4 3.4 0 0 0 0-6.7 4.8 4.8 0 0 0-9.2-1.2A3.3 3.3 0 0 0 7.3 13.5z"
+        fill="currentColor"
+      />
+      <path
+        className="weather-glyph__thunderbolt"
+        d="M12.5 13.2l-3.5 5.4h2.6l-1.1 4.2 4.5-6.2h-2.7z"
+        fill="currentColor"
+      />
+    </>
   )
 };
 
 function kindFor(condition: string): WeatherKind {
   const c = condition.toLowerCase();
-  if (c.includes("rain") || c.includes("shower") || c.includes("drizzle") || c.includes("storm"))
-    return "rain";
+  // Order matters: thunder and snow are checked before rain because "Thunderstorm" and
+  // "Snow Showers" also match the rain keywords ("storm" / "shower").
+  if (c.includes("thunder") || c.includes("storm")) return "thunder";
+  if (c.includes("snow") || c.includes("sleet") || c.includes("blizzard")) return "snow";
+  if (c.includes("rain") || c.includes("shower") || c.includes("drizzle")) return "rain";
   if (c.includes("partly") || c.includes("mostly sunny")) return "partly";
-  if (c.includes("cloud") || c.includes("overcast") || c.includes("fog")) return "cloud";
+  if (c.includes("fog") || c.includes("mist") || c.includes("haze")) return "fog";
+  if (c.includes("cloud") || c.includes("overcast")) return "cloud";
   // Sunny / Clear and anything else fall back to the sun.
   return "sun";
 }

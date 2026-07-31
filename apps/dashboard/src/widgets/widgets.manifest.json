@@ -2,13 +2,13 @@
   "schemaVersion": "1.0.0",
   "description": "Node-readable registry of dashboard widget ids a mode config may reference (widgets.left / widgets.right). Mirror of WIDGET_IDS in widgets.ts (kept in lockstep by widgets.test.ts); read by scripts/validate-config.mjs to resolve mode widget slots.",
   "widgetIds": [
-    "market-brief",
+    "stocks",
     "project-git-status",
     "deadlines",
     "spotify",
     "projects",
     "repositories",
     "courses",
-    "media-list"
+    "releases"
   ]
 }

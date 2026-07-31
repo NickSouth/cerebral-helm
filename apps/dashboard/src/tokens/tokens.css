@@ -63,6 +63,8 @@
   --ch-weather-sun: #f4c95d;
   --ch-weather-cloud: #d6e0ec;
   --ch-weather-rain: #5f9bf0;
+  --ch-weather-snow: #eaf3ff;
+  --ch-weather-fog: #aeb9c6;
 
   /* --- Active accent: defaults to Executive until [data-mode] resolves it --- */
   --ch-accent-primary: var(--ch-mode-executive-primary);

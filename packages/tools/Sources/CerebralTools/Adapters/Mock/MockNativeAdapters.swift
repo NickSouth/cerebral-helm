@@ -26,6 +26,21 @@ public struct MockAppCapability: AppCapability {
     }
 }
 
+public struct MockProjectCapability: ProjectCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(repoPath: String) async throws -> ProjectOpenResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.projectOpen, matrix: matrix, fault: fault, subject: repoPath)
+        return ProjectOpenResult(repoPath: repoPath, opened: true)
+    }
+}
+
 public struct MockURLCapability: URLCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault
@@ -153,6 +168,84 @@ public struct MockSecretCapability: SecretCapability {
     public func resolve(reference: String) async throws -> SecretResolution {
         try CapabilityGate.check(CapabilityMatrix.Capability.secret, matrix: matrix, fault: fault, subject: reference)
         return SecretResolution(reference: reference, isResolved: resolvableReferences.contains(reference))
+    }
+}
+
+/// An in-memory ``SecretManaging`` for pre-Mac builds and tests (NIC-134): an actor holding a
+/// dictionary, so the settings provisioning ops (`storeSecret`/`getSecretStatus`) can be
+/// exercised off the real Keychain. `readValue` throws `notFound` for an unbound reference,
+/// matching the Keychain adapter's contract.
+public actor MockSecretStore: SecretManaging {
+    private var values: [String: String]
+
+    public init(values: [String: String] = [:]) {
+        self.values = values
+    }
+
+    public func store(reference: String, value: String) async throws {
+        values[reference] = value
+    }
+
+    public func readValue(reference: String) async throws -> String {
+        guard let value = values[reference] else {
+            throw NativeCapabilityError.notFound("No secret is stored for reference '\(reference)'.")
+        }
+        return value
+    }
+
+    public func delete(reference: String) async throws {
+        guard values.removeValue(forKey: reference) != nil else {
+            throw NativeCapabilityError.notFound("No secret is stored for reference '\(reference)'.")
+        }
+    }
+
+    public func resolve(reference: String) async throws -> SecretResolution {
+        SecretResolution(reference: reference, isResolved: values[reference] != nil)
+    }
+}
+
+public struct MockGoogleSearchCapability: GoogleSearchCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func search(query: String) async throws -> GoogleSearchResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.googleSearch, matrix: matrix, fault: fault, subject: query)
+        return GoogleSearchResult(query: query, opened: true, resolvedURL: "https://www.google.com/search?q=\(query)")
+    }
+}
+
+public struct MockSpotifyControlCapability: SpotifyControlCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func control(action: String) async throws -> SpotifyControlResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.spotifyControl, matrix: matrix, fault: fault, subject: action)
+        return SpotifyControlResult(action: action, applied: true, activeDevice: true)
+    }
+}
+
+public struct MockWebOpenCapability: WebOpenCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(url: String) async throws -> WebOpenResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.webOpen, matrix: matrix, fault: fault, subject: url)
+        return WebOpenResult(url: url, opened: true)
     }
 }
 

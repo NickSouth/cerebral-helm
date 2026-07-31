@@ -29,7 +29,7 @@ describe("expanded bootstrap state", () => {
     const { regions } = loadBootstrapState();
 
     expect(regions.schedule.state).toBe("ready");
-    expect(regions.news.headlines.length).toBeLessThanOrEqual(3);
+    expect(regions.news.headlines.length).toBeLessThanOrEqual(4);
     // Battery carries a mocked charge percentage (Executive default → 82%).
     expect(regions.systemHealth.battery.state).toBe("ready");
     expect(regions.systemHealth.battery.percent).toBe(82);

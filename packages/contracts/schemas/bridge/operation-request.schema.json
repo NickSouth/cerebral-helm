@@ -34,6 +34,10 @@
         "updateQuickApps",
         "runSpeedTest",
         "getSettings",
+        "storeSecret",
+        "getSecretStatus",
+        "deleteSecret",
+        "connectSpotify",
         "addUrlReference",
         "listUrls",
         "listChromeProfiles",
@@ -50,7 +54,11 @@
         "listWindows",
         "minimizeWindow",
         "surfaceWindow",
-        "closeWindow"
+        "closeWindow",
+        "listCalendars",
+        "getCanvasStatus",
+        "resetCanvas",
+        "setCanvasItemHidden"
       ]
     },
     "payload": {

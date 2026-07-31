@@ -33,11 +33,15 @@ public enum PreMacToolRuntime {
 
         let handlers: [String: any ToolHandler] = [
             "app.open": AppOpenHandler(capability: capabilities.app),
+            "project.open": ProjectOpenHandler(capability: capabilities.project),
             "url.open": URLOpenHandler(capability: capabilities.url),
             "system.status.read": SystemStatusReadHandler(capability: capabilities.systemStatus),
             "network.speed.test": NetworkSpeedTestHandler(capability: capabilities.networkSpeedTest),
             "apps.list": AppsListHandler(capability: capabilities.appDiscovery),
             "apps.quitall": AppsQuitAllHandler(capability: capabilities.applicationLifecycle),
+            "google.search": GoogleSearchHandler(capability: capabilities.googleSearch),
+            "spotify.control": SpotifyControlHandler(capability: capabilities.spotifyControl),
+            "web.open": WebOpenHandler(capability: capabilities.webOpen),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
@@ -107,6 +111,7 @@ public enum PreMacToolRuntime {
         let data = input ?? Data("{}".utf8)
         switch toolID {
         case "app.open": _ = try CerebralHelmAppOpenInput(data: data)
+        case "project.open": _ = try CerebralHelmProjectOpenInput(data: data)
         case "url.open": _ = try CerebralHelmURLOpenInput(data: data)
         case "hook.run": _ = try CerebralHelmHookRunInput(data: data)
         case "note.capture": _ = try CerebralHelmNoteCaptureInput(data: data)
@@ -117,6 +122,9 @@ public enum PreMacToolRuntime {
         case "network.speed.test": _ = try CerebralHelmNetworkSpeedTestInput(data: data)
         case "apps.list": _ = try CerebralHelmAppsListInput(data: data)
         case "apps.quitall": _ = try CerebralHelmAppsQuitAllInput(data: data)
+        case "google.search": _ = try CerebralHelmGoogleSearchInput(data: data)
+        case "spotify.control": _ = try CerebralHelmSpotifyControlInput(data: data)
+        case "web.open": _ = try CerebralHelmWebOpenInput(data: data)
         default: break
         }
     }

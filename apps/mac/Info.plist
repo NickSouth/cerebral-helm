@@ -22,6 +22,10 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>CerebralHelm uses Apple Events to focus the browser tab it already opened for a link, instead of opening a duplicate.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>CerebralHelm reads your calendar events to show your upcoming schedule in the dashboard, filtered by mode.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>CerebralHelm uses your location to show the current weather for where you are in the dashboard.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>

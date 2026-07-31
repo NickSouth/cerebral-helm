@@ -23,13 +23,15 @@ public enum CompositionCapabilities {
         phase: ExecutionPhase,
         capabilities: ToolCapabilities,
         requiredPermissions: [String: Set<String>] = [:],
-        permissions: (any PermissionChecking)? = nil
+        permissions: (any PermissionChecking)? = nil,
+        weatherProviderComposed: Bool = false
     ) -> [CerebralContracts.Capability] {
         bridgeCapabilities(
             phase: phase,
             nativeCapabilityIDs: capabilities.nativeCapabilityIDs,
             requiredPermissions: requiredPermissions,
-            permissions: permissions
+            permissions: permissions,
+            weatherProviderComposed: weatherProviderComposed
         )
     }
 
@@ -43,7 +45,8 @@ public enum CompositionCapabilities {
         phase: ExecutionPhase,
         nativeCapabilityIDs: Set<String>,
         requiredPermissions: [String: Set<String>] = [:],
-        permissions: (any PermissionChecking)? = nil
+        permissions: (any PermissionChecking)? = nil,
+        weatherProviderComposed: Bool = false
     ) -> [CerebralContracts.Capability] {
         func blockedPermission(_ toolCapabilityID: String) -> String? {
             guard let permissions else { return nil }
@@ -68,6 +71,26 @@ public enum CompositionCapabilities {
             return CerebralContracts.Capability(available: true, degradedReason: nil, id: id, source: .native)
         }
 
+        // Weather (NIC-169) is not a tool capability, so it is not bound through `flag`: it is
+        // available exactly when the runtime is composed for macOS with a weather producer AND
+        // the Location permission is satisfied. A denied/undetermined grant degrades it with
+        // the Location guidance instead of prompting (FR-SAF-07) — the producer still emits an
+        // honest "Location unavailable" channel at runtime.
+        func weatherFlag() -> CerebralContracts.Capability {
+            let unavailable = { (reason: String) in
+                CerebralContracts.Capability(available: false, degradedReason: reason, id: "weather", source: .unavailable)
+            }
+            guard phase == .macOS, weatherProviderComposed else {
+                return unavailable("Weather is not available yet.")
+            }
+            if let permissions, !permissions.status(of: "location").satisfiesRequirement {
+                let guidance = PermissionCatalog.guidance(for: "location")
+                let link = guidance.settingsDeepLink.map { " Grant it in System Settings: \($0)" } ?? ""
+                return unavailable(guidance.explanation + link)
+            }
+            return CerebralContracts.Capability(available: true, degradedReason: nil, id: "weather", source: .native)
+        }
+
         return [
             CerebralContracts.Capability(available: true, degradedReason: nil, id: "bridge.bootstrap", source: .native),
             flag("native.app.open", boundTo: CapabilityMatrix.Capability.appOpen, whenUnavailable: "Opening applications is not available yet."),
@@ -77,8 +100,9 @@ public enum CompositionCapabilities {
             flag("native.workspace.windows", boundTo: CapabilityMatrix.Capability.workspaceWindows, whenUnavailable: "Windows Stored by Mode applies on the macOS host."),
             flag("native.window.arrange", boundTo: CapabilityMatrix.Capability.window, whenUnavailable: "Window arrangement is available on the macOS host."),
             flag("native.apps.list", boundTo: CapabilityMatrix.Capability.appsList, whenUnavailable: "App discovery is available on the macOS host."),
-            // No weather provider exists in the MVP; the flag stays honest.
-            CerebralContracts.Capability(available: false, degradedReason: "Weather is not available yet.", id: "weather", source: .unavailable),
+            // Weather (NIC-169): available on macOS with a composed producer + Location grant;
+            // otherwise honest-unavailable with guidance (see weatherFlag).
+            weatherFlag(),
             // Battery rides the system-status adapter; whether this machine has a
             // battery is a runtime per-metric reading, not a composition fact.
             flag("battery", boundTo: CapabilityMatrix.Capability.systemStatusRead, whenUnavailable: "Battery status is not available yet."),

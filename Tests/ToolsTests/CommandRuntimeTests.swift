@@ -151,6 +151,84 @@ func localWriteRunsThenPhaseUnavailable() async throws {
     #expect(recorder.statuses == [.received, .planned, .running, .failed])
 }
 
+@Test("a project command maps to project.open, runs without confirmation, and is phase-unavailable pre-Mac (NIC-131)")
+func projectOpenRunsThenPhaseUnavailable() async throws {
+    // `project <path>` parses to the project.open tool (local_write → no confirmation).
+    // project.open is Mac-only, so pre-Mac the executor refuses it as unavailable-in-phase —
+    // which proves the grammar routes to the project.open tool without gating.
+    let recorder = EventRecorder()
+    let runtime = try makeRuntime(recorder: recorder)
+
+    let outcome = await runtime.submit("project /Users/x/Projects/demo", source: .cli)
+    guard case let .completed(_, status, result) = outcome else {
+        Issue.record("Expected completed (no confirmation), got \(outcome)"); return
+    }
+    #expect(status == .failed)
+    #expect(result?.toolID == "project.open")
+    #expect(result?.status == .unavailable)
+    #expect(result?.error?.code == "tool.unavailable_in_phase")
+    #expect(recorder.statuses == [.received, .planned, .running, .failed])
+}
+
+@Test("a google command maps to google.search, runs without confirmation, and is phase-unavailable pre-Mac (NIC-134)")
+func googleSearchRunsThenPhaseUnavailable() async throws {
+    // `google <query>` parses to the google.search tool (local_write → no confirmation).
+    // google.search is Mac-only, so pre-Mac the executor refuses it as unavailable-in-phase —
+    // which proves the grammar routes to the google.search tool without gating.
+    let recorder = EventRecorder()
+    let runtime = try makeRuntime(recorder: recorder)
+
+    let outcome = await runtime.submit("google where to watch Dune", source: .cli)
+    guard case let .completed(_, status, result) = outcome else {
+        Issue.record("Expected completed (no confirmation), got \(outcome)"); return
+    }
+    #expect(status == .failed)
+    #expect(result?.toolID == "google.search")
+    #expect(result?.status == .unavailable)
+    #expect(result?.error?.code == "tool.unavailable_in_phase")
+    #expect(recorder.statuses == [.received, .planned, .running, .failed])
+}
+
+@Test("a web command maps to web.open, runs without confirmation, and is phase-unavailable pre-Mac (NIC-127)")
+func webOpenRunsThenPhaseUnavailable() async throws {
+    // `web <url>` parses to the web.open tool (local_write → no confirmation). web.open is
+    // Mac-only, so pre-Mac the executor refuses it as unavailable-in-phase — which proves the
+    // grammar routes to the web.open tool without gating.
+    let recorder = EventRecorder()
+    let runtime = try makeRuntime(recorder: recorder)
+
+    let outcome = await runtime.submit("web https://news.example.com/story", source: .cli)
+    guard case let .completed(_, status, result) = outcome else {
+        Issue.record("Expected completed (no confirmation), got \(outcome)"); return
+    }
+    #expect(status == .failed)
+    #expect(result?.toolID == "web.open")
+    #expect(result?.status == .unavailable)
+    #expect(result?.error?.code == "tool.unavailable_in_phase")
+    #expect(recorder.statuses == [.received, .planned, .running, .failed])
+}
+
+@Test("a spotify command maps to spotify.control and runs WITHOUT confirmation despite external_write (NIC-133)")
+func spotifyControlRunsOneClick() async throws {
+    // `spotify <action>` parses to spotify.control. Its risk is external_write (honest — it hits
+    // Spotify's API), but the descriptor's `allow_external_write_without_confirmation` policy key
+    // waives confirmation, so it must COMPLETE rather than pause for a prompt. spotify.control is
+    // Mac-only, so pre-Mac it's phase-unavailable — which together proves the grammar routes to the
+    // tool AND the external-write waiver applied (otherwise the outcome would be awaitingConfirmation).
+    let recorder = EventRecorder()
+    let runtime = try makeRuntime(recorder: recorder)
+
+    let outcome = await runtime.submit("spotify pause", source: .cli)
+    guard case let .completed(_, status, result) = outcome else {
+        Issue.record("Expected completed (no confirmation — the waiver applied), got \(outcome)"); return
+    }
+    #expect(status == .failed)
+    #expect(result?.toolID == "spotify.control")
+    #expect(result?.status == .unavailable)
+    #expect(result?.error?.code == "tool.unavailable_in_phase")
+    #expect(recorder.statuses == [.received, .planned, .running, .failed])
+}
+
 @Test("a shell hook requires confirmation, then is refused as phase-unavailable on approval (AC-33.2, FR-SAF-03, NIC-111)")
 func shellHookRequiresConfirmation() async throws {
     // hook.run declares availability.preMac == false. Confirmation still gates the

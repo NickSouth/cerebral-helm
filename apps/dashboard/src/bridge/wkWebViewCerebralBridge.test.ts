@@ -199,6 +199,52 @@ describe("wkWebViewCerebralBridge", () => {
     ]);
   });
 
+  it("passes the live-data events (widget/weather/news/schedule) through the type gate", () => {
+    // Regression (NIC-126): every runtime-fed live event must be in EVENT_TYPES or the WKWebView
+    // silently drops it — the reducer never runs and the panel stays at its bootstrap state. The
+    // mock bridge has no such gate, so a missing entry passes every test *except* on the real host.
+    installChannel();
+    const bridge = createWKWebViewCerebralBridge();
+    const events: BridgeEvent[] = [];
+    bridge.subscribe((e) => events.push(e));
+
+    reply({
+      type: "widget.data.changed",
+      eventId: "brevt_00000010",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T00:00:00.000Z",
+      payload: { widgetId: "stocks" }
+    });
+    reply({
+      type: "weather.changed",
+      eventId: "brevt_00000011",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T00:00:01.000Z",
+      payload: { weather: { state: "ready" } }
+    });
+    reply({
+      type: "news.changed",
+      eventId: "brevt_00000012",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T00:00:02.000Z",
+      payload: { profile: "broad", news: { state: "ready" } }
+    });
+    reply({
+      type: "schedule.changed",
+      eventId: "brevt_00000013",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T00:00:03.000Z",
+      payload: { profile: "all", schedule: { state: "ready", items: [] } }
+    });
+
+    expect(events.map((e) => e.type)).toEqual([
+      "widget.data.changed",
+      "weather.changed",
+      "news.changed",
+      "schedule.changed"
+    ]);
+  });
+
   it("getBootstrapState returns the injected bootstrap without a round-trip", async () => {
     installChannel();
     win.__cerebralBootstrap = { mode: "Executive", modes: [] };

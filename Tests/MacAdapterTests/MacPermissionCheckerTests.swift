@@ -32,4 +32,15 @@ func accessibilityAndUnknownPermissions() {
     #expect(checker.status(of: "future_unknown_permission") == .notDetermined)
     #expect(!checker.status(of: "future_unknown_permission").satisfiesRequirement)
 }
+
+@Test("location reads the real CoreLocation state without prompting; it is a real TCC gate")
+func locationPermissionReadsRealState() {
+    let checker = MacPermissionChecker()
+    // Like accessibility, the process's actual location grant is environment-dependent; the
+    // contract is that it answers with a real authorization status (a read, never a prompt),
+    // and — unlike the MVP no-op permissions — it is never `.notRequired`.
+    let location = checker.status(of: "location")
+    #expect(location == .granted || location == .denied || location == .notDetermined)
+    #expect(location != .notRequired)
+}
 #endif

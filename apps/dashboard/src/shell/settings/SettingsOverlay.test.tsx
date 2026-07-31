@@ -181,6 +181,271 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(await within(dialog).findByRole("button", { name: "Browse…" })).toBeDisabled();
   });
 
+  it("stores the TMDB API key through the bridge and reflects it as set, never echoing the value (NIC-134)", async () => {
+    const { bridge } = renderApp();
+    const stored: Array<{ reference: string; value: string }> = [];
+    const realStore = bridge.storeSecret.bind(bridge);
+    bridge.storeSecret = (input) => {
+      stored.push({ reference: input.reference, value: input.value });
+      return realStore(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    // Scope to the TMDB field — the section also has a Finnhub key field and its own Save buttons.
+    const input = await within(dialog).findByLabelText("TMDB API key");
+    const field = input.closest(".settings-field") as HTMLElement;
+    // Presence read settles to "Not set" (no key seeded in the mock).
+    expect(await within(field).findByText("Not set")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "tmdb-secret-xyz" } });
+    fireEvent.click(within(field).getByRole("button", { name: "Save" }));
+
+    // The key reached the bridge with the correct logical reference.
+    await waitFor(() => expect(stored).toHaveLength(1));
+    expect(stored[0]).toEqual({ reference: "tmdb_api_key", value: "tmdb-secret-xyz" });
+
+    // The field now reports "Key set" and no longer holds the value (never echoed back).
+    expect(await within(field).findByText("Key set")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+  });
+
+  it("stores the Finnhub API key under its own reference, alongside the TMDB field (NIC-128)", async () => {
+    const { bridge } = renderApp();
+    const stored: Array<{ reference: string; value: string }> = [];
+    const realStore = bridge.storeSecret.bind(bridge);
+    bridge.storeSecret = (input) => {
+      stored.push({ reference: input.reference, value: input.value });
+      return realStore(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const input = await within(dialog).findByLabelText("Finnhub API key");
+    const field = input.closest(".settings-field") as HTMLElement;
+    expect(await within(field).findByText("Not set")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "finnhub-secret-abc" } });
+    fireEvent.click(within(field).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(stored).toHaveLength(1));
+    expect(stored[0]).toEqual({ reference: "finnhub_api_key", value: "finnhub-secret-abc" });
+    expect(await within(field).findByText("Key set")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+  });
+
+  it("stores the NewsData API key under its own reference (NIC-127)", async () => {
+    const { bridge } = renderApp();
+    const stored: Array<{ reference: string; value: string }> = [];
+    const realStore = bridge.storeSecret.bind(bridge);
+    bridge.storeSecret = (input) => {
+      stored.push({ reference: input.reference, value: input.value });
+      return realStore(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const input = await within(dialog).findByLabelText("NewsData API key");
+    const field = input.closest(".settings-field") as HTMLElement;
+    expect(await within(field).findByText("Not set")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "newsdata-secret-123" } });
+    fireEvent.click(within(field).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(stored).toHaveLength(1));
+    expect(stored[0]).toEqual({ reference: "newsdata_api_key", value: "newsdata-secret-123" });
+    expect(await within(field).findByText("Key set")).toBeInTheDocument();
+    // The value is never echoed back into the field.
+    expect(input).toHaveValue("");
+  });
+
+  it("stores the GitHub personal access token under its own reference (NIC-130)", async () => {
+    const { bridge } = renderApp();
+    const stored: Array<{ reference: string; value: string }> = [];
+    const realStore = bridge.storeSecret.bind(bridge);
+    bridge.storeSecret = (input) => {
+      stored.push({ reference: input.reference, value: input.value });
+      return realStore(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const input = await within(dialog).findByLabelText("GitHub personal access token");
+    const field = input.closest(".settings-field") as HTMLElement;
+    expect(await within(field).findByText("Not set")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "ghp_secret_token" } });
+    fireEvent.click(within(field).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(stored).toHaveLength(1));
+    expect(stored[0]).toEqual({ reference: "github_api_token", value: "ghp_secret_token" });
+    expect(await within(field).findByText("Key set")).toBeInTheDocument();
+    // The token is never echoed back into the field.
+    expect(input).toHaveValue("");
+  });
+
+  it("stores the Spotify Client ID under its own reference (NIC-133)", async () => {
+    const { bridge } = renderApp();
+    const stored: Array<{ reference: string; value: string }> = [];
+    const realStore = bridge.storeSecret.bind(bridge);
+    bridge.storeSecret = (input) => {
+      stored.push({ reference: input.reference, value: input.value });
+      return realStore(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const input = await within(dialog).findByLabelText("Spotify Client ID");
+    const field = input.closest(".settings-field") as HTMLElement;
+    expect(await within(field).findByText("Not set")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "spotify-client-abc" } });
+    fireEvent.click(within(field).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(stored).toHaveLength(1));
+    expect(stored[0]).toEqual({ reference: "spotify_client_id", value: "spotify-client-abc" });
+    expect(await within(field).findByText("Key set")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+  });
+
+  it("connects Spotify via the OAuth op and disconnects by clearing the token (NIC-133)", async () => {
+    const { bridge } = renderApp();
+    const connectCalls: number[] = [];
+    const deleted: string[] = [];
+    const realConnect = bridge.connectSpotify.bind(bridge);
+    bridge.connectSpotify = () => {
+      connectCalls.push(1);
+      return realConnect();
+    };
+    const realDelete = bridge.deleteSecret.bind(bridge);
+    bridge.deleteSecret = (input) => {
+      deleted.push(input.reference);
+      return realDelete(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    // The connect control lives in the "Spotify account" field, distinct from the Client ID key field.
+    const field = (await within(dialog).findByText("Spotify account")).closest(
+      ".settings-field"
+    ) as HTMLElement;
+    expect(await within(field).findByText("Not connected")).toBeInTheDocument();
+
+    fireEvent.click(within(field).getByRole("button", { name: "Connect Spotify" }));
+    await waitFor(() => expect(connectCalls).toHaveLength(1));
+    // The mock binds spotify_oauth, so the control flips to Connected and offers Disconnect.
+    expect(await within(field).findByText("Connected")).toBeInTheDocument();
+
+    fireEvent.click(within(field).getByRole("button", { name: "Disconnect" }));
+    await waitFor(() => expect(deleted).toEqual(["spotify_oauth"]));
+    expect(await within(field).findByText("Not connected")).toBeInTheDocument();
+  });
+
+  it("disables Save until a key is entered (NIC-134)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+    const field = (await within(dialog).findByLabelText("TMDB API key")).closest(
+      ".settings-field"
+    ) as HTMLElement;
+    await within(field).findByText("Not set");
+    expect(within(field).getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("edits the tracked stock tickers and saves the list through the settings path (NIC-128)", async () => {
+    const { bridge } = renderApp();
+    const patches: Array<Record<string, unknown>> = [];
+    const realUpdate = bridge.updateSettings.bind(bridge);
+    bridge.updateSettings = (input) => {
+      patches.push(input.patch.changes as Record<string, unknown>);
+      return realUpdate(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    // The editor seeds from the persisted snapshot's starter list.
+    const addInput = await within(dialog).findByLabelText("Add a stock ticker");
+    const field = addInput.closest(".settings-field") as HTMLElement;
+    expect(within(field).getByText("SPY")).toBeInTheDocument();
+
+    // A lowercase symbol is uppercased into a chip on Add.
+    fireEvent.change(addInput, { target: { value: "tsla" } });
+    fireEvent.click(within(field).getByRole("button", { name: "Add" }));
+    expect(within(field).getByText("TSLA")).toBeInTheDocument();
+
+    // Remove one of the starters.
+    fireEvent.click(within(field).getByRole("button", { name: "Remove AAPL" }));
+    expect(within(field).queryByText("AAPL")).toBeNull();
+
+    // Save persists the edited list through updateSettings.
+    fireEvent.click(within(field).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(patches).toHaveLength(1));
+    expect(patches[0]).toEqual({ stocks: { tickers: ["SPY", "NVDA", "VTI", "TSLA"] } });
+  });
+
+  it("maps a calendar to a mode and saves it through the settings path (NIC-126)", async () => {
+    const { bridge } = renderApp();
+    const patches: Array<Record<string, unknown>> = [];
+    const realUpdate = bridge.updateSettings.bind(bridge);
+    bridge.updateSettings = (input) => {
+      patches.push(input.patch.changes as Record<string, unknown>);
+      return realUpdate(input);
+    };
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    // The mapping field lists the host's calendars (mock: Work / Personal / School / Family).
+    const workSelect = await within(dialog).findByLabelText("Mode for Work");
+    fireEvent.change(workSelect, { target: { value: "developer" } });
+
+    // The change writes the whole calendar→mode map through the settings path.
+    await waitFor(() => expect(patches).toHaveLength(1));
+    expect(patches[0]).toEqual({ calendarModeMap: { "cal-work": "developer" } });
+  });
+
+  it("shows the Canvas pairing token + last-scrape status and disconnects (NIC-132)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    // Scope to the Canvas card by its label so its Disconnect doesn't clash with other cards.
+    const label = await within(dialog).findByText("Canvas (School widgets)");
+    const canvas = within(label.closest(".settings-field") as HTMLElement);
+
+    // The pairing token and the last-scrape summary are shown (mock: 2 courses, 2 deadlines).
+    expect(await canvas.findByText("mock-canvas-token")).toBeInTheDocument();
+    expect(canvas.getByText(/2 courses, 2 deadlines/)).toBeInTheDocument();
+
+    // Disconnect rotates the token and clears the scrape summary (purge + rotate).
+    fireEvent.click(canvas.getByRole("button", { name: "Disconnect" }));
+    expect(await canvas.findByText("mock-canvas-token-rotated")).toBeInTheDocument();
+    expect(canvas.getByText(/No scrape received yet/)).toBeInTheDocument();
+  });
+
+  it("hides and unhides a scraped course from the Canvas manage-list (NIC-132)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const label = await within(dialog).findByText("Canvas (School widgets)");
+    const canvas = within(label.closest(".settings-field") as HTMLElement);
+
+    // The manage-list shows each scraped course with a Hide control (mock: Theory of Computation).
+    const hide = await canvas.findByRole("button", { name: "Hide Theory of Computation" });
+    // Hiding drops it from the visible count (2 courses → 1) and flips the control to Unhide.
+    fireEvent.click(hide);
+    expect(await canvas.findByRole("button", { name: "Unhide Theory of Computation" })).toBeInTheDocument();
+    expect(canvas.getByText(/1 course, 2 deadlines/)).toBeInTheDocument();
+
+    // Unhiding restores it.
+    fireEvent.click(canvas.getByRole("button", { name: "Unhide Theory of Computation" }));
+    expect(await canvas.findByRole("button", { name: "Hide Theory of Computation" })).toBeInTheDocument();
+    expect(canvas.getByText(/2 courses, 2 deadlines/)).toBeInTheDocument();
+  });
+
   it("applies persisted reduced motion app-wide at startup, before settings is opened (NIC-141)", async () => {
     const bridge = createMockCerebralBridge();
     bridge.getSettings = () =>

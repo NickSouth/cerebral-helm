@@ -30,11 +30,69 @@ func supportedGrammarResolves() {
     #expect(parser.parse("open github") == .parsed(.openURL(github)))
     #expect(parser.parse("mode developer") == .parsed(.applyMode(modeId: "developer")))
     #expect(parser.parse("note pick up milk") == .parsed(.captureNote(text: "pick up milk")))
+    #expect(parser.parse("project /Users/x/Projects/foo") == .parsed(.openProject(repoPath: "/Users/x/Projects/foo")))
     #expect(parser.parse("search updater config") == .parsed(.searchNotes(query: "updater config")))
     #expect(parser.parse("hook ondraft-dev") == .parsed(.runHook(ondraft)))
     #expect(parser.parse("run open-developer-layout") == .parsed(.runAction(actionId: "open-developer-layout")))
     #expect(parser.parse("apps") == .parsed(.listApps))
     #expect(parser.parse("speedtest") == .parsed(.runSpeedTest))
+}
+
+@Test("project takes the whole remainder as the path and requires an argument (NIC-131)")
+func projectGrammar() {
+    let parser = sampleParser()
+
+    // Paths may contain spaces — the whole remainder is the path, not just the first token.
+    #expect(
+        parser.parse("project /Users/x/My Projects/demo")
+            == .parsed(.openProject(repoPath: "/Users/x/My Projects/demo"))
+    )
+    // An argument-less `project` never executes.
+    if case .parsed = parser.parse("project") {
+        Issue.record("argument-less project must not execute")
+    }
+}
+
+@Test("google takes the whole remainder as the query and requires an argument (NIC-134)")
+func googleGrammar() {
+    let parser = sampleParser()
+
+    // Queries contain spaces — the whole remainder is the query.
+    #expect(
+        parser.parse("google where to watch Dune: Part Two")
+            == .parsed(.googleSearch(query: "where to watch Dune: Part Two"))
+    )
+    // An argument-less `google` never executes.
+    if case .parsed = parser.parse("google") {
+        Issue.record("argument-less google must not execute")
+    }
+}
+
+@Test("spotify takes the action as the remainder and requires an argument (NIC-133)")
+func spotifyGrammar() {
+    let parser = sampleParser()
+
+    #expect(parser.parse("spotify pause") == .parsed(.spotifyControl(action: "pause")))
+    #expect(parser.parse("spotify next") == .parsed(.spotifyControl(action: "next")))
+    // An argument-less `spotify` never executes.
+    if case .parsed = parser.parse("spotify") {
+        Issue.record("argument-less spotify must not execute")
+    }
+}
+
+@Test("web takes the whole remainder as the url and requires an argument (NIC-127)")
+func webGrammar() {
+    let parser = sampleParser()
+
+    // The whole remainder is the url (may carry query params with `?`/`&`).
+    #expect(
+        parser.parse("web https://news.example.com/story?id=42&ref=home")
+            == .parsed(.webOpen(url: "https://news.example.com/story?id=42&ref=home"))
+    )
+    // An argument-less `web` never executes.
+    if case .parsed = parser.parse("web") {
+        Issue.record("argument-less web must not execute")
+    }
 }
 
 @Test("an unresolved workflow id is unrecognized and suggests configured actions")

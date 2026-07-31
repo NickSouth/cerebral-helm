@@ -10,7 +10,7 @@ import Foundation
 /// settings store.
 public enum SettingsPatchValidator {
     private static let allowedChangeKeys: Set<String> =
-        ["defaultModeId", "confirmAllActions", "appearance", "hotkeys", "knowledge", "workspace", "modeColors", "extensions"]
+        ["defaultModeId", "confirmAllActions", "appearance", "hotkeys", "knowledge", "workspace", "modeColors", "stocks", "calendarModeMap", "extensions"]
     private static let allowedAppearanceKeys: Set<String> = ["density", "reducedMotion", "assistantName"]
     private static let assistantNameMaxLength = 40
     private static let densityValues: Set<String> = ["comfortable", "compact"]
@@ -18,6 +18,10 @@ public enum SettingsPatchValidator {
     private static let modeColorKeyPattern =
         "^(executive|developer|school|entertainment)\\.(primary|secondary)$"
     private static let hexColorPattern = "^#[0-9a-fA-F]{6}$"
+    private static let tickerSymbolPattern = "^[A-Za-z][A-Za-z0-9.-]{0,9}$"
+    private static let tickersMaxCount = 20
+    private static let calendarModeMapKeyMaxLength = 512
+    private static let calendarModeValues: Set<String> = ["executive", "developer", "school", "entertainment"]
 
     /// Returns every violation; an empty array means the patch is accepted.
     public static func validate(changes: [String: Any]) -> [String] {
@@ -122,6 +126,53 @@ public enum SettingsPatchValidator {
                 }
             } else {
                 errors.append("modeColors must be an object.")
+            }
+        }
+
+        if let calendarModeMap = changes["calendarModeMap"] {
+            if let dict = calendarModeMap as? [String: Any] {
+                for (key, value) in dict {
+                    if key.isEmpty || key.count > calendarModeMapKeyMaxLength {
+                        errors.append("calendarModeMap key \"\(key)\" must be a non-empty calendar identifier.")
+                    }
+                    if let mode = value as? String {
+                        if !calendarModeValues.contains(mode) {
+                            errors.append("calendarModeMap.\(key) must map to a known mode id.")
+                        }
+                    } else {
+                        errors.append("calendarModeMap.\(key) must be a string.")
+                    }
+                }
+            } else {
+                errors.append("calendarModeMap must be an object.")
+            }
+        }
+
+        if let stocks = changes["stocks"] {
+            if let dict = stocks as? [String: Any] {
+                for key in dict.keys where key != "tickers" {
+                    errors.append("Unknown stocks setting \"\(key)\".")
+                }
+                if let tickers = dict["tickers"] {
+                    if let list = tickers as? [Any] {
+                        if list.count > tickersMaxCount {
+                            errors.append("stocks.tickers may list at most \(tickersMaxCount) symbols.")
+                        }
+                        for symbol in list {
+                            guard let string = symbol as? String else {
+                                errors.append("stocks.tickers entries must be strings.")
+                                continue
+                            }
+                            if string.range(of: tickerSymbolPattern, options: .regularExpression) == nil {
+                                errors.append("stocks.tickers entry \"\(string)\" is not a valid ticker symbol.")
+                            }
+                        }
+                    } else {
+                        errors.append("stocks.tickers must be an array.")
+                    }
+                }
+            } else {
+                errors.append("stocks must be an object.")
             }
         }
 

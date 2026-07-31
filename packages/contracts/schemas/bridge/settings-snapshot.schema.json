@@ -5,7 +5,7 @@
   "description": "The effective durable settings, read on demand over the bridge (`getSettings`) so the settings UI initializes its controls from persisted state instead of hardcoded defaults (NIC-141). Every field is fully resolved: a stored value when set, otherwise the deterministic default. This is the read side of the write-only settings-patch contract; it deliberately omits data that already has a delivery channel — quick apps (bootstrap `modes[].quickApps` + `mode.quickapps.changed`), the login item (`window.__cerebralLoginItem`), and the live command-palette hotkey (`window.__cerebralHotkey`) — so no datum has two sources of truth. Appearance density is not a live setting for now and is intentionally absent.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "defaultModeId", "confirmAllActions", "appearance", "knowledge", "workspace", "modeColors"],
+  "required": ["schemaVersion", "defaultModeId", "confirmAllActions", "appearance", "knowledge", "workspace", "modeColors", "stocks", "calendarModeMap"],
   "properties": {
     "schemaVersion": {
       "type": "string",
@@ -80,6 +80,34 @@
       "additionalProperties": {
         "type": "string",
         "pattern": "^#[0-9a-fA-F]{6}$"
+      }
+    },
+    "stocks": {
+      "title": "SettingsSnapshotStocks",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tickers"],
+      "properties": {
+        "tickers": {
+          "description": "The user's tracked stock symbols for the Executive Stocks widget (NIC-128), in display order. Fully resolved: the stored list when set, otherwise the shipped starter list. An empty array is a meaningful state — the user cleared their tickers — and renders the widget's empty prompt.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9.-]{0,9}$"
+          }
+        }
+      }
+    },
+    "calendarModeMap": {
+      "description": "The user's calendar→mode mapping for the Today panel's per-mode relevance filtering (NIC-126), keyed by calendar identifier with a mode-id value. Sparse: a calendar is present only when the user has mapped it — an unmapped calendar's events fall to the default mode (Executive) at the resolver. Like `modeColors`, this is not fully resolved but a meaningful-unset map (empty when the user has mapped nothing).",
+      "type": "object",
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^(executive|developer|school|entertainment)$"
       }
     }
   }

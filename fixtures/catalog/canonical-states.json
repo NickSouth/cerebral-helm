@@ -36,19 +36,19 @@
           "news": {
             "state": "ready",
             "headlines": [
-              { "id": "news-market", "title": "Markets edge higher into the close", "source": "Market Wire" },
-              { "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily" },
-              { "id": "news-earnings", "title": "Quarterly earnings season opens", "source": "Briefing" }
+              { "id": "news-market", "title": "Markets edge higher into the close as investors weigh fresh inflation data", "source": "Market Wire", "url": "https://example.com/markets-edge-higher" },
+              { "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily", "url": "https://example.com/rates-steady" },
+              { "id": "news-earnings", "title": "Quarterly earnings season opens", "source": "Briefing", "url": "https://example.com/earnings-season" },
+              { "id": "news-ma", "title": "Tech giant announces major acquisition to expand cloud portfolio", "source": "Deal Book", "url": "https://example.com/tech-acquisition" }
             ]
           },
           "widgets": {
             "left": {
-              "widgetId": "market-brief",
+              "widgetId": "stocks",
               "state": "ready",
               "headline": "Markets up modestly",
               "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" },
-              "data": { "tickers": [{ "symbol": "SPX", "changePct": 0.6 }, { "symbol": "AAPL", "changePct": -0.3 }, { "symbol": "NVDA", "changePct": 1.4 }] },
-              "action": { "id": "open-market-brief", "label": "Open market brief" }
+              "data": { "items": [{ "symbol": "SPY", "price": 543.21, "change": 3.24, "changePercent": 0.6, "history": [525.1, 527.3, 524.8, 529.0, 531.2, 528.6, 533.4, 535.1, 532.9, 537.8, 539.2, 536.7, 540.1, 541.9, 538.4, 543.21] }, { "symbol": "AAPL", "price": 227.15, "change": -0.68, "changePercent": -0.3, "history": [232.4, 231.0, 233.1, 230.2, 229.5, 231.2, 228.9, 227.8, 229.6, 226.4, 228.1, 227.0, 228.7, 226.9, 227.9, 227.15] }, { "symbol": "NVDA", "price": 131.4, "change": 1.81, "changePercent": 1.4, "history": [118.2, 120.5, 119.1, 122.8, 124.0, 121.6, 125.9, 127.2, 124.8, 128.6, 129.9, 127.3, 130.1, 132.0, 129.4, 131.4] }, { "symbol": "VTI", "price": 268.9, "change": 1.07, "changePercent": 0.4, "history": [262.1, 263.4, 261.8, 264.9, 266.2, 263.7, 267.1, 268.0, 265.6, 269.2, 270.1, 267.4, 268.8, 270.3, 267.9, 268.9] }] }
             },
             "right": {
               "widgetId": "projects",
@@ -97,19 +97,55 @@
           "news": {
             "state": "ready",
             "headlines": [
-              { "id": "news-ts", "title": "TypeScript 5.9 ships incremental project references", "source": "Dev Weekly" },
-              { "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums" },
-              { "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest" }
+              { "id": "news-ts", "title": "TypeScript 5.9 ships incremental project references", "source": "Dev Weekly", "url": "https://example.com/typescript-5-9" },
+              { "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums", "url": "https://example.com/swift-windows" },
+              { "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest", "url": "https://example.com/vite-5" },
+              { "id": "news-rust", "title": "Rust adoption climbs as more teams rewrite performance-critical services", "source": "The Register", "url": "https://example.com/rust-adoption" }
             ]
           },
           "widgets": {
             "left": {
               "widgetId": "project-git-status",
               "state": "ready",
-              "headline": "dev · checks passing",
+              "headline": "3 repositories",
               "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
-              "data": { "branch": "dev", "ahead": 2, "behind": 0, "checks": "passing", "openPullRequests": 1 },
-              "action": { "id": "git-status", "label": "View status" }
+              "data": {
+                "repositories": [
+                  {
+                    "id": "cerebral-helm",
+                    "name": "cerebral-helm",
+                    "branch": "mvp-polish/integrations-and-widgets",
+                    "sync": "diverged",
+                    "remote": { "owner": "NickSouth", "repo": "cerebral-helm" },
+                    "github": {
+                      "state": "ready",
+                      "openPullRequests": { "count": 2, "titles": ["Repo status widget (GitHub)", "Weather integration"] },
+                      "checks": { "state": "passing" },
+                      "recentCommits": [
+                        { "shortSha": "320ac4c", "message": "fix: news formatting" },
+                        { "shortSha": "c1a4f7e", "message": "feat: news widget" },
+                        { "shortSha": "8b6720d", "message": "feat: stocks widget" },
+                        { "shortSha": "db3c9db", "message": "feat: full releases widget" },
+                        { "shortSha": "da85cf1", "message": "feat: entertainment widget outline and secret provisioning" }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "notes",
+                    "name": "notes",
+                    "branch": "main",
+                    "sync": "synced",
+                    "remote": { "owner": "NickSouth", "repo": "notes" },
+                    "github": {
+                      "state": "ready",
+                      "openPullRequests": { "count": 0, "titles": [] },
+                      "checks": { "state": "none" },
+                      "recentCommits": [{ "shortSha": "a1b2c3d", "message": "Add reading list" }]
+                    }
+                  },
+                  { "id": "scratchpad", "name": "scratchpad", "branch": "wip", "sync": "no-upstream" }
+                ]
+              }
             },
             "right": {
               "widgetId": "repositories",
@@ -161,9 +197,10 @@
           "news": {
             "state": "ready",
             "headlines": [
-              { "id": "news-grant", "title": "New research grant program announced", "source": "Campus News" },
-              { "id": "news-lib", "title": "Library extends finals-week hours", "source": "Student Desk" },
-              { "id": "news-study", "title": "Study finds spaced repetition boosts recall", "source": "Academic Brief" }
+              { "id": "news-grant", "title": "New research grant program announced", "source": "Campus News", "url": "https://example.com/research-grant" },
+              { "id": "news-lib", "title": "Library extends finals-week hours", "source": "Student Desk", "url": "https://example.com/library-hours" },
+              { "id": "news-study", "title": "Study finds spaced repetition boosts recall", "source": "Academic Brief", "url": "https://example.com/spaced-repetition" },
+              { "id": "news-scholar", "title": "National scholarship applications open earlier than usual this year", "source": "Ed News", "url": "https://example.com/scholarships" }
             ]
           },
           "widgets": {
@@ -221,27 +258,26 @@
           "news": {
             "state": "ready",
             "headlines": [
-              { "id": "news-game", "title": "Anticipated indie title launches this week", "source": "Play Wire" },
-              { "id": "news-show", "title": "Streaming series renewed for a new season", "source": "Screen Desk" },
-              { "id": "news-music", "title": "Surprise album drops overnight", "source": "Sound Brief" }
+              { "id": "news-game", "title": "Anticipated indie title launches this week", "source": "Play Wire", "url": "https://example.com/indie-launch" },
+              { "id": "news-show", "title": "Streaming series renewed for a new season", "source": "Screen Desk", "url": "https://example.com/series-renewed" },
+              { "id": "news-music", "title": "Surprise album drops overnight", "source": "Sound Brief", "url": "https://example.com/surprise-album" },
+              { "id": "news-box", "title": "Blockbuster sequel tops the weekend box office with record numbers", "source": "Screen Desk", "url": "https://example.com/box-office" }
             ]
           },
           "widgets": {
             "left": {
               "widgetId": "spotify",
               "state": "ready",
-              "headline": "Recently played",
-              "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "8m ago" },
-              "data": { "track": "Weightless", "artist": "Marconi Union", "playing": false },
-              "action": { "id": "resume-playback", "label": "Resume" }
+              "headline": "Now playing",
+              "data": { "track": "Weightless", "artist": "Marconi Union", "album": "Ambient Transmissions Vol. 2", "artworkImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "isPlaying": true, "deviceName": "Nick's MacBook Pro", "progressMs": 83000, "durationMs": 240000, "upNextTrack": "Nightcall", "upNextArtist": "Kavinsky" }
             },
             "right": {
-              "widgetId": "media-list",
+              "widgetId": "releases",
               "state": "ready",
-              "headline": "Continue watching",
+              "headline": "New & hot",
               "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "10m ago" },
-              "data": { "items": [{ "title": "The Bear", "kind": "continue" }, { "title": "Dune", "kind": "queued" }] },
-              "action": { "id": "browse-library", "label": "Browse library" }
+              "data": { "items": [{ "id": "movie-1", "title": "Dune: Part Two", "mediaType": "movie", "year": 2024, "posterImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" }, { "id": "tv-1", "title": "The Bear", "mediaType": "tv", "year": 2024, "posterImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" }, { "id": "movie-2", "title": "Nosferatu", "mediaType": "movie", "year": 2024 }, { "id": "tv-2", "title": "Shogun", "mediaType": "tv", "year": 2024, "posterImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" }, { "id": "movie-3", "title": "Wicked", "mediaType": "movie", "year": 2024, "posterImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" }, { "id": "tv-3", "title": "Severance", "mediaType": "tv", "year": 2025, "posterImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" }, { "id": "movie-4", "title": "Gladiator II", "mediaType": "movie", "year": 2024, "posterImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" }, { "id": "tv-4", "title": "Silo", "mediaType": "tv", "year": 2025, "posterImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" }] },
+              "action": { "id": "browse-releases", "label": "Browse releases" }
             }
           }
         }
@@ -439,9 +475,25 @@
             "left": {
               "widgetId": "project-git-status",
               "state": "stale",
-              "headline": "dev · last known",
+              "headline": "3 repositories",
               "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "offline" },
-              "data": { "branch": "dev", "checks": "passing" }
+              "data": {
+                "repositories": [
+                  {
+                    "id": "cerebral-helm",
+                    "name": "cerebral-helm",
+                    "branch": "mvp-polish/integrations-and-widgets",
+                    "sync": "diverged",
+                    "remote": { "owner": "NickSouth", "repo": "cerebral-helm" },
+                    "github": {
+                      "state": "ready",
+                      "openPullRequests": { "count": 2, "titles": ["Repo status widget (GitHub)", "Weather integration"] },
+                      "checks": { "state": "passing" },
+                      "recentCommits": [{ "shortSha": "320ac4c", "message": "fix: news formatting" }]
+                    }
+                  }
+                ]
+              }
             },
             "right": {
               "widgetId": "repositories",
@@ -614,7 +666,7 @@
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-lecture", "title": "CS260 lecture", "start": "2026-06-23T17:00:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 16, "memoryPercent": 44, "network": { "state": "ready", "label": "Wi-Fi · 90 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
-          "news": { "state": "ready", "headlines": [{ "id": "news-lib", "title": "Library extends finals-week hours", "source": "Student Desk" }] },
+          "news": { "state": "ready", "headlines": [{ "id": "news-lib", "title": "Library extends finals-week hours", "source": "Student Desk", "url": "https://example.com/library-hours" }] },
           "widgets": {
             "left": { "widgetId": "deadlines", "state": "ready", "headline": "2 due this week", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "5m ago" }, "data": { "items": [{ "title": "CS260 problem set", "dueAt": "2026-06-30T23:59:00.000Z" }] } },
             "right": { "widgetId": "courses", "state": "ready", "headline": "Current term", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "6m ago" }, "data": { "items": [{ "name": "CS260", "next": "Lecture 14" }] } }
@@ -641,9 +693,9 @@
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-board", "title": "Board prep review", "start": "2026-06-23T17:00:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 18, "memoryPercent": 50, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
-          "news": { "state": "ready", "headlines": [{ "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily" }] },
+          "news": { "state": "ready", "headlines": [{ "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily", "url": "https://example.com/rates-steady" }] },
           "widgets": {
-            "left": { "widgetId": "market-brief", "state": "ready", "headline": "Markets up modestly", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" }, "data": { "tickers": [{ "symbol": "SPX", "changePct": 0.6 }] } },
+            "left": { "widgetId": "stocks", "state": "ready", "headline": "Markets up modestly", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" }, "data": { "items": [{ "symbol": "SPY", "price": 543.21, "change": 3.24, "changePercent": 0.6 }] } },
             "right": { "widgetId": "projects", "state": "ready", "headline": "2 active", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" }, "data": { "items": [{ "name": "Quarterly planning", "status": "in-progress" }] } }
           }
         }
@@ -668,9 +720,9 @@
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-standup", "title": "Team standup", "start": "2026-06-23T16:30:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 22, "memoryPercent": 58, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
-          "news": { "state": "ready", "headlines": [{ "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums" }] },
+          "news": { "state": "ready", "headlines": [{ "id": "news-swift", "title": "Swift on Windows toolchain stabilizes", "source": "Swift Forums", "url": "https://example.com/swift-windows" }] },
           "widgets": {
-            "left": { "widgetId": "project-git-status", "state": "ready", "headline": "dev · checks passing", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "branch": "dev", "checks": "passing" } },
+            "left": { "widgetId": "project-git-status", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "repositories": [{ "id": "cerebral-helm", "name": "cerebral-helm", "branch": "dev", "sync": "synced", "remote": { "owner": "NickSouth", "repo": "cerebral-helm" }, "github": { "state": "ready", "openPullRequests": { "count": 1, "titles": ["Repo status widget (GitHub)"] }, "checks": { "state": "passing" }, "recentCommits": [{ "shortSha": "320ac4c", "message": "fix: news formatting" }] } }] } },
             "right": { "widgetId": "repositories", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }] } }
           }
         }
@@ -695,9 +747,9 @@
         "regions": {
           "schedule": { "state": "ready", "items": [{ "id": "evt-review", "title": "PR review block", "start": "2026-06-23T19:00:00.000Z", "kind": "today" }] },
           "systemHealth": { "state": "ready", "cpuPercent": 22, "memoryPercent": 58, "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps" }, "battery": { "state": "unavailable", "label": "Battery — requires the macOS host" } },
-          "news": { "state": "ready", "headlines": [{ "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest" }] },
+          "news": { "state": "ready", "headlines": [{ "id": "news-vite", "title": "Vite 5 cuts cold-start times", "source": "Frontend Digest", "url": "https://example.com/vite-5" }] },
           "widgets": {
-            "left": { "widgetId": "project-git-status", "state": "ready", "headline": "dev · checks passing", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "branch": "dev", "checks": "passing" } },
+            "left": { "widgetId": "project-git-status", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "repositories": [{ "id": "cerebral-helm", "name": "cerebral-helm", "branch": "dev", "sync": "synced", "remote": { "owner": "NickSouth", "repo": "cerebral-helm" }, "github": { "state": "ready", "openPullRequests": { "count": 1, "titles": ["Repo status widget (GitHub)"] }, "checks": { "state": "passing" }, "recentCommits": [{ "shortSha": "320ac4c", "message": "fix: news formatting" }] } }] } },
             "right": { "widgetId": "repositories", "state": "ready", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" }, "data": { "items": [{ "name": "cerebral-helm", "branch": "dev", "state": "clean" }] } }
           }
         }
@@ -728,7 +780,7 @@
           },
           "news": { "state": "unavailable", "headlines": [], "emptyMessage": "Loading headlines…" },
           "widgets": {
-            "left": { "widgetId": "market-brief", "state": "unavailable", "emptyMessage": "Loading…" },
+            "left": { "widgetId": "stocks", "state": "unavailable", "emptyMessage": "Loading…" },
             "right": { "widgetId": "projects", "state": "unavailable", "emptyMessage": "Loading…" }
           }
         }
@@ -763,7 +815,7 @@
           },
           "news": { "state": "unavailable", "headlines": [], "emptyMessage": "News is unavailable after the error." },
           "widgets": {
-            "left": { "widgetId": "project-git-status", "state": "stale", "headline": "dev · last known", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "before the error" }, "data": { "branch": "dev", "checks": "passing" } },
+            "left": { "widgetId": "project-git-status", "state": "stale", "headline": "1 repository", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "before the error" }, "data": { "repositories": [{ "id": "cerebral-helm", "name": "cerebral-helm", "branch": "dev", "sync": "synced", "remote": { "owner": "NickSouth", "repo": "cerebral-helm" }, "github": { "state": "ready", "openPullRequests": { "count": 1, "titles": ["Repo status widget (GitHub)"] }, "checks": { "state": "passing" }, "recentCommits": [{ "shortSha": "320ac4c", "message": "fix: news formatting" }] } }] } },
             "right": { "widgetId": "repositories", "state": "unavailable", "emptyMessage": "Repository data is unavailable after the error." }
           }
         }

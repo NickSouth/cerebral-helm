@@ -4,8 +4,11 @@ import type {
   DashboardRegions,
   DashboardStateSnapshot,
   HeimlichState,
+  NewsRegion,
   RegionState,
-  SystemHealthRegion
+  ScheduleRegion,
+  SystemHealthRegion,
+  WeatherChannel
 } from "../bridge/types";
 import type {
   DashboardState,
@@ -14,6 +17,7 @@ import type {
   LayoutSession,
   WorkflowRunProgress
 } from "./dashboardState";
+import type { WidgetData } from "../widgets/widgetData";
 
 /** One channel of the native status publisher's `system_metrics` payload (NIC-81b). */
 interface MetricsChannelPayload {
@@ -176,6 +180,82 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
         modes: state.modes.map((mode) =>
           mode.id === payload.modeId ? { ...mode, quickApps: payload.quickApps ?? [] } : mode
         )
+      };
+    }
+    case "widget.data.changed": {
+      // One widget's producer streamed fresh data (NIC-131, the widget-liveness blueprint).
+      // Keyed into a runtime `liveWidgets` map by widget id; a rail resolves its slot as this
+      // value over the bootstrap `regions.widgets.{side}` (resolveWidgetData). Runtime-only
+      // state that lives OUTSIDE `regions`, so it survives `config.changed` mode switches by
+      // construction — no per-region preservation needed. A malformed payload, or an envelope
+      // whose own widgetId disagrees with the event key, is ignored (no fabricated update).
+      const payload = event.payload as { widgetId?: string; widget?: WidgetData };
+      const widget = payload.widget;
+      if (!payload.widgetId || !widget || widget.widgetId !== payload.widgetId) {
+        return state;
+      }
+      if (state.liveWidgets?.[payload.widgetId] === widget) {
+        return state;
+      }
+      return {
+        ...state,
+        liveWidgets: { ...state.liveWidgets, [payload.widgetId]: widget }
+      };
+    }
+    case "weather.changed": {
+      // The native weather producer streamed a fresh sample (NIC-169). Folded into the
+      // runtime-only `liveWeather` field — kept OUTSIDE the bootstrap `weather` channel so it
+      // survives `config.changed` mode switches by construction (same reasoning as `liveWidgets`)
+      // and never disturbs the per-mode mock `weather` fixtures. The bottom bar resolves
+      // `liveWeather` over the bootstrap `weather` (live wins). A payload missing a well-formed
+      // channel (`state` string) is ignored — no fabricated update.
+      const weather = (event.payload as { weather?: WeatherChannel }).weather;
+      if (!weather || typeof weather.state !== "string") {
+        return state;
+      }
+      if (state.liveWeather === weather) {
+        return state;
+      }
+      return { ...state, liveWeather: weather };
+    }
+    case "news.changed": {
+      // A news producer streamed fresh headlines for one relevance profile (NIC-127). News
+      // content differs per mode, so — unlike the single machine-global `liveWeather` — it folds
+      // into a runtime-only `liveNews` map keyed by `newsProfile`. The News panel resolves
+      // `liveNews[activeMode.newsProfile]` over the bootstrap `regions.news` (live wins). The map
+      // lives OUTSIDE `regions`, so it survives `config.changed` mode switches by construction
+      // (same reasoning as `liveWidgets`). A payload missing a non-empty profile or a well-formed
+      // region (`state` string) is ignored — no fabricated update.
+      const payload = event.payload as { profile?: string; news?: NewsRegion };
+      const news = payload.news;
+      if (!payload.profile || !news || typeof news.state !== "string") {
+        return state;
+      }
+      if (state.liveNews?.[payload.profile] === news) {
+        return state;
+      }
+      return { ...state, liveNews: { ...state.liveNews, [payload.profile]: news } };
+    }
+    case "schedule.changed": {
+      // A calendar producer streamed a fresh schedule for one relevance profile (NIC-126). Calendar
+      // relevance differs per mode, so — like `liveNews`, and unlike the single machine-global
+      // `liveWeather` — it folds into a runtime-only `liveSchedule` map keyed by `calendarProfile`.
+      // The Today panel resolves `liveSchedule[activeMode.calendarProfile]` over the bootstrap
+      // `regions.schedule` (live wins). The map lives OUTSIDE `regions`, so it survives
+      // `config.changed` mode switches by construction (same reasoning as `liveWidgets`). A payload
+      // missing a non-empty profile or a well-formed region (`state` string) is ignored — no
+      // fabricated update.
+      const payload = event.payload as { profile?: string; schedule?: ScheduleRegion };
+      const schedule = payload.schedule;
+      if (!payload.profile || !schedule || typeof schedule.state !== "string") {
+        return state;
+      }
+      if (state.liveSchedule?.[payload.profile] === schedule) {
+        return state;
+      }
+      return {
+        ...state,
+        liveSchedule: { ...state.liveSchedule, [payload.profile]: schedule }
       };
     }
     case "command.lifecycle.transition": {

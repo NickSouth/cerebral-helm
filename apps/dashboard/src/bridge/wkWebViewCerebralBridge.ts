@@ -14,6 +14,8 @@ import type {
   DecideConfirmationResult,
   CaptureLayoutResult,
   ListAppsResult,
+  ListCalendarsResult,
+  CanvasStatus,
   ListUrlsResult,
   OpenLayoutResult,
   PinLayoutWindowResult,
@@ -26,8 +28,12 @@ import type {
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
+  ConnectSpotifyResult,
+  DeleteSecretResult,
+  SecretStatusResult,
   SettingsSnapshot,
   SpeedTestResult,
+  StoreSecretResult,
   Unsubscribe,
   UpdateQuickAppsResult,
   UpdateSettingsResult
@@ -70,7 +76,11 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "workflow.action.progress",
   "display.topology.changed",
   "layout.session.changed",
-  "mode.windowcollapse.changed"
+  "mode.windowcollapse.changed",
+  "widget.data.changed",
+  "weather.changed",
+  "news.changed",
+  "schedule.changed"
 ]);
 
 /** True when running inside the native shell (the message handler is registered). */
@@ -265,8 +275,32 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     getSettings() {
       return operation<SettingsSnapshot>("getSettings", {});
     },
+    storeSecret(input) {
+      return operation<StoreSecretResult>("storeSecret", { ...input });
+    },
+    getSecretStatus(input) {
+      return operation<SecretStatusResult>("getSecretStatus", { ...input });
+    },
+    deleteSecret(input) {
+      return operation<DeleteSecretResult>("deleteSecret", { ...input });
+    },
+    connectSpotify() {
+      return operation<ConnectSpotifyResult>("connectSpotify", {});
+    },
     listApps() {
       return operation<ListAppsResult>("listApps", {});
+    },
+    getCanvasStatus() {
+      return operation<CanvasStatus>("getCanvasStatus", {});
+    },
+    resetCanvas() {
+      return operation<CanvasStatus>("resetCanvas", {});
+    },
+    setCanvasItemHidden(id: string, hidden: boolean) {
+      return operation<CanvasStatus>("setCanvasItemHidden", { id, hidden });
+    },
+    listCalendars() {
+      return operation<ListCalendarsResult>("listCalendars", {});
     },
     updateQuickApps(input) {
       return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });

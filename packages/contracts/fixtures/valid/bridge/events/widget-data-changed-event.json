@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "brevt_000000000000000000000009",
+  "type": "widget.data.changed",
+  "timestamp": "2026-07-19T16:00:00.030Z",
+  "payload": {
+    "widgetId": "repositories",
+    "widget": {
+      "widgetId": "repositories",
+      "state": "ready",
+      "headline": "2 repositories",
+      "freshness": { "observedAt": "2026-07-19T16:00:00.000Z", "label": "just now" },
+      "data": {
+        "items": [
+          { "id": "cerebral-helm", "name": "cerebral-helm", "branch": "mvp-polish/integrations-and-widgets", "path": "/Users/example/Projects/cerebral-helm" },
+          { "id": "notes", "name": "notes", "branch": "main", "path": "/Users/example/Projects/notes" }
+        ]
+      }
+    }
+  }
+}

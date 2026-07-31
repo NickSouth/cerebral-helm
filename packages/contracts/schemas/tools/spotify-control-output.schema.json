@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/spotify-control-output.schema.json",
+  "title": "CerebralHelm Spotify Control Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action", "applied", "activeDevice"],
+  "properties": {
+    "action": {
+      "title": "SpotifyPlaybackAction",
+      "type": "string",
+      "enum": ["play", "pause", "next", "previous"]
+    },
+    "applied": {
+      "type": "boolean",
+      "description": "True when Spotify accepted the command. False when there was no active device to act on."
+    },
+    "activeDevice": {
+      "type": "boolean",
+      "description": "Whether there was an active Spotify device. False → nothing to control; the widget guides the user to start playback on a device."
+    }
+  }
+}

@@ -161,6 +161,12 @@ export interface DashboardNewsHeadline {
     id:     string;
     source: string;
     title:  string;
+    /**
+     * The article's navigable destination (design spec §5.4), opened on click via the web.open
+     * tool. Optional — omitted (never fabricated) when the source has no link, in which case
+     * the headline renders as non-interactive text.
+     */
+    url?: string;
 }
 
 export enum DashboardRegionState {
@@ -177,10 +183,11 @@ export interface DashboardScheduleRegion {
 }
 
 export interface DashboardScheduleItem {
-    id:     string;
-    kind:   DashboardScheduleKind;
-    start?: string;
-    title:  string;
+    id:        string;
+    kind:      DashboardScheduleKind;
+    location?: string;
+    start?:    string;
+    title:     string;
 }
 
 export enum DashboardScheduleKind {
@@ -344,8 +351,12 @@ export enum CerebralHelmBridgeEventType {
     LayoutSessionChanged = "layout.session.changed",
     ModeQuickappsChanged = "mode.quickapps.changed",
     ModeWindowcollapseChanged = "mode.windowcollapse.changed",
+    NewsChanged = "news.changed",
+    ScheduleChanged = "schedule.changed",
     SettingsChanged = "settings.changed",
     SystemStatusChanged = "system.status.changed",
+    WeatherChanged = "weather.changed",
+    WidgetDataChanged = "widget.data.changed",
     WorkflowActionProgress = "workflow.action.progress",
 }
 
@@ -442,19 +453,27 @@ export enum Operation {
     CloseAllWindows = "closeAllWindows",
     CloseLayout = "closeLayout",
     CloseWindow = "closeWindow",
+    ConnectSpotify = "connectSpotify",
     DecideConfirmation = "decideConfirmation",
+    DeleteSecret = "deleteSecret",
     GetBootstrapState = "getBootstrapState",
+    GetCanvasStatus = "getCanvasStatus",
     GetRecentActivity = "getRecentActivity",
+    GetSecretStatus = "getSecretStatus",
     GetSettings = "getSettings",
     ListApps = "listApps",
+    ListCalendars = "listCalendars",
     ListChromeProfiles = "listChromeProfiles",
     ListUrls = "listUrls",
     ListWindows = "listWindows",
     MinimizeWindow = "minimizeWindow",
     OpenLayout = "openLayout",
     PinLayoutWindow = "pinLayoutWindow",
+    ResetCanvas = "resetCanvas",
     RunSpeedTest = "runSpeedTest",
     SearchNotes = "searchNotes",
+    SetCanvasItemHidden = "setCanvasItemHidden",
+    StoreSecret = "storeSecret",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",
     SurfaceWindow = "surfaceWindow",
@@ -524,6 +543,14 @@ export enum CerebralHelmBridgeOperationResponseType {
 export interface CerebralHelmSettingsSnapshot {
     appearance: SettingsSnapshotAppearance;
     /**
+     * The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+     * (NIC-126), keyed by calendar identifier with a mode-id value. Sparse: a calendar is
+     * present only when the user has mapped it — an unmapped calendar's events fall to the
+     * default mode (Executive) at the resolver. Like `modeColors`, this is not fully resolved
+     * but a meaningful-unset map (empty when the user has mapped nothing).
+     */
+    calendarModeMap: { [key: string]: string };
+    /**
      * When true, policy raises every non-read-only action to require confirmation (the 'Ask
      * before all actions' tightening; stricter-only, never weakens descriptor policy). Defaults
      * to false. Enforced when the command runtime is composed.
@@ -546,6 +573,7 @@ export interface CerebralHelmSettingsSnapshot {
      */
     modeColors:    { [key: string]: string };
     schemaVersion: string;
+    stocks:        SettingsSnapshotStocks;
     workspace:     SettingsSnapshotWorkspace;
 }
 
@@ -567,6 +595,16 @@ export interface SettingsSnapshotKnowledge {
      * meaningful unset state, unlike the other fields).
      */
     rootReference: null | string;
+}
+
+export interface SettingsSnapshotStocks {
+    /**
+     * The user's tracked stock symbols for the Executive Stocks widget (NIC-128), in display
+     * order. Fully resolved: the stored list when set, otherwise the shipped starter list. An
+     * empty array is a meaningful state — the user cleared their tickers — and renders the
+     * widget's empty prompt.
+     */
+    tickers: string[];
 }
 
 export interface SettingsSnapshotWorkspace {
@@ -881,13 +919,20 @@ export interface CerebralHelmSettingsPatch {
 }
 
 export interface Changes {
-    appearance?:        Appearance;
+    appearance?: Appearance;
+    /**
+     * The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+     * (NIC-126), keyed by the calendar's stable identifier with a mode-id value. When present,
+     * replaces the stored map wholesale — an empty object clears it.
+     */
+    calendarModeMap?:   { [key: string]: string };
     confirmAllActions?: boolean;
     defaultModeId?:     string;
     extensions?:        { [key: string]: any };
     hotkeys?:           Hotkeys;
     knowledge?:         Knowledge;
     modeColors?:        { [key: string]: string };
+    stocks?:            Stocks;
     workspace?:         Workspace;
 }
 
@@ -908,6 +953,15 @@ export interface Hotkeys {
 
 export interface Knowledge {
     rootReference?: string;
+}
+
+export interface Stocks {
+    /**
+     * The user's tracked stock symbols for the Executive Stocks widget (NIC-128). When present,
+     * replaces the stored list wholesale — an empty array clears it. Capped so a refresh stays
+     * within the provider's rate limit.
+     */
+    tickers?: string[];
 }
 
 export interface Workspace {
@@ -1109,6 +1163,24 @@ export interface Tool {
     version: string;
 }
 
+export interface CerebralHelmGoogleSearchInput {
+    /**
+     * The search text. The adapter builds a Google search URL host-side (the host is fixed to
+     * google.com); only this query is variable, so untrusted data can never choose the
+     * destination.
+     */
+    query: string;
+}
+
+export interface CerebralHelmGoogleSearchOutput {
+    opened: boolean;
+    query:  string;
+    /**
+     * The Google search URL that was opened.
+     */
+    resolvedURL: string;
+}
+
 export interface CerebralHelmHookRunInput {
     hookId: string;
 }
@@ -1228,6 +1300,51 @@ export enum Freshness {
     Unknown = "unknown",
 }
 
+export interface CerebralHelmProjectOpenInput {
+    /**
+     * Absolute path of the repository directory to open in the configured editor. The adapter
+     * constrains it to the projects root; a path outside is denied.
+     */
+    repoPath: string;
+}
+
+export interface CerebralHelmProjectOpenOutput {
+    opened:   boolean;
+    repoPath: string;
+}
+
+export interface CerebralHelmSpotifyControlInput {
+    /**
+     * The playback command to send to the user's active Spotify device: resume, pause, skip
+     * forward, or skip back.
+     */
+    action: SpotifyPlaybackAction;
+}
+
+/**
+ * The playback command to send to the user's active Spotify device: resume, pause, skip
+ * forward, or skip back.
+ */
+export enum SpotifyPlaybackAction {
+    Next = "next",
+    Pause = "pause",
+    Play = "play",
+    Previous = "previous",
+}
+
+export interface CerebralHelmSpotifyControlOutput {
+    action: SpotifyPlaybackAction;
+    /**
+     * Whether there was an active Spotify device. False → nothing to control; the widget guides
+     * the user to start playback on a device.
+     */
+    activeDevice: boolean;
+    /**
+     * True when Spotify accepted the command. False when there was no active device to act on.
+     */
+    applied: boolean;
+}
+
 export interface CerebralHelmSystemStatusReadInput {
     metrics?: ID[];
 }
@@ -1299,6 +1416,7 @@ export interface AvailabilityClass {
 }
 
 export enum ConfirmationPolicyKey {
+    AllowExternalWriteWithoutConfirmation = "allow_external_write_without_confirmation",
     AllowReadWithoutConfirmation = "allow_read_without_confirmation",
     ConfirmDestructive = "confirm_destructive",
     ConfirmExternalWrite = "confirm_external_write",
@@ -1394,6 +1512,25 @@ export interface CerebralHelmURLOpenOutput {
     resolvedUrl: string;
     surfaced:    boolean;
     urlId:       string;
+}
+
+export interface CerebralHelmWebOpenInput {
+    /**
+     * The absolute https web address to open in the browser. The adapter validates the scheme
+     * (https only) and a present host host-side, so an unresolvable or non-https link is
+     * refused rather than opened. Unlike url.open (which resolves a configured reference id),
+     * this opens an arbitrary destination — used for news article links — so the constraint
+     * lives in the adapter, not in an allowlist.
+     */
+    url: string;
+}
+
+export interface CerebralHelmWebOpenOutput {
+    opened: boolean;
+    /**
+     * The https web address that was opened.
+     */
+    url: string;
 }
 
 /**

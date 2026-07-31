@@ -31,6 +31,12 @@ public enum EffectiveSettings {
     /// set one — the product's default identity.
     public static let defaultAssistantName = "Heimlich"
 
+    /// The shipped starter ticker list for the Executive Stocks widget (NIC-128),
+    /// applied when the user has never configured one. Four symbols — exactly one
+    /// 2×2 page — so the widget shows a full grid on first run. A broad-market ETF,
+    /// two large caps, and a total-market ETF.
+    public static let defaultStockTickers = ["SPY", "AAPL", "NVDA", "VTI"]
+
     /// The message/document schema version stamped on the snapshot.
     private static let schemaVersion = "1.0.0"
 
@@ -47,6 +53,9 @@ public enum EffectiveSettings {
                 assistantName: stored.appearanceAssistantName ?? defaultAssistantName,
                 reducedMotion: stored.appearanceReducedMotion ?? false
             ),
+            // Sparse pass-through, like modeColors: the calendar→mode map is empty until the user
+            // maps a calendar; a malformed stored blob degrades to "no mappings" rather than erroring.
+            calendarModeMap: decodeCalendarModeMap(stored.calendarModeMapJSON),
             confirmAllActions: stored.confirmAllActions ?? false,
             defaultModeID: stored.defaultModeID ?? configDefaultModeID ?? fallbackModeID,
             knowledge: SettingsSnapshotKnowledge(
@@ -57,6 +66,11 @@ public enum EffectiveSettings {
             // erroring the read.
             modeColors: decodeModeColors(stored.modeColorsJSON),
             schemaVersion: schemaVersion,
+            // A stored list wins (including an explicit empty "cleared" list); only a never-set
+            // (nil) or malformed blob falls back to the shipped starter list.
+            stocks: SettingsSnapshotStocks(
+                tickers: decodeStockTickers(stored.stockTickersJSON) ?? defaultStockTickers
+            ),
             workspace: SettingsSnapshotWorkspace(
                 layoutDisplayID: stored.layoutDisplayID ?? systemPrimaryDisplayID,
                 mainDisplayID: stored.mainDisplayID ?? systemPrimaryDisplayID,
@@ -88,12 +102,50 @@ public enum EffectiveSettings {
         return url.standardizedFileURL
     }
 
+    /// The effective tracked-ticker list for the Stocks widget producer (NIC-128): the stored
+    /// list when set (including an explicit empty "cleared" list), else the shipped starter list.
+    /// The ``StocksPublisher`` reads this each tick so a Settings edit applies on the next sample.
+    public static func resolveStockTickers(stored: StoredSettings) -> [String] {
+        decodeStockTickers(stored.stockTickersJSON) ?? defaultStockTickers
+    }
+
+    /// The effective calendar→mode map for the ``CalendarProvider`` producer (NIC-126): the stored
+    /// map when set, else empty (every calendar's events fall to the default mode at the resolver).
+    /// The calendar producer reads this each tick so a Settings edit applies on the next sample.
+    public static func resolveCalendarModeMap(stored: StoredSettings) -> [String: String] {
+        decodeCalendarModeMap(stored.calendarModeMapJSON)
+    }
+
+    private static func decodeCalendarModeMap(_ json: String?) -> [String: String] {
+        guard
+            let data = json?.data(using: .utf8),
+            let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+        else {
+            return [:]
+        }
+        return decoded
+    }
+
     private static func decodeModeColors(_ json: String?) -> [String: String] {
         guard
             let data = json?.data(using: .utf8),
             let decoded = try? JSONDecoder().decode([String: String].self, from: data)
         else {
             return [:]
+        }
+        return decoded
+    }
+
+    /// Decodes the stored ticker JSON array. Returns `nil` for a never-set (nil) or malformed
+    /// blob — the caller then applies the starter default — but returns an explicit `[]` for a
+    /// stored empty list, so a user who cleared their tickers keeps an empty widget rather than
+    /// having the starter list silently reappear.
+    private static func decodeStockTickers(_ json: String?) -> [String]? {
+        guard
+            let data = json?.data(using: .utf8),
+            let decoded = try? JSONDecoder().decode([String].self, from: data)
+        else {
+            return nil
         }
         return decoded
     }

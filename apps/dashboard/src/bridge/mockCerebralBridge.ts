@@ -107,7 +107,17 @@ function mergeSettingsChanges(
     modeColors:
       changes.modeColors && typeof changes.modeColors === "object"
         ? (changes.modeColors as Record<string, string>)
-        : prev.modeColors
+        : prev.modeColors,
+    stocks:
+      changes.stocks &&
+      typeof changes.stocks === "object" &&
+      Array.isArray((changes.stocks as { tickers?: unknown }).tickers)
+        ? { tickers: (changes.stocks as { tickers: string[] }).tickers }
+        : prev.stocks,
+    calendarModeMap:
+      changes.calendarModeMap && typeof changes.calendarModeMap === "object"
+        ? (changes.calendarModeMap as Record<string, string>)
+        : prev.calendarModeMap
   };
 }
 
@@ -220,6 +230,27 @@ export function createMockCerebralBridge(
   // Session-only per-mode collapse-all state (NIC-143), so a browser preview can flip
   // the bottom-bar collapse/expand icon; the real bridge hides/returns the windows.
   const collapsedModes = new Set<string>();
+  // Session-only Canvas hidden-item state (NIC-132) so a browser preview / test can hide + unhide
+  // scraped courses/deadlines; the real bridge persists the hidden ids in SQLite.
+  const canvasHidden = new Set<string>();
+  const canvasCourses = [
+    { id: "37331", label: "Theory of Computation" },
+    { id: "40010", label: "Linear Algebra" }
+  ];
+  const canvasDeadlines = [
+    { id: "a1", label: "Problem Set 7" },
+    { id: "a2", label: "Reading Response 4" }
+  ];
+  const canvasStatus = () => ({
+    available: true,
+    endpoint: "http://127.0.0.1:8899/canvas/ingest",
+    token: "mock-canvas-token",
+    lastScrapedAt: "2026-07-29T12:00:00Z",
+    courseCount: canvasCourses.filter((course) => !canvasHidden.has(course.id)).length,
+    deadlineCount: canvasDeadlines.filter((deadline) => !canvasHidden.has(deadline.id)).length,
+    courses: canvasCourses.map((course) => ({ ...course, hidden: canvasHidden.has(course.id) })),
+    deadlines: canvasDeadlines.map((deadline) => ({ ...deadline, hidden: canvasHidden.has(deadline.id) }))
+  });
   // A mutable window inventory for the navigator (NIC-143), so a browser preview can
   // minimize/surface/close and see the change on the next listWindows; the real bridge
   // enumerates and acts on live windows via Accessibility.
@@ -260,9 +291,15 @@ export function createMockCerebralBridge(
     appearance: { reducedMotion: false, assistantName: "Heimlich" },
     knowledge: { rootReference: "knowledge-root" },
     workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
-    modeColors: {}
+    modeColors: {},
+    stocks: { tickers: ["SPY", "AAPL", "NVDA", "VTI"] },
+    calendarModeMap: {}
   };
   let settingsEventSeq = 0;
+  // The bound secret references (NIC-134), held mutably so storeSecret visibly binds one and
+  // getSecretStatus reflects it — the browser stand-in for the Keychain. Values are never kept
+  // (the mock only tracks presence), mirroring the presence-only surface the real bridge exposes.
+  const boundSecrets = new Set<string>();
   // The configured URL references (NIC-146), held mutably so addUrlReference visibly
   // mints and listUrls reflects it — the browser stand-in for the user URL catalog.
   // Seeded with the shipped config/references/urls.json entries.
@@ -427,6 +464,31 @@ export function createMockCerebralBridge(
       // the settings UI reads stored state and reflects saves (NIC-141/137).
       return Promise.resolve(settingsSnapshot);
     },
+    storeSecret(input) {
+      // The browser stand-in for the Keychain write (NIC-134): a non-empty value binds the
+      // reference. The value is not retained — only presence — mirroring the real surface.
+      const stored = input.value.trim().length > 0;
+      if (stored) {
+        boundSecrets.add(input.reference);
+      }
+      return Promise.resolve({ reference: input.reference, stored });
+    },
+    getSecretStatus(input) {
+      return Promise.resolve({ reference: input.reference, bound: boundSecrets.has(input.reference) });
+    },
+    deleteSecret(input) {
+      const deleted = boundSecrets.delete(input.reference);
+      return Promise.resolve({ reference: input.reference, deleted });
+    },
+    connectSpotify() {
+      // The browser stand-in for the OAuth round trip (NIC-133): binds the token reference so the
+      // Settings control flips to "Connected", without any real browser flow.
+      boundSecrets.add("spotify_oauth");
+      return Promise.resolve({
+        connected: true,
+        scope: "user-read-playback-state user-read-currently-playing user-modify-playback-state"
+      });
+    },
     listApps() {
       // A representative installed-app set for browser previews of the More Apps
       // picker (NIC-119). No icons — the honest non-Mac fallback glyph renders.
@@ -442,6 +504,44 @@ export function createMockCerebralBridge(
         ],
         truncated: false
       });
+    },
+    listCalendars() {
+      // A representative calendar set for browser previews of the Settings calendar→mode mapping
+      // (NIC-126). `authorized: true` so the mapping UI renders its rows rather than the
+      // grant-access prompt.
+      return Promise.resolve({
+        authorized: true,
+        calendars: [
+          { id: "cal-work", title: "Work", colorHex: "#3366cc" },
+          { id: "cal-personal", title: "Personal", colorHex: "#e8590c" },
+          { id: "cal-school", title: "School", colorHex: "#2f9e44" },
+          { id: "cal-family", title: "Family" }
+        ]
+      });
+    },
+    getCanvasStatus() {
+      // A representative paired state for browser previews of the Settings Canvas card (NIC-132):
+      // an endpoint + token to pair the extension, the scrape summary, and the item manage-list.
+      return Promise.resolve(canvasStatus());
+    },
+    resetCanvas() {
+      // Disconnect: the token rotates, the scrape summary clears, and hides reset.
+      canvasHidden.clear();
+      return Promise.resolve({
+        available: true,
+        endpoint: "http://127.0.0.1:8899/canvas/ingest",
+        token: "mock-canvas-token-rotated",
+        lastScrapedAt: null,
+        courseCount: 0,
+        deadlineCount: 0,
+        courses: [],
+        deadlines: []
+      });
+    },
+    setCanvasItemHidden(id: string, hidden: boolean) {
+      if (hidden) canvasHidden.add(id);
+      else canvasHidden.delete(id);
+      return Promise.resolve(canvasStatus());
     },
     updateQuickApps(input) {
       // Stand in for the validated override path (NIC-119c): the same

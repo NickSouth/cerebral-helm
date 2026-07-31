@@ -6,6 +6,8 @@ import { WidgetSlot } from "./WidgetSlot";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useBridge } from "../state/BridgeProvider";
 import { useUiPosture } from "../state/useUiPosture";
+import { useActiveMode } from "./useActiveMode";
+import { resolveWidgetData } from "../widgets/widgetData";
 import { agentActivityLabel } from "./labels";
 import { armModeWave } from "./modeWave";
 
@@ -16,9 +18,14 @@ import { armModeWave } from "./modeWave";
  * workspace that covers this rail on expand is NIC-61 (course-correction A.2).
  */
 export function RightRail() {
-  const { mode, modes, agents, regions } = useDashboardState();
+  const { mode, modes, agents, regions, liveWidgets } = useDashboardState();
+  const activeMode = useActiveMode();
   const bridge = useBridge();
   const { readOnly } = useUiPosture();
+
+  // Resolve the right slot: the live-streamed widget for this mode's assigned id
+  // (NIC-131 blueprint) over the bootstrap value. Every future live widget inherits this.
+  const rightWidget = resolveWidgetData(liveWidgets, activeMode.widgets.right, regions.widgets.right);
 
   return (
     <aside className="shell-rail shell-right" aria-label="Operations">
@@ -79,7 +86,7 @@ export function RightRail() {
         </ul>
       </Panel>
 
-      <WidgetSlot data={regions.widgets.right} labelId="region-widget-right" />
+      <WidgetSlot data={rightWidget} labelId="region-widget-right" slotWidgetId={activeMode.widgets.right} />
     </aside>
   );
 }

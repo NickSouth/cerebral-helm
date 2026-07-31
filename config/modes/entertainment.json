@@ -25,7 +25,7 @@
   ],
   "widgets": {
     "left": "spotify",
-    "right": "media-list"
+    "right": "releases"
   },
   "projectHints": [
     "weekend-plans"

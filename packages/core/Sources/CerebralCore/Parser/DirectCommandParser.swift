@@ -6,6 +6,7 @@ import Foundation
 /// - `open <id>`   — resolve an app or URL reference
 /// - `mode <id>`   — apply a configured mode
 /// - `note <text>` — capture a note
+/// - `project <path>` — open a repository directory in the configured editor
 /// - `search <text>` — search notes
 /// - `hook <id>`   — run a configured hook
 /// - `run <id>`    — run a configured workflow / quick action
@@ -27,7 +28,11 @@ public struct DirectCommandParser: Sendable {
         "open <app|url>",
         "mode <id>",
         "note <text>",
+        "project <path>",
         "search <text>",
+        "google <query>",
+        "spotify <action>",
+        "web <url>",
         "hook <id>",
         "run <action>",
         "apps",
@@ -64,8 +69,25 @@ public struct DirectCommandParser: Sendable {
             return parseRun(remainder)
         case "note":
             return parseFreeText(verb: "note", remainder: remainder) { .captureNote(text: $0) }
+        case "project":
+            // The remainder is the whole repository path (paths may contain spaces),
+            // so the free-text handler takes it verbatim (NIC-131).
+            return parseFreeText(verb: "project", remainder: remainder) { .openProject(repoPath: $0) }
         case "search":
             return parseFreeText(verb: "search", remainder: remainder) { .searchNotes(query: $0) }
+        case "google":
+            // The remainder is the whole search query (queries contain spaces), taken verbatim
+            // (NIC-134). The adapter builds the google.com search URL; only this query varies.
+            return parseFreeText(verb: "google", remainder: remainder) { .googleSearch(query: $0) }
+        case "spotify":
+            // The remainder is the playback action (play/pause/next/previous), taken verbatim
+            // (NIC-133). The tool descriptor validates it against the input enum; an unknown action
+            // is refused by the contract, not acted on.
+            return parseFreeText(verb: "spotify", remainder: remainder) { .spotifyControl(action: $0) }
+        case "web":
+            // The remainder is the whole https URL, taken verbatim (NIC-127). The adapter
+            // validates the scheme/host; a non-https or malformed link is refused, not opened.
+            return parseFreeText(verb: "web", remainder: remainder) { .webOpen(url: $0) }
         case "apps":
             // Argument-free by design: discovery is all-or-nothing and read-only.
             return .parsed(.listApps)

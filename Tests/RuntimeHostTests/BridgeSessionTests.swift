@@ -179,6 +179,41 @@ func applyModeValidatesMode() async throws {
     #expect(try decode(unknown, as: ApplyModeResult.self).status == "error")
 }
 
+@Test("a mode switch fires onModeApplied with the entered mode id — from both switch paths")
+func modeSwitchFiresOnModeApplied() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let applied = EmittedEvents() // reused as a thread-safe string recorder
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        onModeApplied: { applied.emit($0) }
+    )
+
+    // The applyMode operation path…
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"developer"}"#))
+    #expect(applied.all() == ["developer"])
+
+    // …and the raw `mode <id>` command path both notify, so the host can refresh
+    // the entered mode's widget producers regardless of which surface switched.
+    _ = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"mode school","source":"dashboard"}"#)
+    )
+    #expect(applied.all() == ["developer", "school"])
+}
+
+@Test("a rejected mode switch never fires onModeApplied")
+func rejectedModeSwitchDoesNotFireOnModeApplied() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let applied = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        onModeApplied: { applied.emit($0) }
+    )
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"nope"}"#))
+    #expect(applied.all().isEmpty)
+}
+
 // MARK: - getBootstrapState
 
 @Test("getBootstrapState composes the four mode views and agent roster from real config")
@@ -1388,6 +1423,33 @@ func updateSettingsRequiresPatch() async throws {
     #expect(response.error?.category == .invalidInput)
 }
 
+/// Records the changes handed to `onSettingsChanged` from a `@Sendable` closure (NIC-128).
+private final class SettingsChangeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last: SettingsChanges?
+    func record(_ changes: SettingsChanges) { lock.lock(); last = changes; lock.unlock() }
+    var tickersChanged: Bool { lock.lock(); defer { lock.unlock() }; return last?.stockTickersJSON != nil }
+    var fired: Bool { lock.lock(); defer { lock.unlock() }; return last != nil }
+}
+
+@Test("updateSettings fires onSettingsChanged with the applied changes so a producer can refresh (NIC-128)")
+func updateSettingsFiresOnSettingsChanged() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let box = SettingsChangeBox()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        settingsStore: try makeSettingsStore(paths),
+        onSettingsChanged: { box.record($0) }
+    )
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_stocks03","changes":{"stocks":{"tickers":["SPY","QQQ"]}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+    #expect(box.tickersChanged) // the hook saw the ticker change, so the producer can re-sample
+}
+
 // MARK: - getSettings (NIC-141)
 
 /// A settings snapshot decoded from the getSettings response payload.
@@ -1395,6 +1457,7 @@ private struct SettingsSnapshot: Decodable {
     struct Appearance: Decodable { let reducedMotion: Bool; let assistantName: String }
     struct Knowledge: Decodable { let rootReference: String? }
     struct Workspace: Decodable { let windowsStoredByMode: Bool; let mainDisplayId: String }
+    struct Stocks: Decodable { let tickers: [String] }
     let schemaVersion: String
     let defaultModeId: String
     let confirmAllActions: Bool
@@ -1402,6 +1465,14 @@ private struct SettingsSnapshot: Decodable {
     let knowledge: Knowledge
     let workspace: Workspace
     let modeColors: [String: String]
+    let stocks: Stocks
+    let calendarModeMap: [String: String]
+}
+
+private struct CalendarsListResult: Decodable {
+    struct Calendar: Decodable { let id: String; let title: String; let colorHex: String? }
+    let authorized: Bool
+    let calendars: [Calendar]
 }
 
 @Test("getSettings reflects the persisted values written through updateSettings")
@@ -1445,6 +1516,92 @@ func getSettingsResolvesDefaults() async throws {
     #expect(snapshot.knowledge.rootReference == nil)
     #expect(snapshot.workspace.windowsStoredByMode == false)
     #expect(snapshot.workspace.mainDisplayId == "system-primary")
+    #expect(snapshot.stocks.tickers == ["SPY", "AAPL", "NVDA", "VTI"]) // the shipped starter list
+}
+
+@Test("a stocks-tickers patch round-trips through getSettings, normalized to uppercase and deduped")
+func stocksTickersPatchRoundTrips() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    // Mixed case + a duplicate + surrounding whitespace: the store normalizes on write.
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_stocks01","changes":{"stocks":{"tickers":["tsla","AAPL","tsla","brk.b"]}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    let reopened = try makeSessionWithSettings(paths)
+    let response = await reopened.execute(operationRequest(.getSettings, "{}"))
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.stocks.tickers == ["TSLA", "AAPL", "BRK.B"]) // uppercased, order-preserving, deduped
+}
+
+@Test("a calendar→mode-map patch round-trips through getSettings; an invalid mode value is rejected (NIC-126)")
+func calendarModeMapPatchRoundTrips() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_calmap01","changes":{"calendarModeMap":{"cal-work":"executive","cal-dev":"developer"}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    let reopened = try makeSessionWithSettings(paths)
+    let response = await reopened.execute(operationRequest(.getSettings, "{}"))
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.calendarModeMap == ["cal-work": "executive", "cal-dev": "developer"])
+
+    // A value that is not a known mode id is rejected — settings can never invent a mode.
+    let rejected = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_calmap02","changes":{"calendarModeMap":{"cal-x":"cosmic"}}}}"##
+    ))
+    #expect(try decode(rejected, as: Accepted.self).accepted == false)
+}
+
+@Test("listCalendars returns the host's calendars as authorized; a denied provider is unauthorized+empty (NIC-126)")
+func listCalendarsReportsAuthorization() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        calendarProvider: MockCalendarProvider(events: [], calendars: [
+            CalendarInfo(id: "cal-work", title: "Work", colorHex: "#3366cc"),
+            CalendarInfo(id: "cal-personal", title: "Personal"),
+        ])
+    )
+    let response = await session.execute(operationRequest(.listCalendars, "{}"))
+    let result = try decode(response, as: CalendarsListResult.self)
+    #expect(result.authorized)
+    #expect(result.calendars.map(\.id) == ["cal-work", "cal-personal"])
+    #expect(result.calendars.first?.colorHex == "#3366cc")
+
+    // A denied grant → unauthorized + empty; the Settings UI shows a grant-access prompt.
+    let denied = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        calendarProvider: MockCalendarProvider(error: .permissionDenied)
+    )
+    let deniedResponse = await denied.execute(operationRequest(.listCalendars, "{}"))
+    let deniedResult = try decode(deniedResponse, as: CalendarsListResult.self)
+    #expect(deniedResult.authorized == false)
+    #expect(deniedResult.calendars.isEmpty)
+}
+
+@Test("an explicitly cleared ticker list stays empty rather than reverting to the starter list")
+func stocksTickersClearedStaysEmpty() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_stocks02","changes":{"stocks":{"tickers":[]}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    let reopened = try makeSessionWithSettings(paths)
+    let response = await reopened.execute(operationRequest(.getSettings, "{}"))
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.stocks.tickers.isEmpty) // cleared is a real state, not "unset"
 }
 
 @Test("getSettings is the default-mode setting, not the currently active mode")
@@ -1821,4 +1978,109 @@ func windowActionsReportEffect() async throws {
         await bare.execute(operationRequest(.minimizeWindow, #"{"windowId":"1001"}"#)),
         as: WindowActionResult.self
     ).ok)
+}
+
+// MARK: - Canvas connect/status (NIC-132)
+
+private struct CanvasStatusDecode: Decodable {
+    struct Item: Decodable {
+        let id: String
+        let label: String
+        let hidden: Bool
+    }
+    let available: Bool
+    let endpoint: String
+    let token: String?
+    let lastScrapedAt: String?
+    let courseCount: Int
+    let deadlineCount: Int
+    let courses: [Item]
+    let deadlines: [Item]
+}
+
+@Test("getCanvasStatus reports the pairing endpoint/token and last-scrape summary")
+func getCanvasStatusReportsPairing() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        canvasStatus: {
+            CanvasStatusInfo(
+                endpoint: "http://127.0.0.1:8899/canvas/ingest",
+                token: "tok-123", lastScrapedAt: "2026-07-29T12:00:00Z",
+                courseCount: 4, deadlineCount: 7
+            )
+        }
+    )
+    let response = await session.execute(operationRequest(.getCanvasStatus, "{}"))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.available)
+    #expect(status.endpoint == "http://127.0.0.1:8899/canvas/ingest")
+    #expect(status.token == "tok-123")
+    #expect(status.lastScrapedAt == "2026-07-29T12:00:00Z")
+    #expect(status.courseCount == 4)
+    #expect(status.deadlineCount == 7)
+}
+
+@Test("getCanvasStatus reports unavailable off the macOS host (no ingest store)")
+func getCanvasStatusUnavailableWithoutHost() async throws {
+    let session = try makeSession() // no canvasStatus closure injected
+    let response = await session.execute(operationRequest(.getCanvasStatus, "{}"))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.available == false)
+    #expect(status.token == nil)
+}
+
+@Test("setCanvasItemHidden hides an item and returns the fresh status carrying the flag")
+func setCanvasItemHiddenReturnsStatus() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        canvasSetHidden: { id, hidden in
+            CanvasStatusInfo(
+                endpoint: "http://127.0.0.1:8899/canvas/ingest", token: "t",
+                lastScrapedAt: "2026-07-29T12:00:00Z", courseCount: 0, deadlineCount: 0,
+                courses: [CanvasStatusItem(id: id, label: "Theory of Computation", hidden: hidden)],
+                deadlines: []
+            )
+        }
+    )
+    let response = await session.execute(operationRequest(.setCanvasItemHidden, #"{"id":"37331","hidden":true}"#))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.courses.first?.id == "37331")
+    #expect(status.courses.first?.hidden == true)
+}
+
+@Test("setCanvasItemHidden reports unavailable off the macOS host")
+func setCanvasItemHiddenUnavailableWithoutHost() async throws {
+    let session = try makeSession() // no canvasSetHidden closure
+    let response = await session.execute(operationRequest(.setCanvasItemHidden, #"{"id":"1","hidden":true}"#))
+    #expect(response.status == .ok)
+    #expect(try decode(response, as: CanvasStatusDecode.self).available == false)
+}
+
+@Test("resetCanvas rotates the token and returns the fresh, empty state")
+func resetCanvasReturnsFreshState() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        canvasReset: {
+            CanvasStatusInfo(
+                endpoint: "http://127.0.0.1:8899/canvas/ingest",
+                token: "rotated-456", lastScrapedAt: nil, courseCount: 0, deadlineCount: 0
+            )
+        }
+    )
+    let response = await session.execute(operationRequest(.resetCanvas, "{}"))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.token == "rotated-456")
+    #expect(status.lastScrapedAt == nil)
+    #expect(status.courseCount == 0)
+    #expect(status.deadlineCount == 0)
 }

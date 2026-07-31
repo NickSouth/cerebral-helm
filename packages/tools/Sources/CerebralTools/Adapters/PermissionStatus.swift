@@ -53,6 +53,11 @@ public enum PermissionCatalog {
                 explanation: "CerebralHelm needs the Accessibility permission to arrange application windows.",
                 settingsDeepLink: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
             )
+        case "location":
+            return PermissionGuidance(
+                explanation: "CerebralHelm needs Location access to show the weather for where you are.",
+                settingsDeepLink: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices"
+            )
         case "application_launch":
             return PermissionGuidance(explanation: "Opening configured applications requires no additional macOS permission.")
         case "url_open":

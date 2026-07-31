@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0",
+  "patchId": "set_stocks_tickers_01",
+  "changes": {
+    "stocks": {
+      "tickers": ["SPY", "AAPL", "NVDA", "VTI", "MSFT"]
+    }
+  }
+}

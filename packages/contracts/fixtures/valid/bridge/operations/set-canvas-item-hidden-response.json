@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000066",
+  "type": "bridge.operation.response",
+  "operation": "setCanvasItemHidden",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "available": true,
+    "endpoint": "http://127.0.0.1:8899/canvas/ingest",
+    "token": "example-canvas-ingest-token",
+    "lastScrapedAt": "2026-07-29T12:00:00Z",
+    "courseCount": 3,
+    "deadlineCount": 7,
+    "courses": [
+      { "id": "37331", "label": "Theory of Computation", "hidden": true },
+      { "id": "40010", "label": "Linear Algebra", "hidden": false }
+    ],
+    "deadlines": [
+      { "id": "a1", "label": "Problem Set 7", "hidden": false }
+    ]
+  }
+}

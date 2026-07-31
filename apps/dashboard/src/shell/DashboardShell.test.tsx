@@ -202,8 +202,10 @@ describe("DashboardShell config-driven content (one view, four modes, no per-mod
   it("populates Developer mode from its config and region data", () => {
     renderShell("mode.developer.ready");
     expect(screen.getByText("Ready to build.")).toBeInTheDocument();
-    expect(screen.getByText("dev · checks passing")).toBeInTheDocument();
-    expect(screen.getByText("cerebral-helm")).toBeInTheDocument();
+    // The project-git-status widget renders its per-repo report (NIC-130): the open-PR title is
+    // unique to this widget, and the repo name now appears in both it and the Repositories widget.
+    expect(screen.getByText("Repo status widget (GitHub)")).toBeInTheDocument();
+    expect(screen.getAllByText("cerebral-helm").length).toBeGreaterThan(0);
     expect(screen.getByText("Team standup")).toBeInTheDocument();
     expect(screen.getByText(/TypeScript 5.9/)).toBeInTheDocument();
   });
@@ -211,7 +213,7 @@ describe("DashboardShell config-driven content (one view, four modes, no per-mod
   it("renders Executive purely from config — no Developer content leaks", () => {
     renderShell("mode.executive.ready");
     expect(screen.getByText("Good day.")).toBeInTheDocument();
-    expect(screen.getByText("Market Brief")).toBeInTheDocument();
+    expect(screen.getByText("Stocks")).toBeInTheDocument();
     expect(screen.getByText("Markets up modestly")).toBeInTheDocument();
     expect(screen.queryByText("Ready to build.")).toBeNull();
   });
@@ -344,6 +346,17 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     const bar = statusBar();
     expect(bar.getByText("Weather · Unavailable")).toBeInTheDocument();
     expect(bar.getByText("Battery · Unavailable")).toBeInTheDocument();
+  });
+
+  it("renders live weather over the per-mode bootstrap weather (NIC-169)", () => {
+    // Executive bootstrap mocks 72°F; a streamed live sample must win.
+    renderShellWithState((base) => ({
+      ...base,
+      liveWeather: { state: "ready", label: "55°F · Rain", temperatureF: 55, condition: "Rain" }
+    }));
+    const bar = statusBar();
+    expect(bar.getByText("55°F")).toBeInTheDocument();
+    expect(bar.queryByText("72°F")).toBeNull();
   });
 
   it("opens the mode menu as a native top-most dropdown when the channel exists (NIC-144)", () => {
@@ -539,8 +552,8 @@ describe("DashboardShell degraded states (E4 / NIC-64)", () => {
     renderShell("failure.dashboard_error");
     const banner = screen.getByRole("status");
     expect(within(banner).getByText("Something went wrong")).toBeInTheDocument();
-    // Not blank: the last-known stale git widget is still shown.
-    expect(screen.getByText("dev · last known")).toBeInTheDocument();
+    // Not blank: the last-known stale git widget is still shown (NIC-130 per-repo report).
+    expect(screen.getByText("Repo status widget (GitHub)")).toBeInTheDocument();
   });
 
   it("folds a bridge read-only recovery event into a recovery banner and read-only controls", () => {

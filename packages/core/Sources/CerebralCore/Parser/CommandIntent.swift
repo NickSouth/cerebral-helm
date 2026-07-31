@@ -6,8 +6,21 @@ public enum CommandIntent: Equatable, Sendable {
     case openApp(ReferenceEntry)
     case openURL(ReferenceEntry)
     case applyMode(modeId: String)
+    /// Open a repository directory in the configured editor (NIC-131) — a single
+    /// `project.open` tool call. The path is constrained to the projects root by the
+    /// adapter, and the `local_write` risk routes it through a confirmation.
+    case openProject(repoPath: String)
     case captureNote(text: String)
     case searchNotes(query: String)
+    /// Open a Google search for the query in the browser (NIC-134) — a single `google.search`
+    /// tool call. The host is fixed to google.com by the adapter; only the query varies.
+    case googleSearch(query: String)
+    /// Control the user's Spotify playback (NIC-133) — a single `spotify.control` tool call. The
+    /// action is one of play/pause/next/previous; the adapter sends it to the active device.
+    case spotifyControl(action: String)
+    /// Open an https web address in the browser (NIC-127) — a single `web.open` tool call, used
+    /// for news article links. The adapter validates the scheme/host; a non-https link is refused.
+    case webOpen(url: String)
     case runHook(ReferenceEntry)
     /// Measure current internet download/upload capacity on request (NIC-135) —
     /// a single read-only `network.speed.test` tool call.

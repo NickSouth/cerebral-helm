@@ -20,7 +20,11 @@ export type BridgeEventType =
   | "workflow.action.progress"
   | "display.topology.changed"
   | "layout.session.changed"
-  | "mode.windowcollapse.changed";
+  | "mode.windowcollapse.changed"
+  | "widget.data.changed"
+  | "weather.changed"
+  | "news.changed"
+  | "schedule.changed";
 
 export interface BridgeEvent {
   readonly eventId: string;
@@ -124,6 +128,14 @@ export interface SettingsSnapshot {
    *  `#rrggbb`. Sparse: a key is present only when customized; the client fills palette
    *  defaults for every un-overridden channel. */
   readonly modeColors: Readonly<Record<string, string>>;
+  /** The user's tracked stock symbols for the Executive Stocks widget (NIC-128), in
+   *  display order. Fully resolved: the stored list, else the shipped starter list. An
+   *  empty array is a meaningful "cleared" state (the widget shows its empty prompt). */
+  readonly stocks: { readonly tickers: readonly string[] };
+  /** The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+   *  (NIC-126), keyed by calendar identifier → mode id. Sparse: a calendar is present only when
+   *  the user has mapped it; an unmapped calendar's events fall to the default mode (Executive). */
+  readonly calendarModeMap: Readonly<Record<string, string>>;
 }
 
 export interface RecentActivityQuery {
@@ -146,6 +158,45 @@ export interface ListAppsResult {
   readonly truncated: boolean;
 }
 
+/** One of the user's calendars (NIC-126) for the Settings calendar→mode mapping. `colorHex` is the
+ *  calendar's colour for a swatch when known. */
+export interface CalendarInfo {
+  readonly id: string;
+  readonly title: string;
+  readonly colorHex?: string;
+}
+export interface ListCalendarsResult {
+  /** Whether Calendar access is granted; false → the UI shows a "grant Calendar access" prompt
+   *  and `calendars` is empty (never fabricated). */
+  readonly authorized: boolean;
+  readonly calendars: readonly CalendarInfo[];
+}
+
+/** The Canvas ingest connection state (NIC-132) for the Settings connect card. `available` is false
+ *  only off the macOS host (the card then shows "requires the macOS host"). Otherwise `endpoint` and
+ *  `token` are what the Chrome extension pairs with, and `lastScrapedAt` (ISO-8601, null until the
+ *  first scrape) + the counts summarise the latest scrape. `token` is a local pairing secret. */
+/** One scraped Canvas item in the Settings manage-list (NIC-132): its id, a display label, and
+ *  whether the user has hidden it from the School widgets. */
+export interface CanvasStatusItem {
+  readonly id: string;
+  readonly label: string;
+  readonly hidden: boolean;
+}
+
+export interface CanvasStatus {
+  readonly available: boolean;
+  readonly endpoint: string;
+  readonly token: string | null;
+  readonly lastScrapedAt: string | null;
+  /** Visible totals (hidden items excluded). */
+  readonly courseCount: number;
+  readonly deadlineCount: number;
+  /** Every scraped course/assignment (hidden ones flagged) for the manage-list. */
+  readonly courses: readonly CanvasStatusItem[];
+  readonly deadlines: readonly CanvasStatusItem[];
+}
+
 /** On-demand internet speed test result (NIC-135). `status` is "ok" (both
  *  directions), "partial" (one), or "unavailable" (the test could not run);
  *  figures are Mbps and present per `status`. */
@@ -154,6 +205,41 @@ export interface SpeedTestResult {
   readonly downloadMbps?: number;
   readonly uploadMbps?: number;
   readonly testedAt?: string;
+}
+
+/** Provision an API credential into the Keychain behind a logical reference (NIC-134). The
+ *  `value` is the live secret — it is written to the secret store and never returned or logged
+ *  (FR-CFG-03, FR-OBS-03). Storing overwrites in place, so re-entering a key corrects it. */
+export interface StoreSecretInput {
+  readonly reference: string;
+  readonly value: string;
+}
+export interface StoreSecretResult {
+  readonly reference: string;
+  /** True when the value was written to the store. */
+  readonly stored: boolean;
+}
+export interface SecretStatusInput {
+  readonly reference: string;
+}
+/** Presence only — whether the reference is bound. Never carries the value. */
+export interface SecretStatusResult {
+  readonly reference: string;
+  readonly bound: boolean;
+}
+export interface DeleteSecretInput {
+  readonly reference: string;
+}
+export interface DeleteSecretResult {
+  readonly reference: string;
+  /** True when a stored value was removed; false when the reference was already absent. */
+  readonly deleted: boolean;
+}
+/** The result of a Spotify OAuth connect (NIC-133): success + the granted scope only — the tokens
+ *  live in the Keychain and never cross the bridge. */
+export interface ConnectSpotifyResult {
+  readonly connected: boolean;
+  readonly scope?: string;
 }
 
 export interface UpdateQuickAppsInput {
@@ -431,8 +517,31 @@ export interface CerebralBridge {
   /** Read the effective persisted settings so the settings UI initializes its
    *  controls from stored state instead of defaults (NIC-141). */
   getSettings(): Promise<SettingsSnapshot>;
+
+  /** Store an API credential in the Keychain (NIC-134). The value is written, never returned. */
+  storeSecret(input: StoreSecretInput): Promise<StoreSecretResult>;
+  /** Report whether a logical secret reference is bound, without exposing its value. */
+  getSecretStatus(input: SecretStatusInput): Promise<SecretStatusResult>;
+  /** Remove a stored secret (NIC-133) — the disconnect / clear-key path. Idempotent. */
+  deleteSecret(input: DeleteSecretInput): Promise<DeleteSecretResult>;
+  /** Run the Spotify OAuth connect flow on the macOS host (NIC-133): opens the browser, captures
+   *  the redirect, and persists tokens to the Keychain. Resolves with the granted scope, or rejects
+   *  with an honest message (no Client ID, cancelled, rejected). */
+  connectSpotify(): Promise<ConnectSpotifyResult>;
   /** Read-only application discovery for the More Apps picker (NIC-119). */
   listApps(): Promise<ListAppsResult>;
+  /** List the user's calendars for the Settings calendar→mode mapping (NIC-126). Requests
+   *  Calendar access at point of use; a denied grant returns `authorized: false` + no calendars. */
+  listCalendars(): Promise<ListCalendarsResult>;
+  /** The Canvas ingest connection state for the Settings connect card (NIC-132) — the pairing
+   *  endpoint/token (minted on demand) plus the last scrape's age/counts. */
+  getCanvasStatus(): Promise<CanvasStatus>;
+  /** Disconnect Canvas (NIC-132): purge the scraped data and rotate the ingest token, returning the
+   *  fresh (empty) state. The old token stops working, so the extension must be re-paired. */
+  resetCanvas(): Promise<CanvasStatus>;
+  /** Hide or unhide a scraped Canvas course/assignment (NIC-132) from the School widgets, returning
+   *  the fresh status with each item's hidden flag. Persists across scrapes. */
+  setCanvasItemHidden(id: string, hidden: boolean): Promise<CanvasStatus>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */
   updateQuickApps(input: UpdateQuickAppsInput): Promise<UpdateQuickAppsResult>;
   /** Mint a user URL reference (NIC-146) so a typed URL can be pinned as a quick app,

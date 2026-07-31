@@ -34,7 +34,8 @@ func appliedFieldsRoundTrip() throws {
         knowledgeRootReference: "workspace",
         windowsStoredByMode: true,
         modeColorsJSON: ##"{"executive.primary":"#ffd166"}"##,
-        extensionsJSON: #"{"x-theme-lab":{"glow":2}}"#
+        extensionsJSON: #"{"x-theme-lab":{"glow":2}}"#,
+        stockTickersJSON: ##"["SPY","AAPL"]"##
     ))
 
     let loaded = try store.load()
@@ -48,6 +49,39 @@ func appliedFieldsRoundTrip() throws {
     #expect(loaded.knowledgeRootReference == "workspace")
     #expect(loaded.windowsStoredByMode == true)
     #expect(loaded.extensionsJSON == #"{"x-theme-lab":{"glow":2}}"#)
+    #expect(loaded.stockTickersJSON == ##"["SPY","AAPL"]"##)
+}
+
+@Test("the ticker list round-trips and merges like every field; an empty list is a stored value (NIC-128)")
+func stockTickersRoundTrip() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(stockTickersJSON: ##"["SPY","AAPL"]"##))
+    #expect(try store.load().stockTickersJSON == ##"["SPY","AAPL"]"##)
+
+    // An unrelated patch preserves it (COALESCE), then a later patch replaces it — including
+    // with an explicit empty "[]", which is a stored value, not an absence.
+    try store.apply(SettingsChanges(defaultModeID: "school"))
+    #expect(try store.load().stockTickersJSON == ##"["SPY","AAPL"]"##)
+    try store.apply(SettingsChanges(stockTickersJSON: "[]"))
+    let loaded = try store.load()
+    #expect(loaded.stockTickersJSON == "[]")
+    #expect(loaded.defaultModeID == "school")
+}
+
+@Test("the calendar→mode map round-trips and merges like every field; {} is a stored value (NIC-126)")
+func calendarModeMapRoundTrip() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(calendarModeMapJSON: ##"{"cal-work":"executive"}"##))
+    #expect(try store.load().calendarModeMapJSON == ##"{"cal-work":"executive"}"##)
+
+    // An unrelated patch preserves it (COALESCE), then a later patch replaces it — including
+    // with an explicit "{}", which clears the mappings but is a stored value, not an absence.
+    try store.apply(SettingsChanges(defaultModeID: "school"))
+    #expect(try store.load().calendarModeMapJSON == ##"{"cal-work":"executive"}"##)
+    try store.apply(SettingsChanges(calendarModeMapJSON: "{}"))
+    let loaded = try store.load()
+    #expect(loaded.calendarModeMapJSON == "{}")
+    #expect(loaded.defaultModeID == "school")
 }
 
 @Test("the windows-stored-by-mode toggle round-trips and merges like every field")

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_connectSpotifyRequest0001",
+  "type": "bridge.operation.request",
+  "operation": "connectSpotify",
+  "payload": {}
+}

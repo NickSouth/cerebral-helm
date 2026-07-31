@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Per-mode news relevance profiles (NIC-127). Each mode config's `newsProfile` maps here to one or more NewsData.io categories (comma-separated), selecting the headlines the bottom-left News panel surfaces for that mode. Source configuration lives here, not hardcoded in the adapter (FR-CFG). An unmapped profile falls back to `defaultCategory`.",
+  "language": "en",
+  "defaultCategory": "top",
+  "profiles": {
+    "broad": "top,business,technology",
+    "engineering": "technology",
+    "academic": "education,science",
+    "interest": "entertainment,sports"
+  }
+}

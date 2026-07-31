@@ -11,6 +11,7 @@ const fixturesRoot = path.join(contractsRoot, "fixtures");
 
 const mvpToolIds = new Set([
   "app.open",
+  "project.open",
   "url.open",
   "hook.run",
   "note.capture",
@@ -20,7 +21,10 @@ const mvpToolIds = new Set([
   "window.arrange",
   "apps.list",
   "network.speed.test",
-  "apps.quitall"
+  "apps.quitall",
+  "google.search",
+  "web.open",
+  "spotify.control"
 ]);
 
 const riskClasses = new Set([

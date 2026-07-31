@@ -24,7 +24,7 @@ import CerebralTools
 /// else surfaces as `adapterFailure` with the OSStatus in the diagnostic. A
 /// secret failure affects only secret operations — no other capability consults
 /// the keychain, so unrelated tools are untouched by construction.
-public struct KeychainSecretCapability: SecretCapability, SecretStoreManaging {
+public struct KeychainSecretCapability: SecretManaging {
     /// All SecItem calls are serialized process-wide, and this adapter uses the
     /// *legacy* keychain engine deliberately: the modern data-protection keychain
     /// (`kSecUseDataProtectionKeychain`, which bypasses the fragile CSSM engine)

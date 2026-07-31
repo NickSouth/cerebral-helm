@@ -217,6 +217,11 @@
   flex: 1 1 0;
   min-height: 0;
   overflow: hidden;
+  /* Flex column (matching the right rail) so an inner widget with `flex: 1` can fill the panel to
+     a definite height — without this the widget stays content-height and the Stocks sparkline
+     falls back to its SVG intrinsic (square) size and overflows (NIC-128). */
+  display: flex;
+  flex-direction: column;
 }
 
 .shell-right {
@@ -1075,6 +1080,23 @@
   fill: var(--ch-weather-cloud);
 }
 
+.weather-glyph[data-weather="snow"] {
+  color: var(--ch-weather-snow);
+}
+
+.weather-glyph[data-weather="fog"] {
+  color: var(--ch-weather-fog);
+}
+
+/* Thunderstorm is two-tone: a stormy blue cloud with a warm yellow bolt in front. */
+.weather-glyph[data-weather="thunder"] .weather-glyph__thundercloud {
+  fill: var(--ch-weather-rain);
+}
+
+.weather-glyph[data-weather="thunder"] .weather-glyph__thunderbolt {
+  fill: var(--ch-weather-sun);
+}
+
 .bottom-bar__wifi {
   color: var(--ch-accent-secondary);
 }
@@ -1337,6 +1359,12 @@
   padding: 0;
   display: flex;
   flex-direction: column;
+  /* Fill the panel's remaining height and spread the headlines evenly down it, so the four items
+     reach the bottom of the widget instead of clustering under the header (NIC-127). The gap is the
+     minimum spacing; space-between distributes the leftover height between the rows. */
+  flex: 1 1 auto;
+  min-height: 0;
+  justify-content: space-between;
   gap: var(--ch-space-1);
 }
 
@@ -1651,14 +1679,46 @@
 
 .news__title {
   color: var(--ch-text-primary);
+  /* Wrap to at most two lines, then ellipsize — titles are informative, so a hard single-line
+     cut-off loses too much; two lines fills the panel without overflowing (NIC-127). The classic
+     -webkit-box clamp is WebKit-native, so it is reliable in the app's WKWebView. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .news__source {
   color: var(--ch-text-muted);
   font-size: var(--ch-font-size-label);
+}
+
+/* A clickable headline (NIC-127): a full-bleed reset button keeping the item's two-line
+   title+source layout, with a hover/focus affordance. A headline with no url renders as plain
+   text (no .news__link), so there is never a dead button. */
+.news__link {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.news__link:hover:not(:disabled) .news__title,
+.news__link:focus-visible .news__title {
+  color: var(--ch-accent-primary);
+  text-decoration: underline;
+}
+
+.news__link:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 /* Free-widget slots. */
@@ -1690,18 +1750,1247 @@
   font-size: var(--ch-font-size-sm);
 }
 
+/* Both cells stay on a single line and truncate with an ellipsis rather than wrapping
+   (a long branch like `mvp-polish/integrations-and-widgets` must not stack the row). The
+   secondary (branch) shrinks first; the primary (name) keeps its room. `min-width: 0` is
+   required for a flex child to shrink below its content width so the ellipsis can appear. */
 .widget-list__primary {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An interactive widget row (NIC-131 Repositories): a full-bleed reset button inside the
+   card `li`, so the row keeps its card styling while the whole row is the click target. */
+.widget-list__button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--ch-space-2);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.widget-list__button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Repositories row (NIC-131): a folder icon + name on the left, the branch in a monospace
+   "code chip" on the right. Both truncate with an ellipsis rather than wrapping. */
+.repo-row__name {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-1); /* tight icon↔name */
+  min-width: 0; /* lets the label shrink so its ellipsis can appear */
+  flex: 1 1 auto;
   color: var(--ch-text-primary);
 }
 
-.widget-list__secondary {
+.repo-row__icon {
+  flex: 0 0 auto;
   color: var(--ch-text-muted);
+}
+
+.repo-row__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem; /* a hair smaller than the row default so more name fits */
+}
+
+/* The name wins the row: the branch chip yields space first (higher shrink + a lower cap),
+   so the repo name only truncates as a last resort once the chip is at its minimum. */
+.repo-row__branch {
+  flex: 0 4 auto;
+  min-width: 0; /* size tight to the branch text (short ones like `main` shouldn't be padded wide) */
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px var(--ch-space-2);
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  line-height: 1.5;
+  color: var(--ch-text-muted);
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 22%, var(--ch-panel-border));
+  border-radius: var(--ch-radius-sm);
+}
+
+/* A repo with no resolvable branch: a plain muted dash, not an empty code chip. */
+.repo-row__branch--none {
+  min-width: auto;
+  font-family: inherit;
+  background: transparent;
+  border-color: transparent;
+  color: var(--ch-text-faint);
+}
+
+.widget-list__secondary {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--ch-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .widget__freshness {
   margin: 0;
   font-size: var(--ch-font-size-label);
   color: var(--ch-text-muted);
+}
+
+/* Project Git Status widget (NIC-130): a per-repo report shown one repo at a time, with a pager to
+   swap between repos. The local branch/sync always renders; the GitHub sections (PRs, CI, commits)
+   appear when the repo has a GitHub remote and a token is set, and degrade to a quiet note
+   otherwise. A repo with no CI simply omits its CI line. Info-dense, so the pager has no autoplay. */
+.gitstatus {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  /* Fill the rail panel's height and clip our own overflow, so a long report (many commits) is
+     cut off cleanly at the bottom rather than bleeding over the freshness label below it (the
+     freshness is a sibling in `.widget`, outside this box). NIC-130. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gitstatus__pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+  flex: 0 0 auto;
+}
+
+.gitstatus__arrow {
+  margin: 0;
+  padding: 0 var(--ch-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gitstatus__arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.gitstatus__arrow:not(:disabled):hover {
+  color: var(--ch-text-primary);
+}
+
+.gitstatus__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.gitstatus__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ch-text-muted);
+  opacity: 0.4;
+}
+
+.gitstatus__dot--active {
+  background: var(--ch-accent-primary);
+  opacity: 1;
+}
+
+.gitstatus__repo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  /* Fill the widget and clip: the branch/sync/PRs/CI rows stay fixed while the commit list (the
+     last child) absorbs the leftover height and clips gracefully under pressure (NIC-130). */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The report's fixed rows always render; only the commit list gives way when the panel is short. */
+.gitstatus__head,
+.gitstatus__sync,
+.gitstatus__line,
+.gitstatus__section,
+.gitstatus__note {
+  flex: 0 0 auto;
+}
+
+/* The commit list is the shrink/clip tail: it shows as many whole-ish rows as fit and hides the
+   rest, so a tall report never overflows onto the freshness label below the widget. */
+.gitstatus__commits {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gitstatus__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+}
+
+.gitstatus__sync {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.gitstatus__sync--synced {
+  color: var(--ch-status-success);
+}
+
+.gitstatus__sync--diverged {
+  color: var(--ch-status-warning);
+}
+
+.gitstatus__sync--no-upstream {
+  color: var(--ch-text-faint);
+}
+
+.gitstatus__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.gitstatus__line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+}
+
+.gitstatus__label {
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-label);
+}
+
+.gitstatus__value {
+  color: var(--ch-text-primary);
+}
+
+.gitstatus__checks {
+  font-size: var(--ch-font-size-label);
+}
+
+.gitstatus__checks--passing {
+  color: var(--ch-status-success);
+}
+
+.gitstatus__checks--failing {
+  color: var(--ch-status-error);
+}
+
+.gitstatus__checks--pending {
+  color: var(--ch-status-warning);
+}
+
+.gitstatus__prs,
+.gitstatus__commits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gitstatus__pr {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gitstatus__commit {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ch-space-1);
+  min-width: 0;
+  font-size: var(--ch-font-size-sm);
+}
+
+.gitstatus__sha {
+  flex: 0 0 auto;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.gitstatus__msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gitstatus__note {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-faint);
+}
+
+/* Required source attribution for a data provider (e.g. TMDB, NIC-134): a quiet footnote
+   that must stay visible whenever the widget shows that provider's data. */
+/* Releases widget (NIC-134): a 2×2 grid of poster cards (2 movies + 2 shows) that fills the
+   panel, with a pager to page through more. The grid fills the available height and posters
+   crop to fit, so four cards never overflow the rail. */
+.releases {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  min-height: 0;
+}
+
+.releases__pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+  flex: 0 0 auto;
+}
+
+.releases__arrow {
+  margin: 0;
+  padding: 0 var(--ch-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.releases__arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.releases__arrow:not(:disabled):hover {
+  color: var(--ch-text-primary);
+}
+
+.releases__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.releases__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ch-text-muted);
+  opacity: 0.4;
+}
+
+.releases__dot--active {
+  background: var(--ch-accent-primary);
+  opacity: 1;
+}
+
+/* School Courses widget (NIC-132): one row per current course — name + code on the left, a grade
+   ring on the right. The arc fills to the course's percentage (School accent); a letter-only grade
+   shows a neutral full ring, and an N/A or hidden grade an empty ring. The grade sits in the
+   centre. Click-to-open (the course's Canvas home) lands in a later increment. */
+.courses {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.course-row {
+  display: flex;
+}
+
+/* The clickable (or static) row body: name + code on the left, grade ring on the right. As a button
+   it is a full-bleed reset that opens the course in Canvas; the static variant drops the hover/cursor. */
+.course-row__open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 3px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  border-radius: var(--ch-radius-sm);
+}
+
+button.course-row__open {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+button.course-row__open:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+button.course-row__open:not(:disabled):hover {
+  background: color-mix(in srgb, var(--ch-accent-primary) 8%, transparent);
+}
+
+.course-row__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0; /* lets the name/code truncate rather than push the ring off-row */
+  flex: 1 1 auto;
+}
+
+.course-row__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+}
+
+.course-row__code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-faint);
+  font-size: var(--ch-font-size-label);
+}
+
+.grade-ring {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+}
+
+/* Start the arc at 12 o'clock rather than 3 o'clock. */
+.grade-ring svg {
+  transform: rotate(-90deg);
+}
+
+.grade-ring__track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ch-text-muted) 30%, transparent);
+  stroke-width: 4;
+}
+
+.grade-ring__arc {
+  fill: none;
+  stroke: var(--ch-accent-primary);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s ease;
+}
+
+/* A letter-only grade (no percent to fill to) shows a muted full ring, not the accent. */
+.grade-ring--neutral .grade-ring__arc {
+  stroke: color-mix(in srgb, var(--ch-text-muted) 55%, transparent);
+}
+
+.grade-ring__label {
+  position: absolute;
+  font-size: var(--ch-font-size-label);
+  font-weight: 600;
+  color: var(--ch-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.grade-ring--na .grade-ring__label {
+  color: var(--ch-text-faint);
+  font-weight: 500;
+}
+
+/* School Deadlines widget (NIC-132): upcoming assignments in due order, up to five per page, with an
+   arrow pager (no autoplay — a to-do list, not a carousel). Submitted/completed work is excluded by
+   the producer. Click-to-open (the assignment in Canvas) lands in a later increment. */
+.deadlines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.deadlines__pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+  flex: 0 0 auto;
+}
+
+.deadlines__arrow {
+  margin: 0;
+  padding: 0 var(--ch-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.deadlines__arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.deadlines__arrow:not(:disabled):hover {
+  color: var(--ch-text-primary);
+}
+
+.deadlines__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.deadlines__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ch-text-muted);
+  opacity: 0.4;
+}
+
+.deadlines__dot--active {
+  background: var(--ch-accent-primary);
+  opacity: 1;
+}
+
+.deadlines__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.deadline-row {
+  display: flex;
+}
+
+/* The clickable (or static) assignment row: title + due date. As a button it opens the assignment in
+   Canvas; the static variant drops the hover/cursor. */
+.deadline-row__open {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 3px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  border-radius: var(--ch-radius-sm);
+  font-size: var(--ch-font-size-sm);
+}
+
+button.deadline-row__open {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+button.deadline-row__open:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+button.deadline-row__open:not(:disabled):hover {
+  background: color-mix(in srgb, var(--ch-accent-primary) 8%, transparent);
+}
+
+.deadline-row__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+}
+
+.deadline-row__due {
+  flex: 0 0 auto;
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-label);
+  font-variant-numeric: tabular-nums;
+}
+
+/* School widgets' date-aware empty/unavailable state (NIC-132): a big Canvas mark + a seasonal line
+   (summer/winter greeting; a "sync now" nudge during term whose logo opens Canvas). */
+.canvas-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-4) var(--ch-space-2);
+  text-align: center;
+  min-height: 6rem;
+}
+
+.canvas-empty__logo {
+  display: block;
+  transition: transform 0.12s ease;
+}
+
+.canvas-empty__logo-button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.canvas-empty__logo-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.canvas-empty__logo-button:not(:disabled):hover .canvas-empty__logo {
+  transform: scale(1.06);
+}
+
+.canvas-empty__message {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-secondary);
+}
+
+.canvas-empty__season-icon {
+  flex: 0 0 auto;
+}
+
+.releases__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: auto;
+  gap: var(--ch-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-height: 0;
+}
+
+.releases__cell {
+  min-width: 0;
+}
+
+.release-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.release-card:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.release-card__poster {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  display: block;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--ch-panel-border);
+  background: color-mix(in srgb, var(--ch-text-muted) 12%, transparent);
+}
+
+.release-card__poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.release-card:not(:disabled):hover .release-card__poster {
+  border-color: var(--ch-accent-primary);
+}
+
+.release-card__placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.release-card__title {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: var(--ch-text-primary);
+}
+
+.release-card__meta {
+  flex: 0 0 auto;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* Spotify now-playing widget (NIC-133, Entertainment left): a single current-track card — square
+   artwork beside the track/artist/album and a playing/paused indicator. Display only for now;
+   playback controls land in a later increment. The card sits at the top of its (taller) rail
+   panel; nothing-playing / not-connected are honest slot-level states, not rendered here. */
+.nowplaying {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  /* A fixed-size card, never a fill-the-panel grid: keep its natural height so that when the rail
+     panel is short it degrades by clipping the bottom (artwork + track stay visible) rather than
+     shrinking to nothing — the flex-collapse trap the stocks tiles hit (NIC-128). */
+  flex: 0 0 auto;
+}
+
+/* The artwork + track/artist row. */
+.nowplaying__main {
+  display: flex;
+  gap: var(--ch-space-3);
+  align-items: center;
+}
+
+/* The Spotify mark (used inside the "Open in Spotify" button). */
+.nowplaying__logo {
+  flex: 0 0 auto;
+}
+
+/* "Up next · <track> — <artist>", one truncated line. */
+.nowplaying__upnext {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--ch-space-2);
+  min-width: 0;
+  font-size: var(--ch-font-size-sm);
+}
+
+.nowplaying__upnext-label {
+  flex: 0 0 auto;
+  font-size: var(--ch-font-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ch-text-muted);
+}
+
+.nowplaying__upnext-track {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+}
+
+/* "Open in Spotify" button — the Spotify mark beside its label, full width at the card's foot. */
+.nowplaying__open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-2);
+  align-self: stretch;
+  padding: var(--ch-space-1) var(--ch-space-2);
+  border: 1px solid color-mix(in srgb, #1db954 45%, var(--ch-panel-border));
+  border-radius: var(--ch-radius-pill);
+  background: color-mix(in srgb, #1db954 12%, transparent);
+  color: var(--ch-text-primary);
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  cursor: pointer;
+  transition: border-color var(--ch-motion-fast) var(--ch-ease-standard),
+    background var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.nowplaying__open:not(:disabled):hover {
+  border-color: #1db954;
+  background: color-mix(in srgb, #1db954 20%, transparent);
+}
+
+.nowplaying__open:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Idle "Recently played" list (NIC-133): tappable rows that open Spotify. */
+.nowplaying__recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.nowplaying__recent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: var(--ch-space-1) var(--ch-space-1);
+  border: 0;
+  border-radius: var(--ch-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.nowplaying__recent-row:not(:disabled):hover {
+  background: var(--ch-surface-raised);
+}
+
+.nowplaying__recent-row:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.nowplaying__recent-row .nowplaying__note {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--ch-text-muted);
+}
+
+.nowplaying__recent-track {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+}
+
+.nowplaying__recent-artist {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* Spotify idle/empty body (NIC-133 polish): the big mark + honest state line + Open button,
+   so the slot reads as a deliberate resting state instead of a bare text label. */
+.spotify-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-4) var(--ch-space-2) var(--ch-space-2);
+  text-align: center;
+  min-height: 6rem;
+  height: 100%;
+}
+
+.spotify-empty__logo {
+  display: block;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 18px color-mix(in srgb, #1db954 35%, transparent));
+}
+
+.spotify-empty__message {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-secondary);
+}
+
+/* Optimistic skip skeleton (NIC-133): shown for the beat between a skip and the new track landing. */
+.nowplaying__art-bone {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--ch-radius-md);
+}
+
+.nowplaying__bone {
+  display: block;
+  height: 0.8em;
+  border-radius: 4px;
+}
+
+.nowplaying__bone--track {
+  width: 70%;
+  height: 0.95em;
+}
+
+.nowplaying__bone--artist {
+  width: 50%;
+}
+
+.nowplaying__bone--time {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 0.7em;
+}
+
+.nowplaying__bar-bone {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.nowplaying__art {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: color-mix(in srgb, var(--ch-text-muted) 12%, transparent);
+  color: var(--ch-text-muted);
+}
+
+.nowplaying__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.nowplaying__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Let the track/artist truncate with an ellipsis instead of overflowing the card. */
+  min-width: 0;
+}
+
+.nowplaying__track,
+.nowplaying__artist,
+.nowplaying__album {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nowplaying__track {
+  font-size: var(--ch-font-size-base);
+  color: var(--ch-text-primary);
+}
+
+.nowplaying__artist {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+.nowplaying__album {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* A dot + word ("Playing" / "Paused") — the dot is never the only signal. Playing is accented
+   green; paused stays muted. */
+.nowplaying__status {
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-1);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.nowplaying__status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.nowplaying__status--playing {
+  color: var(--ch-status-success);
+}
+
+/* Progress bar (NIC-133): current time · track · duration. The fill advances smoothly client-side
+   while playing (the component ticks it every second), so it stays fluid between polls. */
+.nowplaying__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.nowplaying__time {
+  flex: 0 0 auto;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.nowplaying__bar {
+  flex: 1 1 auto;
+  height: 4px;
+  min-width: 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ch-text-muted) 24%, transparent);
+  overflow: hidden;
+}
+
+.nowplaying__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ch-status-success);
+  transition: width 1s linear;
+}
+
+/* Playback controls (NIC-133): previous / play-pause / next. Compact reset-styled icon buttons;
+   the middle one is accented. Disabled under read-only recovery. */
+.nowplaying__controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-3);
+  margin-top: 2px;
+}
+
+.nowplaying__control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+  transition:
+    border-color var(--ch-motion-fast) var(--ch-ease-standard),
+    color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.nowplaying__control:not(:disabled):hover {
+  border-color: var(--ch-accent-primary);
+  color: var(--ch-accent-primary);
+}
+
+.nowplaying__control--primary {
+  width: 30px;
+  height: 30px;
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 40%, var(--ch-panel-border));
+}
+
+.nowplaying__control:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Stocks widget (NIC-128, Executive left): a 2×2 grid of compact ticker tiles (4 per page),
+   with a pager to page through more — mirroring the releases carousel but with intrinsic-height
+   tiles (never flex-fill, which collapses to 0 in the stacked <1440px layout). */
+.stocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  min-height: 0;
+  flex: 1 1 auto; /* fill the widget so the 2×2 grid reaches the panel's full height */
+}
+
+.stocks__pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+  flex: 0 0 auto;
+}
+
+.stocks__arrow {
+  margin: 0;
+  padding: 0 var(--ch-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stocks__arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.stocks__arrow:not(:disabled):hover {
+  color: var(--ch-text-primary);
+}
+
+.stocks__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.stocks__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ch-text-muted);
+  opacity: 0.4;
+}
+
+.stocks__dot--active {
+  background: var(--ch-accent-primary);
+  opacity: 1;
+}
+
+.stocks__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  /* Each row is at least its content (symbol/price/change) height so the text is never squeezed
+     and clipped, and grows to an equal 1fr share to fill a tall widget — so the sparkline gets
+     the leftover height when there's room, and yields to zero when there isn't (NIC-128). */
+  grid-template-rows: repeat(2, minmax(min-content, 1fr));
+  gap: var(--ch-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.stock-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: color-mix(in srgb, var(--ch-text-muted) 6%, transparent);
+}
+
+.stock-card__symbol {
+  flex: 0 0 auto; /* the text rows keep their height; only the sparkline yields when space is tight */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ch-text-muted);
+}
+
+.stock-card__price {
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ch-text-primary);
+}
+
+.stock-card__change {
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--ch-text-muted);
+}
+
+.stock-card--up .stock-card__change {
+  color: var(--ch-status-success);
+}
+
+.stock-card--down .stock-card__change {
+  color: var(--ch-status-error);
+}
+
+/* Month-trend sparkline: a single line filling the rest of the tile, coloured by the day's
+   direction. `stroke` is inherited by the polyline; a min-height keeps the line visible even in
+   the content-height (stacked, <1440px) layout where flex-fill would otherwise collapse it. */
+.stock-card__spark {
+  display: block;
+  width: 100%;
+  /* basis 0 so the line takes only the leftover tile height as a definite flex length — never the
+     SVG's intrinsic (square, viewBox 1:1) size, which would balloon the tile and clip the grid.
+     min-height 0 so on a short tile the line yields all the way to nothing rather than forcing the
+     symbol/price/change to overflow and clip — the text always wins. */
+  flex: 1 1 0;
+  min-height: 0;
+  margin-top: 2px;
+  stroke: var(--ch-text-muted); /* flat / unknown direction */
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.stock-card__spark--up {
+  stroke: var(--ch-status-success);
+}
+
+.stock-card__spark--down {
+  stroke: var(--ch-status-error);
 }
 
 /* Right-rail widget (e.g. Projects): fills its half of the rail, and each list row is a
@@ -1711,12 +3000,22 @@
   min-height: 0;
 }
 
+/* Left-rail widget (Stocks, NIC-128): likewise fills its half of the rail so the 2×2 ticker
+   grid reaches the panel's full height instead of packing to intrinsic content height. */
+.shell-left .widget {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .shell-right .widget-list {
   gap: var(--ch-space-2);
+  /* Nudge the row cards a fraction toward the panel edges to reclaim text width (the panel
+     keeps ~0.75rem of padding on each side, so this stays comfortably inside the border). */
+  margin-inline: calc(-1 * var(--ch-space-1));
 }
 
 .shell-right .widget-list__item {
-  padding: var(--ch-space-2) var(--ch-space-3);
+  padding: var(--ch-space-2);
   border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 18%, var(--ch-panel-border));
   border-radius: var(--ch-radius-md);
   background: var(--ch-surface-raised);
@@ -2699,6 +3998,148 @@
 .win-nav-window {
   height: 100vh;
   display: flex;
+}
+
+/* Project detail window (NIC-129): a project's PROJECT.md rendered as markdown, plus a
+   placeholder live-status section. Hosted in its own native window (?surface=projectdetail). */
+.project-detail {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ch-surface-panel);
+  color: var(--ch-text-primary);
+  overflow: hidden;
+}
+
+.project-detail__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-3) var(--ch-space-4);
+  border-bottom: 1px solid var(--ch-panel-border);
+}
+
+.project-detail__title {
+  margin: 0;
+  margin-inline-end: auto;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+}
+
+/* Editable priority (importance) stepper in the top bar (NIC-129). */
+.project-detail__priority {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  padding: 0 var(--ch-space-2);
+}
+
+.project-detail__priority-label {
+  font-size: var(--ch-font-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ch-text-muted);
+}
+
+.project-detail__priority-value {
+  min-width: 1.5ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+}
+
+.project-detail__priority-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1px solid var(--ch-panel-border);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+  border-radius: var(--ch-radius-sm);
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.project-detail__priority-step:hover:not(:disabled) {
+  border-color: var(--ch-accent-primary);
+  color: var(--ch-accent-primary);
+}
+
+.project-detail__priority-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.project-detail__close {
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  cursor: pointer;
+  border-radius: var(--ch-radius-sm);
+  padding: 0 var(--ch-space-2);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.project-detail__close:hover {
+  color: var(--ch-text-primary);
+}
+
+.project-detail__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--ch-space-4);
+}
+
+.project-detail__status {
+  border-top: 1px solid var(--ch-panel-border);
+  padding: var(--ch-space-3) var(--ch-space-4);
+}
+
+.project-detail__status-title {
+  margin: 0 0 var(--ch-space-1);
+  font-size: var(--ch-font-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ch-text-muted);
+}
+
+.project-detail__status-note {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+/* Minimal markdown block styles (NIC-129) — the small subset the in-house renderer emits. */
+.md {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+  line-height: 1.5;
+}
+
+.md-heading {
+  margin: 0;
+  line-height: 1.3;
+}
+
+.md-paragraph {
+  margin: 0;
+}
+
+.md-list {
+  margin: 0;
+  padding-inline-start: var(--ch-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
 }
 
 .win-nav__scrim {

@@ -65,6 +65,7 @@ public final class CommandRuntime: @unchecked Sendable {
         let toolPurpose: String
         let declaredRisk: Risk
         let runtimeRiskPolicy: RuntimeRiskPolicy
+        let waivesExternalWriteConfirmation: Bool
         let plannedActionRisks: [Risk]
         let input: Data
         let shellInvocation: HookInvocation?
@@ -262,7 +263,8 @@ public final class CommandRuntime: @unchecked Sendable {
                 declaredRisk: resolved.declaredRisk,
                 runtimeRiskPolicy: resolved.runtimeRiskPolicy,
                 plannedActionRisks: resolved.plannedActionRisks,
-                shellInvocation: resolved.shellInvocation
+                shellInvocation: resolved.shellInvocation,
+                waivesExternalWriteConfirmation: resolved.waivesExternalWriteConfirmation
             )
         )
 
@@ -517,6 +519,64 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [ConfirmationArgument(name: "kind", value: "note", sensitive: false)],
                 actionSummary: "Capture a note."
             )
+        case let .openProject(repoPath):
+            // Open a repository directory in the configured editor (NIC-131). The
+            // descriptor's `local_write` risk routes it through a policy-owned
+            // confirmation before the editor launches; the adapter constrains the path
+            // to the projects root. The repo folder name is shown in the disclosure (not
+            // sensitive) so the user sees which repository will open.
+            let repoName = URL(fileURLWithPath: repoPath).lastPathComponent
+            return make(
+                toolID: "project.open",
+                input: try? CerebralHelmProjectOpenInput(repoPath: repoPath).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "repository", value: repoPath, sensitive: false)],
+                actionSummary: "Open \(repoName.isEmpty ? "repository" : repoName) in the editor."
+            )
+        case let .googleSearch(query):
+            // Open a Google search in the browser (NIC-134). The descriptor's `local_write`
+            // risk (like url.open/project.open) means one-click, no confirmation; the adapter
+            // builds the google.com URL host-side, so the query is data, never the destination.
+            return make(
+                toolID: "google.search",
+                input: try? CerebralHelmGoogleSearchInput(query: query).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "query", value: query, sensitive: false)],
+                actionSummary: "Search Google for \(query)."
+            )
+        case let .spotifyControl(action):
+            // Control Spotify playback (NIC-133). The descriptor's `external_write` risk is honest —
+            // this hits Spotify's API — but its `allow_external_write_without_confirmation` policy key
+            // waives confirmation (owner: play/pause/skip is too low-stakes to prompt), so it runs
+            // one-click; the "Ask before all actions" toggle still re-arms a prompt over it.
+            return make(
+                toolID: "spotify.control",
+                // An unrecognised action doesn't match the input enum → nil input → the command is
+                // refused (no tool resolved), never sent as a bogus control.
+                input: SpotifyPlaybackAction(rawValue: action).flatMap { try? CerebralHelmSpotifyControlInput(action: $0).jsonData() },
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "action", value: action, sensitive: false)],
+                actionSummary: "Spotify: \(action)."
+            )
+        case let .webOpen(url):
+            // Open an https web address in the browser (NIC-127). The descriptor's `local_write`
+            // risk (like url.open/google.search) means one-click, no confirmation; the adapter
+            // validates the scheme/host, so a non-https or malformed link is refused, not opened.
+            return make(
+                toolID: "web.open",
+                input: try? CerebralHelmWebOpenInput(url: url).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "url", value: url, sensitive: false)],
+                actionSummary: "Open \(url) in the browser."
+            )
         case let .searchNotes(query):
             return make(
                 toolID: "note.search",
@@ -640,6 +700,7 @@ public final class CommandRuntime: @unchecked Sendable {
             toolPurpose: tool.descriptor.purpose,
             declaredRisk: tool.risk,
             runtimeRiskPolicy: tool.descriptor.runtimeRiskPolicy,
+            waivesExternalWriteConfirmation: tool.descriptor.confirmationPolicyKey == .allowExternalWriteWithoutConfirmation,
             plannedActionRisks: plannedActionRisks,
             input: input,
             shellInvocation: shellInvocation,

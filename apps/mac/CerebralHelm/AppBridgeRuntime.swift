@@ -31,6 +31,52 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// Streams live system metrics to the dashboard (NIC-81b). Shares the status
     /// capability actor with the `system.status.read` tool.
     private let statusPublisher: SystemStatusPublisher
+    /// Streams the live `repositories` widget to the dashboard (NIC-131) — reads active
+    /// git repos under `~/Projects` and their branches. Runs on the same visibility
+    /// gate as the metrics stream.
+    private let reposPublisher: ActiveReposPublisher
+    /// Streams the live `projects` widget to the dashboard (NIC-129) — reads the project
+    /// folders under `~/Projects` and their `PROJECT.md` importance. Runs on the same
+    /// visibility gate as the metrics and repos streams.
+    private let projectsPublisher: ActiveProjectsPublisher
+    /// Streams the bottom bar's ambient weather (NIC-169) — resolves the device location via
+    /// CoreLocation (prompting at point of use) and fetches current conditions from Open-Meteo
+    /// on a slow cadence. Runs on the same visibility gate as the other streams.
+    private let weatherPublisher: WeatherPublisher
+    /// Streams the Entertainment `releases` widget (NIC-134) — resolves the TMDB API key from
+    /// the Keychain and fetches trending movies + TV on a slow cadence. Runs on the same
+    /// visibility gate as the other streams; a missing key emits an honest "add your key" state.
+    private let releasesPublisher: ReleasesPublisher
+    /// Streams the Executive `stocks` widget (NIC-128) — resolves the user's tracked tickers from
+    /// the settings store and the Finnhub API key from the Keychain, fetching a quote per symbol on
+    /// a slow cadence. Same visibility gate as the other streams; an empty ticker list or a missing
+    /// key emits an honest state rather than a fabricated quote.
+    private let stocksPublisher: StocksPublisher
+    /// Streams the bottom-left `news` panel (NIC-127) — resolves the NewsData API key from the
+    /// Keychain and fetches headlines per relevance profile on a slow cadence, emitting one
+    /// `news.changed` per profile. Same visibility gate as the other streams; a missing key emits
+    /// an honest "add your key" state. Absent when the news config failed to load (no profiles).
+    private let newsPublisher: NewsPublisher?
+    private let calendarPublisher: CalendarPublisher?
+    /// Retained so it keeps observing EventKit's store-changed notification for the lifetime of the
+    /// runtime (NIC-126); dropping it would stop live calendar refreshes.
+    private let calendarChangeObserver: CalendarChangeObserver?
+    /// Streams the Developer `project-git-status` widget (NIC-130) — enumerates the local repos,
+    /// reads each one's branch/sync from `.git` and GitHub remote from `origin`, and fetches the
+    /// read-only GitHub report (PRs, Actions CI, commits) using the Keychain-resolved token. Same
+    /// visibility gate as the other streams; local branch/sync always render while the GitHub half
+    /// degrades honestly when there's no remote, no token, or a fetch failure.
+    private let projectGitStatusPublisher: ProjectGitStatusPublisher
+    /// Streams the Entertainment `spotify` widget (NIC-133) — resolves a valid access token from the
+    /// Keychain-backed OAuth session (refreshing as needed) and reads the currently-playing track on
+    /// a fast cadence. Same visibility gate as the other streams; not-connected/nothing-playing
+    /// degrade honestly. Refreshed immediately after a successful connect.
+    private let spotifyPublisher: SpotifyPublisher
+    /// Streams the School `courses`/`deadlines` widgets (NIC-132) from the local Canvas scrape store,
+    /// and the loopback endpoint the Chrome extension POSTs scrapes to. Both are absent when the store
+    /// can't open — the widgets then stay at their honest bootstrap/unavailable state.
+    private let canvasPublisher: CanvasWidgetPublisher?
+    private let canvasIngestServer: CanvasIngestServer?
     /// Watches display connect/disconnect/rearrange (NIC-87). Native subscribers
     /// are told first (window re-hosting), then the dashboard via one
     /// `display.topology.changed` event.
@@ -98,12 +144,17 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // init, and read at arrange time (a much later async call).
         let layoutDisplayContext = self.layoutDisplayContext
         let reservedStripsBox = self.reservedStripsBox
+        // Shared hook: after a playback control succeeds, the control capability fires this and the
+        // Spotify producer re-polls at once (wired below, once the publisher exists) — so a widget
+        // skip/play/pause updates the track/art near-instantly, not on the next cadence tick (NIC-133).
+        let spotifyRefreshSignal = SpotifyRefreshSignal()
         let composition = MacToolCapabilities.make(
             referenceStore: referenceStore,
             urlOpenRegistry: urlOpenRegistry,
             currentModeProvider: { modeStateStore.flatMap { try? $0.loadActiveModeID() } },
             layoutDisplay: { layoutDisplayContext.resolve() },
-            reservedStrips: { reservedStripsBox.current() }
+            reservedStrips: { reservedStripsBox.current() },
+            spotifyRefresh: spotifyRefreshSignal
         )
         let capabilities = composition.capabilities
         toolCapabilities = capabilities
@@ -113,6 +164,70 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let descriptors = (try? ToolDescriptorCatalog.loadDescriptors(directory: paths.toolDescriptorsDirectory)) ?? []
         requiredPermissions = CompositionCapabilities.requiredPermissionsByCapability(descriptors)
         statusPublisher = SystemStatusPublisher(status: composition.systemStatus, emit: { relay.emit($0) })
+        // The active-repos widget producer (NIC-131): default provider scans ~/Projects.
+        let repos = ActiveReposPublisher(emit: { relay.emit($0) })
+        reposPublisher = repos
+        // The active-projects widget producer (NIC-129): default provider scans ~/Projects.
+        let projects = ActiveProjectsPublisher(emit: { relay.emit($0) })
+        projectsPublisher = projects
+        // The weather producer (NIC-169): CoreLocationProvider is @MainActor; this init runs on
+        // the main thread (AppDelegate.applicationDidFinishLaunching), so assumeIsolated is safe.
+        weatherPublisher = MainActor.assumeIsolated {
+            WeatherPublisher(
+                location: CoreLocationProvider(),
+                weather: OpenMeteoWeatherProvider(),
+                emit: { relay.emit($0) }
+            )
+        }
+        // The Releases producer (NIC-134): reads the TMDB key from the Keychain (the same
+        // KeychainSecretCapability the storeSecret op writes) and fetches trending releases.
+        let releases = ReleasesPublisher(
+            secretStore: composition.secretStore,
+            provider: TMDBReleasesProvider(),
+            emit: { relay.emit($0) }
+        )
+        releasesPublisher = releases
+        // The Project Git Status producer (NIC-130): enumerates local repos under ~/Projects,
+        // resolves each one's branch/sync + GitHub remote directly from `.git`, and fetches the
+        // read-only GitHub report with the Keychain-resolved token (the same KeychainSecretCapability
+        // the storeSecret op writes). Local branch/sync render even without a token.
+        let projectGitStatus = ProjectGitStatusPublisher(
+            secretStore: composition.secretStore,
+            github: GitHubAPIStatusProvider(),
+            emit: { relay.emit($0) }
+        )
+        projectGitStatusPublisher = projectGitStatus
+        // The Spotify producer (NIC-133): resolves a valid access token from the Keychain-backed
+        // OAuth session (refreshing as needed) and reads the currently-playing track on a fast
+        // cadence. Not connected → an honest "connect" state; nothing playing → a healthy empty.
+        let spotify = SpotifyPublisher(
+            session: SpotifyAuthSession(
+                secretStore: composition.secretStore,
+                refresher: SpotifyTokenExchange()
+            ),
+            provider: SpotifyWebPlaybackProvider(),
+            emit: { relay.emit($0) }
+        )
+        spotifyPublisher = spotify
+        // Now that the publisher exists, point the control-refresh hook at it: a successful
+        // play/pause/skip re-polls now-playing at once (NIC-133).
+        spotifyRefreshSignal.setAction { Task { await spotify.refresh() } }
+        // The News producer (NIC-127): reads the NewsData key from the Keychain and fetches
+        // headlines per relevance profile declared in config/news/profiles.json. The profile →
+        // category mapping lives in that config (not hardcoded); when it can't be loaded there are
+        // no profiles to stream and the panel stays at its honest bootstrap "unavailable" state.
+        if let newsCatalog = NewsProfileCatalog.load(configDirectory: paths.configDirectory),
+           !newsCatalog.profiles.isEmpty {
+            let news = NewsPublisher(
+                profiles: newsCatalog.profiles.keys.sorted(),
+                secretStore: composition.secretStore,
+                provider: NewsDataProvider(catalog: newsCatalog),
+                emit: { relay.emit($0) }
+            )
+            newsPublisher = news
+        } else {
+            newsPublisher = nil
+        }
         displayObserver = DisplayTopologyObserver(emit: { relay.emit($0) })
         guard let runtime = try? makeCommandRuntime(paths: paths, phase: .macOS, capabilities: capabilities, onEvent: { event in
             let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
@@ -137,6 +252,128 @@ final class AppBridgeRuntime: @unchecked Sendable {
             Self.log.error("Settings store failed to open; settings changes will not persist.")
         }
         self.settingsStore = settingsStore
+        // The Stocks producer (NIC-128): reads the tracked tickers from the settings store and the
+        // Finnhub key from the Keychain each tick, so a Settings edit applies on the next sample.
+        // Resolving through `EffectiveSettings` means an unset list falls back to the starter list
+        // while an explicitly cleared list stays empty.
+        let stocks = StocksPublisher(
+            tickers: {
+                let stored = (try? settingsStore?.load()).flatMap { $0 } ?? StoredSettings()
+                return EffectiveSettings.resolveStockTickers(stored: stored)
+            },
+            secretStore: composition.secretStore,
+            provider: FinnhubStockProvider(),
+            // Best-effort, keyless ~1-month daily closes for the tile sparkline (NIC-128); a
+            // failure just omits the line — the Finnhub price/change are unaffected.
+            history: YahooStockHistoryProvider(),
+            emit: { relay.emit($0) }
+        )
+        stocksPublisher = stocks
+        // The Schedule producer (NIC-126): reads the day's events from EventKit and the user's
+        // calendar→mode map from the settings store each tick, resolves each event to a mode (a
+        // `#[mode]` tag → the mapped calendar → the default mode), and emits one schedule.changed
+        // per relevance profile. The profile config (config/calendar/profiles.json) is not
+        // hardcoded; when it can't be loaded there are no profiles to stream and the Today panel
+        // stays at its honest bootstrap state.
+        let calendar: CalendarPublisher?
+        if let calendarCatalog = CalendarProfileCatalog.load(configDirectory: paths.configDirectory),
+           !calendarCatalog.distinctProfiles.isEmpty {
+            calendar = CalendarPublisher(
+                catalog: calendarCatalog,
+                calendarModeMap: {
+                    let stored = (try? settingsStore?.load()).flatMap { $0 } ?? StoredSettings()
+                    return EffectiveSettings.resolveCalendarModeMap(stored: stored)
+                },
+                provider: EventKitCalendarProvider(),
+                emit: { relay.emit($0) }
+            )
+        } else {
+            calendar = nil
+        }
+        calendarPublisher = calendar
+        // Refresh the schedule the moment the calendar store changes (an event created/edited in
+        // Calendar.app, or synced in from Google/iCloud) so it doesn't wait out the poll cadence
+        // (NIC-126). Only wired when there's a producer to refresh.
+        if let calendar {
+            calendarChangeObserver = CalendarChangeObserver(onChange: { Task { await calendar.refresh() } })
+        } else {
+            calendarChangeObserver = nil
+        }
+        // The School Canvas widgets + local ingest endpoint (NIC-132): the Chrome extension POSTs
+        // scraped courses/deadlines to the loopback endpoint (bearer-authenticated, loopback-only),
+        // which persists them; the publisher reads the store and streams the two widgets, refreshing
+        // the instant a scrape lands. All Canvas surfaces are nil when the store can't open, so the
+        // widgets fall back to their honest bootstrap state rather than erroring.
+        let canvasStore = try? makeCanvasSnapshotStore(paths)
+        // The hidden-item list (NIC-132): course/assignment ids the user has manually hidden. Read by
+        // the publisher each tick (to filter) and by the settings surface (to list + toggle).
+        let canvasHiddenStore = try? makeCanvasHiddenStore(paths)
+        let canvasSecretStore = composition.secretStore
+        let canvasPort: UInt16 = 8899
+        let canvasEndpoint = "http://127.0.0.1:\(canvasPort)/canvas/ingest"
+        let canvasPub: CanvasWidgetPublisher? = canvasStore.map { store in
+            CanvasWidgetPublisher(
+                store: store,
+                hiddenIds: { (try? canvasHiddenStore?.hiddenIds()).flatMap { $0 } ?? [] },
+                emit: { relay.emit($0) }
+            )
+        }
+        canvasPublisher = canvasPub
+        if let canvasStore, let canvas = canvasPub {
+            canvasIngestServer = CanvasIngestServer(
+                port: canvasPort,
+                store: canvasStore,
+                token: { await CanvasIngestToken.load(from: canvasSecretStore) },
+                onIngest: { Task { await canvas.refresh() } }
+            )
+            // Mint the ingest token once (idempotent) so the extension can be paired via the token the
+            // settings surface shows (Increment 6); a live secret, never logged.
+            Task { _ = try? await CanvasIngestToken.ensure(in: canvasSecretStore) }
+        } else {
+            canvasIngestServer = nil
+            Self.log.error("Canvas scrape store failed to open; School widgets + ingest disabled.")
+        }
+        // The Canvas connect/status surface (NIC-132): `getCanvasStatus` reports the pairing
+        // endpoint/token (minting it if needed) + the last scrape's age/counts + the item lists;
+        // `resetCanvas` purges the scraped data, clears hides, and rotates the token (disconnect);
+        // `setCanvasItemHidden` hides/unhides one item and refreshes the widgets. All nil without a store.
+        let canvasStatusClosure: (@Sendable () async -> CanvasStatusInfo)? = canvasStore.map { store in
+            { @Sendable in
+                let token = try? await CanvasIngestToken.ensure(in: canvasSecretStore)
+                let snapshot = (try? store.load()).flatMap { $0 }
+                let hidden = (try? canvasHiddenStore?.hiddenIds()).flatMap { $0 } ?? []
+                return Self.canvasStatusInfo(
+                    snapshot: snapshot, hidden: hidden, endpoint: canvasEndpoint, token: token
+                )
+            }
+        }
+        let canvasResetClosure: (@Sendable () async -> CanvasStatusInfo)? = canvasStore.map { store in
+            { @Sendable [canvas = canvasPub] in
+                try? store.clear()
+                try? canvasHiddenStore?.clear() // a disconnect is a clean slate
+                let token = try? await CanvasIngestToken.rotate(in: canvasSecretStore)
+                if let canvas { await canvas.refresh() }
+                return CanvasStatusInfo(
+                    endpoint: canvasEndpoint, token: token, lastScrapedAt: nil, courseCount: 0, deadlineCount: 0
+                )
+            }
+        }
+        let canvasSetHiddenClosure: (@Sendable (String, Bool) async -> CanvasStatusInfo)?
+        if let canvasStore, let hiddenStore = canvasHiddenStore {
+            canvasSetHiddenClosure = { [canvas = canvasPub] id, hidden in
+                var ids = (try? hiddenStore.hiddenIds()) ?? []
+                if hidden { ids.insert(id) } else { ids.remove(id) }
+                try? hiddenStore.setHiddenIds(ids)
+                if let canvas { await canvas.refresh() } // apply to the widgets immediately
+                let token = try? await CanvasIngestToken.ensure(in: canvasSecretStore)
+                let snapshot = (try? canvasStore.load()).flatMap { $0 }
+                return Self.canvasStatusInfo(
+                    snapshot: snapshot, hidden: ids, endpoint: canvasEndpoint, token: token
+                )
+            }
+        } else {
+            canvasSetHiddenClosure = nil
+        }
         // Feed the layout-display resolver its persisted ids (captured directly, not
         // through `self`, so no not-yet-initialized capture) — the layout arrange
         // reads it live at open time (NIC-142).
@@ -144,6 +381,26 @@ final class AppBridgeRuntime: @unchecked Sendable {
             let stored = try? settingsStore?.load()
             return (layout: stored?.layoutDisplayID, main: stored?.mainDisplayID)
         }
+        // The Spotify connect coordinator (NIC-133): the `connectSpotify` op runs its OAuth flow
+        // (loopback listener + system browser + code exchange), persisting tokens to the same
+        // Keychain the other providers use. The public Client ID is read from the secret store
+        // (`spotify_client_id`, entered in Settings) at connect time — absent → an honest "add your
+        // Client ID". The tokens never cross back through the bridge; only the granted scope does.
+        let spotifyCoordinator = SpotifyAuthCoordinator(secretStore: composition.secretStore)
+        let spotifySecretStore = composition.secretStore
+        // Which widget ids each mode's left/right slots show (config/modes, through the same
+        // layered loader bootstrap composes from) — drives the mode-entry widget refresh below.
+        let modeWidgetSlots: [String: Set<String>] = {
+            let modes = {
+                switch ConfigLoader(workspace: paths).load() {
+                case let .activated(config): return config.modes
+                case let .rejected(_, lastKnownGood): return lastKnownGood?.modes ?? []
+                }
+            }()
+            return Dictionary(uniqueKeysWithValues: modes.map {
+                ($0.id, Set([$0.widgets.widgetsLeft, $0.widgets.widgetsRight]))
+            })
+        }()
         session = BridgeSession(
             runtime: runtime,
             configDirectory: paths.configDirectory,
@@ -155,7 +412,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 phase: .macOS,
                 capabilities: capabilities,
                 requiredPermissions: requiredPermissions,
-                permissions: permissionChecker
+                permissions: permissionChecker,
+                // The weather producer is composed below (NIC-169), so `weather` reports
+                // available once the Location grant is satisfied.
+                weatherProviderComposed: true
             ),
             settingsStore: settingsStore,
             // Bootstrap restores the last active mode across restarts (FR-MOD-05).
@@ -167,6 +427,72 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // Enumerates Chrome profiles for the profile dropdown + avatar badges
             // (NIC-151), driven off listChromeProfiles.
             chromeProfiles: composition.chromeProfiles,
+            // Lists the user's calendars for the Settings calendar→mode mapping (NIC-126),
+            // driven off listCalendars — the read side of the mapping the schedule producer uses.
+            calendarProvider: EventKitCalendarProvider(),
+            // Provisions/reads API credentials in the Keychain (NIC-134): storeSecret
+            // writes the value, getSecretStatus reports presence — the value never
+            // enters config or a log (FR-CFG-03).
+            secretStore: composition.secretStore,
+            // When a provider key is stored, refresh its producer at once so the widget goes live
+            // immediately instead of on its next slow tick: TMDB → releases (NIC-134), Finnhub →
+            // stocks (NIC-128).
+            onSecretStored: { [news = newsPublisher] reference in
+                if reference == "tmdb_api_key" { Task { await releases.refresh() } }
+                if reference == "finnhub_api_key" { Task { await stocks.refresh() } }
+                if reference == "newsdata_api_key", let news { Task { await news.refresh() } }
+                if reference == "github_api_token" { Task { await projectGitStatus.refresh() } }
+            },
+            // When a settings field changes, refresh the producer it drives so the edit is live at
+            // once rather than on its next tick: the tracked-ticker list → stocks (NIC-128), the
+            // calendar→mode map → the schedule (NIC-126).
+            onSettingsChanged: { [calendar = calendarPublisher] changes in
+                if changes.stockTickersJSON != nil { Task { await stocks.refresh() } }
+                if changes.calendarModeMapJSON != nil, let calendar { Task { await calendar.refresh() } }
+            },
+            // A mode switch refreshes the entered mode's widget producers at once (its
+            // widgets.left/right slots from config/modes), so the rail shows fresh data on
+            // entry — e.g. Developer re-pulls GitHub, Entertainment re-polls Spotify —
+            // rather than each producer's last cadence tick. The all-mode regions
+            // (schedule, news, weather, system health) keep their own cadences: they are
+            // already streaming on every mode, and re-fetching metered providers on every
+            // switch would burn API quota for no fresher data.
+            onModeApplied: { [canvas = canvasPub] modeID in
+                let slots = modeWidgetSlots[modeID] ?? []
+                if slots.contains("project-git-status") { Task { await projectGitStatus.refresh() } }
+                if slots.contains("repositories") { Task { await repos.refresh() } }
+                if slots.contains("projects") { Task { await projects.refresh() } }
+                if slots.contains("stocks") { Task { await stocks.refresh() } }
+                if slots.contains("spotify") { Task { await spotify.refresh() } }
+                if slots.contains("releases") { Task { await releases.refresh() } }
+                // One refresh covers both School widgets — the Canvas producer emits both.
+                if let canvas, !slots.isDisjoint(with: ["deadlines", "courses"]) {
+                    Task { await canvas.refresh() }
+                }
+            },
+            // Runs the Spotify OAuth connect flow for the `connectSpotify` op (NIC-133): reads the
+            // public Client ID from the Keychain, then drives the coordinator's browser round trip.
+            // A missing/blank Client ID surfaces as an honest "add your Client ID" (credentialsMissing).
+            spotifyConnect: {
+                let clientID: String
+                do {
+                    clientID = try await spotifySecretStore.readValue(reference: "spotify_client_id")
+                } catch {
+                    throw SpotifyPlaybackError.credentialsMissing
+                }
+                let trimmed = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { throw SpotifyPlaybackError.credentialsMissing }
+                let connection = try await spotifyCoordinator.connect(clientID: trimmed)
+                // Tokens are stored — emit a now-playing sample at once so the widget goes live
+                // immediately rather than on the publisher's next tick.
+                await spotify.refresh()
+                return SpotifyConnectionInfo(scope: connection.scope)
+            },
+            // The Canvas connect/status surface (NIC-132): getCanvasStatus shows the pairing
+            // endpoint/token + last-scrape summary; resetCanvas purges the scrape and rotates the token.
+            canvasStatus: canvasStatusClosure,
+            canvasReset: canvasResetClosure,
+            canvasSetHidden: canvasSetHiddenClosure,
             // Hides a layout's app windows on closeLayout (NIC-142) — the same
             // permission-free primitive "Windows Stored by Mode" uses.
             workspaceWindows: composition.capabilities.workspaceWindows,
@@ -218,7 +544,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
             phase: .macOS,
             capabilities: toolCapabilities,
             requiredPermissions: requiredPermissions,
-            permissions: permissionChecker
+            permissions: permissionChecker,
+            // Re-derive weather too: granting Location in System Settings flips it available
+            // live on the next app-active recheck (NIC-169/NIC-83).
+            weatherProviderComposed: true
         )
         for changed in session.updateCapabilities(updated) {
             let event = BridgeEventFactory.capabilityChangedEvent(
@@ -237,18 +566,83 @@ final class AppBridgeRuntime: @unchecked Sendable {
         relay.setSink(sink)
     }
 
-    /// Start the live metrics stream (call once the event sink is bound, so the
-    /// first snapshot has a consumer).
-    func startStatusPublishing() {
-        let publisher = statusPublisher
-        Task { await publisher.start() }
+    /// Start the live streams — system metrics (NIC-81b) and the active-repos widget
+    /// (NIC-131). Call once the event sink is bound, so the first snapshot of each has a
+    /// consumer.
+    /// Builds the Canvas status from the latest snapshot + hidden set (NIC-132): the item lists carry
+    /// every scraped course/assignment with its hidden flag, and the counts are the VISIBLE totals.
+    private static func canvasStatusInfo(
+        snapshot: CanvasScrapeSnapshot?, hidden: Set<String>, endpoint: String, token: String?
+    ) -> CanvasStatusInfo {
+        let courses = (snapshot?.courses ?? []).map {
+            CanvasStatusItem(id: $0.id, label: $0.name, hidden: hidden.contains($0.id))
+        }
+        let deadlines = (snapshot?.deadlines ?? []).map {
+            CanvasStatusItem(id: $0.id, label: $0.title, hidden: hidden.contains($0.id))
+        }
+        return CanvasStatusInfo(
+            endpoint: endpoint,
+            token: token,
+            lastScrapedAt: snapshot.map { ISO8601DateFormatter().string(from: $0.scrapedAt) },
+            courseCount: courses.filter { !$0.hidden }.count,
+            deadlineCount: deadlines.filter { !$0.hidden }.count,
+            courses: courses,
+            deadlines: deadlines
+        )
     }
 
-    /// Pause/resume the metrics stream from the shell's visibility signal
-    /// (dashboard occluded → no sampling; MAC-ADAPTER-3 battery AC).
+    func startStatusPublishing() {
+        let metrics = statusPublisher
+        let repos = reposPublisher
+        let projects = projectsPublisher
+        let weather = weatherPublisher
+        let releases = releasesPublisher
+        let stocks = stocksPublisher
+        let news = newsPublisher
+        let calendar = calendarPublisher
+        let projectGitStatus = projectGitStatusPublisher
+        let spotify = spotifyPublisher
+        Task { await metrics.start() }
+        Task { await repos.start() }
+        Task { await projects.start() }
+        Task { await weather.start() }
+        Task { await releases.start() }
+        Task { await stocks.start() }
+        if let news { Task { await news.start() } }
+        if let calendar { Task { await calendar.start() } }
+        Task { await projectGitStatus.start() }
+        Task { await spotify.start() }
+        if let canvas = canvasPublisher { Task { await canvas.start() } }
+        // Bind the Canvas ingest endpoint (NIC-132) once the app is up. Failing to bind (e.g. the
+        // port is taken) disables ingest without affecting the rest of the bridge.
+        if let canvasServer = canvasIngestServer { Task { _ = try? await canvasServer.start() } }
+    }
+
+    /// Pause/resume the live streams from the shell's visibility signal (dashboard
+    /// occluded → no sampling; MAC-ADAPTER-3 battery AC). Both the metrics and
+    /// active-repos producers share this gate.
     func setStatusPublishingActive(_ active: Bool) {
-        let publisher = statusPublisher
-        Task { await publisher.setActive(active) }
+        let metrics = statusPublisher
+        let repos = reposPublisher
+        let projects = projectsPublisher
+        let weather = weatherPublisher
+        let releases = releasesPublisher
+        let stocks = stocksPublisher
+        let news = newsPublisher
+        let calendar = calendarPublisher
+        let projectGitStatus = projectGitStatusPublisher
+        let spotify = spotifyPublisher
+        Task { await metrics.setActive(active) }
+        Task { await repos.setActive(active) }
+        Task { await projects.setActive(active) }
+        Task { await weather.setActive(active) }
+        Task { await releases.setActive(active) }
+        Task { await stocks.setActive(active) }
+        if let news { Task { await news.setActive(active) } }
+        if let calendar { Task { await calendar.setActive(active) } }
+        Task { await projectGitStatus.setActive(active) }
+        Task { await spotify.setActive(active) }
+        if let canvas = canvasPublisher { Task { await canvas.setActive(active) } }
     }
 
     /// The persisted "Main display" id (NIC-120b) — nil when never set. A stale

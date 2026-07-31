@@ -27,6 +27,7 @@
 		CE0000000000000000000038 /* AppBridgeRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000037 /* AppBridgeRuntime.swift */; };
 		CE000000000000000000003A /* CommandPaletteWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000039 /* CommandPaletteWindowController.swift */; };
 		CE000000000000000000003E /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000003D /* WindowCoordinator.swift */; };
+		CE0000000000000000000053 /* ProjectDetailWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000052 /* ProjectDetailWindowController.swift */; };
 		CE0000000000000000000043 /* ConfirmationWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000042 /* ConfirmationWindowController.swift */; };
 		CE0000000000000000000045 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000044 /* SettingsWindowController.swift */; };
 		CE0000000000000000000047 /* MoreAppsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000046 /* MoreAppsWindowController.swift */; };
@@ -54,6 +55,7 @@
 		CE0000000000000000000037 /* AppBridgeRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBridgeRuntime.swift; sourceTree = "<group>"; };
 		CE0000000000000000000039 /* CommandPaletteWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteWindowController.swift; sourceTree = "<group>"; };
 		CE000000000000000000003D /* WindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCoordinator.swift; sourceTree = "<group>"; };
+		CE0000000000000000000052 /* ProjectDetailWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000042 /* ConfirmationWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmationWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000044 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000046 /* MoreAppsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreAppsWindowController.swift; sourceTree = "<group>"; };
@@ -115,6 +117,7 @@
 				CE0000000000000000000037 /* AppBridgeRuntime.swift */,
 				CE0000000000000000000039 /* CommandPaletteWindowController.swift */,
 				CE000000000000000000003D /* WindowCoordinator.swift */,
+				CE0000000000000000000052 /* ProjectDetailWindowController.swift */,
 				CE0000000000000000000042 /* ConfirmationWindowController.swift */,
 				CE0000000000000000000044 /* SettingsWindowController.swift */,
 				CE0000000000000000000046 /* MoreAppsWindowController.swift */,
@@ -221,6 +224,7 @@
 				CE0000000000000000000038 /* AppBridgeRuntime.swift in Sources */,
 				CE000000000000000000003A /* CommandPaletteWindowController.swift in Sources */,
 				CE000000000000000000003E /* WindowCoordinator.swift in Sources */,
+				CE0000000000000000000053 /* ProjectDetailWindowController.swift in Sources */,
 				CE0000000000000000000043 /* ConfirmationWindowController.swift in Sources */,
 				CE0000000000000000000045 /* SettingsWindowController.swift in Sources */,
 				CE0000000000000000000047 /* MoreAppsWindowController.swift in Sources */,

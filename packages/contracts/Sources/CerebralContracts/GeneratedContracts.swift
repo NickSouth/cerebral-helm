@@ -28,6 +28,8 @@
 //   let cerebralHelmAppsQuitAllInput = try CerebralHelmAppsQuitAllInput(json)
 //   let cerebralHelmAppsQuitAllOutput = try CerebralHelmAppsQuitAllOutput(json)
 //   let cerebralHelmConfirmationDisclosure = try CerebralHelmConfirmationDisclosure(json)
+//   let cerebralHelmGoogleSearchInput = try CerebralHelmGoogleSearchInput(json)
+//   let cerebralHelmGoogleSearchOutput = try CerebralHelmGoogleSearchOutput(json)
 //   let cerebralHelmHookRunInput = try CerebralHelmHookRunInput(json)
 //   let cerebralHelmHookRunOutput = try CerebralHelmHookRunOutput(json)
 //   let cerebralHelmModeApplyInput = try CerebralHelmModeApplyInput(json)
@@ -38,12 +40,18 @@
 //   let cerebralHelmNoteCaptureOutput = try CerebralHelmNoteCaptureOutput(json)
 //   let cerebralHelmNoteSearchInput = try CerebralHelmNoteSearchInput(json)
 //   let cerebralHelmNoteSearchOutput = try CerebralHelmNoteSearchOutput(json)
+//   let cerebralHelmProjectOpenInput = try CerebralHelmProjectOpenInput(json)
+//   let cerebralHelmProjectOpenOutput = try CerebralHelmProjectOpenOutput(json)
+//   let cerebralHelmSpotifyControlInput = try CerebralHelmSpotifyControlInput(json)
+//   let cerebralHelmSpotifyControlOutput = try CerebralHelmSpotifyControlOutput(json)
 //   let cerebralHelmSystemStatusReadInput = try CerebralHelmSystemStatusReadInput(json)
 //   let cerebralHelmSystemStatusReadOutput = try CerebralHelmSystemStatusReadOutput(json)
 //   let cerebralHelmToolDescriptor = try CerebralHelmToolDescriptor(json)
 //   let cerebralHelmToolResult = try CerebralHelmToolResult(json)
 //   let cerebralHelmURLOpenInput = try CerebralHelmURLOpenInput(json)
 //   let cerebralHelmURLOpenOutput = try CerebralHelmURLOpenOutput(json)
+//   let cerebralHelmWebOpenInput = try CerebralHelmWebOpenInput(json)
+//   let cerebralHelmWebOpenOutput = try CerebralHelmWebOpenOutput(json)
 //   let cerebralHelmWindowArrangeInput = try CerebralHelmWindowArrangeInput(json)
 //   let cerebralHelmWindowArrangeOutput = try CerebralHelmWindowArrangeOutput(json)
 //   let cerebralHelmWorkflowDefinition = try CerebralHelmWorkflowDefinition(json)
@@ -680,11 +688,16 @@ public extension DashboardNewsRegion {
 // MARK: - DashboardNewsHeadline
 public struct DashboardNewsHeadline: Codable {
     public let id, source, title: String
+    /// The article's navigable destination (design spec §5.4), opened on click via the web.open
+    /// tool. Optional — omitted (never fabricated) when the source has no link, in which case
+    /// the headline renders as non-interactive text.
+    public let url: String?
 
-    public init(id: String, source: String, title: String) {
+    public init(id: String, source: String, title: String, url: String?) {
         self.id = id
         self.source = source
         self.title = title
+        self.url = url
     }
 }
 
@@ -709,12 +722,14 @@ public extension DashboardNewsHeadline {
     func with(
         id: String? = nil,
         source: String? = nil,
-        title: String? = nil
+        title: String? = nil,
+        url: String?? = nil
     ) -> DashboardNewsHeadline {
         return DashboardNewsHeadline(
             id: id ?? self.id,
             source: source ?? self.source,
-            title: title ?? self.title
+            title: title ?? self.title,
+            url: url ?? self.url
         )
     }
 
@@ -798,12 +813,13 @@ public extension DashboardScheduleRegion {
 public struct DashboardScheduleItem: Codable {
     public let id: String
     public let kind: DashboardScheduleKind
-    public let start: String?
+    public let location, start: String?
     public let title: String
 
-    public init(id: String, kind: DashboardScheduleKind, start: String?, title: String) {
+    public init(id: String, kind: DashboardScheduleKind, location: String?, start: String?, title: String) {
         self.id = id
         self.kind = kind
+        self.location = location
         self.start = start
         self.title = title
     }
@@ -830,12 +846,14 @@ public extension DashboardScheduleItem {
     func with(
         id: String? = nil,
         kind: DashboardScheduleKind? = nil,
+        location: String?? = nil,
         start: String?? = nil,
         title: String? = nil
     ) -> DashboardScheduleItem {
         return DashboardScheduleItem(
             id: id ?? self.id,
             kind: kind ?? self.kind,
+            location: location ?? self.location,
             start: start ?? self.start,
             title: title ?? self.title
         )
@@ -1687,8 +1705,12 @@ public enum CerebralHelmBridgeEventType: String, Codable {
     case layoutSessionChanged = "layout.session.changed"
     case modeQuickappsChanged = "mode.quickapps.changed"
     case modeWindowcollapseChanged = "mode.windowcollapse.changed"
+    case newsChanged = "news.changed"
+    case scheduleChanged = "schedule.changed"
     case settingsChanged = "settings.changed"
     case systemStatusChanged = "system.status.changed"
+    case weatherChanged = "weather.changed"
+    case widgetDataChanged = "widget.data.changed"
     case workflowActionProgress = "workflow.action.progress"
 }
 
@@ -2153,19 +2175,27 @@ public enum Operation: String, Codable {
     case closeAllWindows = "closeAllWindows"
     case closeLayout = "closeLayout"
     case closeWindow = "closeWindow"
+    case connectSpotify = "connectSpotify"
     case decideConfirmation = "decideConfirmation"
+    case deleteSecret = "deleteSecret"
     case getBootstrapState = "getBootstrapState"
+    case getCanvasStatus = "getCanvasStatus"
     case getRecentActivity = "getRecentActivity"
+    case getSecretStatus = "getSecretStatus"
     case getSettings = "getSettings"
     case listApps = "listApps"
+    case listCalendars = "listCalendars"
     case listChromeProfiles = "listChromeProfiles"
     case listUrls = "listUrls"
     case listWindows = "listWindows"
     case minimizeWindow = "minimizeWindow"
     case openLayout = "openLayout"
     case pinLayoutWindow = "pinLayoutWindow"
+    case resetCanvas = "resetCanvas"
     case runSpeedTest = "runSpeedTest"
     case searchNotes = "searchNotes"
+    case setCanvasItemHidden = "setCanvasItemHidden"
+    case storeSecret = "storeSecret"
     case submitCommand = "submitCommand"
     case subscribe = "subscribe"
     case surfaceWindow = "surfaceWindow"
@@ -2361,6 +2391,12 @@ public enum CerebralHelmBridgeOperationResponseType: String, Codable {
 // MARK: - CerebralHelmSettingsSnapshot
 public struct CerebralHelmSettingsSnapshot: Codable {
     public let appearance: SettingsSnapshotAppearance
+    /// The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+    /// (NIC-126), keyed by calendar identifier with a mode-id value. Sparse: a calendar is
+    /// present only when the user has mapped it — an unmapped calendar's events fall to the
+    /// default mode (Executive) at the resolver. Like `modeColors`, this is not fully resolved
+    /// but a meaningful-unset map (empty when the user has mapped nothing).
+    public let calendarModeMap: [String: String]
     /// When true, policy raises every non-read-only action to require confirmation (the 'Ask
     /// before all actions' tightening; stricter-only, never weakens descriptor policy). Defaults
     /// to false. Enforced when the command runtime is composed.
@@ -2378,21 +2414,24 @@ public struct CerebralHelmSettingsSnapshot: Codable {
     /// `knowledge.rootReference`.
     public let modeColors: [String: String]
     public let schemaVersion: String
+    public let stocks: SettingsSnapshotStocks
     public let workspace: SettingsSnapshotWorkspace
 
     public enum CodingKeys: String, CodingKey {
-        case appearance, confirmAllActions
+        case appearance, calendarModeMap, confirmAllActions
         case defaultModeID = "defaultModeId"
-        case knowledge, modeColors, schemaVersion, workspace
+        case knowledge, modeColors, schemaVersion, stocks, workspace
     }
 
-    public init(appearance: SettingsSnapshotAppearance, confirmAllActions: Bool, defaultModeID: String, knowledge: SettingsSnapshotKnowledge, modeColors: [String: String], schemaVersion: String, workspace: SettingsSnapshotWorkspace) {
+    public init(appearance: SettingsSnapshotAppearance, calendarModeMap: [String: String], confirmAllActions: Bool, defaultModeID: String, knowledge: SettingsSnapshotKnowledge, modeColors: [String: String], schemaVersion: String, stocks: SettingsSnapshotStocks, workspace: SettingsSnapshotWorkspace) {
         self.appearance = appearance
+        self.calendarModeMap = calendarModeMap
         self.confirmAllActions = confirmAllActions
         self.defaultModeID = defaultModeID
         self.knowledge = knowledge
         self.modeColors = modeColors
         self.schemaVersion = schemaVersion
+        self.stocks = stocks
         self.workspace = workspace
     }
 }
@@ -2417,20 +2456,24 @@ public extension CerebralHelmSettingsSnapshot {
 
     func with(
         appearance: SettingsSnapshotAppearance? = nil,
+        calendarModeMap: [String: String]? = nil,
         confirmAllActions: Bool? = nil,
         defaultModeID: String? = nil,
         knowledge: SettingsSnapshotKnowledge? = nil,
         modeColors: [String: String]? = nil,
         schemaVersion: String? = nil,
+        stocks: SettingsSnapshotStocks? = nil,
         workspace: SettingsSnapshotWorkspace? = nil
     ) -> CerebralHelmSettingsSnapshot {
         return CerebralHelmSettingsSnapshot(
             appearance: appearance ?? self.appearance,
+            calendarModeMap: calendarModeMap ?? self.calendarModeMap,
             confirmAllActions: confirmAllActions ?? self.confirmAllActions,
             defaultModeID: defaultModeID ?? self.defaultModeID,
             knowledge: knowledge ?? self.knowledge,
             modeColors: modeColors ?? self.modeColors,
             schemaVersion: schemaVersion ?? self.schemaVersion,
+            stocks: stocks ?? self.stocks,
             workspace: workspace ?? self.workspace
         )
     }
@@ -2537,6 +2580,58 @@ public extension SettingsSnapshotKnowledge {
     ) -> SettingsSnapshotKnowledge {
         return SettingsSnapshotKnowledge(
             rootReference: rootReference ?? self.rootReference
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - SettingsSnapshotStocks
+public struct SettingsSnapshotStocks: Codable {
+    /// The user's tracked stock symbols for the Executive Stocks widget (NIC-128), in display
+    /// order. Fully resolved: the stored list when set, otherwise the shipped starter list. An
+    /// empty array is a meaningful state — the user cleared their tickers — and renders the
+    /// widget's empty prompt.
+    public let tickers: [String]
+
+    public init(tickers: [String]) {
+        self.tickers = tickers
+    }
+}
+
+// MARK: SettingsSnapshotStocks convenience initializers and mutators
+
+public extension SettingsSnapshotStocks {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(SettingsSnapshotStocks.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        tickers: [String]? = nil
+    ) -> SettingsSnapshotStocks {
+        return SettingsSnapshotStocks(
+            tickers: tickers ?? self.tickers
         )
     }
 
@@ -4054,28 +4149,35 @@ public extension CerebralHelmSettingsPatch {
 // MARK: - Changes
 public struct Changes: Codable {
     public let appearance: Appearance?
+    /// The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+    /// (NIC-126), keyed by the calendar's stable identifier with a mode-id value. When present,
+    /// replaces the stored map wholesale — an empty object clears it.
+    public let calendarModeMap: [String: String]?
     public let confirmAllActions: Bool?
     public let defaultModeID: String?
     public let extensions: [String: JSONAny]?
     public let hotkeys: Hotkeys?
     public let knowledge: Knowledge?
     public let modeColors: [String: String]?
+    public let stocks: Stocks?
     public let workspace: Workspace?
 
     public enum CodingKeys: String, CodingKey {
-        case appearance, confirmAllActions
+        case appearance, calendarModeMap, confirmAllActions
         case defaultModeID = "defaultModeId"
-        case extensions, hotkeys, knowledge, modeColors, workspace
+        case extensions, hotkeys, knowledge, modeColors, stocks, workspace
     }
 
-    public init(appearance: Appearance?, confirmAllActions: Bool?, defaultModeID: String?, extensions: [String: JSONAny]?, hotkeys: Hotkeys?, knowledge: Knowledge?, modeColors: [String: String]?, workspace: Workspace?) {
+    public init(appearance: Appearance?, calendarModeMap: [String: String]?, confirmAllActions: Bool?, defaultModeID: String?, extensions: [String: JSONAny]?, hotkeys: Hotkeys?, knowledge: Knowledge?, modeColors: [String: String]?, stocks: Stocks?, workspace: Workspace?) {
         self.appearance = appearance
+        self.calendarModeMap = calendarModeMap
         self.confirmAllActions = confirmAllActions
         self.defaultModeID = defaultModeID
         self.extensions = extensions
         self.hotkeys = hotkeys
         self.knowledge = knowledge
         self.modeColors = modeColors
+        self.stocks = stocks
         self.workspace = workspace
     }
 }
@@ -4100,22 +4202,26 @@ public extension Changes {
 
     func with(
         appearance: Appearance?? = nil,
+        calendarModeMap: [String: String]?? = nil,
         confirmAllActions: Bool?? = nil,
         defaultModeID: String?? = nil,
         extensions: [String: JSONAny]?? = nil,
         hotkeys: Hotkeys?? = nil,
         knowledge: Knowledge?? = nil,
         modeColors: [String: String]?? = nil,
+        stocks: Stocks?? = nil,
         workspace: Workspace?? = nil
     ) -> Changes {
         return Changes(
             appearance: appearance ?? self.appearance,
+            calendarModeMap: calendarModeMap ?? self.calendarModeMap,
             confirmAllActions: confirmAllActions ?? self.confirmAllActions,
             defaultModeID: defaultModeID ?? self.defaultModeID,
             extensions: extensions ?? self.extensions,
             hotkeys: hotkeys ?? self.hotkeys,
             knowledge: knowledge ?? self.knowledge,
             modeColors: modeColors ?? self.modeColors,
+            stocks: stocks ?? self.stocks,
             workspace: workspace ?? self.workspace
         )
     }
@@ -4274,6 +4380,57 @@ public extension Knowledge {
     ) -> Knowledge {
         return Knowledge(
             rootReference: rootReference ?? self.rootReference
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - Stocks
+public struct Stocks: Codable {
+    /// The user's tracked stock symbols for the Executive Stocks widget (NIC-128). When present,
+    /// replaces the stored list wholesale — an empty array clears it. Capped so a refresh stays
+    /// within the provider's rate limit.
+    public let tickers: [String]?
+
+    public init(tickers: [String]?) {
+        self.tickers = tickers
+    }
+}
+
+// MARK: Stocks convenience initializers and mutators
+
+public extension Stocks {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(Stocks.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        tickers: [String]?? = nil
+    ) -> Stocks {
+        return Stocks(
+            tickers: tickers ?? self.tickers
         )
     }
 
@@ -5474,6 +5631,114 @@ public extension Tool {
 
 // Do not edit by hand; edit packages/contracts/schemas instead.
 
+// MARK: - CerebralHelmGoogleSearchInput
+public struct CerebralHelmGoogleSearchInput: Codable {
+    /// The search text. The adapter builds a Google search URL host-side (the host is fixed to
+    /// google.com); only this query is variable, so untrusted data can never choose the
+    /// destination.
+    public let query: String
+
+    public init(query: String) {
+        self.query = query
+    }
+}
+
+// MARK: CerebralHelmGoogleSearchInput convenience initializers and mutators
+
+public extension CerebralHelmGoogleSearchInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmGoogleSearchInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        query: String? = nil
+    ) -> CerebralHelmGoogleSearchInput {
+        return CerebralHelmGoogleSearchInput(
+            query: query ?? self.query
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmGoogleSearchOutput
+public struct CerebralHelmGoogleSearchOutput: Codable {
+    public let opened: Bool
+    public let query: String
+    /// The Google search URL that was opened.
+    public let resolvedURL: String
+
+    public init(opened: Bool, query: String, resolvedURL: String) {
+        self.opened = opened
+        self.query = query
+        self.resolvedURL = resolvedURL
+    }
+}
+
+// MARK: CerebralHelmGoogleSearchOutput convenience initializers and mutators
+
+public extension CerebralHelmGoogleSearchOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmGoogleSearchOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        opened: Bool? = nil,
+        query: String? = nil,
+        resolvedURL: String? = nil
+    ) -> CerebralHelmGoogleSearchOutput {
+        return CerebralHelmGoogleSearchOutput(
+            opened: opened ?? self.opened,
+            query: query ?? self.query,
+            resolvedURL: resolvedURL ?? self.resolvedURL
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
 // MARK: - CerebralHelmHookRunInput
 public struct CerebralHelmHookRunInput: Codable {
     public let hookID: String
@@ -6233,6 +6498,226 @@ public enum Freshness: String, Codable {
 
 // Do not edit by hand; edit packages/contracts/schemas instead.
 
+// MARK: - CerebralHelmProjectOpenInput
+public struct CerebralHelmProjectOpenInput: Codable {
+    /// Absolute path of the repository directory to open in the configured editor. The adapter
+    /// constrains it to the projects root; a path outside is denied.
+    public let repoPath: String
+
+    public init(repoPath: String) {
+        self.repoPath = repoPath
+    }
+}
+
+// MARK: CerebralHelmProjectOpenInput convenience initializers and mutators
+
+public extension CerebralHelmProjectOpenInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmProjectOpenInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        repoPath: String? = nil
+    ) -> CerebralHelmProjectOpenInput {
+        return CerebralHelmProjectOpenInput(
+            repoPath: repoPath ?? self.repoPath
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmProjectOpenOutput
+public struct CerebralHelmProjectOpenOutput: Codable {
+    public let opened: Bool
+    public let repoPath: String
+
+    public init(opened: Bool, repoPath: String) {
+        self.opened = opened
+        self.repoPath = repoPath
+    }
+}
+
+// MARK: CerebralHelmProjectOpenOutput convenience initializers and mutators
+
+public extension CerebralHelmProjectOpenOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmProjectOpenOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        opened: Bool? = nil,
+        repoPath: String? = nil
+    ) -> CerebralHelmProjectOpenOutput {
+        return CerebralHelmProjectOpenOutput(
+            opened: opened ?? self.opened,
+            repoPath: repoPath ?? self.repoPath
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmSpotifyControlInput
+public struct CerebralHelmSpotifyControlInput: Codable {
+    /// The playback command to send to the user's active Spotify device: resume, pause, skip
+    /// forward, or skip back.
+    public let action: SpotifyPlaybackAction
+
+    public init(action: SpotifyPlaybackAction) {
+        self.action = action
+    }
+}
+
+// MARK: CerebralHelmSpotifyControlInput convenience initializers and mutators
+
+public extension CerebralHelmSpotifyControlInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmSpotifyControlInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        action: SpotifyPlaybackAction? = nil
+    ) -> CerebralHelmSpotifyControlInput {
+        return CerebralHelmSpotifyControlInput(
+            action: action ?? self.action
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+/// The playback command to send to the user's active Spotify device: resume, pause, skip
+/// forward, or skip back.
+public enum SpotifyPlaybackAction: String, Codable {
+    case next = "next"
+    case pause = "pause"
+    case play = "play"
+    case previous = "previous"
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmSpotifyControlOutput
+public struct CerebralHelmSpotifyControlOutput: Codable {
+    public let action: SpotifyPlaybackAction
+    /// Whether there was an active Spotify device. False → nothing to control; the widget guides
+    /// the user to start playback on a device.
+    public let activeDevice: Bool
+    /// True when Spotify accepted the command. False when there was no active device to act on.
+    public let applied: Bool
+
+    public init(action: SpotifyPlaybackAction, activeDevice: Bool, applied: Bool) {
+        self.action = action
+        self.activeDevice = activeDevice
+        self.applied = applied
+    }
+}
+
+// MARK: CerebralHelmSpotifyControlOutput convenience initializers and mutators
+
+public extension CerebralHelmSpotifyControlOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmSpotifyControlOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        action: SpotifyPlaybackAction? = nil,
+        activeDevice: Bool? = nil,
+        applied: Bool? = nil
+    ) -> CerebralHelmSpotifyControlOutput {
+        return CerebralHelmSpotifyControlOutput(
+            action: action ?? self.action,
+            activeDevice: activeDevice ?? self.activeDevice,
+            applied: applied ?? self.applied
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
 // MARK: - CerebralHelmSystemStatusReadInput
 public struct CerebralHelmSystemStatusReadInput: Codable {
     public let metrics: [ID]?
@@ -6645,6 +7130,7 @@ public extension AvailabilityClass {
 }
 
 public enum ConfirmationPolicyKey: String, Codable {
+    case allowExternalWriteWithoutConfirmation = "allow_external_write_without_confirmation"
     case allowReadWithoutConfirmation = "allow_read_without_confirmation"
     case confirmDestructive = "confirm_destructive"
     case confirmExternalWrite = "confirm_external_write"
@@ -7174,6 +7660,112 @@ public extension CerebralHelmURLOpenOutput {
             resolvedURL: resolvedURL ?? self.resolvedURL,
             surfaced: surfaced ?? self.surfaced,
             urlID: urlID ?? self.urlID
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmWebOpenInput
+public struct CerebralHelmWebOpenInput: Codable {
+    /// The absolute https web address to open in the browser. The adapter validates the scheme
+    /// (https only) and a present host host-side, so an unresolvable or non-https link is
+    /// refused rather than opened. Unlike url.open (which resolves a configured reference id),
+    /// this opens an arbitrary destination — used for news article links — so the constraint
+    /// lives in the adapter, not in an allowlist.
+    public let url: String
+
+    public init(url: String) {
+        self.url = url
+    }
+}
+
+// MARK: CerebralHelmWebOpenInput convenience initializers and mutators
+
+public extension CerebralHelmWebOpenInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmWebOpenInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        url: String? = nil
+    ) -> CerebralHelmWebOpenInput {
+        return CerebralHelmWebOpenInput(
+            url: url ?? self.url
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmWebOpenOutput
+public struct CerebralHelmWebOpenOutput: Codable {
+    public let opened: Bool
+    /// The https web address that was opened.
+    public let url: String
+
+    public init(opened: Bool, url: String) {
+        self.opened = opened
+        self.url = url
+    }
+}
+
+// MARK: CerebralHelmWebOpenOutput convenience initializers and mutators
+
+public extension CerebralHelmWebOpenOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmWebOpenOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        opened: Bool? = nil,
+        url: String? = nil
+    ) -> CerebralHelmWebOpenOutput {
+        return CerebralHelmWebOpenOutput(
+            opened: opened ?? self.opened,
+            url: url ?? self.url
         )
     }
 

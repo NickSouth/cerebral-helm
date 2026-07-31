@@ -55,6 +55,31 @@ public struct AppOpenHandler: ToolHandler {
     }
 }
 
+// MARK: - project.open
+
+public struct ProjectOpenHandler: ToolHandler {
+    public let toolID = "project.open"
+    private let capability: any ProjectCapability
+
+    public init(capability: any ProjectCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmProjectOpenInput
+        do { decoded = try CerebralHelmProjectOpenInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("project.open input does not match its contract.")
+        }
+        do {
+            let result = try await capability.open(repoPath: decoded.repoPath)
+            return try CerebralHelmProjectOpenOutput(
+                opened: result.opened,
+                repoPath: result.repoPath
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 // MARK: - url.open
 
 public struct URLOpenHandler: ToolHandler {
@@ -75,6 +100,81 @@ public struct URLOpenHandler: ToolHandler {
                 resolvedURL: result.resolvedURL,
                 surfaced: result.surfaced,
                 urlID: result.urlID
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+// MARK: - google.search
+
+public struct GoogleSearchHandler: ToolHandler {
+    public let toolID = "google.search"
+    private let capability: any GoogleSearchCapability
+
+    public init(capability: any GoogleSearchCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmGoogleSearchInput
+        do { decoded = try CerebralHelmGoogleSearchInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("google.search input does not match its contract.")
+        }
+        do {
+            let result = try await capability.search(query: decoded.query)
+            return try CerebralHelmGoogleSearchOutput(
+                opened: result.opened,
+                query: result.query,
+                resolvedURL: result.resolvedURL
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+public struct SpotifyControlHandler: ToolHandler {
+    public let toolID = "spotify.control"
+    private let capability: any SpotifyControlCapability
+
+    public init(capability: any SpotifyControlCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmSpotifyControlInput
+        do { decoded = try CerebralHelmSpotifyControlInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("spotify.control input does not match its contract.")
+        }
+        do {
+            let result = try await capability.control(action: decoded.action.rawValue)
+            return try CerebralHelmSpotifyControlOutput(
+                action: SpotifyPlaybackAction(rawValue: result.action) ?? decoded.action,
+                activeDevice: result.activeDevice,
+                applied: result.applied
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+// MARK: - web.open
+
+public struct WebOpenHandler: ToolHandler {
+    public let toolID = "web.open"
+    private let capability: any WebOpenCapability
+
+    public init(capability: any WebOpenCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmWebOpenInput
+        do { decoded = try CerebralHelmWebOpenInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("web.open input does not match its contract.")
+        }
+        do {
+            let result = try await capability.open(url: decoded.url)
+            return try CerebralHelmWebOpenOutput(
+                opened: result.opened,
+                url: result.url
             ).jsonData()
         } catch let error as NativeCapabilityError {
             throw toolHandlerError(from: error)

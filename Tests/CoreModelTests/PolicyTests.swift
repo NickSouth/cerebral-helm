@@ -51,6 +51,39 @@ func confirmEveryActionOverlay() {
     #expect(localWrite.reasonCode == "override.stricter_user_policy")
 }
 
+@Test("a descriptor-waived external write runs one-click, but only external_write (NIC-133)")
+func externalWriteConfirmationWaiver() {
+    let engine = PolicyEngine()
+
+    // The waiver downgrades external_write to allow (Spotify play/pause/skip — owner-chosen).
+    let waived = engine.evaluate(PolicyRequest(
+        toolID: "spotify.control", declaredRisk: .externalWrite, waivesExternalWriteConfirmation: true
+    ))
+    #expect(waived.decision == .allow)
+    #expect(waived.reasonCode == "allow.external_write_exempt")
+
+    // Without the waiver, external_write still confirms.
+    #expect(engine.evaluate(PolicyRequest(toolID: "x", declaredRisk: .externalWrite)).decision == .requireConfirmation)
+
+    // The waiver can NEVER downgrade a stricter class — a destructive tool still confirms even if the
+    // flag is (wrongly) set, so the exemption can't be abused to one-click something dangerous.
+    #expect(engine.evaluate(PolicyRequest(
+        toolID: "y", declaredRisk: .destructive, waivesExternalWriteConfirmation: true
+    )).decision == .requireConfirmation)
+}
+
+@Test("the confirm-every-action overlay re-arms confirmation over a waived external write (NIC-133)")
+func waivedExternalWriteStillConfirmsUnderGlobalToggle() {
+    // "Ask before all actions" is stricter-only, so it overrides the descriptor waiver: even a
+    // low-stakes control confirms when the user has asked to confirm everything.
+    let engine = PolicyEngine(overrides: .confirmEveryAction)
+    let evaluation = engine.evaluate(PolicyRequest(
+        toolID: "spotify.control", declaredRisk: .externalWrite, waivesExternalWriteConfirmation: true
+    ))
+    #expect(evaluation.decision == .requireConfirmation)
+    #expect(evaluation.reasonCode == "override.stricter_user_policy")
+}
+
 @Test("a caller cannot lower a required confirmation but may raise one (AC-30.2)")
 func callersCannotLowerRisk() {
     let engine = PolicyEngine()

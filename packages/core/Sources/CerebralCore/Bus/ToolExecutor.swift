@@ -117,7 +117,8 @@ public struct ToolExecutor: Sendable {
                 declaredRisk: tool.risk,
                 runtimeRiskPolicy: tool.descriptor.runtimeRiskPolicy,
                 shellInvocation: invocation.shellInvocation,
-                callerRequestedConfirmation: invocation.callerRequestedConfirmation
+                callerRequestedConfirmation: invocation.callerRequestedConfirmation,
+                waivesExternalWriteConfirmation: tool.descriptor.confirmationPolicyKey == .allowExternalWriteWithoutConfirmation
             )
         )
         if evaluation.decision == .deny {

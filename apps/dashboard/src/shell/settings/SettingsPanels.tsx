@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useBridge } from "../../state/BridgeProvider";
 import { useDashboardState } from "../../state/DashboardStateProvider";
 import { LayoutEditor } from "./LayoutEditor";
 import { useAppearance, DEFAULT_ASSISTANT_NAME } from "../../state/AppearanceProvider";
@@ -11,6 +12,7 @@ import { postShellControl, isShellControlAvailable } from "../shellControl";
 import { PERMISSION_TOOLS } from "./permissionsCatalog";
 import wiredManifest from "../quickActions.manifest.json";
 import type { SettingsCategoryId } from "./categories";
+import type { CalendarInfo, CanvasStatus, CanvasStatusItem } from "../../bridge/cerebralBridge";
 
 /** A titled group within a panel. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -671,6 +673,548 @@ function CustomizationPanelBody() {
 
 // --- Setup ----------------------------------------------------------------
 
+/** The logical Keychain references for the provider API keys (NIC-134 TMDB, NIC-128 Finnhub).
+ *  Each matches the descriptor reference pattern `^[a-z][a-z0-9_]*$` so config, keychain, and
+ *  this UI agree. */
+const TMDB_SECRET_REFERENCE = "tmdb_api_key";
+const FINNHUB_SECRET_REFERENCE = "finnhub_api_key";
+const NEWSDATA_SECRET_REFERENCE = "newsdata_api_key";
+const GITHUB_SECRET_REFERENCE = "github_api_token";
+const SPOTIFY_CLIENT_ID_REFERENCE = "spotify_client_id";
+const SPOTIFY_OAUTH_REFERENCE = "spotify_oauth";
+
+/**
+ * A masked API-key provisioning field for a provider (generalized from the TMDB field, NIC-134;
+ * NIC-128 adds Finnhub): stores the key in the Keychain through the `storeSecret` bridge op and
+ * shows whether one is set via `getSecretStatus` — presence only, the value is never read back
+ * into the field. The value the user types is sent once on Save and then cleared; it never lands
+ * in config or a log (FR-CFG-03, FR-OBS-03).
+ */
+function ProviderKeyField({
+  reference,
+  label,
+  hint,
+  placeholder
+}: {
+  reference: string;
+  label: string;
+  hint: string;
+  placeholder: string;
+}) {
+  const bridge = useBridge();
+  const [bound, setBound] = useState<boolean | null>(null); // null while the status read settles
+  const [draft, setDraft] = useState("");
+  const [phase, setPhase] = useState<"idle" | "saving" | "error">("idle");
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      .getSecretStatus({ reference })
+      .then((result) => {
+        if (active) setBound(result.bound);
+      })
+      .catch(() => {
+        if (active) setBound(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge, reference]);
+
+  const canSave = draft.trim().length > 0 && phase !== "saving";
+
+  function save() {
+    const value = draft.trim();
+    if (!value) return;
+    setPhase("saving");
+    void bridge
+      .storeSecret({ reference, value })
+      .then((result) => {
+        if (result.stored) {
+          setBound(true);
+          setDraft(""); // never retain the secret in the field
+          setPhase("idle");
+        } else {
+          setPhase("error");
+        }
+      })
+      .catch(() => setPhase("error"));
+  }
+
+  const statusLabel = bound === null ? "Checking…" : bound ? "Key set" : "Not set";
+
+  return (
+    <Field label={label} hint={hint}>
+      <div className="settings-secret">
+        <span className="settings-secret__status" data-bound={bound === true}>
+          {statusLabel}
+        </span>
+        <input
+          type="password"
+          className="settings-input"
+          value={draft}
+          placeholder={bound ? "Enter a new key to replace it" : placeholder}
+          aria-label={label}
+          autoComplete="off"
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <button
+          type="button"
+          className="settings-button settings-button--primary"
+          disabled={!canSave}
+          onClick={save}
+        >
+          Save
+        </button>
+      </div>
+      {phase === "error" ? (
+        <p className="settings-note" role="alert">
+          That key couldn't be saved. Check it and try again.
+        </p>
+      ) : null}
+    </Field>
+  );
+}
+
+/**
+ * The Spotify connect control (NIC-133): a "Connect Spotify" button that runs the OAuth flow on the
+ * macOS host (`connectSpotify` — opens the browser, captures the redirect, stores tokens in the
+ * Keychain), and a "Disconnect" that clears them (`deleteSecret`). Connection state comes from
+ * `getSecretStatus("spotify_oauth")` — presence only, the tokens are never read back. Requires the
+ * Spotify Client ID field above to be set; a connect without it fails with honest guidance.
+ */
+function SpotifyConnectField() {
+  const bridge = useBridge();
+  const [connected, setConnected] = useState<boolean | null>(null); // null while the status settles
+  const [phase, setPhase] = useState<"idle" | "connecting" | "error">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      .getSecretStatus({ reference: SPOTIFY_OAUTH_REFERENCE })
+      .then((result) => {
+        if (active) setConnected(result.bound);
+      })
+      .catch(() => {
+        if (active) setConnected(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
+  function connect() {
+    setPhase("connecting");
+    setMessage(null);
+    void bridge
+      .connectSpotify()
+      .then((result) => {
+        if (result.connected) {
+          setConnected(true);
+          setPhase("idle");
+        } else {
+          setPhase("error");
+          setMessage("Couldn't connect to Spotify. Please try again.");
+        }
+      })
+      .catch((error: unknown) => {
+        setPhase("error");
+        setMessage(error instanceof Error ? error.message : "Couldn't connect to Spotify. Please try again.");
+      });
+  }
+
+  function disconnect() {
+    void bridge
+      .deleteSecret({ reference: SPOTIFY_OAUTH_REFERENCE })
+      .then(() => {
+        setConnected(false);
+        setPhase("idle");
+        setMessage(null);
+      })
+      .catch(() => {
+        // Leave the state as-is; a failed delete is rare and the next status read reconciles it.
+      });
+  }
+
+  const statusLabel = connected === null ? "Checking…" : connected ? "Connected" : "Not connected";
+
+  return (
+    <Field
+      label="Spotify account"
+      hint="Connect Spotify to show your now-playing track (and controls) on the Entertainment dashboard. Uses the Client ID above; opens your browser to sign in. Tokens are stored in your macOS Keychain — never in config or logs."
+    >
+      <div className="settings-secret">
+        <span className="settings-secret__status" data-bound={connected === true}>
+          {statusLabel}
+        </span>
+        {connected ? (
+          <button type="button" className="settings-button" onClick={disconnect}>
+            Disconnect
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="settings-button settings-button--primary"
+            disabled={phase === "connecting"}
+            onClick={connect}
+          >
+            {phase === "connecting" ? "Connecting…" : "Connect Spotify"}
+          </button>
+        )}
+      </div>
+      {phase === "error" && message ? (
+        <p className="settings-note" role="alert">
+          {message}
+        </p>
+      ) : null}
+    </Field>
+  );
+}
+
+/** The logical name pattern a ticker symbol must match (NIC-128) — mirrors the settings-patch
+ *  contract. Uppercased on entry; the store normalizes again on write. */
+const TICKER_INPUT_PATTERN = /^[A-Za-z][A-Za-z0-9.-]{0,9}$/;
+const TICKERS_MAX = 20;
+
+function tickersEqual(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((symbol, index) => symbol === b[index]);
+}
+
+/**
+ * The Executive Stocks widget's ticker list (NIC-128): the user's tracked symbols, edited as
+ * add/remove chips and persisted through the validated settings path (`stocks.tickers`). Seeds
+ * from the resolved snapshot (the shipped starter list until the user changes it); an empty list
+ * is a real state — the widget then shows its "add tickers" prompt. Symbols are uppercased and
+ * deduped on entry (the store normalizes again on write), and the contract caps the list at 20.
+ */
+function StocksTickersField() {
+  const { snapshot } = useSettingsSnapshot();
+  const updateSettings = useUpdateSettings();
+
+  const [baseline, setBaseline] = useState<readonly string[]>(snapshot?.stocks?.tickers ?? []);
+  const [draft, setDraft] = useState<string[]>([...(snapshot?.stocks?.tickers ?? [])]);
+  const [input, setInput] = useState("");
+
+  const candidate = input.trim().toUpperCase();
+  const canAdd =
+    TICKER_INPUT_PATTERN.test(candidate) && !draft.includes(candidate) && draft.length < TICKERS_MAX;
+  const dirty = !tickersEqual(draft, baseline);
+
+  function add() {
+    if (!canAdd) return;
+    setDraft((prev) => [...prev, candidate]);
+    setInput("");
+  }
+  function remove(symbol: string) {
+    setDraft((prev) => prev.filter((entry) => entry !== symbol));
+  }
+  function save() {
+    void updateSettings({ stocks: { tickers: draft } });
+    setBaseline([...draft]);
+  }
+  function cancel() {
+    setDraft([...baseline]);
+    setInput("");
+  }
+
+  return (
+    <Field
+      label="Tracked tickers"
+      hint="Symbols shown in the Executive Stocks widget, four to a page. Uppercased automatically; up to 20."
+    >
+      <div className="settings-tickers">
+        <ul className="settings-tickers__list">
+          {draft.length === 0 ? (
+            <li className="settings-tickers__empty">No tickers yet — the widget shows an add prompt.</li>
+          ) : (
+            draft.map((symbol) => (
+              <li key={symbol} className="settings-tickers__chip">
+                <span>{symbol}</span>
+                <button
+                  type="button"
+                  className="settings-tickers__remove"
+                  aria-label={`Remove ${symbol}`}
+                  onClick={() => remove(symbol)}
+                >
+                  ×
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+        <div className="settings-tickers__add">
+          <input
+            type="text"
+            className="settings-input"
+            value={input}
+            placeholder="Add a symbol, e.g. TSLA"
+            aria-label="Add a stock ticker"
+            autoComplete="off"
+            maxLength={10}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                add();
+              }
+            }}
+          />
+          <button type="button" className="settings-button" disabled={!canAdd} onClick={add}>
+            Add
+          </button>
+        </div>
+        <div className="settings-tickers__actions">
+          <button
+            type="button"
+            className="settings-button settings-button--ghost"
+            disabled={!dirty}
+            onClick={cancel}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="settings-button settings-button--primary"
+            disabled={!dirty}
+            onClick={save}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </Field>
+  );
+}
+
+/** Maps each of the user's calendars to a mode (NIC-126), so the Today panel shows the right events
+ *  per mode. Reads the calendar list from the host (requesting Calendar access at point of use) and
+ *  the current map from the settings snapshot; a change writes the whole `calendarModeMap` through
+ *  the settings path. "Unassigned" removes the mapping — those events fall under Executive. */
+function CalendarModeMapField() {
+  const bridge = useBridge();
+  const { snapshot } = useSettingsSnapshot();
+  const updateSettings = useUpdateSettings();
+  const [calendars, setCalendars] = useState<readonly CalendarInfo[] | null>(null); // null while loading
+  const [authorized, setAuthorized] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      .listCalendars()
+      .then((result) => {
+        if (!active) return;
+        setCalendars(result.calendars);
+        setAuthorized(result.authorized);
+      })
+      .catch(() => {
+        if (!active) return;
+        setCalendars([]);
+        setAuthorized(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
+  const map = snapshot?.calendarModeMap ?? {};
+
+  function assign(calendarId: string, mode: string) {
+    const next: Record<string, string> = { ...map };
+    if (mode === "") {
+      delete next[calendarId];
+    } else {
+      next[calendarId] = mode;
+    }
+    void updateSettings({ calendarModeMap: next });
+  }
+
+  return (
+    <Field
+      label="Calendar → mode"
+      hint="Map each calendar to a mode so the Today panel shows the right events per mode. Unmapped calendars show under Executive. Tip: add #executive, #developer, #school, or #entertainment to an event's notes to override per event."
+    >
+      {calendars === null ? (
+        <span className="settings-secret__status">Checking…</span>
+      ) : !authorized ? (
+        <Unavailable label="Grant Calendar access to map your calendars (System Settings → Privacy & Security → Calendars)." />
+      ) : calendars.length === 0 ? (
+        <span className="settings-calendars__empty">No calendars found.</span>
+      ) : (
+        <ul className="settings-calendars">
+          {calendars.map((calendar) => (
+            <li key={calendar.id} className="settings-calendars__row">
+              <span
+                className="settings-calendars__swatch"
+                style={calendar.colorHex ? { background: calendar.colorHex } : undefined}
+                aria-hidden="true"
+              />
+              <span className="settings-calendars__title">{calendar.title}</span>
+              <select
+                className="settings-select"
+                value={map[calendar.id] ?? ""}
+                onChange={(event) => assign(calendar.id, event.target.value)}
+                aria-label={`Mode for ${calendar.title}`}
+              >
+                <option value="">Unassigned</option>
+                {MODE_IDS.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {humanizeId(mode)}
+                  </option>
+                ))}
+              </select>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Field>
+  );
+}
+
+/** A coarse "data age" label from an ISO instant: "just now" / "Nm ago" / "Nh ago" / "Nd ago". */
+function formatScrapeAge(iso: string): string {
+  const elapsedMs = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 60_000) return "just now";
+  const minutes = Math.floor(elapsedMs / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+/** "4 courses, 7 deadlines" — singular/plural, never a fabricated count. */
+function scrapeCountsLabel(status: CanvasStatus): string {
+  const courses = `${status.courseCount} ${status.courseCount === 1 ? "course" : "courses"}`;
+  const deadlines = `${status.deadlineCount} ${status.deadlineCount === 1 ? "deadline" : "deadlines"}`;
+  return `${courses}, ${deadlines}`;
+}
+
+/**
+ * The Canvas connect card (NIC-132): pairs the Chrome extension with the local ingest endpoint. The
+ * School Deadlines/Courses widgets are fed by a scrape the extension posts here on Canvas visits, so
+ * this shows the endpoint + token to paste into the extension, the last scrape's age/counts, and a
+ * Disconnect that purges the scraped data and rotates the token (the old token stops working). Off
+ * the macOS host the surface reports unavailable rather than a broken pairing panel.
+ */
+function CanvasConnectField() {
+  const bridge = useBridge();
+  const [status, setStatus] = useState<CanvasStatus | null>(null); // null while loading
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      .getCanvasStatus()
+      .then((result) => {
+        if (active) setStatus(result);
+      })
+      .catch(() => {
+        if (active) {
+          setStatus({
+            available: false, endpoint: "", token: null, lastScrapedAt: null,
+            courseCount: 0, deadlineCount: 0, courses: [], deadlines: []
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
+  function disconnect() {
+    void bridge
+      .resetCanvas()
+      .then((result) => setStatus(result))
+      .catch(() => {
+        // Leave the state as-is; the next status read reconciles it.
+      });
+  }
+
+  function toggleHidden(id: string, hidden: boolean) {
+    void bridge
+      .setCanvasItemHidden(id, hidden)
+      .then((result) => setStatus(result))
+      .catch(() => {
+        // Leave the state as-is; the next status read reconciles it.
+      });
+  }
+
+  const itemList = (title: string, items: readonly CanvasStatusItem[]) =>
+    items.length > 0 ? (
+      <div className="settings-canvas__group">
+        <span className="settings-canvas__group-title">{title}</span>
+        <ul className="settings-canvas__items">
+          {items.map((item) => (
+            <li
+              key={item.id}
+              className={`settings-canvas__item${item.hidden ? " settings-canvas__item--hidden" : ""}`}
+            >
+              <span className="settings-canvas__item-label">{item.label}</span>
+              <button
+                type="button"
+                className="settings-button settings-button--ghost"
+                onClick={() => toggleHidden(item.id, !item.hidden)}
+                aria-label={`${item.hidden ? "Unhide" : "Hide"} ${item.label}`}
+              >
+                {item.hidden ? "Unhide" : "Hide"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
+
+  function copyToken() {
+    if (!status?.token) return;
+    void navigator.clipboard
+      ?.writeText(status.token)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {
+        // Clipboard denied — the token is still shown for manual copy.
+      });
+  }
+
+  return (
+    <Field
+      label="Canvas (School widgets)"
+      hint="The School Deadlines & Courses widgets are fed by a Chrome extension that scrapes Canvas on your visits and posts to this local endpoint. Pair the extension with the endpoint and token below. Scraped data stays on this Mac. Disconnect clears it and rotates the token — you'll need to re-pair."
+    >
+      {status === null ? (
+        <span className="settings-secret__status">Checking…</span>
+      ) : !status.available ? (
+        <Unavailable label="Requires the macOS host" />
+      ) : (
+        <div className="settings-canvas">
+          <div className="settings-canvas__pair">
+            <span className="settings-canvas__label">Endpoint</span>
+            <code className="settings-canvas__value">{status.endpoint}</code>
+          </div>
+          <div className="settings-canvas__pair">
+            <span className="settings-canvas__label">Token</span>
+            <code className="settings-canvas__value settings-canvas__token">{status.token ?? "—"}</code>
+            <button type="button" className="settings-button" onClick={copyToken} disabled={!status.token}>
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className="settings-canvas__status">
+            {status.lastScrapedAt
+              ? `Last synced ${formatScrapeAge(status.lastScrapedAt)} · ${scrapeCountsLabel(status)}`
+              : "No scrape received yet — open Canvas in Chrome with the extension installed."}
+          </p>
+          {itemList("Courses", status.courses)}
+          {itemList("Deadlines", status.deadlines)}
+          <button type="button" className="settings-button" onClick={disconnect}>
+            Disconnect
+          </button>
+        </div>
+      )}
+    </Field>
+  );
+}
+
 function SetupPanel() {
   // The knowledge-root control seeds from the persisted read (NIC-141).
   const { status } = useSettingsSnapshot();
@@ -749,9 +1293,40 @@ function SetupPanelBody() {
         </Field>
       </Section>
       <Section title="Integrations & onboarding">
-        <Field label="Integrations & providers">
-          <Unavailable label="Requires the macOS host" />
-        </Field>
+        <ProviderKeyField
+          reference={TMDB_SECRET_REFERENCE}
+          label="TMDB API key"
+          hint="Powers the Entertainment Releases widget. Stored in your macOS Keychain — never in config or logs. Get a free key at themoviedb.org."
+          placeholder="Paste your TMDB API key"
+        />
+        <ProviderKeyField
+          reference={FINNHUB_SECRET_REFERENCE}
+          label="Finnhub API key"
+          hint="Powers the Executive Stocks widget. Stored in your macOS Keychain — never in config or logs. Get a free key at finnhub.io."
+          placeholder="Paste your Finnhub API key"
+        />
+        <ProviderKeyField
+          reference={NEWSDATA_SECRET_REFERENCE}
+          label="NewsData API key"
+          hint="Powers the News panel on every mode. Stored in your macOS Keychain — never in config or logs. Get a free key at newsdata.io."
+          placeholder="Paste your NewsData API key"
+        />
+        <ProviderKeyField
+          reference={GITHUB_SECRET_REFERENCE}
+          label="GitHub personal access token"
+          hint="Powers the Developer Project Git Status widget (read-only: pull requests, Actions, commits). Stored in your macOS Keychain — never in config or logs. Create a fine-grained token at github.com/settings/tokens."
+          placeholder="Paste your GitHub token"
+        />
+        <ProviderKeyField
+          reference={SPOTIFY_CLIENT_ID_REFERENCE}
+          label="Spotify Client ID"
+          hint="Powers the Entertainment Spotify widget. Create an app at developer.spotify.com and add the redirect URI http://127.0.0.1:8888/callback — then paste its Client ID here. Public, but stored in your macOS Keychain."
+          placeholder="Paste your Spotify Client ID"
+        />
+        <SpotifyConnectField />
+        <StocksTickersField />
+        <CalendarModeMapField />
+        <CanvasConnectField />
         <Field label="Onboarding">
           <Unavailable label="Requires the macOS host" />
         </Field>

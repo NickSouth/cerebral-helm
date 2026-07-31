@@ -12,6 +12,9 @@
 /// unavailable instead of pretending they work.
 public struct ToolCapabilities: Sendable {
     public let app: any AppCapability
+    /// Opens a repository directory in the configured editor (NIC-131). `.none`-matrix
+    /// mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let project: any ProjectCapability
     public let url: any URLCapability
     public let process: any ProcessCapability
     public let systemStatus: any SystemStatusCapability
@@ -23,12 +26,23 @@ public struct ToolCapabilities: Sendable {
     /// Per-window enumeration + minimize/surface/close for the window navigator and the
     /// per-mode window-state layer (NIC-143). Empty mock by default (pre-Mac/tests).
     public let appWindows: any AppWindowsCapability
+    /// Opens a Google search in the browser (NIC-134), preferring a running Chrome instance.
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let googleSearch: any GoogleSearchCapability
+    /// Opens an arbitrary https web address in the browser (NIC-127), for news article links,
+    /// preferring a running Chrome instance. `.none`-matrix mock by default (pre-Mac/tests); the
+    /// macOS shell binds the honest adapter.
+    public let webOpen: any WebOpenCapability
+    /// Controls the user's Spotify playback (NIC-133): play/pause/next/previous. `.none`-matrix
+    /// mock by default (pre-Mac/tests); the macOS shell binds the honest Web-API adapter.
+    public let spotifyControl: any SpotifyControlCapability
     /// Stable capability IDs (``CapabilityMatrix/Capability/appOpen`` etc.) bound
     /// to honest native implementations in this bundle. Empty for the mock bundle.
     public let nativeCapabilityIDs: Set<String>
 
     public init(
         app: any AppCapability,
+        project: any ProjectCapability = MockProjectCapability(matrix: .none),
         url: any URLCapability,
         process: any ProcessCapability,
         systemStatus: any SystemStatusCapability,
@@ -38,9 +52,13 @@ public struct ToolCapabilities: Sendable {
         appDiscovery: any AppDiscoveryCapability = MockAppDiscoveryCapability(matrix: .none),
         applicationLifecycle: any ApplicationLifecycleCapability = MockApplicationLifecycleCapability(matrix: .none),
         appWindows: any AppWindowsCapability = MockAppWindowsCapability(groups: []),
+        googleSearch: any GoogleSearchCapability = MockGoogleSearchCapability(matrix: .none),
+        webOpen: any WebOpenCapability = MockWebOpenCapability(matrix: .none),
+        spotifyControl: any SpotifyControlCapability = MockSpotifyControlCapability(matrix: .none),
         nativeCapabilityIDs: Set<String> = []
     ) {
         self.app = app
+        self.project = project
         self.url = url
         self.process = process
         self.systemStatus = systemStatus
@@ -50,6 +68,9 @@ public struct ToolCapabilities: Sendable {
         self.appDiscovery = appDiscovery
         self.applicationLifecycle = applicationLifecycle
         self.appWindows = appWindows
+        self.googleSearch = googleSearch
+        self.webOpen = webOpen
+        self.spotifyControl = spotifyControl
         self.nativeCapabilityIDs = nativeCapabilityIDs
     }
 
@@ -58,6 +79,7 @@ public struct ToolCapabilities: Sendable {
     public static func mocks(matrix: CapabilityMatrix = .allAvailable) -> ToolCapabilities {
         ToolCapabilities(
             app: MockAppCapability(matrix: matrix),
+            project: MockProjectCapability(matrix: matrix),
             url: MockURLCapability(matrix: matrix),
             process: MockProcessCapability(matrix: matrix),
             systemStatus: MockSystemStatusCapability(matrix: matrix),
@@ -66,7 +88,10 @@ public struct ToolCapabilities: Sendable {
             window: MockWindowCapability(matrix: matrix),
             appDiscovery: MockAppDiscoveryCapability(matrix: matrix),
             applicationLifecycle: MockApplicationLifecycleCapability(matrix: matrix),
-            appWindows: MockAppWindowsCapability(groups: [])
+            appWindows: MockAppWindowsCapability(groups: []),
+            googleSearch: MockGoogleSearchCapability(matrix: matrix),
+            webOpen: MockWebOpenCapability(matrix: matrix),
+            spotifyControl: MockSpotifyControlCapability(matrix: matrix)
         )
     }
 }

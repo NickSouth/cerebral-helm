@@ -47,7 +47,8 @@ public enum MacToolCapabilities {
         urlOpenRegistry: SessionURLOpenRegistry = SessionURLOpenRegistry(),
         currentModeProvider: @escaping @Sendable () -> String? = { nil },
         layoutDisplay: @escaping @Sendable () -> WindowDisplay? = { nil },
-        reservedStrips: @escaping @Sendable () -> [ReservedStrip] = { [] }
+        reservedStrips: @escaping @Sendable () -> [ReservedStrip] = { [] },
+        spotifyRefresh: SpotifyRefreshSignal = SpotifyRefreshSignal()
     ) -> Composition {
         let systemStatus = MacSystemStatusCapability()
         let secretStore = KeychainSecretCapability()
@@ -61,6 +62,9 @@ public enum MacToolCapabilities {
                 app: NSWorkspaceAppCapability(
                     appsProvider: { referenceStore.current.apps }, workspace: workspace,
                     chromeLauncher: chromeLauncher, currentModeProvider: currentModeProvider
+                ),
+                project: NSWorkspaceProjectCapability(
+                    appsProvider: { referenceStore.current.apps }, workspace: workspace
                 ),
                 url: NSWorkspaceURLCapability(
                     urlsProvider: { referenceStore.current.urls },
@@ -78,8 +82,18 @@ public enum MacToolCapabilities {
                 appDiscovery: MacAppDiscoveryCapability(),
                 applicationLifecycle: MacApplicationLifecycleCapability(),
                 appWindows: MacAppWindowsCapability(),
+                googleSearch: NSWorkspaceGoogleSearchCapability(workspace: workspace),
+                webOpen: NSWorkspaceWebOpenCapability(workspace: workspace),
+                // Playback control (NIC-133): resolves a valid token from the same Keychain-backed
+                // OAuth session the now-playing publisher uses, and sends play/pause/skip to the
+                // active device via the Web API.
+                spotifyControl: SpotifyWebControlCapability(
+                    authSession: SpotifyAuthSession(secretStore: secretStore, refresher: SpotifyTokenExchange()),
+                    refreshSignal: spotifyRefresh
+                ),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,
+                    CapabilityMatrix.Capability.projectOpen,
                     CapabilityMatrix.Capability.urlOpen,
                     CapabilityMatrix.Capability.hookRun,
                     CapabilityMatrix.Capability.systemStatusRead,
@@ -88,6 +102,9 @@ public enum MacToolCapabilities {
                     CapabilityMatrix.Capability.workspaceWindows,
                     CapabilityMatrix.Capability.window,
                     CapabilityMatrix.Capability.appsList,
+                    CapabilityMatrix.Capability.googleSearch,
+                    CapabilityMatrix.Capability.webOpen,
+                    CapabilityMatrix.Capability.spotifyControl,
                 ]
             ),
             systemStatus: systemStatus,

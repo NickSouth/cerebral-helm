@@ -403,12 +403,208 @@
   min-width: 14rem;
 }
 
+/* Calendar → mode mapping (NIC-126): one row per calendar — colour swatch, title, mode select. */
+.settings-calendars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+.settings-calendars__row {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+.settings-calendars__swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex: 0 0 auto;
+  border-radius: var(--ch-radius-sm);
+  background: var(--ch-panel-border);
+}
+.settings-calendars__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-calendars__empty {
+  color: var(--ch-text-secondary);
+}
+
+/* Canvas connect card (NIC-132): the pairing endpoint + token to paste into the Chrome extension,
+   the last-scrape status line, and a Disconnect button. */
+.settings-canvas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  align-items: flex-start;
+}
+.settings-canvas__pair {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  width: 100%;
+  min-width: 0;
+}
+.settings-canvas__label {
+  flex: 0 0 auto;
+  width: 4.5rem;
+  color: var(--ch-text-secondary);
+  font-size: var(--ch-font-size-label);
+}
+.settings-canvas__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-primary);
+  padding: 2px var(--ch-space-2);
+  background: color-mix(in srgb, var(--ch-accent-primary) 8%, transparent);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+}
+.settings-canvas__token {
+  /* The token is long — let it scroll rather than stretch the row. */
+  overflow-x: auto;
+}
+.settings-canvas__status {
+  margin: 0;
+  color: var(--ch-text-secondary);
+  font-size: var(--ch-font-size-label);
+}
+
+/* The manage-list: hide/unhide individual scraped courses + assignments (NIC-132). */
+.settings-canvas__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  width: 100%;
+}
+.settings-canvas__group-title {
+  color: var(--ch-text-secondary);
+  font-size: var(--ch-font-size-label);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.settings-canvas__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+.settings-canvas__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+}
+.settings-canvas__item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+}
+.settings-canvas__item--hidden .settings-canvas__item-label {
+  color: var(--ch-text-faint);
+  text-decoration: line-through;
+}
+
 /* Knowledge-root picker: text field + native Finder "Browse…" button. */
 .settings-root-picker {
   display: flex;
   align-items: center;
   gap: var(--ch-space-2);
   flex: none;
+}
+
+/* Secret-provisioning row (NIC-134): a presence chip + masked input + Save. */
+.settings-secret {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  flex: none;
+}
+
+.settings-secret__status {
+  flex: none;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  white-space: nowrap;
+}
+
+.settings-secret__status[data-bound="true"] {
+  color: var(--ch-accent-primary);
+}
+
+/* Stocks widget ticker editor (NIC-128): add/remove chips + an add row. */
+.settings-tickers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.settings-tickers__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-tickers__empty {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.settings-tickers__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-1);
+  padding: 2px var(--ch-space-1) 2px var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-primary);
+}
+
+.settings-tickers__remove {
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.settings-tickers__remove:hover {
+  color: var(--ch-status-error);
+}
+
+.settings-tickers__add {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.settings-tickers__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
 }
 
 /* Per-mode layout authoring editor (NIC-142). */
