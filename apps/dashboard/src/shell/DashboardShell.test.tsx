@@ -356,6 +356,74 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     );
   });
 
+  // The Wi-Fi indicator (NIC-156). It reports state only — turning the radio on and
+  // off stays with the macOS menu bar — so every case here is about not lying.
+  describe("Wi-Fi indicator", () => {
+    function renderWithNetwork(network: DashboardState["regions"]["systemHealth"]["network"]) {
+      const { container } = renderShellWithState((base) => ({
+        ...base,
+        regions: {
+          ...base.regions,
+          systemHealth: { ...base.regions.systemHealth, network }
+        }
+      }));
+      return container.querySelector(".bottom-bar__wifi") as HTMLElement;
+    }
+
+    it("reports a connected radio with its link rate and signal strength", () => {
+      const wifi = renderWithNetwork({
+        state: "ready",
+        label: "Network",
+        linkMbps: 866,
+        wifiPower: "on",
+        signalRssi: -48
+      });
+      expect(wifi).toHaveAttribute("data-wifi", "on");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi connected · 866 Mbps");
+      // A strong signal lights all three arcs.
+      expect(wifi.querySelector(".health-glyph")).toHaveAttribute("data-signal", "3");
+    });
+
+    it("dims the outer arcs as the signal weakens", () => {
+      const weak = renderWithNetwork({
+        state: "ready",
+        label: "Network",
+        linkMbps: 90,
+        wifiPower: "on",
+        signalRssi: -82
+      });
+      expect(weak.querySelector(".health-glyph")).toHaveAttribute("data-signal", "1");
+    });
+
+    it("says the radio is off rather than showing it as connected", () => {
+      const wifi = renderWithNetwork({ state: "unavailable", label: "Network", wifiPower: "off" });
+      expect(wifi).toHaveAttribute("data-wifi", "off");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi off");
+    });
+
+    it("keeps a machine on Ethernet honest: radio on, but not connected", () => {
+      // No link rate and no signal, yet the radio is genuinely powered. Claiming
+      // "connected" here is the bug this ticket exists to fix.
+      const wifi = renderWithNetwork({ state: "unavailable", label: "Network", wifiPower: "on" });
+      expect(wifi).toHaveAttribute("data-wifi", "idle");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi on · not connected");
+    });
+
+    it("distinguishes a machine with no Wi-Fi hardware from a radio switched off", () => {
+      const wifi = renderWithNetwork({ state: "unavailable", label: "Network", wifiPower: "absent" });
+      expect(wifi).toHaveAttribute("data-wifi", "absent");
+      expect(wifi).toHaveAttribute("aria-label", "No Wi-Fi interface on this machine");
+    });
+
+    it("admits when it has no reading at all instead of implying the radio is off", () => {
+      const wifi = renderWithNetwork(undefined);
+      expect(wifi).toHaveAttribute("data-wifi", "unknown");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi status unavailable");
+      // No measurement means no dimming — an unmeasured signal is not a weak one.
+      expect(wifi.querySelector(".health-glyph")).not.toHaveAttribute("data-signal");
+    });
+  });
+
   it("shows honest-unavailable weather and battery when the dashboard is offline", () => {
     renderShell("failure.dashboard_offline");
     const bar = statusBar();

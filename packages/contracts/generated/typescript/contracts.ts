@@ -227,7 +227,29 @@ export interface DashboardNetworkChannel {
      * Wi-Fi link (transmit) rate in Mbps — the connection's speed, when known.
      */
     linkMbps?: number;
-    state:     DashboardRegionState;
+    /**
+     * Wi-Fi signal strength in dBm (a negative number; closer to zero is stronger), when the
+     * radio is on and associated.
+     */
+    signalRssi?: number;
+    state:       DashboardRegionState;
+    /**
+     * Wi-Fi radio state: powered on, switched off by the user, or no Wi-Fi interface on this
+     * machine. Absent and off are distinct — a Mac with no Wi-Fi hardware is not a Mac whose
+     * radio the user turned off.
+     */
+    wifiPower?: DashboardWiFiPower;
+}
+
+/**
+ * Wi-Fi radio state: powered on, switched off by the user, or no Wi-Fi interface on this
+ * machine. Absent and off are distinct — a Mac with no Wi-Fi hardware is not a Mac whose
+ * radio the user turned off.
+ */
+export enum DashboardWiFiPower {
+    Absent = "absent",
+    Off = "off",
+    On = "on",
 }
 
 export interface DashboardRegionWidgets {

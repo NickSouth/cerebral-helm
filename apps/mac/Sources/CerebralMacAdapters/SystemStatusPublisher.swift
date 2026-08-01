@@ -96,6 +96,8 @@ public actor SystemStatusPublisher {
             network: BridgeEventFactory.SystemMetricsNetworkChannel(
                 availability: snapshot.network.availability.rawValue,
                 linkMbps: snapshot.network.linkMbps,
+                wifiPower: snapshot.network.power.rawValue,
+                signalRssi: snapshot.network.signalRssi,
                 unit: "mbps",
                 sampledAt: snapshot.network.sampledAt
             ),

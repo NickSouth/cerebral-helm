@@ -45,6 +45,29 @@ public struct BatterySample: Equatable, Sendable {
     }
 }
 
+/// The Wi-Fi radio's power state (NIC-156). `absent` means this machine has no
+/// Wi-Fi interface at all; `off` means it has one the user switched off. Keeping
+/// them distinct is what lets the bar indicator stop claiming "Wi-Fi connected"
+/// on a desktop Mac wired to Ethernet.
+public enum WiFiPower: String, Equatable, Sendable {
+    case on
+    case off
+    case absent
+}
+
+/// One sample of the Wi-Fi radio: its power state, and the associated network's
+/// signal strength in dBm when there is one. `rssi` is `nil` whenever the radio is
+/// off, absent, or on but not associated — never a fabricated floor value.
+public struct WiFiStateSample: Equatable, Sendable {
+    public let power: WiFiPower
+    public let rssi: Double?
+
+    public init(power: WiFiPower, rssi: Double?) {
+        self.power = power
+        self.rssi = rssi
+    }
+}
+
 /// The raw-counter seam over Mach / getifaddrs / IOKit / CoreGraphics, so the
 /// delta math and availability mapping are unit-testable with scripted samples.
 /// Any `nil` means "this metric cannot be sampled right now" and maps to an
@@ -57,6 +80,11 @@ public protocol SystemMetricSampling: Sendable {
     /// there is no associated Wi-Fi interface (Ethernet, Wi-Fi off, sampling failed),
     /// which maps to an honest `.unavailable` reading.
     func wifiLinkMbps() -> Double?
+    /// The Wi-Fi radio's power state and signal strength (NIC-156). `nil` means the
+    /// Wi-Fi subsystem could not be sampled at all, which reports as `absent` rather
+    /// than guessing. Independent of `wifiLinkMbps()`: a radio can be on with no
+    /// association (no link rate) and must still read as `on`.
+    func wifiState() -> WiFiStateSample?
     /// Battery charge and charging state, or `nil` when no internal battery
     /// exists (or sampling failed) — a desktop Mac honestly reports unavailable.
     func battery() -> BatterySample?
@@ -74,9 +102,17 @@ public struct SystemStatusChannel: Equatable, Sendable {
 
 /// Network reports the Wi-Fi link (transmit) rate — the connection's speed, not
 /// current throughput (NIC-135). The portable tool reading exposes the same value.
+///
+/// `availability` and `linkMbps` describe the *link rate* metric only; `power` and
+/// `signalRssi` (NIC-156) are independent facts about the radio itself, deliberately
+/// not folded into `availability`. A machine on Ethernet has no link rate
+/// (`.unavailable`) while its Wi-Fi radio may still be legitimately `on`, and the
+/// bar indicator needs that distinction to tell the truth.
 public struct SystemStatusNetworkChannel: Equatable, Sendable {
     public let availability: MetricAvailability
     public let linkMbps: Double?
+    public let power: WiFiPower
+    public let signalRssi: Double?
     public let sampledAt: Date?
 }
 
@@ -199,14 +235,33 @@ public actor MacSystemStatusCapability: SystemStatusCapability {
     }
 
     private func networkChannel() -> SystemStatusNetworkChannel {
+        // The radio's power state is sampled independently of the link rate: an
+        // unsamplable Wi-Fi subsystem reports `absent` rather than guessing `off`
+        // (NIC-156). Signal strength is only meaningful while the radio is on.
+        let wifi = source.wifiState()
+        let power = wifi?.power ?? .absent
+        let signalRssi = power == .on ? wifi?.rssi : nil
+
         // The Wi-Fi link rate is an instantaneous CoreWLAN reading — no delta, so
         // it is `.available` on the first sample. A non-positive or missing rate
         // means no associated Wi-Fi interface (Ethernet, Wi-Fi off), reported as
         // an honest `.unavailable` (NIC-135).
         guard let linkMbps = source.wifiLinkMbps(), linkMbps > 0 else {
-            return SystemStatusNetworkChannel(availability: .unavailable, linkMbps: nil, sampledAt: nil)
+            return SystemStatusNetworkChannel(
+                availability: .unavailable,
+                linkMbps: nil,
+                power: power,
+                signalRssi: signalRssi,
+                sampledAt: nil
+            )
         }
-        return SystemStatusNetworkChannel(availability: .available, linkMbps: linkMbps, sampledAt: wallClock())
+        return SystemStatusNetworkChannel(
+            availability: .available,
+            linkMbps: linkMbps,
+            power: power,
+            signalRssi: signalRssi,
+            sampledAt: wallClock()
+        )
     }
 
     private func batteryChannel() -> SystemStatusBatteryChannel {
@@ -283,6 +338,23 @@ public struct LiveSystemMetricSource: SystemMetricSampling {
         guard let interface = CWWiFiClient.shared().interface() else { return nil }
         let rate = interface.transmitRate()
         return rate > 0 ? rate : nil
+    }
+
+    public func wifiState() -> WiFiStateSample? {
+        // `powerOn()` and `rssiValue()` read without Location authorization — unlike
+        // `ssid()`/`bssid()`, which return nil unless the app is authorized (macOS 14+).
+        // That is why the indicator reports state and signal but not a network name.
+        guard let interface = CWWiFiClient.shared().interface() else {
+            return WiFiStateSample(power: .absent, rssi: nil)
+        }
+        guard interface.powerOn() else {
+            return WiFiStateSample(power: .off, rssi: nil)
+        }
+        // CoreWLAN reports 0 dBm for "on but not associated" — a real reading of 0
+        // is not physically meaningful here, so treat it as no signal rather than a
+        // perfect one.
+        let rssi = interface.rssiValue()
+        return WiFiStateSample(power: .on, rssi: rssi == 0 ? nil : Double(rssi))
     }
 
     public func battery() -> BatterySample? {

@@ -8,7 +8,8 @@ import type {
   RegionState,
   ScheduleRegion,
   SystemHealthRegion,
-  WeatherChannel
+  WeatherChannel,
+  WiFiPower
 } from "../bridge/types";
 import type {
   DashboardState,
@@ -29,6 +30,8 @@ interface MetricsChannelPayload {
 interface MetricsNetworkPayload {
   readonly availability?: string;
   readonly linkMbps?: number | null;
+  readonly wifiPower?: string | null;
+  readonly signalRssi?: number | null;
   readonly sampledAt?: string | null;
 }
 
@@ -64,6 +67,15 @@ function channelState(availability: string | undefined): RegionState {
   }
 }
 
+/**
+ * Narrow the payload's Wi-Fi power to the contract's union, dropping anything a
+ * future or malformed producer sends rather than passing an unknown string to the
+ * indicator (which would render as an unexplained blank).
+ */
+function wifiPowerFrom(value: string | null | undefined): WiFiPower | undefined {
+  return value === "on" || value === "off" || value === "absent" ? value : undefined;
+}
+
 /** Fold one live metrics snapshot into the system-health region shape. */
 function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthRegion {
   const cpuLive = payload.cpu?.availability === "available";
@@ -77,7 +89,11 @@ function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthReg
     network: {
       state: networkState,
       label: "Network",
-      linkMbps: payload.network?.linkMbps ?? undefined
+      linkMbps: payload.network?.linkMbps ?? undefined,
+      // Not gated on `networkState`: the radio's power is exactly what the indicator
+      // needs when the link-rate metric is unavailable (Wi-Fi off, or on Ethernet).
+      wifiPower: wifiPowerFrom(payload.network?.wifiPower),
+      signalRssi: payload.network?.signalRssi ?? undefined
     },
     battery: {
       state: batteryState,

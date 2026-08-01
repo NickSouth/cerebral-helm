@@ -23,6 +23,8 @@ private final class SteadySource: SystemMetricSampling, @unchecked Sendable {
 
     func wifiLinkMbps() -> Double? { 866 }
 
+    func wifiState() -> WiFiStateSample? { WiFiStateSample(power: .on, rssi: -59) }
+
     func battery() -> BatterySample? { BatterySample(percent: 76, isCharging: false, isPluggedIn: true) }
     func displayCount() -> Int? { 2 }
 }
@@ -119,5 +121,9 @@ func payloadCarriesLinkRate() async throws {
     #expect(payload.network.linkMbps == link)
     #expect(payload.network.unit == "mbps")
     #expect(payload.cpu.availability == "available")
+
+    // The radio's state rides the same channel as a wire-level string (NIC-156).
+    #expect(payload.network.wifiPower == "on")
+    #expect(payload.network.signalRssi == -59)
 }
 #endif

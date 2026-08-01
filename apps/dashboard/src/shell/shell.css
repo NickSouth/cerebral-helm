@@ -1106,6 +1106,22 @@
   height: 1.4rem;
 }
 
+/* A radio that is off (or absent) reads as inactive rather than as an error: the
+   struck-through glyph already carries the meaning, so it only steps down in tint. */
+.bottom-bar__wifi[data-wifi="off"],
+.bottom-bar__wifi[data-wifi="absent"] {
+  color: var(--ch-text-muted);
+}
+
+/* Signal strength (NIC-156): the arcs above the measured level dim, so a weak
+   connection reads at a glance. With no `data-signal` every arc stays full — an
+   unmeasured signal must not look like a weak one. */
+.health-glyph[data-signal="1"] .health-glyph__arc--2,
+.health-glyph[data-signal="1"] .health-glyph__arc--3,
+.health-glyph[data-signal="2"] .health-glyph__arc--3 {
+  opacity: 0.25;
+}
+
 /* Battery: a good amount bigger; the whole icon (outline + fill) is tinted by the charge
    threshold (green > 60, yellow ≥ 20, red < 20). */
 .battery-glyph {

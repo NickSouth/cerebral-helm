@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Panel } from "./Panel";
 import { PanelGlyph } from "./PanelGlyph";
-import { HealthGlyph, type HealthGlyphName } from "./HealthGlyph";
+import { HealthGlyph, signalLevelFromRssi, type HealthGlyphName } from "./HealthGlyph";
 import { ChargingBoltGlyph } from "./BatteryGlyph";
 import { StaleMarker } from "../components/StaleMarker";
 import { SkeletonBone } from "../components/Skeleton";
@@ -10,6 +10,7 @@ import { Unavailable } from "../components/Unavailable";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useBridge } from "../state/BridgeProvider";
 import type { SpeedTestResult } from "../bridge/cerebralBridge";
+import type { WiFiPower } from "../bridge/types";
 
 /** Usage-bar tone: mode accent normally, red once a utilization metric crosses 90% (owner rule). */
 function usageTone(percent: number): string {
@@ -122,7 +123,15 @@ function SpeedRing({ phase }: { phase: "idle" | "measuring" | "done" }) {
  * "Test" button runs the read-only `network.speed.test` tool via the bridge and
  * shows the last download/upload result, cached for the session.
  */
-function NetworkRow({ linkMbps }: { linkMbps?: number }) {
+function NetworkRow({
+  linkMbps,
+  wifiPower,
+  signalRssi
+}: {
+  linkMbps?: number;
+  wifiPower?: WiFiPower;
+  signalRssi?: number;
+}) {
   const bridge = useBridge();
   const toggleRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -180,13 +189,18 @@ function NetworkRow({ linkMbps }: { linkMbps?: number }) {
   return (
     <li className="metric metric--network">
       <span className="metric__icon">
-        <HealthGlyph name="network" />
+        <HealthGlyph
+          name={wifiPower === "off" || wifiPower === "absent" ? "network-off" : "network"}
+          signalLevel={signalLevelFromRssi(signalRssi)}
+        />
       </span>
       <span className="metric__label">Network</span>
       {typeof linkMbps === "number" ? (
         <span className="metric__value metric__value--network">{Math.round(linkMbps)} Mbps</span>
       ) : (
-        <span className="unavailable metric__unavailable metric__value--network">No Wi-Fi</span>
+        <span className="unavailable metric__unavailable metric__value--network">
+          {wifiPower === "off" ? "Wi-Fi off" : "No Wi-Fi"}
+        </span>
       )}
       <button
         ref={toggleRef}
@@ -284,7 +298,13 @@ export function SystemHealthPanel() {
               tone={usageTone(systemHealth.memoryPercent)}
             />
           ) : null}
-          {network ? <NetworkRow linkMbps={network.linkMbps} /> : null}
+          {network ? (
+            <NetworkRow
+              linkMbps={network.linkMbps}
+              wifiPower={network.wifiPower}
+              signalRssi={network.signalRssi}
+            />
+          ) : null}
           {batteryLive ? (
             <BarRow
               glyph="battery"

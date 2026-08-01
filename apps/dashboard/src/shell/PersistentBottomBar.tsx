@@ -6,6 +6,7 @@ import { useAppearance } from "../state/AppearanceProvider";
 import { useBridge } from "../state/BridgeProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import type { LayoutSession } from "../state/dashboardState";
+import type { NetworkChannel } from "../bridge/types";
 import { AppGlyph } from "./AppGlyph";
 import { LayoutPinPicker } from "./LayoutPinPicker";
 import { useResolvedAppIcons, type ResolvedIcon } from "./useResolvedAppIcons";
@@ -14,7 +15,7 @@ import { heimlichStateLabel } from "./labels";
 import { BatteryGlyph } from "./BatteryGlyph";
 import { BeamOverlay } from "./BeamOverlay";
 import { WeatherGlyph } from "./WeatherGlyph";
-import { HealthGlyph } from "./HealthGlyph";
+import { HealthGlyph, signalLevelFromRssi } from "./HealthGlyph";
 import { HeimlichAvatar } from "./HeimlichAvatar";
 import { ModeGlyph } from "./ModeGlyph";
 import { WindowNavigator } from "./WindowNavigator";
@@ -480,6 +481,60 @@ function LayoutBar({ session }: { session: LayoutSession }) {
   );
 }
 
+/**
+ * The bottom-bar Wi-Fi indicator (NIC-156). It reports what the machine actually
+ * reports and nothing more: the radio's power state drives the glyph, and signal
+ * strength dims the outer arcs. The four honest outcomes are visually distinct —
+ * connected (accent arcs, dimmed by strength), on-but-unassociated (muted arcs),
+ * off or absent (struck through), and no reading at all (struck through, and the
+ * label says so rather than implying the radio is off).
+ *
+ * Read-only: the macOS menu bar owns turning Wi-Fi on and off (owner decision,
+ * 2026-08-01) — this indicator reports state and is deliberately not a control.
+ */
+function WiFiIndicator({ network }: { network?: NetworkChannel }) {
+  const power = network?.wifiPower;
+  const linkMbps = network?.linkMbps;
+  const signalLevel = signalLevelFromRssi(network?.signalRssi);
+  const connected = power === "on" && (linkMbps !== undefined || network?.signalRssi !== undefined);
+
+  let status: "on" | "idle" | "off" | "absent" | "unknown";
+  let label: string;
+  if (power === undefined) {
+    status = "unknown";
+    label = "Wi-Fi status unavailable";
+  } else if (power === "absent") {
+    status = "absent";
+    label = "No Wi-Fi interface on this machine";
+  } else if (power === "off") {
+    status = "off";
+    label = "Wi-Fi off";
+  } else if (connected) {
+    status = "on";
+    label =
+      linkMbps !== undefined
+        ? `Wi-Fi connected · ${Math.round(linkMbps)} Mbps`
+        : "Wi-Fi connected";
+  } else {
+    status = "idle";
+    label = "Wi-Fi on · not connected";
+  }
+
+  const struck = status === "off" || status === "absent" || status === "unknown";
+
+  return (
+    <span
+      className="bottom-bar__item bottom-bar__wifi"
+      data-wifi={status}
+      role="img"
+      title={label}
+      aria-label={label}
+    >
+      <HealthGlyph name={struck ? "network-off" : "network"} signalLevel={signalLevel} />
+    </span>
+  );
+}
+
 export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
   const state = useDashboardState();
   const { openSettings } = useSettings();
@@ -588,14 +643,7 @@ export function PersistentBottomBar({ now = new Date() }: { now?: Date } = {}) {
           </>
         )}
 
-        <span
-          className="bottom-bar__item bottom-bar__wifi"
-          role="img"
-          title="Wi-Fi connected"
-          aria-label="Wi-Fi connected"
-        >
-          <HealthGlyph name="network" />
-        </span>
+        <WiFiIndicator network={state.regions.systemHealth.network} />
 
         {batteryLive ? (
           <span

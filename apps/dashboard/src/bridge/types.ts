@@ -90,9 +90,20 @@ export interface MetricChannel {
   readonly label: string;
 }
 
-/** Network channel carrying the Wi-Fi link (transmit) rate — the connection's speed (mirrors DashboardNetworkChannel). */
+/** Wi-Fi radio state: on, switched off by the user, or no Wi-Fi interface on this machine. */
+export type WiFiPower = "on" | "off" | "absent";
+
+/**
+ * Network channel carrying the Wi-Fi link (transmit) rate — the connection's speed
+ * (mirrors DashboardNetworkChannel). `wifiPower` and `signalRssi` (NIC-156) describe the
+ * radio itself and are independent of `state`/`linkMbps`, which describe the link-rate
+ * metric: a machine on Ethernet has no link rate while its radio is legitimately on.
+ */
 export interface NetworkChannel extends MetricChannel {
   readonly linkMbps?: number;
+  readonly wifiPower?: WiFiPower;
+  /** Signal strength in dBm (negative; closer to zero is stronger), when associated. */
+  readonly signalRssi?: number;
 }
 
 /** Battery channel with an optional charge percentage (Mac-only capability; mocked pre-Mac). */

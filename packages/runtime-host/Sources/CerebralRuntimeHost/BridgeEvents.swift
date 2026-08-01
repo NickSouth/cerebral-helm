@@ -1166,16 +1166,30 @@ public enum BridgeEventFactory {
     }
 
     /// Network carries the Wi-Fi link (transmit) rate — the connection's speed,
-    /// not measured throughput (NIC-135).
+    /// not measured throughput (NIC-135) — plus the radio's power state and signal
+    /// strength (NIC-156). Power is its own field rather than an `availability`
+    /// value because "radio off" and "no link rate" are different facts: a machine
+    /// on Ethernet with Wi-Fi idle reports no rate but is not switched off.
     public struct SystemMetricsNetworkChannel: Encodable, Sendable {
         public let availability: String
         public let linkMbps: Double?
+        public let wifiPower: String?
+        public let signalRssi: Double?
         public let unit: String?
         public let sampledAt: Date?
 
-        public init(availability: String, linkMbps: Double?, unit: String?, sampledAt: Date?) {
+        public init(
+            availability: String,
+            linkMbps: Double?,
+            wifiPower: String?,
+            signalRssi: Double?,
+            unit: String?,
+            sampledAt: Date?
+        ) {
             self.availability = availability
             self.linkMbps = linkMbps
+            self.wifiPower = wifiPower
+            self.signalRssi = signalRssi
             self.unit = unit
             self.sampledAt = sampledAt
         }
