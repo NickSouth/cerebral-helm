@@ -222,6 +222,39 @@ export interface CanvasStatus {
   readonly deadlines: readonly CanvasStatusItem[];
 }
 
+/** One note in the Setup → Library card (NIC-162), projected from its Markdown file. `path` is
+ *  relative to the knowledge root and `folder` is its containing folder (`inbox`, `projects/atlas`),
+ *  empty at the root. `updated` is ISO-8601, or null when neither the note's frontmatter nor the
+ *  file's date is readable. */
+export interface NoteListItem {
+  readonly path: string;
+  readonly title: string;
+  readonly folder: string;
+  readonly updated: string | null;
+}
+
+/** The durable notes under the knowledge root (NIC-162). `available` is false when the root could
+ *  not be read at all — the card then says so, because "no notes yet" and "your knowledge root is
+ *  gone" must never look the same. `total` counts every note under the root regardless of the
+ *  requested limit, so a card showing the most recent few still reports the real size. */
+export interface ListNotesResult {
+  readonly available: boolean;
+  readonly root: string;
+  readonly total: number;
+  readonly notes: readonly NoteListItem[];
+}
+
+/** The outcome of rebuilding the derived note search index (NIC-163). `rebuilt` is false only when
+ *  the host has no knowledge composition (the browser preview) — the card then shows the action as
+ *  unavailable rather than reporting a rebuild that never ran. Otherwise `root` is the knowledge
+ *  root that was read and `noteCount` is how many notes were indexed. The durable Markdown is never
+ *  written: a rebuild only reconstructs derived state. */
+export interface KnowledgeRebuildResult {
+  readonly rebuilt: boolean;
+  readonly root: string;
+  readonly noteCount: number;
+}
+
 /** On-demand internet speed test result (NIC-135). `status` is "ok" (both
  *  directions), "partial" (one), or "unavailable" (the test could not run);
  *  figures are Mbps and present per `status`. */
@@ -571,6 +604,13 @@ export interface CerebralBridge {
   /** Hide or unhide a scraped Canvas course/assignment (NIC-132) from the School widgets, returning
    *  the fresh status with each item's hidden flag. Persists across scrapes. */
   setCanvasItemHidden(id: string, hidden: boolean): Promise<CanvasStatus>;
+  /** Rebuild the derived note search index from the durable Markdown (NIC-163), for Setup →
+   *  Library. Needed after editing notes outside CerebralHelm — the index only learns about those
+   *  files when it is rebuilt. Never destructive to the Markdown; rejects if the rebuild fails. */
+  rebuildKnowledgeIndex(): Promise<KnowledgeRebuildResult>;
+  /** The durable notes under the knowledge root (NIC-162), for the Setup → Library card. `limit`
+   *  caps the returned notes (most recently changed first); the reported total is unaffected. */
+  listNotes(limit?: number): Promise<ListNotesResult>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */
   updateQuickApps(input: UpdateQuickAppsInput): Promise<UpdateQuickAppsResult>;
   /** Mint a user URL reference (NIC-146) so a typed URL can be pinned as a quick app,

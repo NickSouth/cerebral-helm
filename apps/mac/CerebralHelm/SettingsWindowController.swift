@@ -75,6 +75,15 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
             forMainFrameOnly: true
         ))
 
+        // Seed the Library panel with whether Obsidian can take a browse request
+        // (NIC-162), so the button says up front where it will send you rather than
+        // finding out only after a click.
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "window.__cerebralNotesBrowser = { obsidian: \(WindowCoordinator.obsidianInstalled) };",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+
         webView = WKWebView(frame: .zero, configuration: configuration)
 
         // Sized to the web surface's design dimensions (design spec §10); resizable
@@ -159,6 +168,16 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
     func pushLoginItemStatus(_ status: String) {
         webView.evaluateJavaScript(
             "window.__cerebralLoginItemUpdate && window.__cerebralLoginItemUpdate(\"\(status)\");"
+        )
+    }
+
+    /// Report where a "Browse notes" request actually went (NIC-162): `obsidian`,
+    /// `finder` (Obsidian is not installed), `missing-root`, or `unavailable`. The
+    /// panel states the outcome rather than assuming the click worked — especially
+    /// for Obsidian, which silently ignores a folder it has not registered as a vault.
+    func pushNotesBrowserOutcome(_ outcome: String) {
+        webView.evaluateJavaScript(
+            "window.__cerebralNotesBrowserUpdate && window.__cerebralNotesBrowserUpdate(\"\(outcome)\");"
         )
     }
 

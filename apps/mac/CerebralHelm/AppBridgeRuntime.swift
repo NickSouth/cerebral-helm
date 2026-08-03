@@ -493,6 +493,17 @@ final class AppBridgeRuntime: @unchecked Sendable {
             canvasStatus: canvasStatusClosure,
             canvasReset: canvasResetClosure,
             canvasSetHidden: canvasSetHiddenClosure,
+            // Rebuilds the derived note index from the durable Markdown (NIC-163). The user reaches
+            // this from Setup → Library after editing notes in another editor — the index only
+            // learns about those files when it is rebuilt. Composed through the shared
+            // `makeKnowledgeService`, so it reads the same root the runtime writes to, including a
+            // re-pointed one (NIC-138). Runs off the main actor: a large vault is a filesystem walk.
+            knowledgeRebuild: {
+                try await Task.detached(priority: .userInitiated) {
+                    let knowledge = try makeKnowledgeService(paths)
+                    return KnowledgeRebuildInfo(root: knowledge.rootPath, noteCount: try knowledge.rebuild())
+                }.value
+            },
             // Hides a layout's app windows on closeLayout (NIC-142) — the same
             // permission-free primitive "Windows Stored by Mode" uses.
             workspaceWindows: composition.capabilities.workspaceWindows,

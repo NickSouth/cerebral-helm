@@ -112,7 +112,10 @@ public struct CommandSuggestionEngine: Sendable {
         case .openApp, .openURL, .applyMode, .runAction, .runHook,
              .listApps, .runSpeedTest, .quitAllApps:
             return true
-        case .captureNote, .searchNotes, .googleSearch, .spotifyControl, .webOpen, .openProject:
+        // A note read returns data to its caller rather than doing something the
+        // user would want repeated from the palette (NIC-162), like a search.
+        case .captureNote, .searchNotes, .listNotes, .readNote,
+             .googleSearch, .spotifyControl, .webOpen, .openProject:
             return false
         }
     }
@@ -249,7 +252,8 @@ public struct CommandSuggestionEngine: Sendable {
             return CommandSuggestion(command: command, label: workflowLabels[actionId] ?? actionId, kind: .workflow)
         case let .runHook(entry):
             return CommandSuggestion(command: command, label: entry.label, kind: .hook)
-        case .captureNote, .searchNotes, .googleSearch, .spotifyControl, .webOpen, .openProject,
+        case .captureNote, .searchNotes, .listNotes, .readNote,
+             .googleSearch, .spotifyControl, .webOpen, .openProject,
              .listApps, .runSpeedTest, .quitAllApps:
             let verb = splitFirstToken(command).first
             let label = Verb.all.first { $0.token == verb }?.description ?? command
@@ -324,6 +328,11 @@ public struct CommandSuggestionEngine: Sendable {
             Verb(token: "apps", description: "List installed apps", pattern: "apps", argument: .none),
             Verb(token: "speedtest", description: "Test internet speed", pattern: "speedtest", argument: .none),
             Verb(token: "quit-all", description: "Quit all open apps", pattern: "quit-all", argument: .none),
+            // Deliberately absent: `notes-list` and `notes-read <path>` (NIC-162).
+            // The parser accepts them, but they return data to a caller rather
+            // than doing anything the palette could show, so advertising them here
+            // would offer the user a command with no visible result. Add rows when
+            // a surface renders them.
         ]
     }
 

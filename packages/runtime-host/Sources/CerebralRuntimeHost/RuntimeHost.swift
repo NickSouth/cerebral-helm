@@ -127,6 +127,26 @@ public func operationalDatabase(_ paths: WorkspacePaths) throws -> SQLiteDatabas
     return database
 }
 
+/// The durable knowledge service over the effective knowledge root and the
+/// operational database — the same composition ``makeCommandRuntime`` builds
+/// internally, exposed for the surfaces that need the concrete service rather
+/// than the port: the `knowledge rebuild` CLI and the settings rebuild action
+/// (NIC-163), both of which reconstruct the derived index.
+///
+/// Resolves the user's `knowledgeRootReference` when set (NIC-138), so a rebuild
+/// always reads the same root the runtime writes to.
+public func makeKnowledgeService(_ paths: WorkspacePaths) throws -> MarkdownKnowledgeService {
+    let database = try operationalDatabase(paths)
+    let stored = try? SQLiteSettingsStore(database: database).load()
+    return MarkdownKnowledgeService(
+        rootURL: EffectiveSettings.knowledgeRootURL(
+            reference: stored?.knowledgeRootReference, default: paths.knowledgeRoot
+        ),
+        metadataStore: SQLiteNoteMetadataStore(database: database),
+        searchIndex: SQLiteNoteSearchIndex(database: database)
+    )
+}
+
 /// The durable settings store over the operational database (FR-CFG-04), for hosts
 /// that bind a ``BridgeSession``.
 public func makeSettingsStore(_ paths: WorkspacePaths) throws -> any SettingsStore {

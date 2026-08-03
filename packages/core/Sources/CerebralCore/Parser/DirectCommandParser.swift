@@ -8,9 +8,23 @@ import Foundation
 /// - `note <text>` — capture a note
 /// - `project <path>` — open a repository directory in the configured editor
 /// - `search <text>` — search notes
+/// - `notes-list [n]` — list the notes under the knowledge root (read-only)
+/// - `notes-read <path>` — read one note by its root-relative path (read-only)
 /// - `hook <id>`   — run a configured hook
 /// - `run <id>`    — run a configured workflow / quick action
 /// - `apps`        — list installed applications (read-only discovery)
+///
+/// The note-read verbs are hyphenated (like `quit-all`) rather than the shorter
+/// `notes` / `read`, because `notes` is already the Notes **app** reference id —
+/// a bare `notes` verb would hijack `open notes` for anyone with that app
+/// configured. A verb must not shadow a reference the user already owns.
+///
+/// They are also addressable but **not** advertised in ``supportedPatterns`` or
+/// the suggestion engine's verb catalog (NIC-162): they return data to a caller —
+/// the settings Library surface, the CLI, and eventually an assistant — and
+/// typing one into the palette would show the user nothing. Offering a command
+/// with no visible result is exactly the dishonesty the placeholder rules exist
+/// to prevent, so they stay unlisted until a surface renders them.
 ///
 /// Unknown verbs and unresolved references return suggestions without
 /// executing; a token matching more than one catalog returns a reviewable
@@ -75,6 +89,14 @@ public struct DirectCommandParser: Sendable {
             return parseFreeText(verb: "project", remainder: remainder) { .openProject(repoPath: $0) }
         case "search":
             return parseFreeText(verb: "search", remainder: remainder) { .searchNotes(query: $0) }
+        case "notes-list":
+            return parseNotesList(remainder)
+        case "notes-read":
+            // The remainder is the whole root-relative path (note paths contain
+            // spaces — a file authored elsewhere is titled by its filename), so the
+            // free-text handler takes it verbatim. One hyphenated verb rather than
+            // `note read <path>`: `note <text>` is capture, and would swallow it.
+            return parseFreeText(verb: "notes-read", remainder: remainder) { .readNote(path: $0) }
         case "google":
             // The remainder is the whole search query (queries contain spaces), taken verbatim
             // (NIC-134). The adapter builds the google.com search URL; only this query varies.
@@ -176,6 +198,23 @@ public struct DirectCommandParser: Sendable {
             reason: .unresolvedReference(verb: "run", token: token),
             suggestions: references.workflowIds.sorted()
         ))
+    }
+
+    /// `notes-list [n]` — the whole library, or its `n` most recently changed
+    /// notes. The cap is part of the grammar so every caller can ask for one: a
+    /// tool input no command can set would be a contract nothing honors.
+    private func parseNotesList(_ remainder: String) -> ParseResult {
+        let token = firstToken(remainder)
+        guard !token.isEmpty else { return .parsed(.listNotes(limit: nil)) }
+        guard let limit = Int(token), limit > 0 else {
+            // Not a cap, and not something to guess at — a listing that silently
+            // ignored its argument would misreport what it returned.
+            return .unrecognized(UnrecognizedInput(
+                reason: .unresolvedReference(verb: "notes-list", token: token),
+                suggestions: ["notes-list", "notes-list 50"]
+            ))
+        }
+        return .parsed(.listNotes(limit: limit))
     }
 
     private func parseFreeText(

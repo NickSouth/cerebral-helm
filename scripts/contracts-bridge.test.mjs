@@ -60,7 +60,9 @@ const bridgeOperations = new Set([
   "getCanvasStatus",
   "resetCanvas",
   "setCanvasItemHidden",
-  "suggestCommands"
+  "suggestCommands",
+  "rebuildKnowledgeIndex",
+  "listNotes"
 ]);
 
 function readJson(filePath) {

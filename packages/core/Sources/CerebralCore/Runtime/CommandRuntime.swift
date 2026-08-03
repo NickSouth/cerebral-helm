@@ -592,6 +592,31 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [],
                 actionSummary: "Search notes for \(query)."
             )
+        case let .listNotes(limit):
+            // Read the durable notes on disk (NIC-162). `read_only`, so it runs
+            // without confirmation; the caller chooses the cap, not this seam.
+            return make(
+                toolID: "note.list",
+                input: try? CerebralHelmNoteListInput(limit: limit).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [],
+                actionSummary: "List the notes in the knowledge root."
+            )
+        case let .readNote(path):
+            // Read one note (NIC-162). The path is data, never a destination: the
+            // adapter resolves it against the knowledge root and refuses anything
+            // that lands outside, so a traversal attempt fails rather than reads.
+            return make(
+                toolID: "note.read",
+                input: try? CerebralHelmNoteReadInput(path: path).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "note", value: path, sensitive: false)],
+                actionSummary: "Read the note \(path)."
+            )
         case .listApps:
             return make(
                 toolID: "apps.list",

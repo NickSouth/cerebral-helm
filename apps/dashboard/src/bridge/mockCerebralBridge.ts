@@ -630,6 +630,36 @@ export function createMockCerebralBridge(
       else canvasHidden.delete(id);
       return Promise.resolve(canvasStatus());
     },
+    listNotes(limit?: number) {
+      // A representative library for browser previews of the Setup → Library card (NIC-162):
+      // a captured note and one authored elsewhere (no CerebralHelm id, filename as title).
+      // `total` stays the real size even when `limit` trims the list, mirroring the tool.
+      const notes = [
+        {
+          path: "projects/atlas/kickoff.md",
+          title: "Atlas kickoff",
+          folder: "projects/atlas",
+          updated: "2026-06-23T18:04:00Z"
+        },
+        {
+          path: "inbox/Hull Plating.md",
+          title: "Hull Plating",
+          folder: "inbox",
+          updated: "2026-06-22T09:15:00Z"
+        }
+      ];
+      return Promise.resolve({
+        available: true,
+        root: "/Users/you/CerebralHelm/knowledge",
+        total: notes.length,
+        notes: limit === undefined ? notes : notes.slice(0, limit)
+      });
+    },
+    rebuildKnowledgeIndex() {
+      // The browser preview has no knowledge root and no index, so there is nothing to
+      // rebuild — reported honestly rather than faking a successful rebuild (NIC-163).
+      return Promise.resolve({ rebuilt: false, root: "", noteCount: 0 });
+    },
     updateQuickApps(input) {
       // Stand in for the validated override path (NIC-119c): the same
       // reference-existence check the bridge applies, accepted otherwise. A pinned

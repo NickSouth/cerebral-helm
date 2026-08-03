@@ -36,7 +36,19 @@ private func mockRegistry() throws -> ToolRegistry {
             sensitivity: "private",
             freshness: "fresh"
         ),
-    ])
+    ], entries: [
+        // The same fixture note as a library entry, so note.list/note.read have
+        // something deterministic to answer with (NIC-162).
+        NoteListEntry(
+            path: "inbox/ch-idea-001.md",
+            title: "Fixture note",
+            noteID: "ch-idea-001",
+            folder: "inbox",
+            project: nil,
+            sensitivity: "private",
+            updated: "2026-06-23"
+        ),
+    ], bodies: ["inbox/ch-idea-001.md": "Deterministic body."])
     return try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: descriptorsDirectory(),
         capabilities: MockContractComposition.bundle(),
@@ -51,7 +63,7 @@ func portableHandlersSatisfyContractSuite() async throws {
         registry: try mockRegistry(),
         fixtures: MockContractComposition.fixtures
     )
-    #expect(cases.count == 8)
+    #expect(cases.count == 11)
     await runContractCases(cases)
 }
 
@@ -72,6 +84,45 @@ func readOnlyKnowledgeRootDeniesCapture() async throws {
 
     #expect(result.status == .denied)
     #expect(result.error?.category == .permissionDenied)
+}
+
+@Test("note.list and note.read run read-only, without confirmation (NIC-162)")
+func noteLibraryToolsRunWithoutConfirmation() async throws {
+    let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory())
+    for id in ["note.list", "note.read"] {
+        let descriptor = try #require(descriptors.first { $0.id == id })
+        #expect(descriptor.risk == .readOnly)
+        #expect(descriptor.confirmationPolicyKey == .allowReadWithoutConfirmation)
+        // Reading notes is the user's own files; it needs no macOS permission
+        // beyond reaching the root, and both phases can do it.
+        #expect(descriptor.requiredPermissions == ["knowledge_root_read"])
+        #expect(descriptor.availability.preMAC && descriptor.availability.macOS)
+    }
+}
+
+@Test("an unavailable knowledge root makes the note reads unavailable, never empty (NIC-162)")
+func missingKnowledgeRootIsUnavailableNotEmpty() async throws {
+    let knowledge = MockKnowledgeService(rootState: .missing)
+    let executor = try PreMacToolRuntime.makeExecutor(descriptorsDirectory: descriptorsDirectory(), knowledge: knowledge)
+
+    let listed = await executor.execute(ToolInvocation(toolID: "note.list", input: Data("{}".utf8)))
+    #expect(listed.status == .unavailable)
+    #expect(listed.error?.category == .unavailableCapability)
+
+    let read = await executor.execute(
+        ToolInvocation(toolID: "note.read", input: Data(#"{"path":"inbox/ch-idea-001.md"}"#.utf8))
+    )
+    #expect(read.status == .unavailable)
+}
+
+@Test("note.read rejects input that does not match its contract before touching the service")
+func noteReadRejectsMalformedInput() async throws {
+    let handler = NoteReadHandler(knowledge: MockKnowledgeService())
+    for malformed in [#"{}"#, #"{"path":42}"#] {
+        await #expect(throws: ToolHandlerError.self) {
+            _ = try await handler.execute(input: Data(malformed.utf8))
+        }
+    }
 }
 
 @Test("apps.list maps discovery results into contract-valid output (NIC-119)")

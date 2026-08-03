@@ -59,7 +59,9 @@
         "getCanvasStatus",
         "resetCanvas",
         "setCanvasItemHidden",
-        "suggestCommands"
+        "suggestCommands",
+        "rebuildKnowledgeIndex",
+        "listNotes"
       ]
     },
     "payload": {

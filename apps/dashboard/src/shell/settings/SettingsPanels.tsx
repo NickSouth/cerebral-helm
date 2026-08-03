@@ -12,7 +12,12 @@ import { postShellControl, isShellControlAvailable } from "../shellControl";
 import { PERMISSION_TOOLS } from "./permissionsCatalog";
 import wiredManifest from "../quickActions.manifest.json";
 import type { SettingsCategoryId } from "./categories";
-import type { CalendarInfo, CanvasStatus, CanvasStatusItem } from "../../bridge/cerebralBridge";
+import type {
+  CalendarInfo,
+  CanvasStatus,
+  CanvasStatusItem,
+  ListNotesResult
+} from "../../bridge/cerebralBridge";
 
 /** A titled group within a panel. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -119,6 +124,13 @@ const SYSTEM_PRIMARY = "system-primary";
 interface LoginItemWindow extends Window {
   __cerebralLoginItem?: { status?: string };
   __cerebralLoginItemUpdate?: (status: string) => void;
+}
+
+interface NotesBrowserWindow extends Window {
+  /** Seeded by the native shell: whether anything handles `obsidian://` (NIC-162). */
+  __cerebralNotesBrowser?: { obsidian?: boolean };
+  /** Set by the native shell after a browse request resolves, with where it went. */
+  __cerebralNotesBrowserUpdate?: (outcome: string) => void;
 }
 
 interface KnowledgeRootWindow extends Window {
@@ -1215,6 +1227,180 @@ function CanvasConnectField() {
   );
 }
 
+/** What the native shell reports a browse request actually did (NIC-162). */
+const BROWSE_OUTCOMES: Record<string, string> = {
+  obsidian: "Opened in Obsidian. Not there? Add the folder as a vault in Obsidian first.",
+  finder: "Obsidian isn't installed — opened the folder in Finder instead.",
+  "missing-root": "That folder doesn't exist yet. Choose a knowledge root above.",
+  unavailable: "Couldn't reach your knowledge root."
+};
+
+/**
+ * "Browse notes" (NIC-162): hands the knowledge root to Obsidian.
+ *
+ * CerebralHelm captures and indexes; Obsidian is where notes are read and edited. Rather than
+ * reimplementing a Markdown reader inside a settings panel, this opens the folder in the tool that
+ * already does it well — and says where the request actually went, because Obsidian silently
+ * ignores a folder it has not registered as a vault, and the shell cannot detect that.
+ *
+ * Off the macOS host there is no channel to ask, so the button is honestly disabled.
+ */
+function BrowseNotesField() {
+  const canBrowse = isShellControlAvailable();
+  const hasObsidian = (window as NotesBrowserWindow).__cerebralNotesBrowser?.obsidian === true;
+  const [outcome, setOutcome] = useState<string | null>(null);
+
+  useEffect(() => {
+    const target = window as NotesBrowserWindow;
+    target.__cerebralNotesBrowserUpdate = (next) => setOutcome(next);
+    return () => {
+      delete target.__cerebralNotesBrowserUpdate;
+    };
+  }, []);
+
+  if (!canBrowse) {
+    return <Unavailable label="Browsing your notes requires the macOS host" />;
+  }
+
+  return (
+    <div className="settings-rebuild">
+      <button
+        type="button"
+        className="settings-button"
+        onClick={() => {
+          setOutcome(null);
+          postShellControl("browseKnowledgeRoot");
+        }}
+      >
+        {/* The label names the destination up front, so the click holds no surprise. */}
+        {hasObsidian ? "Open in Obsidian" : "Reveal in Finder"}
+      </button>
+      {outcome !== null && (
+        <span className="settings-secret__status" role="status">
+          {BROWSE_OUTCOMES[outcome] ?? "Couldn't open your knowledge folder."}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The Library summary (NIC-162): what is actually in the knowledge base — how many notes, where
+ * they live, and when one last changed.
+ *
+ * It reads through the same `note.list` tool an assistant would, so there is no UI-only view of the
+ * knowledge base. Every state is reported as itself: a root that cannot be read says so rather than
+ * showing an empty library, an empty root says it is empty, and a note whose date is unreadable is
+ * listed without a fabricated one.
+ */
+function NoteLibraryField() {
+  const bridge = useBridge();
+  // null while loading — distinct from a loaded-but-empty library.
+  const [library, setLibrary] = useState<ListNotesResult | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      // Only the most recent few are shown; `total` still reports the real size.
+      .listNotes(3)
+      .then((result) => {
+        if (active) setLibrary(result);
+      })
+      .catch(() => {
+        if (active) setLibrary({ available: false, root: "", total: 0, notes: [] });
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
+  if (library === null) {
+    return <span className="settings-secret__status">Checking…</span>;
+  }
+  if (!library.available) {
+    return <Unavailable label="Your knowledge root could not be read" />;
+  }
+  if (library.total === 0) {
+    return (
+      <div className="settings-library">
+        <span className="settings-secret__status">No notes yet</span>
+        <code className="settings-library__root">{library.root}</code>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-library">
+      <span className="settings-secret__status" data-bound="true">
+        {library.total} {library.total === 1 ? "note" : "notes"}
+      </span>
+      <code className="settings-library__root">{library.root}</code>
+      <ul className="settings-library__recent">
+        {library.notes.map((note) => (
+          <li key={note.path} className="settings-library__note">
+            <span className="settings-library__note-title">{note.title}</span>
+            <span className="settings-library__note-meta">
+              {note.folder || "root"}
+              {/* A note with no readable date is listed without one, never with a guess. */}
+              {note.updated ? ` · ${formatScrapeAge(note.updated)}` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The "Rebuild index" action (NIC-163): reconstructs the derived note search index from the durable
+ * Markdown, which is what makes notes written in another editor findable.
+ *
+ * Feedback is the awaited response, not a progress stream — a rebuild is a filesystem walk of a
+ * personal knowledge base, fast enough that a spinner and a result line tell the whole story. Each
+ * outcome is reported as itself: how many notes were indexed on success, an honest failure on
+ * error, and "requires the macOS host" where there is no knowledge composition at all. The button
+ * never reports a rebuild that did not happen.
+ */
+function RebuildIndexField() {
+  const bridge = useBridge();
+  const [state, setState] = useState<"idle" | "running" | "done" | "failed" | "unavailable">("idle");
+  const [indexed, setIndexed] = useState(0);
+
+  function rebuild() {
+    setState("running");
+    void bridge
+      .rebuildKnowledgeIndex()
+      .then((result) => {
+        if (!result.rebuilt) {
+          setState("unavailable");
+          return;
+        }
+        setIndexed(result.noteCount);
+        setState("done");
+      })
+      .catch(() => setState("failed"));
+  }
+
+  return (
+    <div className="settings-rebuild">
+      <button type="button" className="settings-button" onClick={rebuild} disabled={state === "running"}>
+        {state === "running" ? "Rebuilding…" : "Rebuild index"}
+      </button>
+      {state === "done" && (
+        <span className="settings-secret__status" data-bound="true" role="status">
+          Rebuilt · {indexed} {indexed === 1 ? "note" : "notes"} indexed
+        </span>
+      )}
+      {state === "failed" && (
+        <span className="settings-rebuild__error" role="status">
+          Rebuild failed. Your notes are unchanged.
+        </span>
+      )}
+      {state === "unavailable" && <Unavailable label="Requires the macOS host" />}
+    </div>
+  );
+}
+
 function SetupPanel() {
   // The knowledge-root control seeds from the persisted read (NIC-141).
   const { status } = useSettingsSnapshot();
@@ -1285,11 +1471,23 @@ function SetupPanelBody() {
         <SectionActions dirty={dirty} onSave={save} onCancel={cancel} />
       </Section>
       <Section title="Library">
-        <Field label="Browse notes">
-          <Unavailable label="Requires the knowledge system" />
+        <Field
+          label="Your notes"
+          hint="Read from the Markdown itself, so notes written in any editor appear here — no rebuild needed."
+        >
+          <NoteLibraryField />
         </Field>
-        <Field label="Rebuild index">
-          <Unavailable label="Requires the knowledge system" />
+        <Field
+          label="Browse notes"
+          hint="Opens your knowledge folder in Obsidian, which reads and edits Markdown far better than this panel could. The first time, add the folder as a vault in Obsidian — it can only open vaults it already knows. Without Obsidian installed, the folder opens in Finder."
+        >
+          <BrowseNotesField />
+        </Field>
+        <Field
+          label="Rebuild index"
+          hint="Search reads a derived index built from your Markdown. Notes you add or edit outside CerebralHelm — in Obsidian, or any editor — become searchable once you rebuild. Your notes are never modified: only the index is reconstructed."
+        >
+          <RebuildIndexField />
         </Field>
       </Section>
       <Section title="Integrations & onboarding">

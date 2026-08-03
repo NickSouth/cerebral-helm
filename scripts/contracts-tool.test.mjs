@@ -16,6 +16,8 @@ const mvpToolIds = new Set([
   "hook.run",
   "note.capture",
   "note.search",
+  "note.list",
+  "note.read",
   "mode.apply",
   "system.status.read",
   "window.arrange",

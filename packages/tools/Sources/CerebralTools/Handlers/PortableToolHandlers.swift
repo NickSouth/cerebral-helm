@@ -26,6 +26,7 @@ func toolHandlerError(from error: KnowledgeServiceError) -> ToolHandlerError {
     case .rootReadOnly: return .permissionDenied("The knowledge root is read-only.")
     case let .collision(message): return .providerFailure(message)
     case let .writeFailed(message): return .providerFailure(message)
+    case let .noteNotFound(message): return .providerFailure(message)
     }
 }
 
@@ -367,6 +368,85 @@ public struct NoteSearchHandler: ToolHandler {
                 )
             }
             return try CerebralHelmNoteSearchOutput(results: results, truncated: outcome.truncated).jsonData()
+        } catch let error as KnowledgeServiceError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+// MARK: - note.list
+
+/// Lists the durable notes under the knowledge root (NIC-162).
+///
+/// Reads the Markdown files rather than the derived index, so a note authored
+/// outside CerebralHelm is listed without waiting for a rebuild. Read-only: the
+/// descriptor's `read_only` risk means no confirmation, and its
+/// `/notes` redaction keeps the user's note titles and paths — an inventory of
+/// what they think about — out of the operational log.
+public struct NoteListHandler: ToolHandler {
+    public let toolID = "note.list"
+    private let knowledge: any KnowledgeService
+
+    public init(knowledge: any KnowledgeService) { self.knowledge = knowledge }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmNoteListInput
+        do { decoded = try CerebralHelmNoteListInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("note.list input does not match its contract.")
+        }
+        do {
+            let outcome = try await knowledge.list(NoteListRequest(limit: decoded.limit))
+            let notes = outcome.entries.map { entry in
+                NoteListItem(
+                    folder: entry.folder,
+                    noteID: entry.noteID,
+                    path: entry.path,
+                    project: entry.project,
+                    sensitivity: entry.sensitivity.flatMap(Sensitivity.init(rawValue:)),
+                    title: entry.title,
+                    updated: entry.updated
+                )
+            }
+            return try CerebralHelmNoteListOutput(
+                notes: notes, root: outcome.root, total: outcome.total, truncated: outcome.truncated
+            ).jsonData()
+        } catch let error as KnowledgeServiceError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+// MARK: - note.read
+
+/// Reads one note by its root-relative path (NIC-162).
+///
+/// The contract constrains the path to root-relative Markdown, and the knowledge
+/// service resolves it and refuses anything landing outside the knowledge root —
+/// so neither a traversal nor a symlink reads a file the root does not contain.
+/// The descriptor redacts `/body` and `/frontmatter`, so a note's contents never
+/// reach a `tool_calls` row (FR-OBS-03).
+public struct NoteReadHandler: ToolHandler {
+    public let toolID = "note.read"
+    private let knowledge: any KnowledgeService
+
+    public init(knowledge: any KnowledgeService) { self.knowledge = knowledge }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmNoteReadInput
+        do { decoded = try CerebralHelmNoteReadInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("note.read input does not match its contract.")
+        }
+        do {
+            let note = try await knowledge.read(NoteReadRequest(path: decoded.path))
+            return try CerebralHelmNoteReadOutput(
+                body: note.body,
+                frontmatter: note.frontmatter,
+                noteID: note.noteID,
+                path: note.path,
+                root: note.root,
+                title: note.title,
+                updated: note.updated
+            ).jsonData()
         } catch let error as KnowledgeServiceError {
             throw toolHandlerError(from: error)
         }

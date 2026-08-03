@@ -12,6 +12,15 @@ public enum CommandIntent: Equatable, Sendable {
     case openProject(repoPath: String)
     case captureNote(text: String)
     case searchNotes(query: String)
+    /// List the notes under the knowledge root (NIC-162) — a single read-only
+    /// `note.list` tool call. Reads the Markdown itself, so a note authored
+    /// outside CerebralHelm is listed before any index rebuild. `limit` caps the
+    /// listing (most recently changed first); nil lists everything.
+    case listNotes(limit: Int?)
+    /// Read one note by its root-relative path (NIC-162) — a single read-only
+    /// `note.read` tool call. The adapter refuses any path resolving outside the
+    /// knowledge root.
+    case readNote(path: String)
     /// Open a Google search for the query in the browser (NIC-134) — a single `google.search`
     /// tool call. The host is fixed to google.com by the adapter; only the query varies.
     case googleSearch(query: String)

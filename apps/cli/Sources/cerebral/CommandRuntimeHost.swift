@@ -1,4 +1,5 @@
 import Foundation
+import ArgumentParser
 import CerebralContracts
 import CerebralCore
 import CerebralKnowledge
@@ -34,21 +35,9 @@ func makeBackupService(_ paths: WorkspacePaths) -> BackupService {
     )
 }
 
-/// Builds the durable knowledge service over the env-aware knowledge root and the
-/// operational database. Used by the `knowledge rebuild` surface, which needs the
-/// concrete service to reconstruct its search index.
-func makeKnowledgeService(_ paths: WorkspacePaths) throws -> MarkdownKnowledgeService {
-    let database = try operationalDatabase(paths)
-    let stored = try? SQLiteSettingsStore(database: database).load()
-    let root = EffectiveSettings.knowledgeRootURL(
-        reference: stored?.knowledgeRootReference, default: paths.knowledgeRoot
-    )
-    return MarkdownKnowledgeService(
-        rootURL: root,
-        metadataStore: SQLiteNoteMetadataStore(database: database),
-        searchIndex: SQLiteNoteSearchIndex(database: database)
-    )
-}
+// The durable knowledge service composition moved to `CerebralRuntimeHost`
+// (`makeKnowledgeService`), so the CLI's `knowledge rebuild` and the settings
+// rebuild action reconstruct the index through the identical wiring (NIC-163).
 
 /// Reconstructs a command's latest status from the operational database — the
 /// SQLite single source of truth that `command status` and `cancel` read (ADR-006).
@@ -65,6 +54,35 @@ func recentEventPayloads(options: GlobalOptions, limit: Int) throws -> [String] 
     let paths = try workspacePaths(options)
     let repository = CommandRepository(database: try operationalDatabase(paths))
     return try repository.recentEventPayloads(limit: limit)
+}
+
+/// Runs one line through the runtime and returns the completed tool's output, so
+/// a surface that renders a tool's *data* (rather than its outcome summary) still
+/// goes through the whole bus — parser, policy, executor, redacted tool-call
+/// record — instead of reaching around it into the service (NIC-162).
+///
+/// Every non-success is raised as a `ValidationError` carrying the runtime's own
+/// message: the CLI reports what actually happened and exits non-zero, never an
+/// empty result dressed as a successful read.
+func toolOutput(_ rawInput: String, options: GlobalOptions) async throws -> Data {
+    let runtime = try makeCommandRuntime(options)
+    switch await runtime.submit(rawInput, source: .cli) {
+    case let .completed(_, status, result):
+        if let error = result?.error {
+            throw ValidationError("\(error.category.rawValue): \(error.message)")
+        }
+        guard let output = result?.output else {
+            throw ValidationError("The command ended \(status.rawValue) without producing a result.")
+        }
+        return output
+    case let .awaitingConfirmation(_, disclosure, _):
+        // Read-only tools never gate, so this means policy was tightened over
+        // them; say so rather than silently approving on the user's behalf.
+        throw ValidationError("This action requires confirmation: \(disclosure.actionSummary)")
+    case let .rejected(reason, suggestions):
+        let hint = suggestions.isEmpty ? "" : " Try: \(suggestions.joined(separator: ", "))"
+        throw ValidationError("\(reason)\(hint)")
+    }
 }
 
 /// Parses and runs one line of input through the runtime, printing the outcome.

@@ -16,6 +16,8 @@ import type {
   ListAppsResult,
   ListCalendarsResult,
   CanvasStatus,
+  KnowledgeRebuildResult,
+  ListNotesResult,
   ListUrlsResult,
   OpenLayoutResult,
   PinLayoutWindowResult,
@@ -302,6 +304,12 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     setCanvasItemHidden(id: string, hidden: boolean) {
       return operation<CanvasStatus>("setCanvasItemHidden", { id, hidden });
+    },
+    rebuildKnowledgeIndex() {
+      return operation<KnowledgeRebuildResult>("rebuildKnowledgeIndex", {});
+    },
+    listNotes(limit?: number) {
+      return operation<ListNotesResult>("listNotes", limit === undefined ? {} : { limit });
     },
     listCalendars() {
       return operation<ListCalendarsResult>("listCalendars", {});

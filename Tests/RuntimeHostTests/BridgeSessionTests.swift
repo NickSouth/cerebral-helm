@@ -2337,3 +2337,141 @@ func resetCanvasReturnsFreshState() async throws {
     #expect(status.courseCount == 0)
     #expect(status.deadlineCount == 0)
 }
+
+// MARK: - Rebuild knowledge index (NIC-163)
+
+private struct KnowledgeRebuildDecode: Decodable {
+    let rebuilt: Bool
+    let root: String
+    let noteCount: Int
+}
+
+@Test("rebuildKnowledgeIndex reports the root it read and how many notes it indexed (NIC-163)")
+func rebuildKnowledgeIndexReportsCoverage() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        knowledgeRebuild: { KnowledgeRebuildInfo(root: "/Users/fixture/knowledge", noteCount: 42) }
+    )
+
+    let response = await session.execute(operationRequest(.rebuildKnowledgeIndex, "{}"))
+
+    #expect(response.status == .ok)
+    let result = try decode(response, as: KnowledgeRebuildDecode.self)
+    #expect(result.rebuilt)
+    #expect(result.root == "/Users/fixture/knowledge")
+    #expect(result.noteCount == 42)
+}
+
+@Test("rebuildKnowledgeIndex reports unavailable without a knowledge composition, never a fake rebuild")
+func rebuildKnowledgeIndexUnavailableWithoutHost() async throws {
+    let session = try makeSession() // no knowledgeRebuild closure injected
+
+    let response = await session.execute(operationRequest(.rebuildKnowledgeIndex, "{}"))
+
+    #expect(response.status == .ok)
+    let result = try decode(response, as: KnowledgeRebuildDecode.self)
+    // The distinction that matters: nothing was rebuilt, and the response says so
+    // rather than reporting a successful rebuild of zero notes.
+    #expect(result.rebuilt == false)
+    #expect(result.noteCount == 0)
+}
+
+@Test("a failed rebuild is reported as a failure that left the notes alone")
+func rebuildKnowledgeIndexFailureIsStructured() async throws {
+    struct RebuildFailure: Error {}
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        knowledgeRebuild: { throw RebuildFailure() }
+    )
+
+    let response = await session.execute(operationRequest(.rebuildKnowledgeIndex, "{}"))
+
+    #expect(response.status == .error)
+    #expect(response.error?.code == "knowledge_rebuild_failed")
+    // The user's Markdown is the source of truth, so a failed rebuild costs search
+    // results and nothing else — the message must say so.
+    #expect(response.error?.message.contains("notes are unchanged") == true)
+}
+
+// MARK: - List notes (NIC-162)
+
+private struct ListNotesDecode: Decodable {
+    struct Item: Decodable {
+        let path: String
+        let title: String
+        let folder: String
+        let updated: String?
+    }
+    let available: Bool
+    let root: String
+    let total: Int
+    let notes: [Item]
+}
+
+@Test("listNotes reads the durable Markdown through the bus, including notes CerebralHelm never wrote")
+func listNotesReadsTheKnowledgeRoot() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+
+    // One captured through the runtime, one written by hand — the Obsidian case.
+    _ = await session.execute(operationRequest(.captureNote, #"{"title":"Quarterly plan","body":"targets"}"#))
+    let external = paths.knowledgeRoot.appendingPathComponent("inbox/Hull Plating.md")
+    try FileManager.default.createDirectory(
+        at: external.deletingLastPathComponent(), withIntermediateDirectories: true
+    )
+    try Data("rivets\n".utf8).write(to: external)
+
+    let response = await session.execute(operationRequest(.listNotes, "{}"))
+
+    #expect(response.status == .ok)
+    let library = try decode(response, as: ListNotesDecode.self)
+    #expect(library.available)
+    #expect(library.root == paths.knowledgeRoot.path)
+    #expect(library.total == 2)
+    let handWritten = try #require(library.notes.first { $0.path == "inbox/Hull Plating.md" })
+    #expect(handWritten.title == "Hull Plating")   // no frontmatter: the filename is the title
+    #expect(handWritten.folder == "inbox")
+}
+
+@Test("a limit trims the notes but never the reported total (NIC-162)")
+func listNotesTotalIgnoresTheLimit() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+    for index in 0..<3 {
+        _ = await session.execute(
+            operationRequest(.captureNote, #"{"title":"Note \#(index)","body":"b"}"#)
+        )
+    }
+
+    let response = await session.execute(operationRequest(.listNotes, #"{"limit":1}"#))
+
+    let library = try decode(response, as: ListNotesDecode.self)
+    #expect(library.notes.count == 1)
+    // The card shows one note but must still say how many there are.
+    #expect(library.total == 3)
+}
+
+@Test("an unreadable knowledge root is unavailable, never an empty library (NIC-162)")
+func listNotesUnavailableRootIsNotEmpty() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+    // The root has never been created: nothing to read, and "no notes yet" would be a lie.
+    try? FileManager.default.removeItem(at: paths.knowledgeRoot)
+
+    let response = await session.execute(operationRequest(.listNotes, "{}"))
+
+    #expect(response.status == .ok)
+    let library = try decode(response, as: ListNotesDecode.self)
+    #expect(library.available == false)
+    #expect(library.total == 0)
+}

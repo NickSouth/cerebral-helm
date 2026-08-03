@@ -47,6 +47,20 @@ public struct CanvasStatusInfo: Sendable, Equatable {
     }
 }
 
+/// The outcome of a knowledge-index rebuild (NIC-163), returned by the host's rebuild closure to the
+/// `rebuildKnowledgeIndex` op: the knowledge root that was read and how many notes were indexed, so
+/// the settings panel reports what the rebuild covered instead of a bare "done". The durable
+/// Markdown is never written — only the derived index is reconstructed.
+public struct KnowledgeRebuildInfo: Sendable, Equatable {
+    public let root: String
+    public let noteCount: Int
+
+    public init(root: String, noteCount: Int) {
+        self.root = root
+        self.noteCount = noteCount
+    }
+}
+
 /// One scraped Canvas item in the settings manage-list (NIC-132): its id, a display label, and
 /// whether the user has hidden it from the School widgets.
 public struct CanvasStatusItem: Sendable, Equatable {
@@ -178,6 +192,15 @@ public final class BridgeSession: @unchecked Sendable {
     /// a host without the ingest store reports the surface unavailable.
     private let canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)?
 
+    /// Rebuilds the derived note search index from the durable Markdown for
+    /// `rebuildKnowledgeIndex` (NIC-163), returning the knowledge root it read and
+    /// how many notes it indexed. Deliberately **not** a bus tool: it maintains
+    /// derived state rather than acting on the user's behalf, like `resetCanvas`.
+    /// It never writes to the Markdown — a rebuild can lose nothing, because the
+    /// files are the source of truth. Optional: a host without a workspace reports
+    /// the surface honestly unavailable rather than claiming a rebuild happened.
+    private let knowledgeRebuild: (@Sendable () async throws -> KnowledgeRebuildInfo)?
+
     /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
     /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
     /// uses. Optional: a host without it (pre-Mac, tests) still ends the session
@@ -240,6 +263,7 @@ public final class BridgeSession: @unchecked Sendable {
         canvasStatus: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasReset: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)? = nil,
+        knowledgeRebuild: (@Sendable () async throws -> KnowledgeRebuildInfo)? = nil,
         workspaceWindows: (any WorkspaceWindowsCapability)? = nil,
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
@@ -264,6 +288,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.canvasStatus = canvasStatus
         self.canvasReset = canvasReset
         self.canvasSetHidden = canvasSetHidden
+        self.knowledgeRebuild = knowledgeRebuild
         self.workspaceWindows = workspaceWindows
         self.app = app
         self.url = url
@@ -398,6 +423,10 @@ public final class BridgeSession: @unchecked Sendable {
             return await resetCanvas(request)
         case .setCanvasItemHidden:
             return await setCanvasItemHidden(request)
+        case .rebuildKnowledgeIndex:
+            return await rebuildKnowledgeIndex(request)
+        case .listNotes:
+            return await listNotes(request)
         case .minimizeWindow:
             return await windowAction(request) { try await $0.minimize(windowID: $1) }
         case .surfaceWindow:
@@ -1788,6 +1817,58 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: CanvasStatusResult(await canvasSetHidden(input.id, input.hidden)))
     }
 
+    /// Lists the durable notes for the Setup → Library card (NIC-162).
+    ///
+    /// Goes through the bus like `searchNotes`, so the settings surface reads the
+    /// knowledge base through the same `note.list` tool an assistant would — there
+    /// is no second, UI-only read path. The reported `total` is every note under
+    /// the root regardless of `limit`, so a card that shows the few most recent
+    /// notes still states honestly how many there are.
+    ///
+    /// An unreachable root is `available: false` rather than an empty list: "no
+    /// notes yet" and "your knowledge root is gone" must never look the same.
+    private func listNotes(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let input: ListNotesInput? = decodePayload(request)
+        let limit = input?.limit
+        let outcome = await runtime.submit(
+            limit.map { "notes-list \($0)" } ?? "notes-list", source: .dashboard
+        )
+        guard
+            case let .completed(_, _, result) = outcome,
+            result?.error == nil,
+            let data = result?.output,
+            let output = try? CerebralHelmNoteListOutput(data: data)
+        else {
+            return ok(request, payload: ListNotesResult.unavailable)
+        }
+        return ok(request, payload: ListNotesResult(output))
+    }
+
+    /// Rebuilds the derived note search index from the durable Markdown (NIC-163).
+    ///
+    /// The user reaches this from Setup → Library after editing notes outside
+    /// CerebralHelm — the index only learns about those files when it is rebuilt.
+    /// It is safe by construction: the Markdown is the source of truth, so the
+    /// worst a failed rebuild costs is search results, never a note. A failure is
+    /// reported as one; the response never claims a rebuild that did not happen.
+    private func rebuildKnowledgeIndex(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let knowledgeRebuild else {
+            return ok(request, payload: KnowledgeRebuildResult.unavailable)
+        }
+        do {
+            return ok(request, payload: KnowledgeRebuildResult(try await knowledgeRebuild()))
+        } catch {
+            return errorResponse(
+                request, category: .providerFailure, code: "knowledge_rebuild_failed",
+                message: "The search index could not be rebuilt. Your notes are unchanged."
+            )
+        }
+    }
+
     /// Mints an app reference that opens Google Chrome in a specific profile (NIC-151),
     /// so a Chrome profile can be pinned as a quick app the same way any app is. The
     /// minted reference targets `com.google.Chrome` and carries the profile directory,
@@ -2120,6 +2201,44 @@ public final class BridgeSession: @unchecked Sendable {
         let text: String
         let limit: Int?
     }
+    /// `listNotes` input (NIC-162): how many of the most recently changed notes to
+    /// return. The reported total is unaffected by it.
+    private struct ListNotesInput: Decodable {
+        let limit: Int?
+    }
+    /// The library wire shape (NIC-162). `available` is false when the knowledge root could not be
+    /// read at all — the card then says so instead of showing an empty library.
+    private struct NoteListItemDTO: Encodable {
+        let path: String
+        let title: String
+        let folder: String
+        let updated: String?
+    }
+    private struct ListNotesResult: Encodable {
+        let available: Bool
+        let root: String
+        /// Every note under the root, regardless of the requested limit.
+        let total: Int
+        let notes: [NoteListItemDTO]
+
+        init(_ output: CerebralHelmNoteListOutput) {
+            available = true
+            root = output.root
+            total = output.total
+            notes = output.notes.map {
+                NoteListItemDTO(path: $0.path, title: $0.title, folder: $0.folder, updated: $0.updated)
+            }
+        }
+
+        private init() {
+            available = false
+            root = ""
+            total = 0
+            notes = []
+        }
+
+        static let unavailable = ListNotesResult()
+    }
     private struct NoteHit: Encodable {
         let noteId: String
         let title: String
@@ -2314,6 +2433,30 @@ public final class BridgeSession: @unchecked Sendable {
         let authorized: Bool
         let calendars: [CalendarDTO]
     }
+    /// The knowledge-rebuild wire shape (NIC-163). `rebuilt` is false only when the host has no
+    /// knowledge composition (pre-Mac/tests) — the UI then shows the surface as unavailable rather
+    /// than reporting a rebuild that never ran. Otherwise it carries the root that was read and how
+    /// many notes were indexed, so the panel can say what the rebuild actually covered.
+    private struct KnowledgeRebuildResult: Encodable {
+        let rebuilt: Bool
+        let root: String
+        let noteCount: Int
+
+        init(_ info: KnowledgeRebuildInfo) {
+            rebuilt = true
+            root = info.root
+            noteCount = info.noteCount
+        }
+
+        private init() {
+            rebuilt = false
+            root = ""
+            noteCount = 0
+        }
+
+        static let unavailable = KnowledgeRebuildResult()
+    }
+
     /// The Canvas ingest status wire shape (NIC-132). `available` is false only when the host has no
     /// ingest store (pre-Mac/tests) — the UI then shows "requires the macOS host". Otherwise it
     /// carries the pairing endpoint/token and the last scrape's age/counts.

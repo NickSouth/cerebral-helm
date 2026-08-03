@@ -6,12 +6,15 @@ import CerebralCore
 /// NIC-24: deterministic direct-command parser.
 
 private let vscode = ReferenceEntry(id: "vscode", label: "Visual Studio Code", target: "com.microsoft.VSCode")
+/// The shipped catalog configures the Notes app under exactly this id, so it is
+/// the live collision case for any note-related verb (NIC-162).
+private let notes = ReferenceEntry(id: "notes", label: "Notes", target: "com.apple.Notes")
 private let github = ReferenceEntry(id: "github", label: "GitHub", target: "https://github.com")
 private let ondraft = ReferenceEntry(id: "ondraft-dev", label: "On Draft (dev)", target: "scripts/ondraft-dev.sh")
 
 private func sampleParser() -> DirectCommandParser {
     let references = CommandReferences(
-        apps: [vscode],
+        apps: [vscode, notes],
         urls: [github],
         hooks: [ondraft],
         modeIds: ["developer", "executive"],
@@ -36,6 +39,53 @@ func supportedGrammarResolves() {
     #expect(parser.parse("run open-developer-layout") == .parsed(.runAction(actionId: "open-developer-layout")))
     #expect(parser.parse("apps") == .parsed(.listApps))
     #expect(parser.parse("speedtest") == .parsed(.runSpeedTest))
+    #expect(parser.parse("notes-list") == .parsed(.listNotes(limit: nil)))
+    #expect(parser.parse("notes-read inbox/ch-idea-001.md") == .parsed(.readNote(path: "inbox/ch-idea-001.md")))
+}
+
+@Test("the note read verbs are addressable but unadvertised until a surface renders them (NIC-162)")
+func noteLibraryGrammar() {
+    let parser = sampleParser()
+
+    // A note authored elsewhere is titled by its filename, so paths carry spaces:
+    // the whole remainder is the path, not just the first token.
+    #expect(
+        parser.parse("notes-read inbox/Hull Plating.md")
+            == .parsed(.readNote(path: "inbox/Hull Plating.md"))
+    )
+    // The cap is part of the grammar, so every caller can ask for one.
+    #expect(parser.parse("notes-list") == .parsed(.listNotes(limit: nil)))
+    #expect(parser.parse("notes-list 50") == .parsed(.listNotes(limit: 50)))
+    // A cap that isn't one never executes: a listing that ignored its argument
+    // would misreport what it returned.
+    for bad in ["notes-list abc", "notes-list 0", "notes-list -3"] {
+        guard case let .unrecognized(unrecognized) = parser.parse(bad) else {
+            Issue.record("\(bad) must not execute")
+            continue
+        }
+        #expect(unrecognized.suggestions == ["notes-list", "notes-list 50"])
+    }
+    // An argument-less read never executes.
+    #expect(
+        parser.parse("notes-read")
+            == .unrecognized(UnrecognizedInput(
+                reason: .missingArgument(verb: "notes-read"),
+                suggestions: DirectCommandParser.supportedPatterns
+            ))
+    )
+    // The verbs must not shadow a reference the user already owns: `notes` is the
+    // Notes app, and it keeps resolving as one.
+    #expect(parser.parse("open notes") == .parsed(.openApp(notes)))
+    #expect(
+        parser.parse("notes")
+            == .unrecognized(UnrecognizedInput(
+                reason: .unknownVerb("notes"),
+                suggestions: DirectCommandParser.supportedPatterns
+            ))
+    )
+    // Deliberately absent from the advertised grammar: both return data to a
+    // caller, and the palette has nothing to show for them yet.
+    #expect(!DirectCommandParser.supportedPatterns.contains { $0.hasPrefix("notes-") })
 }
 
 @Test("project takes the whole remainder as the path and requires an argument (NIC-131)")

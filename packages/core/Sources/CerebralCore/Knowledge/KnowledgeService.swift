@@ -8,6 +8,13 @@
 public protocol KnowledgeService: Sendable {
     func capture(_ request: NoteCaptureRequest) async throws -> NoteCaptureOutcome
     func search(_ request: NoteSearchRequest) async throws -> NoteSearchOutcome
+    /// Enumerates the durable notes under the knowledge root (NIC-162). Reads the
+    /// Markdown itself rather than the derived index, so a note written outside
+    /// CerebralHelm — by hand, or in Obsidian — is listed before any rebuild.
+    func list(_ request: NoteListRequest) async throws -> NoteListOutcome
+    /// Reads one note by its root-relative path (NIC-162). Read-only: nothing in
+    /// this port writes, and the path never resolves outside the knowledge root.
+    func read(_ request: NoteReadRequest) async throws -> NoteReadOutcome
 }
 
 public struct NoteCaptureRequest: Equatable, Sendable {
@@ -78,13 +85,116 @@ public struct NoteSearchOutcome: Equatable, Sendable {
     }
 }
 
+/// One note in a library listing (NIC-162), projected from its Markdown file.
+///
+/// `path` — root-relative, forward-slashed — is the stable handle: it addresses a
+/// note the same way whether CerebralHelm wrote it or the user did. `noteID` is
+/// therefore optional: only a note carrying CerebralHelm frontmatter has one, and
+/// a file created in another editor is still a first-class note.
+public struct NoteListEntry: Equatable, Sendable {
+    public let path: String
+    public let title: String
+    public let noteID: String?
+    /// The containing folder, root-relative (`inbox`, `projects/atlas`), empty at
+    /// the root — the hierarchy FR-KNW-03 defines, for grouping by project/area.
+    public let folder: String
+    public let project: String?
+    public let sensitivity: String?
+    /// ISO-8601. The frontmatter `updated` when present, else the file's
+    /// modification date, so a note edited outside CerebralHelm still sorts by
+    /// when it actually changed. Nil only when neither is readable.
+    public let updated: String?
+
+    public init(
+        path: String, title: String, noteID: String?, folder: String,
+        project: String?, sensitivity: String?, updated: String?
+    ) {
+        self.path = path
+        self.title = title
+        self.noteID = noteID
+        self.folder = folder
+        self.project = project
+        self.sensitivity = sensitivity
+        self.updated = updated
+    }
+}
+
+public struct NoteListRequest: Equatable, Sendable {
+    /// Caps the returned entries; the outcome reports whether the cap truncated.
+    public let limit: Int?
+
+    public init(limit: Int?) {
+        self.limit = limit
+    }
+}
+
+public struct NoteListOutcome: Equatable, Sendable {
+    /// The absolute path of the effective knowledge root the entries came from, so
+    /// a caller can cite the source location without a second read channel.
+    public let root: String
+    /// Most recently updated first, then by path so equal timestamps stay stable.
+    public let entries: [NoteListEntry]
+    /// Every note found under the root, before any limit. A caller that asks for
+    /// the five most recent notes still learns how many there are — a count that
+    /// silently meant "as many as I asked for" would misdescribe the library.
+    public let total: Int
+    /// Whether the requested limit cut the listing short (`total > entries.count`).
+    public let truncated: Bool
+
+    public init(root: String, entries: [NoteListEntry], total: Int, truncated: Bool) {
+        self.root = root
+        self.entries = entries
+        self.total = total
+        self.truncated = truncated
+    }
+}
+
+public struct NoteReadRequest: Equatable, Sendable {
+    /// The note's root-relative path, as reported by ``NoteListEntry/path``.
+    public let path: String
+
+    public init(path: String) {
+        self.path = path
+    }
+}
+
+/// One note's full content (NIC-162): its parsed frontmatter, its Markdown body,
+/// and where it lives. Frontmatter is surfaced verbatim as parsed — including
+/// keys CerebralHelm does not write — because the file is the source of truth.
+public struct NoteReadOutcome: Equatable, Sendable {
+    public let root: String
+    public let path: String
+    public let title: String
+    public let noteID: String?
+    public let frontmatter: [String: String]
+    public let body: String
+    public let updated: String?
+
+    public init(
+        root: String, path: String, title: String, noteID: String?,
+        frontmatter: [String: String], body: String, updated: String?
+    ) {
+        self.root = root
+        self.path = path
+        self.title = title
+        self.noteID = noteID
+        self.frontmatter = frontmatter
+        self.body = body
+        self.updated = updated
+    }
+}
+
 /// Failures the knowledge service raises, mirroring the canonical knowledge
 /// fixtures (PRD §13.2): a missing or read-only root, a collision with an existing
-/// note, or a write failure.
+/// note, a write failure, or a note that cannot be read at the requested path.
 public enum KnowledgeServiceError: Error, Equatable, Sendable {
     case rootUnavailable
     case rootReadOnly
     /// A note already exists at the target path; capture never overwrites (AC-44.3).
     case collision(String)
     case writeFailed(String)
+    /// No readable note at the requested path (NIC-162). Also the answer to a path
+    /// that resolves outside the knowledge root: a read never confirms or denies
+    /// anything about the filesystem beyond the root.
+    case noteNotFound(String)
 }

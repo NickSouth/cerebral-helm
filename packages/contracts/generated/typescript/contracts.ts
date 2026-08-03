@@ -486,11 +486,13 @@ export enum Operation {
     ListApps = "listApps",
     ListCalendars = "listCalendars",
     ListChromeProfiles = "listChromeProfiles",
+    ListNotes = "listNotes",
     ListUrls = "listUrls",
     ListWindows = "listWindows",
     MinimizeWindow = "minimizeWindow",
     OpenLayout = "openLayout",
     PinLayoutWindow = "pinLayoutWindow",
+    RebuildKnowledgeIndex = "rebuildKnowledgeIndex",
     ResetCanvas = "resetCanvas",
     RunSpeedTest = "runSpeedTest",
     SearchNotes = "searchNotes",
@@ -1294,6 +1296,118 @@ export interface CerebralHelmNoteCaptureOutput {
     created: boolean;
     noteId:  string;
     path:    string;
+}
+
+export interface CerebralHelmNoteListInput {
+    /**
+     * Caps the returned notes, most recently changed first. Omitted means every note under the
+     * knowledge root; the output reports whether a cap truncated the listing, so a caller is
+     * never silently shown a partial library.
+     */
+    limit?: number;
+}
+
+export interface CerebralHelmNoteListOutput {
+    /**
+     * The notes on disk, most recently changed first, then by path so equal timestamps stay
+     * stable.
+     */
+    notes: NoteListItem[];
+    /**
+     * The absolute path of the knowledge root the notes were read from, so a caller can cite
+     * the source location without a second read.
+     */
+    root: string;
+    /**
+     * Every note found under the root, before any limit. A caller that asks for the five most
+     * recent notes still learns how many there are, so a count is never quietly the size of its
+     * own request.
+     */
+    total: number;
+    /**
+     * Whether the requested limit cut the listing short — equivalently, `total` exceeds the
+     * length of `notes`.
+     */
+    truncated: boolean;
+}
+
+export interface NoteListItem {
+    /**
+     * The containing folder relative to the knowledge root (`inbox`, `projects/atlas`), empty
+     * at the root — the durable hierarchy, for grouping by project or area.
+     */
+    folder: string;
+    /**
+     * The CerebralHelm note id from frontmatter. Absent for a note authored outside
+     * CerebralHelm, which is an ordinary case, not a defect — such a note has no id and is
+     * addressed by path. Deliberately unpatterned, unlike note-search-output's noteId: a file
+     * may be named anything.
+     */
+    noteId?: string;
+    /**
+     * The note's path relative to the knowledge root, forward-slashed. This is the handle:
+     * note.read takes it verbatim.
+     */
+    path: string;
+    /**
+     * The project the note belongs to: its frontmatter project, else the folder beneath
+     * `projects/` that contains it.
+     */
+    project?:     string;
+    sensitivity?: Sensitivity;
+    /**
+     * The frontmatter title when the note declares one, else its filename.
+     */
+    title: string;
+    /**
+     * ISO-8601. The frontmatter `updated` when present, else the file's modification date, so a
+     * note edited in another editor still reports when it actually changed. Absent only when
+     * neither is readable.
+     */
+    updated?: string;
+}
+
+export interface CerebralHelmNoteReadInput {
+    /**
+     * The note's path relative to the knowledge root, as reported by note.list. Root-relative
+     * and Markdown only; the adapter additionally resolves the path and refuses anything that
+     * lands outside the knowledge root, so this pattern is a first gate, not the boundary.
+     */
+    path: string;
+}
+
+export interface CerebralHelmNoteReadOutput {
+    /**
+     * The Markdown body, verbatim, with the frontmatter block removed. Redacted out of the
+     * operational log by the descriptor: a note body never reaches a tool_calls row.
+     */
+    body: string;
+    /**
+     * The note's frontmatter exactly as parsed, including keys CerebralHelm does not write —
+     * the file is the source of truth, so nothing in it is dropped on the way out.
+     */
+    frontmatter: { [key: string]: string };
+    /**
+     * The CerebralHelm note id from frontmatter; absent for a note authored elsewhere.
+     */
+    noteId?: string;
+    /**
+     * The note's path relative to the knowledge root.
+     */
+    path: string;
+    /**
+     * The absolute path of the knowledge root the note was read from; joined with `path` it is
+     * the note's source location.
+     */
+    root: string;
+    /**
+     * The frontmatter title when the note declares one, else its filename.
+     */
+    title: string;
+    /**
+     * ISO-8601. The frontmatter `updated` when present, else the file's modification date.
+     */
+    updated?: string;
 }
 
 export interface CerebralHelmNoteSearchInput {

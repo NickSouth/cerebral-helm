@@ -93,7 +93,13 @@ private func registry(_ bundle: ToolCapabilities) throws -> ToolRegistry {
                 noteID: "ch-idea-001", title: "Fixture note", excerpt: "Deterministic body.",
                 path: "inbox/ch-idea-001.md", updated: "2026-06-23", sensitivity: "private", freshness: "fresh"
             ),
-        ]),
+        ], entries: [
+            // The same fixture note as a library entry, for note.list/note.read (NIC-162).
+            NoteListEntry(
+                path: "inbox/ch-idea-001.md", title: "Fixture note", noteID: "ch-idea-001",
+                folder: "inbox", project: nil, sensitivity: "private", updated: "2026-06-23"
+            ),
+        ], bodies: ["inbox/ch-idea-001.md": "Deterministic body."]),
         hookCatalog: HookCatalog(["echo-hook": hookInvocation])
     )
 }
@@ -105,7 +111,7 @@ func nativeCompositionSatisfiesFullSuite() async throws {
     let bundle = nativeBundle()
     let cases = AdapterContractSuite.capabilityCases(bundle: bundle, fixtures: nativeFixtures)
         + AdapterContractSuite.handlerCases(registry: try registry(bundle), fixtures: nativeFixtures)
-    #expect(cases.count == 12)
+    #expect(cases.count == 15)
     for contractCase in cases {
         do {
             try await contractCase.run()

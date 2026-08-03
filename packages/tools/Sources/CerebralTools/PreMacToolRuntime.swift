@@ -44,6 +44,8 @@ public enum PreMacToolRuntime {
             "web.open": WebOpenHandler(capability: capabilities.webOpen),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
+            "note.list": NoteListHandler(knowledge: knowledge),
+            "note.read": NoteReadHandler(knowledge: knowledge),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
             "window.arrange": WindowArrangeHandler(capability: capabilities.window, appTargets: appTargets),
             "mode.apply": ModeApplyHandler(
@@ -116,6 +118,8 @@ public enum PreMacToolRuntime {
         case "hook.run": _ = try CerebralHelmHookRunInput(data: data)
         case "note.capture": _ = try CerebralHelmNoteCaptureInput(data: data)
         case "note.search": _ = try CerebralHelmNoteSearchInput(data: data)
+        case "note.list": _ = try CerebralHelmNoteListInput(data: data)
+        case "note.read": _ = try CerebralHelmNoteReadInput(data: data)
         case "mode.apply": _ = try CerebralHelmModeApplyInput(data: data)
         case "window.arrange": _ = try CerebralHelmWindowArrangeInput(data: data)
         case "system.status.read": _ = try CerebralHelmSystemStatusReadInput(data: data)

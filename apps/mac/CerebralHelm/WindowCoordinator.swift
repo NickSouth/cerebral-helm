@@ -760,6 +760,8 @@ final class WindowCoordinator: @unchecked Sendable {
             fanOutLayoutSession()
         case "pickKnowledgeRoot":
             presentKnowledgeRootPicker()
+        case "browseKnowledgeRoot":
+            browseKnowledgeRoot()
         case "reportBottomBarRect":
             updateReservedStrip(body, from: source)
         default:
@@ -786,6 +788,49 @@ final class WindowCoordinator: @unchecked Sendable {
             barFrame: barFrame, screenFrame: screen.frame
         )
         onReservedStripsChanged?(Array(reservedStrips.values))
+    }
+
+    /// NIC-162: open the knowledge root in Obsidian — the browsing surface for
+    /// durable notes.
+    ///
+    /// The notes are plain Markdown that Obsidian reads far better than a settings
+    /// panel could, so CerebralHelm hands off rather than reimplementing a reader.
+    /// Without Obsidian installed the folder is revealed in Finder instead: the
+    /// action still does something real, and the panel is told which happened so it
+    /// can say so. Nothing is written either way — this only opens what exists.
+    private func browseKnowledgeRoot() {
+        MainActor.assumeIsolated {
+            guard let paths, let root = try? makeKnowledgeService(paths).rootPath else {
+                settings?.pushNotesBrowserOutcome("unavailable")
+                return
+            }
+            let rootURL = URL(fileURLWithPath: root)
+            // A root that was never created (or was moved away) is not something to
+            // open — say so instead of handing Obsidian a path that does not exist.
+            guard FileManager.default.fileExists(atPath: rootURL.path) else {
+                settings?.pushNotesBrowserOutcome("missing-root")
+                return
+            }
+
+            switch ObsidianLink.destination(forRoot: rootURL, obsidianInstalled: Self.obsidianInstalled) {
+            case let .obsidian(url):
+                NSWorkspace.shared.open(url)
+                // Obsidian opens, but only if the folder is already one of its
+                // vaults — the URI cannot register a new one, and there is no way
+                // to detect that from here. The panel carries the one-time hint.
+                settings?.pushNotesBrowserOutcome("obsidian")
+            case let .revealInFinder(url):
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+                settings?.pushNotesBrowserOutcome("finder")
+            }
+        }
+    }
+
+    /// Whether anything on this Mac handles `obsidian://`. Resolved per call rather
+    /// than cached: the user may install Obsidian while the app is running.
+    static var obsidianInstalled: Bool {
+        guard let probe = URL(string: "obsidian://open") else { return false }
+        return NSWorkspace.shared.urlForApplication(toOpen: probe) != nil
     }
 
     /// NIC-138: choose the durable-knowledge root folder through a native directory
