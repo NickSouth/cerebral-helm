@@ -15,13 +15,13 @@
   "quickApps": [],
   "quickActions": [
     "open-entertainment-layout",
-    "open-media",
-    "capture-note",
-    "check-system-status",
-    "resume-playback",
-    "open-queue",
-    "browse-library",
-    "start-party-mode"
+    "create-playlist",
+    "create-event",
+    "search-youtube",
+    "check-scoreboard",
+    "suggest-a-movie",
+    "start-party-mode",
+    null
   ],
   "widgets": {
     "left": "spotify",

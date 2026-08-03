@@ -1515,9 +1515,17 @@ export enum AvailabilityEnum {
 }
 
 export interface CerebralHelmToolDescriptor {
-    adapterRequirements:   AdapterRequirements;
-    availability:          AvailabilityClass;
-    cancellable:           boolean;
+    adapterRequirements: AdapterRequirements;
+    availability:        AvailabilityClass;
+    cancellable:         boolean;
+    /**
+     * Which confirmation rule the deterministic policy engine applies to this tool.
+     * `allow_external_write_when_user_authored` is the one provenance-conditioned key: a
+     * low-stakes external write runs one-click when the user authored the arguments, and still
+     * confirms when a model proposed them. It only ever affects the `external_write` class —
+     * destructive, financial, and purchase_or_booking are never exemptible — and the
+     * stricter-only 'ask before all actions' overlay still re-arms confirmation over it.
+     */
     confirmationPolicyKey: ConfirmationPolicyKey;
     id:                    string;
     idempotency:           Idempotency;
@@ -1552,8 +1560,16 @@ export interface AvailabilityClass {
     preMac: boolean;
 }
 
+/**
+ * Which confirmation rule the deterministic policy engine applies to this tool.
+ * `allow_external_write_when_user_authored` is the one provenance-conditioned key: a
+ * low-stakes external write runs one-click when the user authored the arguments, and still
+ * confirms when a model proposed them. It only ever affects the `external_write` class —
+ * destructive, financial, and purchase_or_booking are never exemptible — and the
+ * stricter-only 'ask before all actions' overlay still re-arms confirmation over it.
+ */
 export enum ConfirmationPolicyKey {
-    AllowExternalWriteWithoutConfirmation = "allow_external_write_without_confirmation",
+    AllowExternalWriteWhenUserAuthored = "allow_external_write_when_user_authored",
     AllowReadWithoutConfirmation = "allow_read_without_confirmation",
     ConfirmDestructive = "confirm_destructive",
     ConfirmExternalWrite = "confirm_external_write",

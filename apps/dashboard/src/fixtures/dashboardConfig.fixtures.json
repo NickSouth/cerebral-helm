@@ -12,13 +12,13 @@
       "quickApps": [],
       "quickActions": [
         "daily-brief",
-        "open-calendar",
         "capture-note",
-        "review-projects",
-        "check-system-status",
-        "open-mail",
-        "start-focus-block",
-        "open-news-brief"
+        "create-event",
+        "create-project",
+        "send-text",
+        "email-report",
+        "system-status-checks",
+        "shut-down"
       ],
       "widgets": {
         "left": "stocks",
@@ -43,13 +43,13 @@
       "quickApps": [],
       "quickActions": [
         "open-developer-layout",
-        "open-workspace",
-        "run-tests",
-        "search-notes",
-        "git-status",
+        "git-clone",
+        "create-event",
+        "create-ticket",
+        "check-ondraft",
         "open-terminal",
-        "review-pull-requests",
-        "capture-note"
+        null,
+        null
       ],
       "widgets": {
         "left": "project-git-status",
@@ -75,12 +75,12 @@
       "quickActions": [
         "open-school-layout",
         "open-schedule",
-        "capture-idea",
+        "create-event",
+        "take-notes",
         "search-notes",
-        "review-assignments",
-        "start-study-block",
-        "summarize-notes",
-        "open-courses"
+        null,
+        null,
+        null
       ],
       "widgets": {
         "left": "deadlines",
@@ -105,13 +105,13 @@
       "quickApps": [],
       "quickActions": [
         "open-entertainment-layout",
-        "open-media",
-        "capture-note",
-        "check-system-status",
-        "resume-playback",
-        "open-queue",
-        "browse-library",
-        "start-party-mode"
+        "create-playlist",
+        "create-event",
+        "search-youtube",
+        "check-scoreboard",
+        "suggest-a-movie",
+        "start-party-mode",
+        null
       ],
       "widgets": {
         "left": "spotify",

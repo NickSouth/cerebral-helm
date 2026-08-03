@@ -193,15 +193,20 @@ Contains:
 - mode-aware system greeting;
 - Heimlich's consciousness: the animated ribbon field (see 5.8);
 - optional concise contextual summary;
-- exactly eight quick actions at the bottom.
+- up to eight quick actions at the bottom.
 
 Quick-action geometry is binding:
 
-- first row: four compact horizontal action bars;
-- second row: four slightly larger action boxes;
+- first row: up to four compact horizontal action bars;
+- second row: up to four slightly larger action boxes;
 - all actions remain inside the shared Heimlich component;
 - actions are configurable by mode;
-- Developer, School, and Entertainment each include `Open [Mode] Layout` as one of the eight actions.
+- **an unconfigured slot is omitted, not rendered as a placeholder.** Each slot keeps its
+  quarter-row width, so a partly-filled row centers its remaining actions and the bar/box
+  split is preserved. A mode holding slots for later reads as deliberately shorter rather
+  than unfinished. A *configured but not yet built* action still renders — labeled, greyed,
+  and disabled — because hiding it would misrepresent the mode's design;
+- Developer, School, and Entertainment each include `Open [Mode] Layout` as one of their actions.
 
 Executive actions emphasize broad daily orchestration. The other modes emphasize their specific workflow and default layout.
 
@@ -513,7 +518,7 @@ The dashboard design is implemented correctly when:
 2. Region placement remains stable while mode color and content change substantially.
 3. Search always places `Ask Heimlich` first and can navigate apps, settings, and local CerebralHelm destinations.
 4. Quick Apps supports one to five configured apps plus More Apps.
-5. Heimlich ambient view has exactly eight actions in the required four-plus-four geometry.
+5. Heimlich ambient view has up to eight actions in the required four-plus-four geometry, with unconfigured slots omitted and the remainder centered within their row.
 6. Developer, School, and Entertainment expose their layout action.
 7. Active conversation is a translucent overlay over the still-running ambient center (it never replaces it), provides follow-up input docked at the bottom of the center, and can be minimized.
 8. System Health contains CPU, memory, battery, and network speed with degraded states.

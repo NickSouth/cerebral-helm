@@ -65,7 +65,7 @@ public final class CommandRuntime: @unchecked Sendable {
         let toolPurpose: String
         let declaredRisk: Risk
         let runtimeRiskPolicy: RuntimeRiskPolicy
-        let waivesExternalWriteConfirmation: Bool
+        let honorsUserAuthoredExemption: Bool
         let plannedActionRisks: [Risk]
         let input: Data
         let shellInvocation: HookInvocation?
@@ -269,7 +269,11 @@ public final class CommandRuntime: @unchecked Sendable {
                 runtimeRiskPolicy: resolved.runtimeRiskPolicy,
                 plannedActionRisks: resolved.plannedActionRisks,
                 shellInvocation: resolved.shellInvocation,
-                waivesExternalWriteConfirmation: resolved.waivesExternalWriteConfirmation
+                honorsUserAuthoredExemption: resolved.honorsUserAuthoredExemption,
+                // Derived here, from the envelope the runtime itself stamped — never read
+                // from tool input, so a model choosing arguments cannot claim authorship
+                // of them (FR-SAF-02).
+                provenance: ActionProvenance(source: envelope.source)
             )
         )
 
@@ -345,13 +349,18 @@ public final class CommandRuntime: @unchecked Sendable {
             shellInvocationForPolicy: hookInvocations.count == 1 ? hookInvocations.values.first : nil
         )
 
+        // A workflow is an aggregate of several tools and has no descriptor of its own, so no
+        // user-authored exemption applies to it: a quick action whose plan reaches
+        // external_write still confirms once at aggregate risk, disclosing every step. Provenance
+        // is passed for a uniform policy path, not to relax anything here.
         let evaluation = policy.evaluate(
             PolicyRequest(
                 toolID: actionID,
                 declaredRisk: .readOnly,
                 runtimeRiskPolicy: .highestPlannedAction,
                 plannedActionRisks: plan.actions.map(\.risk),
-                shellInvocation: workflow.shellInvocationForPolicy
+                shellInvocation: workflow.shellInvocationForPolicy,
+                provenance: ActionProvenance(source: envelope.source)
             )
         )
 
@@ -555,9 +564,10 @@ public final class CommandRuntime: @unchecked Sendable {
             )
         case let .spotifyControl(action):
             // Control Spotify playback (NIC-133). The descriptor's `external_write` risk is honest —
-            // this hits Spotify's API — but its `allow_external_write_without_confirmation` policy key
-            // waives confirmation (owner: play/pause/skip is too low-stakes to prompt), so it runs
-            // one-click; the "Ask before all actions" toggle still re-arms a prompt over it.
+            // this hits Spotify's API — but its `allow_external_write_when_user_authored` policy key
+            // exempts it when the user drove the control (play/pause/skip is too low-stakes to
+            // prompt), so it runs one-click. An agent proposing the same call still confirms, and
+            // the "Ask before all actions" toggle re-arms a prompt over both.
             return make(
                 toolID: "spotify.control",
                 // An unrecognised action doesn't match the input enum → nil input → the command is
@@ -730,7 +740,7 @@ public final class CommandRuntime: @unchecked Sendable {
             toolPurpose: tool.descriptor.purpose,
             declaredRisk: tool.risk,
             runtimeRiskPolicy: tool.descriptor.runtimeRiskPolicy,
-            waivesExternalWriteConfirmation: tool.descriptor.confirmationPolicyKey == .allowExternalWriteWithoutConfirmation,
+            honorsUserAuthoredExemption: tool.descriptor.confirmationPolicyKey == .allowExternalWriteWhenUserAuthored,
             plannedActionRisks: plannedActionRisks,
             input: input,
             shellInvocation: shellInvocation,

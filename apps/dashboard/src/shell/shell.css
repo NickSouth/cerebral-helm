@@ -436,14 +436,19 @@
   gap: var(--ch-space-2);
 }
 
+/* Flex rather than a 4-column grid: an unconfigured slot is omitted from the DOM, and each slot
+   holds its quarter-row width regardless, so a partly-filled row centres its survivors instead of
+   stretching them across the empty tracks (docs/quick-actions/PLAN.md). */
 .quick-actions__bars,
 .quick-actions__boxes {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
+  justify-content: center;
   gap: var(--ch-space-2);
 }
 
 .quick-action {
+  flex: 0 0 calc((100% - 3 * var(--ch-space-2)) / 4);
+  min-width: 0;
   font: inherit;
   font-size: var(--ch-font-size-sm);
   color: var(--ch-status-neutral);
@@ -470,6 +475,8 @@
 }
 
 .quick-action--bar {
+  /* Matches the wider `--ch-space-3` gap the bar row overrides above. */
+  flex-basis: calc((100% - 3 * var(--ch-space-3)) / 4);
   padding-block: var(--ch-space-3);
   font-size: var(--ch-font-size-label);
 }

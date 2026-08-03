@@ -1,15 +1,14 @@
 import type { CerebralBridge } from "../bridge/cerebralBridge";
 import type { ActionStatusSeverity } from "../state/ActionStatusProvider";
-import wiringManifest from "./quickActions.manifest.json";
+import { quickActionEntry } from "./quickActionRegistry";
 
 /**
- * D4 wiring for the trivial quick actions. The 4 + 4 quick-action slots render the active
- * mode's `quickActions` ids; an id present in `quickActions.manifest.json` is **wired** (live),
- * any other id is an allowed placeholder ("coming soon"). The manifest names a `handler` per
- * wired action; the implementations below are keyed by that handler name. The
- * `validateQuickActionWiring` gate (scripts/validate-config.mjs) guarantees every wired
- * handler/workflow target resolves, so a missing implementation here is a typed lookup miss,
- * never a silent no-op.
+ * Quick-action dispatch. The 4 + 4 slots render the active mode's `quickActions` ids; each id
+ * resolves through the dispatch registry (`quickActions.registry.json`), which names the action's
+ * `target` once it is built — a coded `handler` below, a `workflow` run through the command bus, or
+ * a mode `layout`. An entry with no target is planned, not built, and stays a labelled placeholder.
+ * The `validateQuickActionRegistry` gate (scripts/validate-config.mjs) guarantees every declared
+ * target resolves, so a missing implementation here is a typed lookup miss, never a silent no-op.
  *
  * Results stay honest: a handler dispatches the real bridge op and surfaces only what the
  * bridge actually returned via `announce` (the top-left status line — NIC-124). Nothing is
@@ -38,10 +37,6 @@ const HANDLERS = {
     );
   }
 } satisfies Record<string, (deps: QuickActionDeps) => Promise<void>>;
-
-const WIRED_ACTIONS = wiringManifest.wiredActions as Readonly<
-  Record<string, { readonly handler?: string; readonly workflow?: string }>
->;
 
 /**
  * Dispatch a workflow-backed quick action: `run <workflowId>` through the same command
@@ -81,41 +76,36 @@ function openLayout(modeId: string, { bridge, announce }: QuickActionDeps): void
     });
 }
 
-/** Matches a mode's layout-open action id, capturing the mode id. */
-const LAYOUT_ACTION = /^open-([a-z][a-z0-9-]*)-layout$/;
-
 /**
- * Resolve a quick-action id to its click handler, or `null` if the id is a placeholder. A wired
- * action names exactly one target: a `handler` implemented above, or a `workflow` run through
- * the command bus. A wired handler with no implementation here throws — the wiring gate makes
- * that unreachable in a valid build, so the throw is a developer-error guard, not a runtime path.
+ * Resolve a quick-action id to its click handler, or `null` if the action is planned but not
+ * built (no registry target) — the slot then renders as a labelled placeholder. A registered
+ * handler target with no implementation here throws: the registry gate makes that unreachable
+ * in a valid build, so the throw is a developer-error guard, not a runtime path.
  */
 export function resolveQuickAction(actionId: string, deps: QuickActionDeps): (() => void) | null {
-  // A layout-open action enters layout mode through the dedicated openLayout op
-  // (session + windows), not a bare workflow run — even though the manifest wires it
-  // to the same synthesized workflow for the resolution gate.
-  const layoutMatch = LAYOUT_ACTION.exec(actionId);
-  if (layoutMatch) {
-    const modeId = layoutMatch[1];
-    return () => {
-      openLayout(modeId, deps);
-    };
-  }
-  const target = WIRED_ACTIONS[actionId];
-  if (target?.workflow) {
-    const workflowId = target.workflow;
-    return () => {
-      runWorkflow(workflowId, deps);
-    };
-  }
-  if (!target?.handler) {
+  const target = quickActionEntry(actionId)?.target;
+  if (!target) {
     return null;
   }
-  const handler = HANDLERS[target.handler as HandlerName];
-  if (!handler) {
-    throw new Error(`Quick action "${actionId}" is wired to unknown handler "${target.handler}".`);
+  switch (target.kind) {
+    // A layout action enters layout mode through the dedicated openLayout op (session +
+    // windows), not a bare `run <workflow>` of the same synthesized workflow.
+    case "layout":
+      return () => {
+        openLayout(target.mode, deps);
+      };
+    case "workflow":
+      return () => {
+        runWorkflow(target.workflow, deps);
+      };
+    case "handler": {
+      const handler = HANDLERS[target.handler as HandlerName];
+      if (!handler) {
+        throw new Error(`Quick action "${actionId}" targets unknown handler "${target.handler}".`);
+      }
+      return () => {
+        void handler(deps);
+      };
+    }
   }
-  return () => {
-    void handler(deps);
-  };
 }

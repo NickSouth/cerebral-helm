@@ -7278,6 +7278,12 @@ public struct CerebralHelmToolDescriptor: Codable {
     public let adapterRequirements: AdapterRequirements
     public let availability: AvailabilityClass
     public let cancellable: Bool
+    /// Which confirmation rule the deterministic policy engine applies to this tool.
+    /// `allow_external_write_when_user_authored` is the one provenance-conditioned key: a
+    /// low-stakes external write runs one-click when the user authored the arguments, and still
+    /// confirms when a model proposed them. It only ever affects the `external_write` class —
+    /// destructive, financial, and purchase_or_booking are never exemptible — and the
+    /// stricter-only 'ask before all actions' overlay still re-arms confirmation over it.
     public let confirmationPolicyKey: ConfirmationPolicyKey
     public let id: String
     public let idempotency: Idempotency
@@ -7509,8 +7515,14 @@ public extension AvailabilityClass {
     }
 }
 
+/// Which confirmation rule the deterministic policy engine applies to this tool.
+/// `allow_external_write_when_user_authored` is the one provenance-conditioned key: a
+/// low-stakes external write runs one-click when the user authored the arguments, and still
+/// confirms when a model proposed them. It only ever affects the `external_write` class —
+/// destructive, financial, and purchase_or_booking are never exemptible — and the
+/// stricter-only 'ask before all actions' overlay still re-arms confirmation over it.
 public enum ConfirmationPolicyKey: String, Codable {
-    case allowExternalWriteWithoutConfirmation = "allow_external_write_without_confirmation"
+    case allowExternalWriteWhenUserAuthored = "allow_external_write_when_user_authored"
     case allowReadWithoutConfirmation = "allow_read_without_confirmation"
     case confirmDestructive = "confirm_destructive"
     case confirmExternalWrite = "confirm_external_write"

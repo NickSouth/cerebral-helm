@@ -208,25 +208,41 @@ func webOpenRunsThenPhaseUnavailable() async throws {
     #expect(recorder.statuses == [.received, .planned, .running, .failed])
 }
 
-@Test("a spotify command maps to spotify.control and runs WITHOUT confirmation despite external_write (NIC-133)")
-func spotifyControlRunsOneClick() async throws {
+@Test("a user-authored spotify command runs WITHOUT confirmation despite external_write")
+func spotifyControlRunsOneClickWhenUserAuthored() async throws {
     // `spotify <action>` parses to spotify.control. Its risk is external_write (honest — it hits
-    // Spotify's API), but the descriptor's `allow_external_write_without_confirmation` policy key
-    // waives confirmation, so it must COMPLETE rather than pause for a prompt. spotify.control is
-    // Mac-only, so pre-Mac it's phase-unavailable — which together proves the grammar routes to the
-    // tool AND the external-write waiver applied (otherwise the outcome would be awaitingConfirmation).
+    // Spotify's API), but the descriptor's `allow_external_write_when_user_authored` policy key
+    // exempts it for an invocation the user authored, so it must COMPLETE rather than pause for a
+    // prompt. spotify.control is Mac-only, so pre-Mac it's phase-unavailable — which together
+    // proves the grammar routes to the tool AND the exemption applied (otherwise the outcome
+    // would be awaitingConfirmation).
     let recorder = EventRecorder()
     let runtime = try makeRuntime(recorder: recorder)
 
     let outcome = await runtime.submit("spotify pause", source: .cli)
     guard case let .completed(_, status, result) = outcome else {
-        Issue.record("Expected completed (no confirmation — the waiver applied), got \(outcome)"); return
+        Issue.record("Expected completed (no confirmation — the exemption applied), got \(outcome)"); return
     }
     #expect(status == .failed)
     #expect(result?.toolID == "spotify.control")
     #expect(result?.status == .unavailable)
     #expect(result?.error?.code == "tool.unavailable_in_phase")
     #expect(recorder.statuses == [.received, .planned, .running, .failed])
+}
+
+@Test("the SAME spotify command proposed by an agent requires confirmation (provenance tier)")
+func spotifyControlConfirmsWhenModelProposed() async throws {
+    // Identical input and identical tool as the test above — only the command source differs.
+    // The runtime derives provenance from the envelope, so an agent-proposed invocation of a
+    // user-exempted tool still pauses for confirmation. This is the end-to-end proof that the
+    // exemption is conditioned on WHO authored the arguments, not on which tool was called.
+    let runtime = try makeRuntime()
+
+    let outcome = await runtime.submit("spotify pause", source: .agent)
+    guard case let .awaitingConfirmation(_, disclosure, _) = outcome else {
+        Issue.record("Expected awaitingConfirmation for a model-proposed external write, got \(outcome)"); return
+    }
+    #expect(disclosure.risk == .externalWrite)
 }
 
 @Test("a shell hook requires confirmation, then is refused as phase-unavailable on approval (AC-33.2, FR-SAF-03, NIC-111)")

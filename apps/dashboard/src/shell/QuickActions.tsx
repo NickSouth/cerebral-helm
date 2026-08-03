@@ -1,5 +1,5 @@
 import { useActiveMode } from "./useActiveMode";
-import { humanizeId } from "./labels";
+import { quickActionLabel } from "./quickActionRegistry";
 import { resolveQuickAction } from "./quickActionHandlers";
 import { useBridge } from "../state/BridgeProvider";
 import { useActionStatus } from "../state/ActionStatusProvider";
@@ -7,18 +7,22 @@ import { useDashboardState } from "../state/DashboardStateProvider";
 import { useUiPosture } from "../state/useUiPosture";
 
 /**
- * The binding 4 + 4 quick-action geometry (§5.7): four bars over four boxes, ALWAYS eight
- * slots, rendered from the active mode's `quickActions`. A slot whose id is wired
- * (`quickActions.manifest.json`) is live and dispatches its handler; every other id stays
- * labelled but greyed and disabled ("coming soon") until individually wired (D4 wires the
- * trivial ones, e.g. `capture-note`). A null config slot renders as a disabled "Add action".
+ * The 4 + 4 quick-action geometry (§5.7): a row of bars over a row of boxes, rendered from the
+ * active mode's `quickActions`. Labels come from the dispatch registry, which also decides what a
+ * slot does; an action with a registry target is live, one without stays labelled but greyed
+ * ("coming soon") until it is built.
+ *
+ * **An unconfigured (null) slot is omitted, not rendered as an "Add action" placeholder**
+ * (docs/quick-actions/PLAN.md): a mode holding slots for the LLM era should look deliberately
+ * shorter, not unfinished. Each slot keeps its quarter-row width, so the survivors re-centre
+ * within their own row and the bar/box split is preserved.
  */
 function QuickActionSlot({
   action,
   variant,
   onActivate
 }: {
-  action: string | null;
+  action: string;
   variant: "bar" | "box";
   onActivate: (() => void) | null;
 }) {
@@ -32,9 +36,14 @@ function QuickActionSlot({
       title={wired ? undefined : "Coming soon"}
       onClick={onActivate ?? undefined}
     >
-      {action ? humanizeId(action) : "Add action"}
+      {quickActionLabel(action)}
     </button>
   );
+}
+
+/** Narrows a slot row to its configured actions, dropping the unconfigured (null) slots. */
+function configured(slots: readonly (string | null)[]): string[] {
+  return slots.filter((slot): slot is string => slot !== null);
 }
 
 export function QuickActions() {
@@ -48,17 +57,17 @@ export function QuickActions() {
   // Read-only recovery exposes no mutating controls: every action stays disabled (NIC-64 AC).
   // While a workflow is executing, its actions are also disabled — one run at a time.
   const running = activeWorkflowRun != null;
-  const resolve = (action: string | null) =>
-    action && !readOnly && !running ? resolveQuickAction(action, deps) : null;
-  const bars = quickActions.slice(0, 4);
-  const boxes = quickActions.slice(4, 8);
+  const resolve = (action: string) =>
+    !readOnly && !running ? resolveQuickAction(action, deps) : null;
+  const bars = configured(quickActions.slice(0, 4));
+  const boxes = configured(quickActions.slice(4, 8));
 
   return (
     <div className="quick-actions" role="group" aria-label="Quick actions">
       <div className="quick-actions__bars">
-        {bars.map((action, index) => (
+        {bars.map((action) => (
           <QuickActionSlot
-            key={`bar-${index}`}
+            key={action}
             action={action}
             variant="bar"
             onActivate={resolve(action)}
@@ -66,9 +75,9 @@ export function QuickActions() {
         ))}
       </div>
       <div className="quick-actions__boxes">
-        {boxes.map((action, index) => (
+        {boxes.map((action) => (
           <QuickActionSlot
-            key={`box-${index}`}
+            key={action}
             action={action}
             variant="box"
             onActivate={resolve(action)}

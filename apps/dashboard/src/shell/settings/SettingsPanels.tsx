@@ -10,7 +10,7 @@ import { useUpdateSettings } from "./useUpdateSettings";
 import { useSettingsSnapshot } from "./SettingsSnapshotProvider";
 import { postShellControl, isShellControlAvailable } from "../shellControl";
 import { PERMISSION_TOOLS } from "./permissionsCatalog";
-import wiredManifest from "../quickActions.manifest.json";
+import { isQuickActionWired, quickActionEntry, quickActionLabel } from "../quickActionRegistry";
 import type { SettingsCategoryId } from "./categories";
 import type {
   CalendarInfo,
@@ -555,10 +555,6 @@ function ModesPanelBody() {
 
 // --- Actions --------------------------------------------------------------
 
-const WIRED_ACTION_IDS = new Set(
-  Object.keys((wiredManifest as { wiredActions?: Record<string, unknown> }).wiredActions ?? {})
-);
-
 function ActionsPanel() {
   const { modes, mode } = useDashboardState();
   const active = modes.find((modeView) => modeView.label === mode) ?? modes[0];
@@ -567,22 +563,28 @@ function ActionsPanel() {
   return (
     <Section title={`Quick actions — ${active?.label ?? ""}`}>
       <p className="settings-note">
-        The eight quick-action slots for the active mode, and whether each is wired to a workflow
-        yet. Building and rebinding actions arrives in a later pass.
+        The eight quick-action slots for the active mode, read from the dispatch registry: what each
+        is built from, and whether it exists yet. An unconfigured slot is held for a later action and
+        is omitted from the dashboard rather than shown as an empty tile.
       </p>
       <ul className="settings-list">
         {actions.map((action, index) => (
           <li key={`${action ?? "empty"}-${index}`} className="settings-list__item">
             <div className="settings-list__text">
               <span className="settings-list__title">
-                {action ? humanizeId(action) : "Empty slot"}
+                {action ? quickActionLabel(action) : "Empty slot"}
               </span>
+              {action ? (
+                <span className="settings-list__sub">
+                  {quickActionEntry(action)?.archetype ?? "unregistered"}
+                </span>
+              ) : null}
             </div>
             <span className="settings-list__policy">
-              {action && WIRED_ACTION_IDS.has(action)
+              {action && isQuickActionWired(action)
                 ? "Wired"
                 : action
-                  ? "Not wired yet"
+                  ? "Not built yet"
                   : "Unconfigured"}
             </span>
           </li>

@@ -169,17 +169,42 @@ describe("DashboardShell structure", () => {
     }
   });
 
-  it("renders eight quick-action slots — wired ones enabled, placeholders disabled", () => {
+  it("renders eight quick-action slots — built ones enabled, planned ones disabled", () => {
     renderShell();
     const slots = within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole(
       "button"
     );
     expect(slots).toHaveLength(8);
-    // D4 wires capture-note; the rest remain greyed placeholders.
+    // capture-note is the one built action; the rest are registered but targetless.
     expect(screen.getByRole("button", { name: "Capture note" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Daily brief" })).toBeDisabled();
+    // Labels come from the dispatch registry, not from humanizing the id.
+    expect(screen.getByRole("button", { name: "System status" })).toBeInTheDocument();
     const disabled = slots.filter((slot) => slot.hasAttribute("disabled"));
     expect(disabled).toHaveLength(7);
+  });
+
+  it("omits unconfigured slots rather than rendering placeholder tiles, keeping the bar/box split", () => {
+    renderShellWithState((base) => ({
+      ...base,
+      modes: base.modes.map((modeView) =>
+        modeView.label === base.mode
+          ? {
+              ...modeView,
+              quickActions: ["daily-brief", null, null, null, "capture-note", null, null, null]
+            }
+          : modeView
+      )
+    }));
+
+    const group = screen.getByRole("group", { name: "Quick actions" });
+    const slots = within(group).getAllByRole("button");
+    expect(slots).toHaveLength(2);
+    // The old "Add action" placeholder tile is gone (docs/quick-actions/PLAN.md).
+    expect(within(group).queryByRole("button", { name: "Add action" })).toBeNull();
+    // The surviving slots stay in their own rows — a bar is not promoted into the box row.
+    expect(slots[0]).toHaveClass("quick-action--bar");
+    expect(slots[1]).toHaveClass("quick-action--box");
   });
 
   it("exposes the persistent global command launcher (enabled)", () => {

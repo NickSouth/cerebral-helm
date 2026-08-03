@@ -16,12 +16,12 @@
   "quickActions": [
     "open-school-layout",
     "open-schedule",
-    "capture-idea",
+    "create-event",
+    "take-notes",
     "search-notes",
-    "review-assignments",
-    "start-study-block",
-    "summarize-notes",
-    "open-courses"
+    null,
+    null,
+    null
   ],
   "widgets": {
     "left": "deadlines",

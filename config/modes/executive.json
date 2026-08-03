@@ -15,13 +15,13 @@
   "quickApps": [],
   "quickActions": [
     "daily-brief",
-    "open-calendar",
     "capture-note",
-    "review-projects",
-    "check-system-status",
-    "open-mail",
-    "start-focus-block",
-    "open-news-brief"
+    "create-event",
+    "create-project",
+    "send-text",
+    "email-report",
+    "system-status-checks",
+    "shut-down"
   ],
   "widgets": {
     "left": "stocks",

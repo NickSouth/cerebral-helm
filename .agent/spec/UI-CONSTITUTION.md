@@ -187,8 +187,11 @@ the platform directly.
   flip and not a loading/pending state; all four palettes preload (`bootstrap.modes`).
 - **All modes share identical density** — palette/accent differs, density is constant
   (Entertainment is *not* lighter).
-- **The 4+4 quick-action grid always renders 8 slots**; unwired actions are greyed,
-  labeled, and disabled ("coming soon") — never hidden, never empty.
+- **The 4+4 quick-action grid renders up to 8 slots.** A *configured* action that is not
+  built yet is greyed, labeled, and disabled ("coming soon") — never hidden. An
+  *unconfigured* (null) slot is omitted entirely; each slot keeps its quarter-row width so
+  the remainder centers within its own row (`quickActions.registry.json` owns each action's
+  label, icon, archetype, and dispatch target).
 - **Agent status is runtime** (Idle / Waiting / Thinking / Ready, from events;
   `bootstrap.agents[].activity`), text + non-color cue; the config `status` stays the
   availability flag (`…availability`). Identity icons are fixed per agent id.

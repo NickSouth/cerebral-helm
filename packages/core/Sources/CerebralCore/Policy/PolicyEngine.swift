@@ -74,13 +74,20 @@ public struct PolicyRequest: Sendable {
     public let plannedActionRisks: [Risk]
     public let shellInvocation: HookInvocation?
     public let callerRequestedConfirmation: Bool?
-    /// A descriptor-declared, deliberate exemption for a specific low-stakes `external_write` tool
-    /// (its `confirmationPolicyKey` is `allow_external_write_without_confirmation`, e.g. Spotify
-    /// playback control, NIC-133). It runs one-click instead of confirming. Descriptor-sourced only
-    /// — a caller/model can never set it — and it affects **only** the `external_write` class; it
-    /// can never downgrade destructive/financial/purchase, and the stricter-only "Ask before all
-    /// actions" override still re-arms confirmation over it.
-    public let waivesExternalWriteConfirmation: Bool
+    /// A descriptor-declared opt-in: this tool's `confirmationPolicyKey` is
+    /// `allow_external_write_when_user_authored`, meaning it is low-stakes enough to run
+    /// one-click **when the user authored the arguments** (Spotify play/pause/skip, sending a
+    /// message the user typed). Descriptor-sourced only — a caller or model can never set it.
+    ///
+    /// It grants nothing on its own: the exemption applies only together with
+    /// ``provenance`` == `.userAuthored`, only to the `external_write` class, and the
+    /// stricter-only "Ask before all actions" override still re-arms confirmation over it.
+    public let honorsUserAuthoredExemption: Bool
+    /// Who determined this invocation's arguments. Derived by the runtime from the command
+    /// source (``ActionProvenance``), never supplied by a caller. Defaults to the strict
+    /// `.modelProposed`, so a construction site that has no provenance to offer gets
+    /// confirmation rather than a silent exemption.
+    public let provenance: ActionProvenance
 
     public init(
         toolID: String,
@@ -89,7 +96,8 @@ public struct PolicyRequest: Sendable {
         plannedActionRisks: [Risk] = [],
         shellInvocation: HookInvocation? = nil,
         callerRequestedConfirmation: Bool? = nil,
-        waivesExternalWriteConfirmation: Bool = false
+        honorsUserAuthoredExemption: Bool = false,
+        provenance: ActionProvenance = .modelProposed
     ) {
         self.toolID = toolID
         self.declaredRisk = declaredRisk
@@ -97,7 +105,8 @@ public struct PolicyRequest: Sendable {
         self.plannedActionRisks = plannedActionRisks
         self.shellInvocation = shellInvocation
         self.callerRequestedConfirmation = callerRequestedConfirmation
-        self.waivesExternalWriteConfirmation = waivesExternalWriteConfirmation
+        self.honorsUserAuthoredExemption = honorsUserAuthoredExemption
+        self.provenance = provenance
     }
 }
 
@@ -184,15 +193,31 @@ public struct PolicyEngine: Sendable {
             }
             return (.requireConfirmation, "confirm.shell", "Shell execution requires confirmation unless the exact invocation is allowlisted.")
         case .externalWrite:
-            // External writes confirm by default — except a specific tool the descriptor exempts as
-            // low-stakes (e.g. Spotify play/pause/skip, NIC-133), which runs one-click. The
-            // exemption is descriptor-sourced only, and the stricter-only overrides below still
-            // re-arm confirmation when "Ask before all actions" is on.
-            if request.waivesExternalWriteConfirmation {
-                return (.allow, "allow.external_write_exempt", "This low-stakes external action is descriptor-exempted from confirmation.")
+            // External writes confirm by default. The one exemption needs BOTH halves: the
+            // descriptor must opt this tool in as low-stakes, AND the user must have authored
+            // the arguments. A model proposing the same call on the same tool still confirms,
+            // with the values it chose disclosed — that asymmetry is the whole point of the
+            // provenance tier. The stricter-only overrides below still re-arm confirmation
+            // over it when "Ask before all actions" is on.
+            if request.honorsUserAuthoredExemption && request.provenance == .userAuthored {
+                return (
+                    .allow,
+                    "allow.external_write_user_authored",
+                    "The user authored this low-stakes external action, and the descriptor exempts it from re-confirmation."
+                )
+            }
+            if request.honorsUserAuthoredExemption {
+                return (
+                    .requireConfirmation,
+                    "confirm.external_write_model_proposed",
+                    "A model determined this action's arguments, so it requires confirmation despite the tool's user-authored exemption."
+                )
             }
             return (.requireConfirmation, "confirm.external_write", "Risk class 'external_write' requires confirmation.")
         case .destructive, .financial, .purchaseOrBooking:
+            // Never exemptible, at any provenance. Reaching this case ignores both the
+            // descriptor opt-in and `userAuthored` by construction — there is no branch that
+            // could relax an irreversible, financial, or purchasing action.
             return (.requireConfirmation, "confirm.\(risk.rawValue)", "Risk class '\(risk.rawValue)' requires confirmation.")
         }
     }
