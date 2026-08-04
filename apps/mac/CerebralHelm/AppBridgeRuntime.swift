@@ -201,11 +201,15 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // The Spotify producer (NIC-133): resolves a valid access token from the Keychain-backed
         // OAuth session (refreshing as needed) and reads the currently-playing track on a fast
         // cadence. Not connected → an honest "connect" state; nothing playing → a healthy empty.
+        // Hoisted out of the publisher's argument list so connect/disconnect can invalidate the
+        // session's in-memory grant — it holds the refreshed token rather than writing it back to
+        // the Keychain every hour, so nothing else would tell it the grant changed.
+        let spotifySession = SpotifyAuthSession(
+            secretStore: composition.secretStore,
+            refresher: SpotifyTokenExchange()
+        )
         let spotify = SpotifyPublisher(
-            session: SpotifyAuthSession(
-                secretStore: composition.secretStore,
-                refresher: SpotifyTokenExchange()
-            ),
+            session: spotifySession,
             provider: SpotifyWebPlaybackProvider(),
             emit: { relay.emit($0) }
         )
@@ -492,6 +496,23 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 if reference == "newsdata_api_key", let news { Task { await news.refresh() } }
                 if reference == "github_api_token" { Task { await projectGitStatus.refresh() } }
             },
+            // Disconnect: drop the revoked grant from the session that holds it in memory, then
+            // re-sample so the widget shows its honest "connect" state at once. Without the
+            // invalidate the session would keep using the credential the user just removed.
+            onSecretDeleted: { reference in
+                if reference == SpotifyAuthSession.tokenReference {
+                    Task {
+                        await spotifySession.invalidate()
+                        await spotify.refresh()
+                    }
+                }
+                if reference == GoogleAuthSession.tokenReference {
+                    Task {
+                        await gmailSession.invalidate()
+                        await mail.refresh()
+                    }
+                }
+            },
             // When a settings field changes, refresh the producer it drives so the edit is live at
             // once rather than on its next tick: the tracked-ticker list → stocks (NIC-128), the
             // calendar→mode map → the schedule (NIC-126).
@@ -532,6 +553,9 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 let trimmed = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { throw SpotifyPlaybackError.credentialsMissing }
                 let connection = try await spotifyCoordinator.connect(clientID: trimmed)
+                // The session may hold a token from a previous grant; drop it so the next read uses
+                // the one just stored rather than a stale or revoked predecessor.
+                await spotifySession.invalidate()
                 // Tokens are stored — emit a now-playing sample at once so the widget goes live
                 // immediately rather than on the publisher's next tick.
                 await spotify.refresh()

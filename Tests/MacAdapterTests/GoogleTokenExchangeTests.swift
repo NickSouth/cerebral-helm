@@ -235,7 +235,7 @@ func googleSessionUsesALiveToken() async throws {
     #expect(try await session.accessToken(now: anchor) == "live")
 }
 
-@Test("a token at the margin refreshes, and the new one is persisted")
+@Test("a token at the margin refreshes, and is served from memory without a Keychain write")
 func googleSessionRefreshesNearExpiry() async throws {
     let store = FakeSecrets([
         GoogleTokenBlob.reference: try blob(GoogleTokens(
@@ -249,11 +249,40 @@ func googleSessionRefreshesNearExpiry() async throws {
     let session = GoogleAuthSession(secretStore: store, refresher: FakeRefresher(result: .success(refreshed)))
 
     #expect(try await session.accessToken(now: anchor) == "fresh")
-    // Persisted, not just cached: a relaunch a minute later must not have to refresh again.
+
+    // Deliberately NOT persisted. This reverses the original "persist every refresh" rule: an
+    // access token lasts about an hour, so writing each one back meant an hourly Keychain write,
+    // and on an ad-hoc-signed build every write is a password prompt (the read cache cannot absorb
+    // a write). Google's refresh response never carries a `refresh_token`, so the stored grant is
+    // unchanged and re-derives the access token on next launch — one cheap refresh instead of a
+    // prompt every hour.
     // Split deliberately: `#require` cannot nest inside another `#require`.
     let json = try #require(store.snapshot()[GoogleTokenBlob.reference])
     let stored = try #require(GoogleTokenBlob.decode(json))
-    #expect(stored.accessToken == "fresh")
+    #expect(stored.accessToken == "stale")
+    #expect(stored.refreshToken == "r")
+
+    // Served from memory, so the tick after the refresh neither refreshes nor reads again.
+    #expect(try await session.accessToken(now: anchor) == "fresh")
+}
+
+@Test("a rotated refresh token IS persisted — losing it would end the grant")
+func googleSessionPersistsARotatedRefreshToken() async throws {
+    let store = FakeSecrets([
+        GoogleTokenBlob.reference: try blob(GoogleTokens(
+            accessToken: "stale", refreshToken: "r-old", expiresAt: anchor.addingTimeInterval(30), scope: nil
+        )),
+        GoogleAuthSession.clientIDReference: "client-1"
+    ])
+    let refreshed = GoogleTokens(
+        accessToken: "fresh", refreshToken: "r-new", expiresAt: anchor.addingTimeInterval(3600), scope: nil
+    )
+    let session = GoogleAuthSession(secretStore: store, refresher: FakeRefresher(result: .success(refreshed)))
+
+    #expect(try await session.accessToken(now: anchor) == "fresh")
+    let json = try #require(store.snapshot()[GoogleTokenBlob.reference])
+    let stored = try #require(GoogleTokenBlob.decode(json))
+    #expect(stored.refreshToken == "r-new")
 }
 
 @Test("a refresh with no Client ID is reported as unconfigured, not as a broken account")

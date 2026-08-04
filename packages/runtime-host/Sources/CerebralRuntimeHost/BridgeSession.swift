@@ -225,6 +225,13 @@ public final class BridgeSession: @unchecked Sendable {
     /// leaves it nil.
     private let onSecretStored: (@Sendable (String) -> Void)?
 
+    /// Invoked with the reference after a secret is successfully removed, so a consumer holding
+    /// that grant in memory can drop it. Required for correctness, not just freshness: an OAuth
+    /// session caches its token to avoid re-reading the Keychain, so without this a Disconnect
+    /// would leave the session happily using the credential the user just revoked. Optional; a
+    /// host with no such consumer leaves it nil.
+    private let onSecretDeleted: (@Sendable (String) -> Void)?
+
     /// Invoked after a settings patch is durably applied, carrying the applied changes, so a
     /// host can refresh a live producer that depends on a setting (e.g. the Stocks producer
     /// re-samples when the ticker list changes, NIC-128) instead of waiting out its slow
@@ -359,6 +366,7 @@ public final class BridgeSession: @unchecked Sendable {
         calendarProvider: (any CalendarProvider)? = nil,
         secretStore: (any SecretManaging)? = nil,
         onSecretStored: (@Sendable (String) -> Void)? = nil,
+        onSecretDeleted: (@Sendable (String) -> Void)? = nil,
         onSettingsChanged: (@Sendable (SettingsChanges) -> Void)? = nil,
         onModeApplied: (@Sendable (String) -> Void)? = nil,
         spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil,
@@ -392,6 +400,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.calendarProvider = calendarProvider
         self.secretStore = secretStore
         self.onSecretStored = onSecretStored
+        self.onSecretDeleted = onSecretDeleted
         self.onSettingsChanged = onSettingsChanged
         self.onModeApplied = onModeApplied
         self.spotifyConnect = spotifyConnect
@@ -1541,6 +1550,9 @@ public final class BridgeSession: @unchecked Sendable {
         }
         do {
             try await secretStore.delete(reference: input.reference)
+            // Tell any consumer holding this grant in memory to drop it, so a disconnect is real
+            // rather than cosmetic (see `onSecretDeleted`).
+            onSecretDeleted?(input.reference)
             return ok(request, payload: DeleteSecretResult(reference: input.reference, deleted: true))
         } catch {
             // Absent (or an unreadable store) — nothing to remove, an honest idempotent no-op.

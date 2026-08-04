@@ -50,7 +50,7 @@ func spotifySessionReturnsValidToken() async throws {
     #expect(await refresher.calls == 0)
 }
 
-@Test("a token at/near expiry is refreshed with the stored Client ID, and persisted")
+@Test("a token at/near expiry is refreshed with the stored Client ID; a rotated refresh token is persisted")
 func spotifySessionRefreshesNearExpiry() async throws {
     // Expires in 30s — inside the 60s refresh margin.
     let store = try makeStore(spotifyStoredTokens(access: "at-old", refresh: "rt-old", expiresIn: 30))
@@ -62,10 +62,52 @@ func spotifySessionRefreshesNearExpiry() async throws {
     #expect(token == "at-new")
     #expect(await refresher.calls == 1)
 
-    // The new tokens were written back, so the next read sees the refreshed access token.
+    // The refresh token rotated, so the grant was written back — dropping a rotated refresh token
+    // would end the connection permanently.
     let reloaded = try await SpotifyTokenBlob.load(from: store)
     #expect(reloaded?.accessToken == "at-new")
     #expect(reloaded?.refreshToken == "rt-new")
+}
+
+@Test("a refresh that does not rotate the refresh token is never written back to the Keychain")
+func spotifySessionSkipsTheWriteWhenTheRefreshTokenIsUnchanged() async throws {
+    // The common path: Spotify echoes no `refresh_token`, so SpotifyTokenExchange carries the
+    // previous one forward and only the access token changes.
+    let store = try makeStore(spotifyStoredTokens(access: "at-old", refresh: "rt", expiresIn: 30))
+    let refreshed = spotifyStoredTokens(access: "at-new", refresh: "rt", expiresIn: 3600)
+    let refresher = SpotifyFakeRefresher(.success(refreshed))
+    let session = SpotifyAuthSession(secretStore: store, refresher: refresher)
+
+    #expect(try await session.accessToken(now: spotifyNow) == "at-new")
+
+    // The stored grant is untouched. An access token lives about an hour, so writing each one back
+    // meant an hourly Keychain write — and on an ad-hoc-signed build every write is a password
+    // prompt that the read cache cannot absorb. The access token is re-derivable from the refresh
+    // token, so the cost is one extra refresh on the next launch.
+    let reloaded = try await SpotifyTokenBlob.load(from: store)
+    #expect(reloaded?.accessToken == "at-old")
+    #expect(reloaded?.refreshToken == "rt")
+
+    // Served from memory: the tick after a refresh neither refreshes nor re-reads.
+    #expect(try await session.accessToken(now: spotifyNow) == "at-new")
+    #expect(await refresher.calls == 1)
+}
+
+@Test("invalidate drops the in-memory grant, so Disconnect actually disconnects")
+func spotifySessionInvalidatesItsCache() async throws {
+    let store = try makeStore(spotifyStoredTokens(access: "at-live", refresh: "rt", expiresIn: 3600))
+    let refresher = SpotifyFakeRefresher(.failure(.providerFailed("must not be called")))
+    let session = SpotifyAuthSession(secretStore: store, refresher: refresher)
+    #expect(try await session.accessToken(now: spotifyNow) == "at-live")
+
+    // The disconnect path: the bridge's deleteSecret removes the grant, then the host's
+    // onSecretDeleted hook invalidates the session. Without the second half the session would keep
+    // serving the credential the user just revoked.
+    try await store.delete(reference: SpotifyTokenBlob.reference)
+    await session.invalidate()
+    await #expect(throws: SpotifyPlaybackError.credentialsMissing) {
+        _ = try await session.accessToken(now: spotifyNow)
+    }
 }
 
 @Test("a refresh with no stored Client ID maps to notConnected (can't renew the grant)")

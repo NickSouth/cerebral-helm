@@ -19,15 +19,33 @@ private func spotifyOpRepositoryRoot() -> URL {
 
 private func makeSpotifyOpSession(
     store: (any SecretManaging)? = nil,
-    spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil
+    spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil,
+    onSecretDeleted: (@Sendable (String) -> Void)? = nil
 ) throws -> BridgeSession {
     let paths = try WorkspacePaths.temporary(repositoryRoot: spotifyOpRepositoryRoot())
     return BridgeSession(
         runtime: try makeCommandRuntime(paths: paths),
         configDirectory: paths.configDirectory,
         secretStore: store,
+        onSecretDeleted: onSecretDeleted,
         spotifyConnect: spotifyConnect
     )
+}
+
+/// Records the references a bridge session reported as deleted.
+private final class DeletedReferenceLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var references: [String] = []
+
+    func record(_ reference: String) {
+        lock.lock(); defer { lock.unlock() }
+        references.append(reference)
+    }
+
+    var recorded: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return references
+    }
 }
 
 private func spotifyOpRequest(
@@ -103,6 +121,32 @@ func spotifyDeleteSecretRemoves() async throws {
     #expect(response.status == .ok)
     #expect(try decodeSpotifyOp(response, as: DeleteResultDTO.self).deleted == true)
     #expect(try await store.resolve(reference: "spotify_oauth").isResolved == false)
+}
+
+@Test("deleteSecret notifies the host, so a session holding the grant in memory can drop it")
+func spotifyDeleteSecretNotifiesTheHost() async throws {
+    // The OAuth sessions cache their token rather than re-reading the Keychain on every tick, so a
+    // Disconnect that only removed the stored item would be cosmetic — the session would keep using
+    // the revoked credential. This hook is what makes the disconnect real.
+    let log = DeletedReferenceLog()
+    let store = MockSecretStore(values: ["spotify_oauth": "{\"blob\":true}"])
+    let session = try makeSpotifyOpSession(store: store, onSecretDeleted: { log.record($0) })
+
+    let response = await session.execute(spotifyOpRequest(.deleteSecret, #"{"reference":"spotify_oauth"}"#))
+    #expect(response.status == .ok)
+    #expect(log.recorded == ["spotify_oauth"])
+}
+
+@Test("deleteSecret does not notify the host when there was nothing to delete")
+func spotifyDeleteSecretDoesNotNotifyOnNoOp() async throws {
+    let log = DeletedReferenceLog()
+    let session = try makeSpotifyOpSession(store: MockSecretStore(), onSecretDeleted: { log.record($0) })
+
+    let response = await session.execute(spotifyOpRequest(.deleteSecret, #"{"reference":"spotify_oauth"}"#))
+    #expect(response.status == .ok)
+    // No grant existed, so no consumer can be holding one — a spurious invalidate would drop a
+    // perfectly good token from an unrelated session.
+    #expect(log.recorded.isEmpty)
 }
 
 @Test("deleteSecret on an already-absent reference is an idempotent no-op success")

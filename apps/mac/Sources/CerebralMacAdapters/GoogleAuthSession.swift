@@ -76,6 +76,10 @@ public actor GoogleAuthSession {
     /// Refresh this far before the token actually expires, so a request never races the boundary.
     private static let refreshMargin: TimeInterval = 120
 
+    /// The Keychain reference holding the OAuth grant. Public so the host can recognise a
+    /// disconnect of *this* secret and invalidate the session, without duplicating the name.
+    public static let tokenReference = GoogleTokenBlob.reference
+
     public static let clientIDReference = "google_client_id"
     /// Google issues Desktop clients a secret and its token endpoint expects it. Optional here
     /// because a client type that genuinely has none (Android/iOS/Chrome) must still work.
@@ -125,8 +129,16 @@ public actor GoogleAuthSession {
         // same way the refresh token itself is. Without this, every link would silently fall back
         // to the default account an hour after connecting.
         let renewed = refreshed.withAddress(stored.address)
-        try await GoogleTokenBlob.save(renewed, to: secretStore)
         cached = renewed
+        // Persist **only when the refresh token itself rotated** — the same reasoning as
+        // ``SpotifyAuthSession/accessToken(now:)``: an hourly write-back of a rotating access token
+        // is an hourly Keychain `SecItemUpdate`, and on an ad-hoc-signed build that is an hourly
+        // password prompt no read cache can absorb. Google's refresh response never carries a
+        // `refresh_token` (see `GoogleTokenExchange.parseTokens`), so in practice this never writes
+        // and the stored grant is touched only by connect and disconnect.
+        if let rotated = renewed.refreshToken, rotated != stored.refreshToken {
+            try await GoogleTokenBlob.save(renewed, to: secretStore)
+        }
         return renewed.accessToken
     }
 
