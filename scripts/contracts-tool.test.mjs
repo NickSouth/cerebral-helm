@@ -33,7 +33,8 @@ const mvpToolIds = new Set([
   "linear.createissue",
   "web.open",
   "spotify.control",
-  "spotify.createplaylist"
+  "spotify.createplaylist",
+  "messages.send"
 ]);
 
 const riskClasses = new Set([

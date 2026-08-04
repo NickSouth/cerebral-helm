@@ -14,6 +14,7 @@ import {
   initialValues,
   missingRequired,
   renderableFields,
+  type InputField,
   type InputForm
 } from "./inputForm";
 import { clearSportsEventsCache } from "../sports/sportsEvents";
@@ -771,6 +772,79 @@ describe("check-scoreboard in the region", () => {
   });
 });
 
+describe("send-text in the region", () => {
+  async function openSendText(overrides: Parameters<typeof renderShell>[0] = {}) {
+    renderShell(overrides);
+    // Executive slot 4.
+    fireEvent.click(screen.getByRole("button", { name: "Send text" }));
+    return screen.findByRole("region", { name: "Send text form" });
+  }
+
+  it("chooses nobody until a result is clicked — typing only filters", async () => {
+    // For this form specifically, a half-typed name becoming a recipient is the difference
+    // between a message and a mistake.
+    const region = await openSendText();
+    const search = within(region).getByRole("combobox");
+    fireEvent.change(search, { target: { value: "jam" } });
+
+    const match = await within(region).findByRole("option", { name: /Jamie Rivera/ });
+    // Still nothing chosen, and the submit is still blocked.
+    expect(within(region).getByRole("button", { name: "Send" })).toBeDisabled();
+
+    fireEvent.click(match);
+    await waitFor(() =>
+      expect(within(region).getByText(/Jamie Rivera/)).toBeInTheDocument()
+    );
+  });
+
+  it("says a group's size in the picker, because it changes what sending means", async () => {
+    const region = await openSendText();
+    fireEvent.change(within(region).getByRole("combobox"), { target: { value: "ski" } });
+    expect(await within(region).findByRole("option", { name: /group of 6/ })).toBeInTheDocument();
+  });
+
+  it("reports 'confirm to send', never 'sent' — this action always gates", async () => {
+    // The most consequential lie this surface could tell: nothing has left the machine until the
+    // confirmation is approved.
+    const sent: { target: string; targetKind: string; groupSize?: number }[] = [];
+    const region = await openSendText({
+      sendMessage: (input) => {
+        sent.push(input);
+        return Promise.resolve({
+          targetName: "Ski trip",
+          sent: false,
+          awaitingConfirmation: true
+        });
+      }
+    });
+
+    fireEvent.change(within(region).getByRole("combobox"), { target: { value: "ski" } });
+    fireEvent.click(await within(region).findByRole("option", { name: /Ski trip/ }));
+    fireEvent.change(within(region).getByLabelText(/Message/), {
+      target: { value: "  Running late.  " }
+    });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Send" }));
+    });
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    // The group size travels so the confirmation can say how many people this reaches.
+    expect(sent[0]).toMatchObject({ target: "chat123", targetKind: "chat", groupSize: 6 });
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent("Confirm to send to Ski trip."));
+    expect(status).not.toHaveTextContent(/^Sent/);
+  });
+
+  it("blocks on both the recipient and the message", async () => {
+    const region = await openSendText();
+    expect(within(region).getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.change(within(region).getByLabelText(/Message/), { target: { value: "Hello" } });
+    // A message with nobody to send it to is still blocked.
+    expect(within(region).getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+});
+
 describe("Input field schema", () => {
   const form: InputForm = {
     actionId: "example",
@@ -789,8 +863,10 @@ describe("Input field schema", () => {
         initialEndValue: "2026-08-03T15:00"
       },
       { name: "d", label: "D", kind: "folderPicker" },
-      // Declared but not yet rendered — it arrives with the action that needs it (create-ticket).
-      { name: "c", label: "C", kind: "combobox", required: true }
+      // Every declared kind now renders, so the skip guard has no real example left. It exists
+      // for the kind a FUTURE composer names, which is what this stands in for — cast in rather
+      // than declared, because the type is deliberately closed.
+      { name: "c", label: "C", kind: "someFutureKind" as InputField["kind"], required: true }
     ],
     submit: () => Promise.resolve({ message: "done" })
   };

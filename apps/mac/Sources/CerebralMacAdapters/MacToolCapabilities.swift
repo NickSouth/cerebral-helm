@@ -108,6 +108,8 @@ public enum MacToolCapabilities {
                 spotifyPlaylist: SpotifyWebPlaylistCapability(
                     authSession: SpotifyAuthSession(secretStore: secretStore, refresher: SpotifyTokenExchange())
                 ),
+                // The one tool that speaks to another person; every send confirms first.
+                messaging: MessagesCapability(),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,
                     CapabilityMatrix.Capability.projectOpen,
@@ -128,6 +130,7 @@ public enum MacToolCapabilities {
                     CapabilityMatrix.Capability.calendarWrite,
                     CapabilityMatrix.Capability.spotifyControl,
                     CapabilityMatrix.Capability.spotifyPlaylist,
+                    CapabilityMatrix.Capability.messagesSend,
                 ]
             ),
             systemStatus: systemStatus,

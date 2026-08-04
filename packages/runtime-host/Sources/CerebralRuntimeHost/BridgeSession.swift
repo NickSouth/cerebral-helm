@@ -267,6 +267,11 @@ public final class BridgeSession: @unchecked Sendable {
     /// and reading scores, not acting on the world.
     private let sportsEvents: (@Sendable () async throws -> [SportsEvent])?
 
+    /// Lists who a message can go to for `listMessageRecipients` (quick-actions phase 4). A read
+    /// closure, deliberately separate from the `messages.send` tool: a surface that lists people
+    /// must not be able to reach the one that sends to them.
+    private let messageRecipients: (@Sendable () async throws -> [MessageRecipient])?
+
     private let canvasStatus: (@Sendable () async -> CanvasStatusInfo)?
     private let canvasReset: (@Sendable () async -> CanvasStatusInfo)?
     /// Hides or unhides a scraped Canvas item by id (NIC-132), returning the fresh status. Optional —
@@ -344,6 +349,7 @@ public final class BridgeSession: @unchecked Sendable {
         chooseFolder: (@Sendable () async -> FolderSelectionInfo)? = nil,
         linearWorkspace: (@Sendable () async throws -> LinearWorkspaceInfo)? = nil,
         sportsEvents: (@Sendable () async throws -> [SportsEvent])? = nil,
+        messageRecipients: (@Sendable () async throws -> [MessageRecipient])? = nil,
         canvasStatus: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasReset: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)? = nil,
@@ -372,6 +378,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.chooseFolder = chooseFolder
         self.linearWorkspace = linearWorkspace
         self.sportsEvents = sportsEvents
+        self.messageRecipients = messageRecipients
         self.canvasStatus = canvasStatus
         self.canvasReset = canvasReset
         self.canvasSetHidden = canvasSetHidden
@@ -514,6 +521,10 @@ public final class BridgeSession: @unchecked Sendable {
             return await listLinearOptions(request)
         case .listSportsEvents:
             return await listSportsEvents(request)
+        case .listMessageRecipients:
+            return await listMessageRecipients(request)
+        case .sendMessage:
+            return await sendMessage(request)
         case .createLinearIssue:
             return await createLinearIssue(request)
         case .createSpotifyPlaylist:
@@ -2026,6 +2037,91 @@ public final class BridgeSession: @unchecked Sendable {
         ))
     }
 
+    /// Lists contacts and existing chats for the `send-text` recipient picker.
+    ///
+    /// Two grants sit behind it — Contacts and Automation — and each can be refused independently,
+    /// so a partial list is a normal outcome rather than a failure. The contacts never leave the
+    /// machine: they cross to a local webview so the user can pick one.
+    private func listMessageRecipients(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let messageRecipients else {
+            return ok(request, payload: MessageRecipientsResult(recipients: [], available: false, reason: nil))
+        }
+        do {
+            let found = try await messageRecipients()
+            return ok(request, payload: MessageRecipientsResult(
+                recipients: found.map(MessageRecipientsResult.Recipient.init), available: true, reason: nil
+            ))
+        } catch {
+            return ok(request, payload: MessageRecipientsResult(
+                recipients: [], available: true,
+                reason: "Contacts couldn\u{2019}t be read. Grant Contacts access in System Settings."
+            ))
+        }
+    }
+
+    /// Sends one message from the `send-text` form.
+    ///
+    /// **This one is expected to gate.** `messages.send` takes no user-authored exemption, so the
+    /// normal outcome here is `awaitingConfirmation` — the response says so, and the form reports
+    /// that it needs confirming rather than that it was sent.
+    private func sendMessage(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: SendMessageInput = decodePayload(request),
+              !input.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return invalidInput(request, "sendMessage requires a message.")
+        }
+        guard !input.target.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return invalidInput(request, "sendMessage requires a recipient.")
+        }
+
+        let outcome = await runtime.submit(
+            intent: .sendMessage(MessageDraft(
+                body: input.body.trimmingCharacters(in: .whitespacesAndNewlines),
+                target: input.target,
+                targetKind: input.targetKind == "chat" ? "chat" : "participant",
+                targetName: input.targetName,
+                groupSize: input.groupSize
+            )),
+            source: .dashboard,
+            // The summary names the recipient but NOT the body: it is the line that reaches the
+            // command log, and the body belongs only in the confirmation the user reads.
+            summary: "Send a message to \(input.targetName ?? input.target)"
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(_, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmMessagesSendOutput(data: data), output.messageSent {
+                return ok(request, payload: SendMessageResult(
+                    targetName: output.messageTargetName ?? input.targetName ?? input.target,
+                    sent: true, awaitingConfirmation: false
+                ))
+            }
+            let denied = result?.status == .denied
+            return errorResponse(
+                request, category: denied ? .permissionDenied : .unavailableCapability,
+                code: denied ? "messages_permission_required" : "message_not_sent",
+                message: denied
+                    ? "Messages refused. Allow CerebralHelm to control Messages in System Settings → Privacy & Security → Automation."
+                    : "The message was not sent (\(status.rawValue))."
+            )
+        case .awaitingConfirmation:
+            // The expected path, not an error: every send is confirmed.
+            return ok(request, payload: SendMessageResult(
+                targetName: input.targetName ?? input.target, sent: false, awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "message_rejected", message: reason
+            )
+        }
+    }
+
     /// Lists current sports events for the `check-scoreboard` picker and the report it opens.
     ///
     /// **One operation serves both** because they read the same document: the picker shows the
@@ -2911,6 +3007,43 @@ public final class BridgeSession: @unchecked Sendable {
     /// The `create-event` form's collected values. `calendarTitle` is carried alongside the id
     /// purely so a confirmation disclosure can name the calendar in words — the id alone would be
     /// unreadable in a prompt.
+    private struct MessageRecipientsResult: Encodable {
+        struct Recipient: Encodable {
+            let id: String
+            let name: String
+            let kind: String
+            let groupSize: Int?
+            let handle: String?
+
+            init(_ recipient: MessageRecipient) {
+                id = recipient.id
+                name = recipient.name
+                kind = recipient.kind
+                groupSize = recipient.groupSize
+                handle = recipient.handle
+            }
+        }
+
+        let recipients: [Recipient]
+        let available: Bool
+        let reason: String?
+    }
+
+    private struct SendMessageInput: Decodable {
+        let body: String
+        let target: String
+        let targetKind: String
+        let targetName: String?
+        let groupSize: Int?
+    }
+
+    private struct SendMessageResult: Encodable {
+        let targetName: String
+        let sent: Bool
+        /// True on the normal path — this action always confirms.
+        let awaitingConfirmation: Bool
+    }
+
     private struct SportsEventsResult: Encodable {
         struct Competitor: Encodable {
             let abbreviation: String

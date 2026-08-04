@@ -612,6 +612,46 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: arguments,
                 actionSummary: "Clone \(url) into your projects folder."
             )
+        case let .sendMessage(draft):
+            // The one external write with NO user-authored exemption. A calendar event can be
+            // edited and a ticket closed; a message lands on someone else's device and cannot be
+            // unsent, so every send confirms.
+            //
+            // The body is disclosed `sensitive: false` **on purpose**: hiding it would blank the
+            // one thing the reader needs to check before it leaves. Sensitivity here protects the
+            // body from the LOG, which is what the descriptor's `redactionPaths` does — the
+            // confirmation is the user re-reading their own message.
+            var arguments = [
+                ConfirmationArgument(
+                    name: "to",
+                    value: draft.targetName ?? draft.target,
+                    sensitive: false
+                )
+            ]
+            if let groupSize = draft.groupSize, groupSize > 1 {
+                // Sending to nine people is a materially bigger action than sending to one.
+                arguments.append(ConfirmationArgument(
+                    name: "group", value: "\(groupSize) people", sensitive: false
+                ))
+            }
+            arguments.append(ConfirmationArgument(name: "message", value: draft.body, sensitive: false))
+            return make(
+                toolID: "messages.send",
+                input: try? CerebralHelmMessagesSendInput(
+                    messageBody: draft.body,
+                    messageGroupSize: draft.groupSize,
+                    messageTarget: draft.target,
+                    messageTargetKind: MessageTargetKind(rawValue: draft.targetKind) ?? .participant,
+                    messageTargetName: draft.targetName
+                ).jsonData(),
+                destination: draft.targetName ?? draft.target,
+                dataLeavingDevice: .content,
+                // A sent message cannot be recalled. Saying otherwise in the disclosure would be
+                // the single most misleading thing this surface could claim.
+                reversibility: .notReversible,
+                arguments: arguments,
+                actionSummary: "Send a message to \(draft.targetName ?? draft.target)."
+            )
         case let .scaffoldProject(name, location, summary, importance):
             // `local_write`, like project.open and git.clone: a folder and a Markdown file inside
             // the projects root, no process, no network. The adapter owns containment.

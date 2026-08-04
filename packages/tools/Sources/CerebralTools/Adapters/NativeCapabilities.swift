@@ -105,6 +105,53 @@ public struct GoogleSearchResult: Equatable, Sendable {
     }
 }
 
+// MARK: - messages.send
+
+/// Sends one iMessage (quick-actions phase 4) — the only tool in the MVP that speaks to another
+/// person.
+///
+/// **This is the one external write that never takes the user-authored exemption.** A calendar
+/// event can be edited, a Linear ticket closed, a playlist deleted; a message lands on someone
+/// else's device and cannot be unsent. So `messages.send` is `confirm_external_write` outright:
+/// every send confirms, with the recipient named and the **body shown in full** — the disclosure
+/// is the user re-reading their own message before it leaves, which is exactly the moment a typo
+/// or a wrong recipient is catchable.
+///
+/// The body is passed to the adapter as an argument and never interpolated into a script, so
+/// quotes and AppleScript keywords inside it are data rather than syntax.
+public protocol MessagingCapability: Sendable {
+    /// `targetKind` is `participant` (one person, by handle) or `chat` (an existing thread).
+    func send(body: String, target: String, targetKind: String) async throws -> Bool
+}
+
+/// Someone (or some thread) a message can be sent to.
+public struct MessageRecipient: Equatable, Sendable {
+    /// The handle for a person, or the chat identifier for a thread.
+    public let id: String
+    public let name: String
+    /// `participant` or `chat`.
+    public let kind: String
+    /// How many people are in the thread, for a group. Nil for one person.
+    public let groupSize: Int?
+    /// The phone number or Apple ID behind a person, shown so two "John Smith"s are separable.
+    public let handle: String?
+
+    public init(id: String, name: String, kind: String, groupSize: Int?, handle: String?) {
+        self.id = id
+        self.name = name
+        self.kind = kind
+        self.groupSize = groupSize
+        self.handle = handle
+    }
+}
+
+/// Reading who can be messaged is a **separate port** from sending — the fourth instance of that
+/// split, and the one where it matters most: a surface that lists contacts must not be able to
+/// reach the path that sends to them.
+public protocol MessageRecipientsProviding: Sendable {
+    func recipients() async throws -> [MessageRecipient]
+}
+
 // MARK: - spotify.createplaylist
 
 /// Creates an empty playlist in the user's connected Spotify account (quick-actions phase 4).

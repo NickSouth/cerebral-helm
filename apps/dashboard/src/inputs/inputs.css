@@ -272,3 +272,67 @@
   font-size: var(--ch-font-size-sm);
   color: var(--ch-text-muted);
 }
+
+/* --- Combobox (send-text) -------------------------------------------------------------------
+   Typeahead over a list too long to scan. Nothing is chosen until a result is clicked: typing
+   only filters, so a half-typed name can never become a recipient. */
+.input-field__combobox {
+  position: relative;
+}
+
+.input-field__matches {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  margin: var(--ch-space-1) 0 0;
+  padding: var(--ch-space-1);
+  list-style: none;
+  max-height: 11rem;
+  overflow-y: auto;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+
+.input-field__match {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-2);
+  border: 0;
+  border-radius: var(--ch-radius-sm);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.input-field__match:hover,
+.input-field__match:focus-visible {
+  background: color-mix(in srgb, var(--ch-accent-primary) 16%, transparent);
+}
+
+/* A chosen recipient reads as settled — the search box is gone, and changing it is deliberate. */
+.input-field__chosen {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-panel);
+}
+
+.input-field__chosen-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

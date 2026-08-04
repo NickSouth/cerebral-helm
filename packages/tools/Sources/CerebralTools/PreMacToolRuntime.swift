@@ -47,6 +47,7 @@ public enum PreMacToolRuntime {
             "project.scaffold": ProjectScaffoldHandler(capability: capabilities.projectScaffold),
             "linear.createissue": LinearCreateIssueHandler(capability: capabilities.linearIssue),
             "spotify.createplaylist": SpotifyCreatePlaylistHandler(capability: capabilities.spotifyPlaylist),
+            "messages.send": MessagesSendHandler(capability: capabilities.messaging),
             "spotify.control": SpotifyControlHandler(capability: capabilities.spotifyControl),
             "web.open": WebOpenHandler(capability: capabilities.webOpen),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
@@ -141,6 +142,7 @@ public enum PreMacToolRuntime {
         case "project.scaffold": _ = try CerebralHelmProjectScaffoldInput(data: data)
         case "linear.createissue": _ = try CerebralHelmLinearCreateIssueInput(data: data)
         case "spotify.createplaylist": _ = try CerebralHelmSpotifyCreatePlaylistInput(data: data)
+        case "messages.send": _ = try CerebralHelmMessagesSendInput(data: data)
         case "spotify.control": _ = try CerebralHelmSpotifyControlInput(data: data)
         case "web.open": _ = try CerebralHelmWebOpenInput(data: data)
         default: break

@@ -1,5 +1,6 @@
 // Platform permission status (NIC-83, MAC-ADAPTER-5).
 #if canImport(AppKit)
+import Contacts
 import ApplicationServices
 import CoreLocation
 import Foundation
@@ -32,10 +33,15 @@ public struct MacPermissionChecker: PermissionChecking {
              "knowledge_root_write",
              "system_metrics_read",
              "mode_plan_execute",
-             "projects_root_write":
+             "projects_root_write",
+             "messages_automation":
             return .notRequired
         case "accessibility":
             return AXIsProcessTrusted() ? .granted : .denied
+        case "contacts_read":
+            // Read without prompting — the prompt stays at point of use in the recipients
+            // provider, so opening Settings never asks for the address book.
+            return ContactsPermission.status(CNContactStore.authorizationStatus(for: .contacts))
         case "location":
             // The weather widget's location fix (NIC-169). Read the live CoreLocation
             // authorization without prompting — the prompt stays at point of use in
@@ -43,6 +49,18 @@ public struct MacPermissionChecker: PermissionChecking {
             return CoreLocationProvider.permissionStatus(from: CLLocationManager().authorizationStatus)
         default:
             return .notDetermined
+        }
+    }
+}
+
+/// Maps CoreContacts' authorization to the shared status, so the tool surface reports an honest
+/// "not required / granted / denied" instead of guessing.
+enum ContactsPermission {
+    static func status(_ status: CNAuthorizationStatus) -> PermissionStatus {
+        switch status {
+        case .authorized: return .granted
+        case .denied, .restricted: return .denied
+        default: return .notDetermined
         }
     }
 }

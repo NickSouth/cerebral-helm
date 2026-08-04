@@ -134,6 +134,39 @@ public struct GoogleSearchHandler: ToolHandler {
     }
 }
 
+// MARK: - messages.send
+
+public struct MessagesSendHandler: ToolHandler {
+    public let toolID = "messages.send"
+    private let capability: any MessagingCapability
+
+    public init(capability: any MessagingCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmMessagesSendInput
+        do { decoded = try CerebralHelmMessagesSendInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("messages.send input does not match its contract.")
+        }
+        do {
+            let sent = try await capability.send(
+                body: decoded.messageBody,
+                target: decoded.messageTarget,
+                targetKind: decoded.messageTargetKind.rawValue
+            )
+            // Never reports sent for something the adapter did not confirm.
+            guard sent else {
+                throw ToolHandlerError.providerFailure("Messages did not confirm the send.")
+            }
+            return try CerebralHelmMessagesSendOutput(
+                messageSent: true,
+                messageTargetName: decoded.messageTargetName
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 // MARK: - spotify.createplaylist
 
 public struct SpotifyCreatePlaylistHandler: ToolHandler {

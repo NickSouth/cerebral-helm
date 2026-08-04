@@ -8,6 +8,7 @@ import { createTicketForm } from "./createTicket";
 import { createPlaylistForm } from "./createPlaylist";
 import { createProjectForm } from "./createProject";
 import { checkScoreboardForm } from "./checkScoreboard";
+import { sendTextForm } from "./sendText";
 import { useReports } from "../state/ReportProvider";
 import { submitYouTubeSearch } from "../shell/youtubeSearch";
 import type { CerebralBridge } from "../bridge/cerebralBridge";
@@ -42,6 +43,8 @@ export function useInputForm(actionId: string): { form: InputForm | null; loadin
       return { form: createProjectForm(bridge), loading: false };
     case "check-scoreboard":
       return { form: checkScoreboardForm(openReport), loading: false };
+    case "send-text":
+      return { form: sendTextForm(bridge), loading: false };
     case "create-event":
       return calendarModeMap.loading
         ? { form: null, loading: true }

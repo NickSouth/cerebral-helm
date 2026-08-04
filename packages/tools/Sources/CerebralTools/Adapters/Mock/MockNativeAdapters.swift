@@ -219,6 +219,21 @@ public struct MockGoogleSearchCapability: GoogleSearchCapability {
     }
 }
 
+public struct MockMessagingCapability: MessagingCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func send(body: String, target: String, targetKind: String) async throws -> Bool {
+        try CapabilityGate.check(CapabilityMatrix.Capability.messagesSend, matrix: matrix, fault: fault, subject: target)
+        return true
+    }
+}
+
 public struct MockSpotifyPlaylistCapability: SpotifyPlaylistCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault

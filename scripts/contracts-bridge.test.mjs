@@ -59,6 +59,8 @@ const bridgeOperations = new Set([
   "chooseFolder",
   "listLinearOptions",
   "listSportsEvents",
+  "listMessageRecipients",
+  "sendMessage",
   "createLinearIssue",
   "createSpotifyPlaylist",
   "scaffoldProject",

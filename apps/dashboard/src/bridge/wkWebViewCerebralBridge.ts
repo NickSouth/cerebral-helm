@@ -18,7 +18,9 @@ import type {
   ChooseFolderResult,
   CreateLinearIssueResult,
   CreateSpotifyPlaylistResult,
+  ListMessageRecipientsResult,
   ListSportsEventsResult,
+  SendMessageResult,
   ScaffoldProjectResult,
   ListLinearOptionsResult,
   CloneRepositoryResult,
@@ -345,6 +347,12 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     listSportsEvents() {
       return operation<ListSportsEventsResult>("listSportsEvents", {});
+    },
+    listMessageRecipients() {
+      return operation<ListMessageRecipientsResult>("listMessageRecipients", {});
+    },
+    sendMessage(input) {
+      return operation<SendMessageResult>("sendMessage", { ...input });
     },
     updateQuickApps(input) {
       return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });

@@ -529,6 +529,11 @@ final class AppBridgeRuntime: @unchecked Sendable {
             // picker rooted at the projects root. The chooser — not the caller — decides where the
             // panel opens and refuses a selection outside that root, so the tool's containment
             // guarantee is never delegated to the web layer. Main actor: it presents a panel.
+            // The `send-text` recipient picker (quick-actions phase 4): contacts + existing chats.
+            // A READ closure, separate from the `messages.send` tool that writes — a surface that
+            // lists people must not reach the one that sends to them. Both grants (Contacts,
+            // Automation) prompt at point of use, and either can be refused independently.
+            messageRecipients: { try await MessagesRecipientsProvider().recipients() },
             // The Canvas connect/status surface (NIC-132): getCanvasStatus shows the pairing
             // endpoint/token + last-scrape summary; resetCanvas purges the scrape and rotates the token.
             canvasStatus: canvasStatusClosure,

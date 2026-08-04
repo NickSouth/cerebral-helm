@@ -253,6 +253,35 @@ export interface ListSportsEventsResult {
   readonly reason: string | null;
 }
 
+/** Someone (or some thread) a message can go to. `groupSize` is present only for a real group. */
+export interface MessageRecipient {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: "participant" | "chat";
+  readonly groupSize: number | null;
+  readonly handle: string | null;
+}
+export interface ListMessageRecipientsResult {
+  readonly recipients: readonly MessageRecipient[];
+  readonly available: boolean;
+  readonly reason: string | null;
+}
+
+export interface SendMessageInput {
+  readonly body: string;
+  readonly target: string;
+  readonly targetKind: "participant" | "chat";
+  /** Carried so the confirmation names who this is going to, rather than a phone number. */
+  readonly targetName?: string;
+  readonly groupSize?: number;
+}
+export interface SendMessageResult {
+  readonly targetName: string;
+  readonly sent: boolean;
+  /** True on the normal path — this action always confirms before sending. */
+  readonly awaitingConfirmation: boolean;
+}
+
 export interface SearchNotesInput {
   readonly text: string;
   readonly limit?: number;
@@ -781,6 +810,10 @@ export interface CerebralBridge {
   /** Read current NFL games and PGA tournaments for `check-scoreboard` (quick actions phase 4).
    *  One call serves both the picker and the report it opens — they read the same document. */
   listSportsEvents(): Promise<ListSportsEventsResult>;
+  /** Contacts and existing chats for the `send-text` picker (quick actions phase 4). */
+  listMessageRecipients(): Promise<ListMessageRecipientsResult>;
+  /** Send one message. Always gates: the result normally reports `awaitingConfirmation`. */
+  sendMessage(input: SendMessageInput): Promise<SendMessageResult>;
   /** The Canvas ingest connection state for the Settings connect card (NIC-132) — the pairing
    *  endpoint/token (minted on demand) plus the last scrape's age/counts. */
   getCanvasStatus(): Promise<CanvasStatus>;

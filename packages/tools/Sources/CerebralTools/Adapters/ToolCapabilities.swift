@@ -58,6 +58,10 @@ public struct ToolCapabilities: Sendable {
     /// ``spotifyControl``: a playback surface must not reach a path that writes to the library.
     /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
     public let spotifyPlaylist: any SpotifyPlaylistCapability
+    /// Sends one iMessage (quick-actions phase 4) — the only tool that speaks to another person,
+    /// and the only external write that never takes the user-authored exemption.
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let messaging: any MessagingCapability
     /// Stable capability IDs (``CapabilityMatrix/Capability/appOpen`` etc.) bound
     /// to honest native implementations in this bundle. Empty for the mock bundle.
     public let nativeCapabilityIDs: Set<String>
@@ -83,6 +87,7 @@ public struct ToolCapabilities: Sendable {
         calendarWrite: any CalendarWritingCapability = MockCalendarWritingCapability(matrix: .none),
         spotifyControl: any SpotifyControlCapability = MockSpotifyControlCapability(matrix: .none),
         spotifyPlaylist: any SpotifyPlaylistCapability = MockSpotifyPlaylistCapability(matrix: .none),
+        messaging: any MessagingCapability = MockMessagingCapability(matrix: .none),
         nativeCapabilityIDs: Set<String> = []
     ) {
         self.app = app
@@ -105,6 +110,7 @@ public struct ToolCapabilities: Sendable {
         self.calendarWrite = calendarWrite
         self.spotifyControl = spotifyControl
         self.spotifyPlaylist = spotifyPlaylist
+        self.messaging = messaging
         self.nativeCapabilityIDs = nativeCapabilityIDs
     }
 
@@ -131,7 +137,8 @@ public struct ToolCapabilities: Sendable {
             webOpen: MockWebOpenCapability(matrix: matrix),
             calendarWrite: MockCalendarWritingCapability(matrix: matrix),
             spotifyControl: MockSpotifyControlCapability(matrix: matrix),
-            spotifyPlaylist: MockSpotifyPlaylistCapability(matrix: matrix)
+            spotifyPlaylist: MockSpotifyPlaylistCapability(matrix: matrix),
+            messaging: MockMessagingCapability(matrix: matrix)
         )
     }
 }

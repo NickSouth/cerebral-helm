@@ -38,7 +38,10 @@
     "send-text": {
       "label": "Send text",
       "icon": "message",
-      "archetype": "input"
+      "archetype": "input",
+      "target": {
+        "kind": "input"
+      }
     },
     "email-report": {
       "label": "Email report",

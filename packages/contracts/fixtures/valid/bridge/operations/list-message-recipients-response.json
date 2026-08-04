@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_listRecipientsRes0000001",
+  "type": "bridge.operation.response",
+  "operation": "listMessageRecipients",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "recipients": [
+      { "id": "chat123", "name": "Ski trip", "kind": "chat", "groupSize": 6, "handle": null },
+      { "id": "+15551234567", "name": "Jamie Rivera", "kind": "participant", "groupSize": null, "handle": "+15551234567" }
+    ],
+    "available": true,
+    "reason": null
+  }
+}

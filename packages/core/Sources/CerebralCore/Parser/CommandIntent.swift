@@ -44,6 +44,9 @@ public enum CommandIntent: Equatable, Sendable {
     /// Scaffold a new project folder — a single `project.scaffold` tool call, from the
     /// `create-project` Input form. Form-submitted only.
     case scaffoldProject(name: String, location: String?, summary: String?, importance: Int?)
+    /// Send one iMessage — a single `messages.send` tool call, from the `send-text` Input form.
+    /// Form-submitted only, and the one intent that always reaches a confirmation.
+    case sendMessage(MessageDraft)
     /// Control the user's Spotify playback (NIC-133) — a single `spotify.control` tool call. The
     /// action is one of play/pause/next/previous; the adapter sends it to the active device.
     case spotifyControl(action: String)
@@ -170,6 +173,29 @@ public struct LinearIssueDraft: Equatable, Sendable {
         self.labelIDs = labelIDs
         self.labelNames = labelNames
         self.priority = priority
+    }
+}
+
+/// Everything the `send-text` form collected.
+///
+/// `targetName` and `groupSize` exist purely for the confirmation: a phone number tells the reader
+/// nothing, and "9 people" is the difference between a message and a broadcast (FR-SAF-04).
+public struct MessageDraft: Equatable, Sendable {
+    public let body: String
+    public let target: String
+    /// `participant` (one person) or `chat` (an existing thread).
+    public let targetKind: String
+    public let targetName: String?
+    public let groupSize: Int?
+
+    public init(
+        body: String, target: String, targetKind: String, targetName: String? = nil, groupSize: Int? = nil
+    ) {
+        self.body = body
+        self.target = target
+        self.targetKind = targetKind
+        self.targetName = targetName
+        self.groupSize = groupSize
     }
 }
 

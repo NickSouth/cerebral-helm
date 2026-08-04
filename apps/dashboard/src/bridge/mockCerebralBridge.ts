@@ -723,6 +723,33 @@ export function createMockCerebralBridge(
         reason: null
       });
     },
+    listMessageRecipients() {
+      // A representative pair for browser previews: one group thread and one person, which are
+      // the two shapes the picker and the confirmation have to handle.
+      return Promise.resolve({
+        recipients: [
+          { id: "chat123", name: "Ski trip", kind: "chat" as const, groupSize: 6, handle: null },
+          {
+            id: "+15551234567",
+            name: "Jamie Rivera",
+            kind: "participant" as const,
+            groupSize: null,
+            handle: "+15551234567"
+          }
+        ],
+        available: true,
+        reason: null
+      });
+    },
+    sendMessage(input: { target: string; targetName?: string }) {
+      // The browser sends nothing. It reports the GATED shape, because that is the real one: the
+      // tool takes no user-authored exemption, so a send always waits on a confirmation.
+      return Promise.resolve({
+        targetName: input.targetName ?? input.target,
+        sent: false,
+        awaitingConfirmation: true
+      });
+    },
     listCalendars() {
       // A representative calendar set for browser previews of the Settings calendar→mode mapping
       // (NIC-126). `authorized: true` so the mapping UI renders its rows rather than the

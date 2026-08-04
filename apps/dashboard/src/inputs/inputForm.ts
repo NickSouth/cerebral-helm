@@ -15,9 +15,9 @@
  */
 
 /**
- * The seven planned field kinds. `combobox` (typeahead over a long list — contacts, Linear
- * projects) is declared but not yet rendered; it arrives with the first action that needs it. The
- * renderer skips an unrendered kind rather than drawing a broken control.
+ * The planned field kinds. `combobox` is typeahead over a list too long to scan — it arrived with
+ * `send-text`, where the list is an address book. It was deliberately NOT used for Linear's ten
+ * labels: typeahead over a short list is worse than a dropdown, not better.
  *
  * `folderPicker` is the one kind needing a **native open-panel round trip**, so it is the one kind
  * that can be unavailable at runtime rather than merely undrawn: a host without a window server
@@ -40,6 +40,7 @@ export const RENDERABLE_FIELD_KINDS: ReadonlySet<InputFieldKind> = new Set<Input
   "textarea",
   "select",
   "multiSelect",
+  "combobox",
   "number",
   "datetimeRange",
   "folderPicker"
@@ -78,7 +79,8 @@ export type InputOptionProvider =
   | "linearTeams"
   | "linearProjects"
   | "linearLabels"
-  | "sportsEvents";
+  | "sportsEvents"
+  | "messageRecipients";
 
 export type InputOptionSource =
   | { readonly kind: "static"; readonly options: readonly InputSelectOption[] }

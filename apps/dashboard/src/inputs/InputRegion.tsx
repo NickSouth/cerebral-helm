@@ -14,6 +14,7 @@ import {
 } from "./inputForm";
 import type { ListLinearOptionsResult } from "../bridge/cerebralBridge";
 import { eventLabel, pickableEvents, useSportsEvents } from "../sports/sportsEvents";
+import { recipientLabel, useMessageRecipients } from "./messageRecipients";
 import { useBridge } from "../state/BridgeProvider";
 import { quickActionLabel } from "../shell/quickActionRegistry";
 import { useActionStatus } from "../state/ActionStatusProvider";
@@ -77,6 +78,11 @@ function InputFormBody({ form, onDone }: { form: InputForm; onDone: () => void }
   // The second remote option source, fetched the same way and for the same reason. A third would
   // be the point to generalize this into one provider-registry hook rather than a third one-off.
   const sports = useSportsEvents(fields.some((field) => providerOf(field) === "sportsEvents"));
+  // The third remote option source, and the point at which the one-offs were collapsed: they now
+  // share one shape (`RemoteOptions`) so a fourth is a table entry rather than another hook.
+  const recipients = useMessageRecipients(
+    fields.some((field) => providerOf(field) === "messageRecipients")
+  );
   const missing = missingRequired(form, values);
   const canSubmit = !readOnly && !submitting && missing.length === 0;
 
@@ -115,6 +121,7 @@ function InputFormBody({ form, onDone }: { form: InputForm; onDone: () => void }
           values={values}
           linear={linear}
           sports={sports}
+          recipients={recipients}
           disabled={readOnly || submitting}
           onChange={set}
         />
@@ -288,6 +295,7 @@ function FieldView({
   values,
   linear,
   sports,
+  recipients,
   disabled,
   onChange
 }: {
@@ -295,6 +303,7 @@ function FieldView({
   values: InputValues;
   linear: LinearState;
   sports: SportsEventsState;
+  recipients: ReturnType<typeof useMessageRecipients>;
   disabled: boolean;
   onChange: (name: string, next: string) => void;
 }) {
@@ -302,11 +311,17 @@ function FieldView({
   const calendars = useOptionSource(field.source);
   const isLinear = usesLinearProvider(field);
   const isSports = providerOf(field) === "sportsEvents";
+  const isRecipients = providerOf(field) === "messageRecipients";
   // A scoped field reads the value of the field it depends on, so a project list narrows to the
   // chosen team instead of spanning the workspace.
   const scopeValue = field.scopedBy ? (values[field.scopedBy] ?? "") : "";
   const provider = field.source?.kind === "provider" ? field.source.provider : "";
-  const options = isSports
+  const options = isRecipients
+    ? (recipients.result?.recipients ?? []).map((recipient) => ({
+        value: `${recipient.kind}:${recipient.id}`,
+        label: recipientLabel(recipient)
+      }))
+    : isSports
     ? pickableEvents(sports.result?.events ?? []).map((event) => ({
         value: event.id,
         label: eventLabel(event)
@@ -314,17 +329,22 @@ function FieldView({
     : isLinear
       ? linearOptions(provider, linear.result, scopeValue)
       : calendars.options;
-  const unavailable = isSports
+  const unavailable = isRecipients
+    ? recipients.failed || recipients.result?.available === false || recipients.result?.reason != null
+    : isSports
     ? sports.failed || sports.result?.available === false || sports.result?.reason != null
     : isLinear
       ? linear.failed || linear.result?.available === false || linear.result?.reason != null
       : calendars.unavailable;
   const hint = unavailable
-    ? isSports
+    ? isRecipients
+      ? (recipients.result?.reason ??
+        "Contacts couldn\u2019t be read. Grant Contacts access in System Settings.")
+      : isSports
       ? sports.result?.reason ?? "Scores couldn\u2019t be read right now."
-      : isLinear
-        ? "Your Linear workspace couldn\u2019t be read. Check the API key under Settings \u2192 Setup."
-        : "Your calendars couldn\u2019t be read — this will use the default."
+        : isLinear
+          ? "Your Linear workspace couldn\u2019t be read. Check the API key under Settings \u2192 Setup."
+          : "Your calendars couldn\u2019t be read — this will use the default."
     : isSports && sports.loading
       ? "Loading today\u2019s games…"
       : field.hint;
@@ -441,6 +461,16 @@ function FieldView({
             onChange={(event) => field.endName && onChange(field.endName, event.target.value)}
           />
         </div>
+      ) : field.kind === "combobox" ? (
+        <ComboboxControl
+          id={id}
+          field={field}
+          options={options}
+          value={value}
+          disabled={disabled}
+          describedBy={describedBy}
+          onChange={onChange}
+        />
       ) : field.kind === "multiSelect" ? (
         <MultiSelectControl
           id={id}
@@ -652,6 +682,104 @@ function MultiSelectControl({
           <span>{option.label}</span>
         </label>
       ))}
+    </div>
+  );
+}
+
+/**
+ * A `combobox`: typeahead over a list too long to scan.
+ *
+ * Deliberately not used for a short list — a dropdown of ten labels beats a search box over ten
+ * labels. It exists because an address book is the case where scanning stops working.
+ *
+ * **Nothing is chosen until something is chosen.** Typing filters; it never sets the value. The
+ * stored value only changes when a result is picked, so a half-typed name can never become a
+ * recipient — which for this particular form is the difference between a message and a mistake.
+ */
+function ComboboxControl({
+  id,
+  field,
+  options,
+  value,
+  disabled,
+  describedBy,
+  onChange
+}: {
+  id: string;
+  field: InputField;
+  options: readonly InputSelectOption[];
+  value: string;
+  disabled: boolean;
+  describedBy?: string;
+  onChange: (name: string, next: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const chosen = options.find((option) => option.value === value);
+  const needle = query.trim().toLowerCase();
+  const matches =
+    needle.length === 0
+      ? []
+      : options.filter((option) => option.label.toLowerCase().includes(needle)).slice(0, 8);
+
+  function choose(option: InputSelectOption) {
+    onChange(field.name, option.value);
+    // The label rides along so the confirmation can name the recipient in words.
+    onChange(`${field.name}Label`, option.label);
+    setQuery("");
+  }
+
+  if (chosen) {
+    return (
+      <div className="input-field__chosen">
+        <span className="input-field__chosen-label">{chosen.label}</span>
+        <button
+          type="button"
+          className="input-field__picker-button"
+          disabled={disabled}
+          onClick={() => {
+            onChange(field.name, "");
+            onChange(`${field.name}Label`, "");
+          }}
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="input-field__combobox">
+      <input
+        id={id}
+        className="input-field__control"
+        type="text"
+        role="combobox"
+        aria-expanded={matches.length > 0}
+        aria-controls={`${id}-matches`}
+        autoComplete="off"
+        value={query}
+        disabled={disabled}
+        placeholder={field.placeholder}
+        aria-describedby={describedBy}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      {matches.length > 0 ? (
+        <ul className="input-field__matches" id={`${id}-matches`} role="listbox">
+          {matches.map((option) => (
+            <li key={option.value}>
+              <button
+                type="button"
+                className="input-field__match"
+                role="option"
+                aria-selected={false}
+                onClick={() => choose(option)}
+              >
+                {option.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

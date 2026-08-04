@@ -492,6 +492,7 @@ export enum Operation {
     ListCalendars = "listCalendars",
     ListChromeProfiles = "listChromeProfiles",
     ListLinearOptions = "listLinearOptions",
+    ListMessageRecipients = "listMessageRecipients",
     ListNotes = "listNotes",
     ListSportsEvents = "listSportsEvents",
     ListUrls = "listUrls",
@@ -504,6 +505,7 @@ export enum Operation {
     RunSpeedTest = "runSpeedTest",
     ScaffoldProject = "scaffoldProject",
     SearchNotes = "searchNotes",
+    SendMessage = "sendMessage",
     SetCanvasItemHidden = "setCanvasItemHidden",
     StoreSecret = "storeSecret",
     SubmitCommand = "submitCommand",
@@ -1570,6 +1572,53 @@ export interface CerebralHelmLinearCreateIssueOutput {
      * The issue's web URL, as returned by Linear — never constructed here.
      */
     issueURL: string;
+}
+
+export interface CerebralHelmMessagesSendInput {
+    /**
+     * The message text. Passed to the adapter as an argument, never interpolated into a script,
+     * so quotes and AppleScript keywords in it are data.
+     */
+    messageBody: string;
+    /**
+     * How many people are in the thread, when it is a group. Disclosed because sending to nine
+     * people is a materially bigger action than sending to one (FR-SAF-04).
+     */
+    messageGroupSize?: number;
+    /**
+     * A participant handle (phone number or Apple ID) or a chat identifier, per
+     * messageTargetKind.
+     */
+    messageTarget: string;
+    /**
+     * Messages can send to one person or to an existing chat. A new group cannot be assembled —
+     * the scripting dictionary's `chat` class is read-only — so a group is always an existing
+     * thread.
+     */
+    messageTargetKind: MessageTargetKind;
+    /**
+     * The recipient's display name, so a confirmation can name who this is going to in words
+     * rather than as a phone number.
+     */
+    messageTargetName?: string;
+}
+
+/**
+ * Messages can send to one person or to an existing chat. A new group cannot be assembled —
+ * the scripting dictionary's `chat` class is read-only — so a group is always an existing
+ * thread.
+ */
+export enum MessageTargetKind {
+    Chat = "chat",
+    Participant = "participant",
+}
+
+export interface CerebralHelmMessagesSendOutput {
+    messageSent: boolean;
+    /**
+     * Who it went to, echoed back so the result names them rather than repeating a handle.
+     */
+    messageTargetName?: string;
 }
 
 export interface CerebralHelmModeApplyInput {

@@ -1,6 +1,6 @@
 # Quick actions — surface architecture and build plan
 
-**Status:** In progress — phases 0-3 complete; phase 4 (integration-gated actions) next
+**Status:** In progress — phases 0-4 complete; phase 5 (pickers + streaming status) next
 **Owner:** Nick Southey
 **Source:** Planning session 2026-08-03; supersedes the NIC-139 workflow-builder approach
 **Scope:** All 32 quick-action slots across the four modes, the surfaces they render in, and the order to build them
@@ -282,7 +282,7 @@ Each is now "wire an integration into an existing surface", independent of the o
 | 3 | ~~`create-ticket`~~ **Built** | Linear API + the first provider-backed dropdowns against a live source (teams, projects, labels) | First credential of the batch, and the first real exercise of remote option sources. Low blast radius — a ticket in your own workspace. |
 | 4 | ~~`create-playlist`~~ **Built** | Spotify playlist scope | Forces **re-authorization**: the existing grant lacks the scope, so this disturbs something that currently works. Do it when you are ready to reconnect. |
 | 5 | ~~`check-scoreboard`~~ **Built** | ESPN site API + the first parameterized Report + two new block kinds | Unblocked 2026-08-03 (see *Deferred to build time*). |
-| 6 | `send-text` | iMessage send + Contacts | Highest risk in the phase: outward communication to a real person, two permission grants, and confirmation-gated with recipient and full message body disclosed. Wants its own careful pass. |
+| 6 | ~~`send-text`~~ **Built** | iMessage send + Contacts | Highest risk in the phase: outward communication to a real person, two permission grants, and confirmation-gated with recipient and full message body disclosed. |
 
 **1 — `search-youtube` is built.** A full vertical slice with no new architecture, exactly as predicted: two schemas, a descriptor plus its stricter-only overlay, a `YouTubeSearchCapability` port and mock, a `youtube.search` handler, a `youtubeSearch` intent and verb, a resolve case, an `NSWorkspace` adapter, and a one-field form. No credential, no bridge op, no new field kind.
 
@@ -338,6 +338,16 @@ Playlist creation is a **separate capability** from playback control even though
 It inherits the `folderPicker` from `git-clone` with the same parent semantics and the same containment invariant. Two details worth keeping. A name containing a path separator is **refused, not sanitized** — silently turning "Helm / v2" into a nested folder would put it somewhere the user never asked for, and a name they can see is wrong beats a path they cannot. And the descriptor is **composed in code rather than substituted into `config/templates/PROJECT.md`**: that template is a hand-authoring reference full of prose placeholders, and string-replacing into prose works right up until someone edits a sentence. A test holds the generated descriptor to the template's *structure*, which survives edits to either, and another asserts the `importance` it writes survives the same frontmatter parser the widget reads with — the value is what orders the panel, so it has to parse, not merely look right.
 
 **`email-report` and the daily brief's unread count are deferred out of this phase.** Both need Gmail OAuth, which the plan already calls the largest single lift, and which the PRD **excludes from MVP scope**. Neither belongs ahead of the tech-debt and Mac hardening/release work.
+
+**`send-text` is built — and it is the one action that never runs one-click.** Every other external write here takes the user-authored exemption, because a calendar event can be edited, a ticket closed, a playlist deleted. A message lands on someone else's device and cannot be unsent, so `messages.send` is `confirm_external_write` outright and the form's success path reads *"Confirm to send"*, never *"Sent"*. Its disclosure is `reversibility: not_reversible`, which is simply true.
+
+**The body is disclosed in full, `sensitive: false` — deliberately.** Marking it sensitive would render it as `•••••• (hidden)`, blanking the one thing worth re-reading before it leaves. Sensitivity protects a value from the **log**, which is what the descriptor's `redactionPaths: ["/messageBody"]` does; the confirmation is the user reading their own message. Those are different jobs and this is the action that makes the difference obvious.
+
+**Injection safety is the adapter's whole shape.** The message is passed to `osascript` as an **argument** against a fixed `on run argv` script — verified — so a body containing quotes, `&`, or the literal `end tell` is data. Interpolating it into script text would have made every message the user types an AppleScript injection into their own Messages app. A test asserts the script never contains the body.
+
+`combobox` finally arrived, and only here: typeahead over an address book earns itself, where typeahead over Linear's ten labels would have been worse than a dropdown. **Nothing is chosen until a result is clicked** — typing only filters — so a half-typed name can never become a recipient.
+
+Reading recipients is a **separate port** from sending, the fourth instance of that split and the one where it matters most. Contacts and Automation are refused independently, and a refusal drops that source rather than failing the read: a contact list with no group threads is still usable.
 
 **`send-text` design note (verified 2026-08-03 against the Messages scripting dictionary on this Mac).** `send … to` accepts a **chat** as well as a participant, and `chat` exposes `id`, `name` and `participants`, so messaging an **existing group thread is supported**. There is no creation command — `chats` is read-only — so a *new* group cannot be assembled from a set of contacts. Two consequences: the recipient source is **contacts plus existing chats**, and the confirmation disclosure should name the resolved recipient *and*, for a group, its size — sending to a thread of nine is a materially bigger action than sending to one (FR-SAF-04). The API surface was verified, not an end-to-end send; that needs an Automation grant and is a manual step.
 
