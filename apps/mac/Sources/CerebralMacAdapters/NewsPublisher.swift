@@ -126,6 +126,24 @@ public actor NewsPublisher {
         await tick(force: true)
     }
 
+    /// Re-emit the current cached state without fetching, for a surface that has just become able
+    /// to receive events.
+    ///
+    /// Event delivery is fire-and-forget: the shell drops an event when the webview has not yet
+    /// registered its receiver. That was survivable while the first tick always waited on a network
+    /// round trip — the page won that race. Serving the first tick from a warm cache made it
+    /// instant, so the first `news.changed` now loses the race on a relaunch, and with a 2 h cadence
+    /// the panel would sit on its bootstrap "unavailable" until the next scheduled tick. The shell
+    /// calls this once the dashboard's bridge handshake proves the page can receive.
+    ///
+    /// Emits nothing when the cache is empty: on a first-ever run there is no state worth showing,
+    /// and emitting an "unavailable" here would only flash it before the first fetch lands.
+    public func resend() async {
+        hydrateIfNeeded()
+        guard !cache.entries.isEmpty else { return }
+        emitFromCache(at: now())
+    }
+
     /// Pause/resume from the shell's visibility signal. Resuming emits a fresh sample immediately —
     /// from the cache when the last fetch was recent, so an occlusion flap costs no quota.
     public func setActive(_ nowActive: Bool) async {

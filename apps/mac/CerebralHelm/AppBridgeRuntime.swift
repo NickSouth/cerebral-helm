@@ -643,6 +643,18 @@ final class AppBridgeRuntime: @unchecked Sendable {
         )
     }
 
+    /// Re-emit live widget state that a webview may have missed, called once its bridge handshake
+    /// proves it can receive events.
+    ///
+    /// Event delivery is fire-and-forget — an event emitted before the page registers its receiver
+    /// is dropped — so any producer whose first tick can beat the webview's load needs a replay.
+    /// The topology snapshot already has one (`WindowCoordinator.lastTopologyJSON`). News needs it
+    /// too now that its first tick is served from a warm cache instead of a network round trip.
+    /// The other producers all still open with a network fetch, so the page wins their race.
+    func resendLiveWidgetState() {
+        if let news = newsPublisher { Task { await news.resend() } }
+    }
+
     func startStatusPublishing() {
         let metrics = statusPublisher
         let repos = reposPublisher

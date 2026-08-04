@@ -481,6 +481,47 @@ func newsPublisherRateLimitKeepsLastGood() async throws {
     #expect(collector.all.last?.contains("Markets steady") == true)
 }
 
+@Test("resend repaints from cache without spending a request — the webview-race repair")
+func newsPublisherResendRepaintsFromCache() async throws {
+    let store = InMemoryNewsCacheStore()
+    let clock = TestClock()
+    let provider = CountingNewsProvider(items: sampleNews())
+    let secrets = MockSecretStore(values: ["newsdata_api_key": "tok"])
+
+    // A previous run warmed the cache.
+    await resume(makeQuotaPublisher(
+        provider: provider, cacheStore: store, clock: clock, collector: NewsEventCollector()
+    ))
+    #expect(await provider.callCount == 1)
+
+    // Relaunch: the first tick is served from cache, so it is instant and can be emitted before
+    // the dashboard webview has registered its receiver — that event is dropped by the shell.
+    // Once the page's handshake lands, resend() must repaint it.
+    let afterHandshake = NewsEventCollector()
+    let publisher = makeQuotaPublisher(
+        provider: provider, cacheStore: store, clock: clock, collector: afterHandshake
+    )
+    await publisher.resend()
+
+    #expect(afterHandshake.count == 1, "the panel is repainted")
+    #expect(afterHandshake.all[0].contains("\"state\":\"ready\""))
+    #expect(afterHandshake.all[0].contains("Markets steady"))
+    #expect(await provider.callCount == 1, "a repaint must never cost a provider request")
+}
+
+@Test("resend on a cold cache stays silent rather than flashing an unavailable panel")
+func newsPublisherResendSilentWhenNothingCached() async throws {
+    let collector = NewsEventCollector()
+    let publisher = makeQuotaPublisher(
+        provider: CountingNewsProvider(items: sampleNews()),
+        cacheStore: InMemoryNewsCacheStore(), clock: TestClock(), collector: collector
+    )
+
+    await publisher.resend()
+
+    #expect(collector.count == 0)
+}
+
 @Test("a missing credential is never masked by cached headlines")
 func newsPublisherCredentialsMissingBeatsCache() async throws {
     let store = InMemoryNewsCacheStore()
