@@ -3,6 +3,8 @@ import { useActiveMode } from "../shell/useActiveMode";
 import { composeDailyBrief, type DailyBriefSnapshot } from "./dailyBrief";
 import { composeOpenSchedule, type OpenScheduleSnapshot } from "./openSchedule";
 import { composeSuggestAMovie, type SuggestAMovieSnapshot } from "./suggestAMovie";
+import { composeCheckScoreboard } from "./checkScoreboard";
+import { useSportsEvents } from "../sports/sportsEvents";
 import type { DashboardState } from "../state/dashboardState";
 import type { ReportDocument } from "./reportDocument";
 
@@ -14,21 +16,46 @@ import type { ReportDocument } from "./reportDocument";
  * Canvas / TMDB widget feeds are already live in the dashboard, so v1 composes entirely from
  * state it holds. When a model becomes the composer it will consume the same snapshot types.
  */
-export function useReportDocument(reportId: string, now: Date = new Date()): ReportDocument | null {
+export function useReportDocument(
+  reportId: string,
+  now: Date | undefined = undefined,
+  params: readonly string[] = []
+): { document: ReportDocument | null; refresh: () => void } {
+  const at = now ?? new Date();
   const state = useDashboardState();
   const calendarProfile = useActiveMode().calendarProfile;
+  // Called unconditionally — a hook inside the switch would change the hook order between reports.
+  // The read is a no-op unless this is the report that needs it, and it comes through the shared
+  // cache, so opening the report normally reuses the fetch the picker just made.
+  const sports = useSportsEvents(reportId === "check-scoreboard");
+
+  // The refresh is the sports read's, because that is the only report composed from a fetch. A
+  // report built from ambient dashboard state has nothing to re-request, and says so by not
+  // declaring itself refreshable.
+  const refresh = sports.refresh;
 
   switch (reportId) {
+    case "check-scoreboard":
+      return { refresh, document: composeCheckScoreboard({
+        events: sports.result?.events ?? [],
+        selected: params,
+        loading: sports.loading,
+        reason: sports.failed
+          ? "Scores couldn\u2019t be read right now."
+          : sports.result?.available === false
+            ? "Scores need the macOS host."
+            : (sports.result?.reason ?? null)
+      }) };
     case "daily-brief":
-      return composeDailyBrief(dailyBriefSnapshot(state, calendarProfile, now));
+      return { refresh, document: composeDailyBrief(dailyBriefSnapshot(state, calendarProfile, at)) };
     case "open-schedule":
-      return composeOpenSchedule(openScheduleSnapshot(state, calendarProfile));
+      return { refresh, document: composeOpenSchedule(openScheduleSnapshot(state, calendarProfile)) };
     case "suggest-a-movie":
-      return composeSuggestAMovie(suggestAMovieSnapshot(state, now));
+      return { refresh, document: composeSuggestAMovie(suggestAMovieSnapshot(state, at)) };
     default:
       // Registered as a Report but not composed yet — the region renders its honest not-yet
       // state rather than an empty document, which would look like a successful, empty report.
-      return null;
+      return { refresh, document: null };
   }
 }
 

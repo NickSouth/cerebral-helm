@@ -20,6 +20,10 @@ public enum MacToolCapabilities {
         public let capabilities: ToolCapabilities
         public let systemStatus: MacSystemStatusCapability
         public let secretStore: KeychainSecretCapability
+        /// The Linear GraphQL client (quick-actions phase 4). Exposed on the composition so the
+        /// bridge's read-only `listLinearOptions` closure can use the same client — and the same
+        /// Keychain-resolved key — as the write tool, without going through the tool.
+        public let linear: LinearAPIClient
         /// URL-quick-app favicon fetcher (NIC-147). Carried here rather than on
         /// `ToolCapabilities` because no tool handler consumes it — `BridgeSession`
         /// drives it directly off `listUrls`/`addUrlReference`, like `secretStore`.
@@ -57,6 +61,7 @@ public enum MacToolCapabilities {
         // One launcher shared by both open paths so its profile→window registry is
         // consistent across app-tile and URL-tile opens (NIC-151).
         let chromeLauncher = ChromeProfileLauncher(workspace: workspace)
+        let linearClient = LinearAPIClient(secretStore: secretStore)
         return Composition(
             capabilities: ToolCapabilities(
                 app: NSWorkspaceAppCapability(
@@ -85,6 +90,10 @@ public enum MacToolCapabilities {
                 googleSearch: NSWorkspaceGoogleSearchCapability(workspace: workspace),
                 youtubeSearch: NSWorkspaceYouTubeSearchCapability(workspace: workspace),
                 gitClone: MacGitCloneCapability(),
+                projectScaffold: ProjectScaffolder(),
+                // One client serves both the write port and the workspace read; the ports stay
+                // separate so a surface that only lists options cannot reach the write path.
+                linearIssue: linearClient,
                 webOpen: NSWorkspaceWebOpenCapability(workspace: workspace),
                 calendarWrite: EventKitCalendarWriter(),
                 // Playback control (NIC-133): resolves a valid token from the same Keychain-backed
@@ -94,9 +103,15 @@ public enum MacToolCapabilities {
                     authSession: SpotifyAuthSession(secretStore: secretStore, refresher: SpotifyTokenExchange()),
                     refreshSignal: spotifyRefresh
                 ),
+                // Playlist creation (quick-actions phase 4): the same Keychain-backed session,
+                // a separate capability — control is transport, this writes to the library.
+                spotifyPlaylist: SpotifyWebPlaylistCapability(
+                    authSession: SpotifyAuthSession(secretStore: secretStore, refresher: SpotifyTokenExchange())
+                ),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,
                     CapabilityMatrix.Capability.projectOpen,
+                    CapabilityMatrix.Capability.projectScaffold,
                     CapabilityMatrix.Capability.urlOpen,
                     CapabilityMatrix.Capability.hookRun,
                     CapabilityMatrix.Capability.systemStatusRead,
@@ -108,13 +123,16 @@ public enum MacToolCapabilities {
                     CapabilityMatrix.Capability.googleSearch,
                     CapabilityMatrix.Capability.youtubeSearch,
                     CapabilityMatrix.Capability.gitClone,
+                    CapabilityMatrix.Capability.linearIssue,
                     CapabilityMatrix.Capability.webOpen,
                     CapabilityMatrix.Capability.calendarWrite,
                     CapabilityMatrix.Capability.spotifyControl,
+                    CapabilityMatrix.Capability.spotifyPlaylist,
                 ]
             ),
             systemStatus: systemStatus,
             secretStore: secretStore,
+            linear: linearClient,
             favicon: favicon,
             chromeProfiles: chromeProfiles
         )

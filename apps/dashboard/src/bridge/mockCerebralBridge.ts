@@ -629,6 +629,100 @@ export function createMockCerebralBridge(
         available: false
       });
     },
+    listLinearOptions() {
+      // A representative workspace for browser previews of the create-ticket form: one team with a
+      // project and two labels, enough to exercise the team-scoped dropdowns.
+      return Promise.resolve({
+        teams: [
+          {
+            id: "team-nic",
+            key: "NIC",
+            name: "CerebralHelm Development",
+            projects: [{ id: "proj-ch", name: "CerebralHelm" }],
+            labels: [
+              { id: "label-polish", name: "MVP Polish" },
+              { id: "label-debt", name: "Tech Debt" }
+            ]
+          }
+        ],
+        available: true,
+        reason: null
+      });
+    },
+    createLinearIssue(input: { title: string }) {
+      // The browser files nothing. It reports a synthetic identifier — and reports it as created
+      // rather than pending, because the mock never gates; the policy engine lives in Swift.
+      return Promise.resolve({
+        identifier: "NIC-000",
+        url: `https://linear.app/mock/issue/NIC-000/${input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 32)}`,
+        awaitingConfirmation: false
+      });
+    },
+    createSpotifyPlaylist(input: { name: string; isPublic?: boolean }) {
+      // The browser creates nothing; it reports a synthetic id so the form's wiring is exercisable
+      // without an OAuth round trip. Reported as created rather than pending — the mock never gates.
+      return Promise.resolve({
+        playlistId: "mock-playlist",
+        name: input.name,
+        url: "https://open.spotify.com/playlist/mock-playlist",
+        awaitingConfirmation: false,
+        needsReconnect: false
+      });
+    },
+    scaffoldProject(input: { name: string; location?: string }) {
+      // The browser writes nothing; it reports the path the host WOULD use so the form's wiring is
+      // exercisable without a projects folder.
+      const parent = input.location ? `${input.location}/` : "";
+      return Promise.resolve({
+        projectPath: `/mock/Projects/${parent}${input.name}`,
+        awaitingConfirmation: false
+      });
+    },
+    listSportsEvents() {
+      // A representative pair for browser previews: one scheduled NFL game and one finished
+      // tournament — the two shapes the report has to render, and the two states August actually
+      // produces.
+      return Promise.resolve({
+        events: [
+          {
+            id: "nfl-1",
+            league: "nfl",
+            name: "Carolina Panthers at Arizona Cardinals",
+            shortName: "CAR VS ARI",
+            state: "pre" as const,
+            detail: "8/6 - 8:00 PM EDT",
+            venue: "Tom Benson Hall of Fame Stadium · Canton",
+            competitors: [
+              {
+                abbreviation: "ARI", name: "Arizona Cardinals", score: "0",
+                color: "a40227", isHome: true, record: "0-0"
+              },
+              {
+                abbreviation: "CAR", name: "Carolina Panthers", score: "0",
+                color: "0085ca", isHome: false, record: "0-0"
+              }
+            ],
+            leaderboard: []
+          },
+          {
+            id: "pga-1",
+            league: "pga",
+            name: "Rocket Classic",
+            shortName: "Rocket Classic",
+            state: "post" as const,
+            detail: "Final",
+            competitors: [],
+            leaderboard: [
+              { order: 1, position: null, name: "Michael Thorbjornsen", score: "-18", thru: null },
+              { order: 2, position: null, name: "Xander Schauffele", score: "-16", thru: null },
+              { order: 3, position: null, name: "Davis Riley", score: "-15", thru: null }
+            ]
+          }
+        ],
+        available: true,
+        reason: null
+      });
+    },
     listCalendars() {
       // A representative calendar set for browser previews of the Settings calendar→mode mapping
       // (NIC-126). `authorized: true` so the mapping UI renders its rows rather than the

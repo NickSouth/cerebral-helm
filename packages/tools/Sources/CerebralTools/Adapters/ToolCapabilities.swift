@@ -37,6 +37,13 @@ public struct ToolCapabilities: Sendable {
     /// a typed argument list — never a shell. `.none`-matrix mock by default (pre-Mac/tests); the
     /// macOS shell binds the honest adapter.
     public let gitClone: any GitCloneCapability
+    /// Creates a new project folder + descriptor under the projects root (quick-actions phase 4).
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let projectScaffold: any ProjectScaffoldCapability
+    /// Creates issues in the user's Linear workspace (quick-actions phase 4). Write only — listing
+    /// teams/projects/labels is a separate read path that never crosses this port.
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let linearIssue: any LinearIssueCapability
     /// Opens an arbitrary https web address in the browser (NIC-127), for news article links,
     /// preferring a running Chrome instance. `.none`-matrix mock by default (pre-Mac/tests); the
     /// macOS shell binds the honest adapter.
@@ -47,6 +54,10 @@ public struct ToolCapabilities: Sendable {
     /// Controls the user's Spotify playback (NIC-133): play/pause/next/previous. `.none`-matrix
     /// mock by default (pre-Mac/tests); the macOS shell binds the honest Web-API adapter.
     public let spotifyControl: any SpotifyControlCapability
+    /// Creates playlists in the user's Spotify account (quick-actions phase 4). Separate from
+    /// ``spotifyControl``: a playback surface must not reach a path that writes to the library.
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let spotifyPlaylist: any SpotifyPlaylistCapability
     /// Stable capability IDs (``CapabilityMatrix/Capability/appOpen`` etc.) bound
     /// to honest native implementations in this bundle. Empty for the mock bundle.
     public let nativeCapabilityIDs: Set<String>
@@ -66,9 +77,12 @@ public struct ToolCapabilities: Sendable {
         googleSearch: any GoogleSearchCapability = MockGoogleSearchCapability(matrix: .none),
         youtubeSearch: any YouTubeSearchCapability = MockYouTubeSearchCapability(matrix: .none),
         gitClone: any GitCloneCapability = MockGitCloneCapability(matrix: .none),
+        projectScaffold: any ProjectScaffoldCapability = MockProjectScaffoldCapability(matrix: .none),
+        linearIssue: any LinearIssueCapability = MockLinearIssueCapability(matrix: .none),
         webOpen: any WebOpenCapability = MockWebOpenCapability(matrix: .none),
         calendarWrite: any CalendarWritingCapability = MockCalendarWritingCapability(matrix: .none),
         spotifyControl: any SpotifyControlCapability = MockSpotifyControlCapability(matrix: .none),
+        spotifyPlaylist: any SpotifyPlaylistCapability = MockSpotifyPlaylistCapability(matrix: .none),
         nativeCapabilityIDs: Set<String> = []
     ) {
         self.app = app
@@ -85,9 +99,12 @@ public struct ToolCapabilities: Sendable {
         self.googleSearch = googleSearch
         self.youtubeSearch = youtubeSearch
         self.gitClone = gitClone
+        self.projectScaffold = projectScaffold
+        self.linearIssue = linearIssue
         self.webOpen = webOpen
         self.calendarWrite = calendarWrite
         self.spotifyControl = spotifyControl
+        self.spotifyPlaylist = spotifyPlaylist
         self.nativeCapabilityIDs = nativeCapabilityIDs
     }
 
@@ -109,9 +126,12 @@ public struct ToolCapabilities: Sendable {
             googleSearch: MockGoogleSearchCapability(matrix: matrix),
             youtubeSearch: MockYouTubeSearchCapability(matrix: matrix),
             gitClone: MockGitCloneCapability(matrix: matrix),
+            projectScaffold: MockProjectScaffoldCapability(matrix: matrix),
+            linearIssue: MockLinearIssueCapability(matrix: matrix),
             webOpen: MockWebOpenCapability(matrix: matrix),
             calendarWrite: MockCalendarWritingCapability(matrix: matrix),
-            spotifyControl: MockSpotifyControlCapability(matrix: matrix)
+            spotifyControl: MockSpotifyControlCapability(matrix: matrix),
+            spotifyPlaylist: MockSpotifyPlaylistCapability(matrix: matrix)
         )
     }
 }

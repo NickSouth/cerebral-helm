@@ -52,13 +52,19 @@ func spotifyAuthorizeURL() throws {
     #expect(!url.absoluteString.contains("code_verifier"))
 }
 
-@Test("the authorize URL requests exactly the read + control scopes the widget needs")
+@Test("the authorize URL requests exactly the scopes the built surfaces need, and no more")
 func spotifyPlaybackScopes() {
+    // Exact, not a superset check: an over-broad scope request is a real fault, and this is the
+    // one place it would be caught. The playlist pair arrived with `create-playlist`
+    // (quick-actions phase 4) — a grant made before them keeps working for playback and is
+    // refused for playlists, which the adapter reports as "reconnect".
     #expect(SpotifyTokenExchange.playbackScopes == [
         "user-read-playback-state",
         "user-read-currently-playing",
         "user-modify-playback-state",
         "user-read-recently-played",
+        "playlist-modify-private",
+        "playlist-modify-public",
     ])
 }
 

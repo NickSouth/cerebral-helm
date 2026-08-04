@@ -612,6 +612,90 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: arguments,
                 actionSummary: "Clone \(url) into your projects folder."
             )
+        case let .scaffoldProject(name, location, summary, importance):
+            // `local_write`, like project.open and git.clone: a folder and a Markdown file inside
+            // the projects root, no process, no network. The adapter owns containment.
+            var arguments = [ConfirmationArgument(name: "project", value: name, sensitive: false)]
+            if let location, !location.isEmpty {
+                arguments.append(ConfirmationArgument(name: "location", value: location, sensitive: false))
+            }
+            return make(
+                toolID: "project.scaffold",
+                input: try? CerebralHelmProjectScaffoldInput(
+                    projectImportance: importance,
+                    projectLocation: location,
+                    projectName: name,
+                    projectSummary: summary
+                ).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: arguments,
+                actionSummary: "Create the project folder \"\(name)\"."
+            )
+        case let .createSpotifyPlaylist(name, description, isPublic):
+            // `external_write` with the user-authored exemption, like the calendar and Linear
+            // writes. Visibility is disclosed in words rather than as a boolean, because "public"
+            // is the part of this a person would want to catch before it happened.
+            var arguments = [ConfirmationArgument(name: "playlist", value: name, sensitive: false)]
+            arguments.append(ConfirmationArgument(
+                name: "visibility", value: isPublic ? "public" : "private", sensitive: false
+            ))
+            return make(
+                toolID: "spotify.createplaylist",
+                input: try? CerebralHelmSpotifyCreatePlaylistInput(
+                    playlistDescription: description,
+                    playlistIsPublic: isPublic,
+                    playlistName: name
+                ).jsonData(),
+                destination: "spotify.com",
+                dataLeavingDevice: .content,
+                reversibility: .reversible,
+                arguments: arguments,
+                actionSummary: "Create the \(isPublic ? "public" : "private") Spotify playlist \"\(name)\"."
+            )
+        case let .createLinearIssue(draft):
+            // `external_write` that opts into the user-authored exemption, like calendar.createevent:
+            // someone who filled in the form and pressed Create already authored exactly what
+            // happens. The same call from an agent still confirms, with these values disclosed —
+            // named in words (team, project, label) rather than as ids nobody can read. The body is
+            // marked sensitive and the descriptor redacts `/issueDescription`, so free-form text
+            // never reaches a disclosure in the clear.
+            var arguments = [ConfirmationArgument(name: "title", value: draft.title, sensitive: false)]
+            if let teamName = draft.teamName, !teamName.isEmpty {
+                arguments.append(ConfirmationArgument(name: "team", value: teamName, sensitive: false))
+            }
+            if let projectName = draft.projectName, !projectName.isEmpty {
+                arguments.append(ConfirmationArgument(name: "project", value: projectName, sensitive: false))
+            }
+            if !draft.labelNames.isEmpty {
+                // Every label is named, not just a count: "2 labels" tells the user nothing about
+                // which ones would be applied.
+                arguments.append(ConfirmationArgument(
+                    name: draft.labelNames.count == 1 ? "label" : "labels",
+                    value: draft.labelNames.joined(separator: ", "),
+                    sensitive: false
+                ))
+            }
+            if let description = draft.description, !description.isEmpty {
+                arguments.append(ConfirmationArgument(name: "description", value: description, sensitive: true))
+            }
+            return make(
+                toolID: "linear.createissue",
+                input: try? CerebralHelmLinearCreateIssueInput(
+                    issueDescription: draft.description,
+                    issuePriority: draft.priority,
+                    issueTitle: draft.title,
+                    linearLabelIDs: draft.labelIDs.isEmpty ? nil : draft.labelIDs,
+                    linearProjectID: draft.projectID,
+                    linearTeamID: draft.teamID
+                ).jsonData(),
+                destination: "linear.app",
+                dataLeavingDevice: .content,
+                reversibility: .reversible,
+                arguments: arguments,
+                actionSummary: "Create the Linear issue \"\(draft.title)\"."
+            )
         case let .createCalendarEvent(draft):
             // Everything the user typed is disclosed, so a confirmation (an agent-proposed one,
             // or any invocation while "ask before all actions" is on) shows the actual event

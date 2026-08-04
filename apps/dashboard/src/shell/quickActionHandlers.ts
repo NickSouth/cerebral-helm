@@ -24,7 +24,7 @@ export interface QuickActionDeps {
    * (a test, a future headless dispatcher) leaves a `report` action unresolved rather than
    * pretending it ran.
    */
-  openReport?(reportId: string): void;
+  openReport?(reportId: string, params?: readonly string[]): void;
   /** Open an Input's form in the centre panel's Input region. Optional for the same reason. */
   openInput?(actionId: string): void;
 }

@@ -25,6 +25,10 @@
       "items": {
         "$ref": "#/$defs/reportBlock"
       }
+    },
+    "refreshable": {
+      "description": "Whether this report was composed from a fetch the reader can repeat. The region shows a refresh control only for a report that says so — offering one on a document composed from ambient state would promise something it cannot do.",
+      "type": "boolean"
     }
   },
   "$defs": {
@@ -58,7 +62,9 @@
         "checklist",
         "empty",
         "count",
-        "proposal"
+        "proposal",
+        "scoreboard",
+        "leaderboard"
       ]
     },
     "reportGreetingSize": {
@@ -170,6 +176,83 @@
           "items": {
             "$ref": "#/$defs/reportActionReference"
           }
+        },
+        "scoreboardSides": {
+          "description": "A `scoreboard` block's two sides, away first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reportScoreboardSide"
+          }
+        },
+        "leaderboardRows": {
+          "description": "A `leaderboard` block's ranked field, complete rather than truncated: `leaderboardPreview` decides how many show, so expanding needs no second fetch.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reportLeaderboardRow"
+          }
+        },
+        "leaderboardPreview": {
+          "description": "How many rows show before the reader expands. Absent shows all of them.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "reportScoreboardSide": {
+      "title": "Report Scoreboard Side",
+      "description": "One side of a team game. Carries the team's own colour so a scoreboard can look like one without fetching a logo.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sideAbbreviation",
+        "sideScore"
+      ],
+      "properties": {
+        "sideAbbreviation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sideName": {
+          "type": "string"
+        },
+        "sideScore": {
+          "type": "string"
+        },
+        "sideColor": {
+          "type": "string",
+          "description": "Bare hex, no leading '#', as the provider supplies it."
+        },
+        "sideIsHome": {
+          "type": "boolean"
+        },
+        "sideRecord": {
+          "type": "string"
+        }
+      }
+    },
+    "reportLeaderboardRow": {
+      "title": "Report Leaderboard Row",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rowName",
+        "rowScore"
+      ],
+      "properties": {
+        "rowPosition": {
+          "type": "string",
+          "description": "Displayed position ('T4'). Absent on a finished or unranked field."
+        },
+        "rowName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rowScore": {
+          "type": "string"
+        },
+        "rowThru": {
+          "type": "string",
+          "description": "Holes played, only while a round is in progress."
         }
       }
     }

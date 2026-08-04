@@ -298,3 +298,127 @@
   text-decoration: none;
   background: color-mix(in srgb, var(--ch-accent-primary) 12%, transparent);
 }
+
+/* --- Scoreboard block (check-scoreboard) ---------------------------------------------------
+   Two sides stacked, away first. The team colour is a thin accent bar, never a fill: a tile
+   flooded with team colour would be the loudest thing in a dashboard built on one accent per
+   mode, and inside a report colour means *actionable*. A bar reads as identity without
+   pretending to be a link. */
+.report-scoreboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.report-scoreboard__side {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ch-space-2);
+}
+
+.report-scoreboard__accent {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 3px;
+  border-radius: 2px;
+  /* A team with no colour still lines up with one that has: the bar stays, unpainted. */
+  background: var(--ch-panel-border);
+}
+
+.report-scoreboard__abbr {
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-sm);
+  letter-spacing: 0.06em;
+  color: var(--ch-text-primary);
+}
+
+.report-scoreboard__record {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.report-scoreboard__score {
+  margin-left: auto;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-md);
+  color: var(--ch-text-primary);
+}
+
+.report-scoreboard__status {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* --- Leaderboard block ---------------------------------------------------------------------- */
+
+.report-leaderboard__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.report-leaderboard__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ch-space-2);
+  font-size: var(--ch-font-size-sm);
+}
+
+.report-leaderboard__position {
+  flex: 0 0 2.25rem;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.report-leaderboard__name {
+  color: var(--ch-text-primary);
+  /* The name yields first when the row is tight; the score must never be the thing that clips. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-leaderboard__thru {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.report-leaderboard__score {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-family: var(--ch-font-mono);
+  color: var(--ch-text-primary);
+}
+
+.report-leaderboard__more,
+.report-region__refresh {
+  font: inherit;
+  font-size: var(--ch-font-size-label);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  /* Accent because it IS actionable — the report's one colour rule, honoured. */
+  color: var(--ch-accent-primary);
+  cursor: pointer;
+}
+
+.report-leaderboard__more {
+  margin-top: var(--ch-space-2);
+}
+
+.report-leaderboard__more:hover,
+.report-region__refresh:hover {
+  text-decoration: underline;
+}
+
+.report-leaderboard__more:focus-visible,
+.report-region__refresh:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: 2px;
+}

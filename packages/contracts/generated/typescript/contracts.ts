@@ -479,6 +479,8 @@ export enum Operation {
     CloseWindow = "closeWindow",
     ConnectSpotify = "connectSpotify",
     CreateCalendarEvent = "createCalendarEvent",
+    CreateLinearIssue = "createLinearIssue",
+    CreateSpotifyPlaylist = "createSpotifyPlaylist",
     DecideConfirmation = "decideConfirmation",
     DeleteSecret = "deleteSecret",
     GetBootstrapState = "getBootstrapState",
@@ -489,7 +491,9 @@ export enum Operation {
     ListApps = "listApps",
     ListCalendars = "listCalendars",
     ListChromeProfiles = "listChromeProfiles",
+    ListLinearOptions = "listLinearOptions",
     ListNotes = "listNotes",
+    ListSportsEvents = "listSportsEvents",
     ListUrls = "listUrls",
     ListWindows = "listWindows",
     MinimizeWindow = "minimizeWindow",
@@ -498,6 +502,7 @@ export enum Operation {
     RebuildKnowledgeIndex = "rebuildKnowledgeIndex",
     ResetCanvas = "resetCanvas",
     RunSpeedTest = "runSpeedTest",
+    ScaffoldProject = "scaffoldProject",
     SearchNotes = "searchNotes",
     SetCanvasItemHidden = "setCanvasItemHidden",
     StoreSecret = "storeSecret",
@@ -1085,6 +1090,12 @@ export interface Reference {
 export interface CerebralHelmReportDocument {
     blocks: Block[];
     /**
+     * Whether this report was composed from a fetch the reader can repeat. The region shows a
+     * refresh control only for a report that says so — offering one on a document composed from
+     * ambient state would promise something it cannot do.
+     */
+    refreshable?: boolean;
+    /**
      * The quick-action id this document was composed for, so the renderer can key its reveal
      * and the region can title itself.
      */
@@ -1107,6 +1118,15 @@ export interface Block {
     greetingSize?: GreetingSize;
     label?:        string;
     /**
+     * How many rows show before the reader expands. Absent shows all of them.
+     */
+    leaderboardPreview?: number;
+    /**
+     * A `leaderboard` block's ranked field, complete rather than truncated:
+     * `leaderboardPreview` decides how many show, so expanding needs no second fetch.
+     */
+    leaderboardRows?: LeaderboardRow[];
+    /**
      * `strong` uses weight, never color — inside a report, color means actionable.
      */
     lineEmphasis?: LineEmphasis;
@@ -1124,8 +1144,12 @@ export interface Block {
      */
     reportAction?:  PurpleReportAction;
     reportActions?: ReportActionElement[];
-    text?:          string;
-    value?:         string;
+    /**
+     * A `scoreboard` block's two sides, away first.
+     */
+    scoreboardSides?: ScoreboardSide[];
+    text?:            string;
+    value?:           string;
 }
 
 export enum BlockKind {
@@ -1133,15 +1157,30 @@ export enum BlockKind {
     Count = "count",
     Empty = "empty",
     Greeting = "greeting",
+    Leaderboard = "leaderboard",
     Line = "line",
     List = "list",
     Metric = "metric",
     Proposal = "proposal",
+    Scoreboard = "scoreboard",
 }
 
 export enum GreetingSize {
     Hero = "hero",
     Standard = "standard",
+}
+
+export interface LeaderboardRow {
+    rowName: string;
+    /**
+     * Displayed position ('T4'). Absent on a finished or unranked field.
+     */
+    rowPosition?: string;
+    rowScore:     string;
+    /**
+     * Holes played, only while a round is in progress.
+     */
+    rowThru?: string;
 }
 
 /**
@@ -1234,6 +1273,22 @@ export interface PurpleReportAction {
 export interface ReportActionElement {
     action:  string;
     params?: { [key: string]: any };
+}
+
+/**
+ * One side of a team game. Carries the team's own colour so a scoreboard can look like one
+ * without fetching a logo.
+ */
+export interface ScoreboardSide {
+    sideAbbreviation: string;
+    /**
+     * Bare hex, no leading '#', as the provider supplies it.
+     */
+    sideColor?:  string;
+    sideIsHome?: boolean;
+    sideName?:   string;
+    sideRecord?: string;
+    sideScore:   string;
 }
 
 export interface CerebralHelmAppOpenInput {
@@ -1474,6 +1529,49 @@ export interface CerebralHelmHookRunOutput {
     timedOut:     boolean;
 }
 
+/**
+ * Property names are prefixed because the code generator derives type names from property
+ * names: a bare `title`/`description`/`priority` would mint or steal a generic type across
+ * the whole shared module.
+ */
+export interface CerebralHelmLinearCreateIssueInput {
+    /**
+     * Markdown body. Optional.
+     */
+    issueDescription?: string;
+    /**
+     * Linear's priority scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low.
+     */
+    issuePriority?: number;
+    issueTitle:     string;
+    /**
+     * Optional labels. A list because Linear issues carry several, and because that is how the
+     * labels are actually used here — an issue is routinely both a category and a status.
+     */
+    linearLabelIDs?: string[];
+    /**
+     * Optional project. Must belong to the chosen team.
+     */
+    linearProjectID?: string;
+    /**
+     * The Linear team the issue belongs to. Required by the API and never inferred: a workspace
+     * can have several teams, and guessing one would file the ticket somewhere the user did not
+     * choose.
+     */
+    linearTeamID: string;
+}
+
+export interface CerebralHelmLinearCreateIssueOutput {
+    /**
+     * The human-readable identifier Linear assigned, e.g. NIC-176.
+     */
+    issueIdentifier: string;
+    /**
+     * The issue's web URL, as returned by Linear — never constructed here.
+     */
+    issueURL: string;
+}
+
 export interface CerebralHelmModeApplyInput {
     modeId: string;
 }
@@ -1704,6 +1802,39 @@ export interface CerebralHelmProjectOpenOutput {
     repoPath: string;
 }
 
+export interface CerebralHelmProjectScaffoldInput {
+    /**
+     * Ordering weight for the Projects widget (higher first). Absent uses the shipped
+     * template's default.
+     */
+    projectImportance?: number;
+    /**
+     * Optional folder to create it in, relative to the projects root. The adapter joins the
+     * name onto it and re-checks that the result stays inside that root.
+     */
+    projectLocation?: string;
+    /**
+     * The project's display name, which is also its folder name. The adapter refuses a name
+     * containing a path separator rather than silently mangling it into nested folders.
+     */
+    projectName: string;
+    /**
+     * Optional one-line summary, written into the PROJECT.md descriptor.
+     */
+    projectSummary?: string;
+}
+
+export interface CerebralHelmProjectScaffoldOutput {
+    /**
+     * The absolute path of the PROJECT.md written into it.
+     */
+    projectDescriptorPath: string;
+    /**
+     * The absolute path of the created project folder, always inside the projects root.
+     */
+    projectPath: string;
+}
+
 export interface CerebralHelmSpotifyControlInput {
     /**
      * The playback command to send to the user's active Spotify device: resume, pause, skip
@@ -1734,6 +1865,35 @@ export interface CerebralHelmSpotifyControlOutput {
      * True when Spotify accepted the command. False when there was no active device to act on.
      */
     applied: boolean;
+}
+
+/**
+ * Property names are prefixed because the code generator derives type names from property
+ * names: a bare `name`/`description` would mint or steal a generic type across the whole
+ * shared module.
+ */
+export interface CerebralHelmSpotifyCreatePlaylistInput {
+    /**
+     * Optional description, as shown in Spotify clients.
+     */
+    playlistDescription?: string;
+    /**
+     * Whether the playlist appears on the user's public profile. Absent means private:
+     * Spotify's own API defaults this to true, and silently publishing something to someone's
+     * profile is not a default worth inheriting.
+     */
+    playlistIsPublic?: boolean;
+    playlistName:      string;
+}
+
+export interface CerebralHelmSpotifyCreatePlaylistOutput {
+    playlistID:   string;
+    playlistName: string;
+    /**
+     * The playlist's Spotify URL as returned by the API — never constructed here. Absent when
+     * Spotify omitted it.
+     */
+    playlistURL?: string;
 }
 
 export interface CerebralHelmSystemStatusReadInput {

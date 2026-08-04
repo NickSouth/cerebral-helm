@@ -16,8 +16,14 @@ import {
   renderableFields,
   type InputForm
 } from "./inputForm";
+import { clearSportsEventsCache } from "../sports/sportsEvents";
 
 /** The Input region and its field schema (docs/quick-actions/PLAN.md phase 3). */
+
+// The sports read is cached module-wide so the picker and the report it opens share one fetch.
+// That cache outlives a test, so each one starts from a clean read rather than the previous
+// test's events.
+beforeEach(() => clearSportsEventsCache());
 
 function renderShell(bridgeOverrides: Partial<ReturnType<typeof createMockCerebralBridge>> = {}) {
   const base = createMockCerebralBridge();
@@ -419,6 +425,349 @@ describe("git-clone in the region", () => {
     const status = document.querySelector(".action-status") as HTMLElement;
     await waitFor(() => expect(status).toHaveTextContent(/needs your confirmation/));
     expect(status).not.toHaveTextContent(/Cloned into/);
+  });
+});
+
+describe("create-ticket in the region", () => {
+  async function openCreateTicket(overrides: Parameters<typeof renderShell>[0] = {}) {
+    const { bridge } = renderShell(overrides);
+    await act(async () => {
+      await bridge.applyMode({ modeId: "developer" });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+    return screen.findByRole("region", { name: "Create ticket form" });
+  }
+
+  it("asks for a team rather than inferring one, even with a single team", async () => {
+    // A silent "use the first team" keeps working right up until a second team exists, and then
+    // files tickets somewhere they were never meant to go.
+    const region = await openCreateTicket();
+    const team = (await within(region).findByLabelText(/Team/)) as HTMLSelectElement;
+    await waitFor(() =>
+      expect([...team.options].map((option) => option.textContent)).toContain(
+        "CerebralHelm Development"
+      )
+    );
+    // With exactly one real option there is no decision to make, so the field makes it — the
+    // dropdown stays visible and overridable, but nobody clicks through a list of one.
+    await waitFor(() => expect(team.value).toBe("team-nic"));
+  });
+
+  it("still asks when there is more than one team", async () => {
+    // The auto-selection is "there is no alternative", not "pick the first" — with two teams it
+    // stays blank rather than guessing.
+    const region = await openCreateTicket({
+      listLinearOptions: () =>
+        Promise.resolve({
+          teams: [
+            { id: "a", key: "A", name: "Team A", projects: [], labels: [] },
+            { id: "b", key: "B", name: "Team B", projects: [], labels: [] }
+          ],
+          available: true,
+          reason: null
+        })
+    });
+    const team = (await within(region).findByLabelText(/Team/)) as HTMLSelectElement;
+    await waitFor(() => expect([...team.options]).toHaveLength(3));
+    expect(team.value).toBe("");
+    expect(within(region).getByRole("button", { name: "Create" })).toBeDisabled();
+  });
+
+  it("scopes projects and labels to the chosen team", async () => {
+    const region = await openCreateTicket();
+    const team = (await within(region).findByLabelText(/Team/)) as HTMLSelectElement;
+    fireEvent.change(team, { target: { value: "team-nic" } });
+
+    const project = within(region).getByLabelText("Project") as HTMLSelectElement;
+    const labels = within(region).getByRole("group", { name: /Labels/ }) as HTMLElement;
+    await waitFor(() =>
+      expect([...project.options].map((option) => option.textContent)).toEqual([
+        "No project",
+        "CerebralHelm"
+      ])
+    );
+    // Labels are a checkbox group, not a dropdown — an issue routinely carries several.
+    expect(within(labels).getByLabelText("MVP Polish")).toBeInTheDocument();
+    expect(within(labels).getByLabelText("Tech Debt")).toBeInTheDocument();
+  });
+
+  it("offers nothing scoped until a team is chosen, rather than guessing", async () => {
+    const region = await openCreateTicket({
+      listLinearOptions: () =>
+        Promise.resolve({
+          teams: [
+            { id: "a", key: "A", name: "Team A", projects: [{ id: "pa", name: "Alpha" }], labels: [] },
+            { id: "b", key: "B", name: "Team B", projects: [{ id: "pb", name: "Beta" }], labels: [] }
+          ],
+          available: true,
+          reason: null
+        })
+    });
+    const project = (await within(region).findByLabelText("Project")) as HTMLSelectElement;
+    // Two teams, no selection: a flat list would offer both projects and produce a write Linear
+    // rejects.
+    expect([...project.options].map((option) => option.textContent)).toEqual(["No project"]);
+
+    fireEvent.change(within(region).getByLabelText(/Team/), { target: { value: "b" } });
+    await waitFor(() =>
+      expect([...project.options].map((option) => option.textContent)).toEqual(["No project", "Beta"])
+    );
+  });
+
+  it("sends the chosen ids with their labels, so a confirmation can name them", async () => {
+    const sent: Record<string, unknown>[] = [];
+    const region = await openCreateTicket({
+      createLinearIssue: (input) => {
+        sent.push(input as unknown as Record<string, unknown>);
+        return Promise.resolve({ identifier: "NIC-9", url: null, awaitingConfirmation: false });
+      }
+    });
+
+    await within(region).findByLabelText(/Team/);
+    fireEvent.change(within(region).getByLabelText(/Team/), { target: { value: "team-nic" } });
+    fireEvent.change(within(region).getByLabelText(/Title/), { target: { value: "  Fix it  " } });
+    await waitFor(() => expect(within(region).getByLabelText("Tech Debt")).toBeInTheDocument());
+    fireEvent.click(within(region).getByLabelText("Tech Debt"));
+    fireEvent.click(within(region).getByLabelText("MVP Polish"));
+    fireEvent.change(within(region).getByLabelText("Priority"), { target: { value: "2" } });
+
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Create" }));
+    });
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({
+      title: "Fix it",
+      teamId: "team-nic",
+      teamName: "CerebralHelm Development",
+      // Packed back in option order, not click order, so the value reads like the list.
+      labelIds: ["label-polish", "label-debt"],
+      labelNames: ["MVP Polish", "Tech Debt"],
+      priority: 2
+    });
+    // An unchosen project is omitted entirely rather than sent as an empty string.
+    expect(sent[0].projectId).toBeUndefined();
+  });
+
+  it("says the workspace could not be read rather than showing empty dropdowns", async () => {
+    // "You have no teams" and "we could not read your teams" are different facts.
+    const region = await openCreateTicket({
+      listLinearOptions: () =>
+        Promise.resolve({ teams: [], available: true, reason: "unauthorized" })
+    });
+    await waitFor(() =>
+      expect(within(region).getAllByText(/Linear workspace couldn’t be read/).length).toBeGreaterThan(0)
+    );
+  });
+});
+
+describe("create-playlist in the region", () => {
+  async function openCreatePlaylist(overrides: Parameters<typeof renderShell>[0] = {}) {
+    const { bridge } = renderShell(overrides);
+    await act(async () => {
+      await bridge.applyMode({ modeId: "entertainment" });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create playlist" }));
+    return screen.findByRole("region", { name: "Create playlist form" });
+  }
+
+  it("defaults to private — Spotify's own default is public", async () => {
+    const sent: { name: string; isPublic?: boolean }[] = [];
+    const region = await openCreatePlaylist({
+      createSpotifyPlaylist: (input) => {
+        sent.push(input);
+        return Promise.resolve({
+          playlistId: "p1",
+          name: input.name,
+          url: null,
+          awaitingConfirmation: false,
+          needsReconnect: false
+        });
+      }
+    });
+
+    expect((within(region).getByLabelText("Visibility") as HTMLSelectElement).value).toBe("private");
+    fireEvent.change(within(region).getByLabelText(/Name/), { target: { value: "  Late night  " } });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Create" }));
+    });
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ name: "Late night", isPublic: false });
+  });
+
+  it("sends public only when the user chose it", async () => {
+    const sent: { isPublic?: boolean }[] = [];
+    const region = await openCreatePlaylist({
+      createSpotifyPlaylist: (input) => {
+        sent.push(input);
+        return Promise.resolve({
+          playlistId: "p1", name: "x", url: null, awaitingConfirmation: false, needsReconnect: false
+        });
+      }
+    });
+    fireEvent.change(within(region).getByLabelText(/Name/), { target: { value: "Shared" } });
+    fireEvent.change(within(region).getByLabelText("Visibility"), { target: { value: "public" } });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Create" }));
+    });
+    await waitFor(() => expect(sent[0].isPublic).toBe(true));
+  });
+
+  it("tells the user to reconnect when the grant predates the playlist scopes", async () => {
+    // The one failure with a one-step remedy. A generic "something went wrong" would leave the
+    // user thinking their Spotify account is broken, when playback still works fine.
+    const region = await openCreatePlaylist({
+      createSpotifyPlaylist: () =>
+        Promise.reject(Object.assign(new Error("denied"), { code: "spotify_reconnect_required" }))
+    });
+    fireEvent.change(within(region).getByLabelText(/Name/), { target: { value: "Anything" } });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Create" }));
+    });
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent(/reconnecting/i));
+    // A failed submit keeps the form and the typing.
+    expect(within(region).getByLabelText(/Name/)).toHaveValue("Anything");
+  });
+});
+
+describe("create-project in the region", () => {
+  async function openCreateProject(overrides: Parameters<typeof renderShell>[0] = {}) {
+    renderShell(overrides);
+    // The slot lives in Executive, the default mode.
+    fireEvent.click(screen.getByRole("button", { name: "Create project" }));
+    return screen.findByRole("region", { name: "Create project form" });
+  }
+
+  it("sends the name, the picked location and the importance", async () => {
+    const sent: { name: string; location?: string; importance?: number }[] = [];
+    const region = await openCreateProject({
+      scaffoldProject: (input) => {
+        sent.push(input);
+        return Promise.resolve({
+          projectPath: "/Users/example/Projects/CerebralHelm/Helm",
+          awaitingConfirmation: false
+        });
+      },
+      chooseFolder: () =>
+        Promise.resolve({
+          folderPath: "/Users/example/Projects/CerebralHelm",
+          relativeFolder: "CerebralHelm",
+          cancelled: false,
+          outsideRoot: false,
+          available: true
+        })
+    });
+
+    fireEvent.change(within(region).getByLabelText(/Name/), { target: { value: "  Helm  " } });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Choose…" }));
+    });
+    await waitFor(() =>
+      expect(within(region).getByLabelText(/Location/)).toHaveValue("CerebralHelm")
+    );
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Create" }));
+    });
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    // The name is NOT pre-joined onto the location here — the host owns that join, so the naming
+    // rule lives in one place.
+    expect(sent[0]).toMatchObject({ name: "Helm", location: "CerebralHelm", importance: 5 });
+  });
+
+  it("blocks on the name alone — everything else is optional", async () => {
+    const region = await openCreateProject();
+    expect(within(region).getByRole("button", { name: "Create" })).toBeDisabled();
+    fireEvent.change(within(region).getByLabelText(/Name/), { target: { value: "Helm" } });
+    expect(within(region).getByRole("button", { name: "Create" })).toBeEnabled();
+  });
+
+  it("reports the path the host actually created", async () => {
+    const region = await openCreateProject({
+      scaffoldProject: () =>
+        Promise.resolve({ projectPath: "/Users/example/Projects/Helm", awaitingConfirmation: false })
+    });
+    fireEvent.change(within(region).getByLabelText(/Name/), { target: { value: "Helm" } });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Create" }));
+    });
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent("/Users/example/Projects/Helm"));
+  });
+});
+
+describe("check-scoreboard in the region", () => {
+  async function openCheckScoreboard(overrides: Parameters<typeof renderShell>[0] = {}) {
+    const { bridge } = renderShell(overrides);
+    await act(async () => {
+      await bridge.applyMode({ modeId: "entertainment" });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check scoreboard" }));
+    return screen.findByRole("region", { name: "Check scoreboard form" });
+  }
+
+  it("lists both leagues and caps the selection at three", async () => {
+    const region = await openCheckScoreboard({
+      listSportsEvents: () =>
+        Promise.resolve({
+          events: [1, 2, 3, 4].map((n) => ({
+            id: `e${n}`,
+            league: "nfl",
+            name: `Game ${n}`,
+            shortName: `G${n}`,
+            state: "in" as const,
+            detail: "Q1",
+            competitors: [],
+            leaderboard: []
+          })),
+          available: true,
+          reason: null
+        })
+    });
+
+    const games = await within(region).findByRole("group", { name: /Games/ });
+    await waitFor(() => expect(within(games).getByLabelText(/G1/)).toBeInTheDocument());
+
+    fireEvent.click(within(games).getByLabelText(/G1/));
+    fireEvent.click(within(games).getByLabelText(/G2/));
+    fireEvent.click(within(games).getByLabelText(/G3/));
+
+    // At the cap the unchosen boxes disable rather than silently ignoring a click — and the
+    // chosen ones stay live so unpicking is always possible.
+    await waitFor(() => expect(within(games).getByLabelText(/G4/)).toBeDisabled());
+    expect(within(games).getByLabelText(/G1/)).toBeEnabled();
+  });
+
+  it("opens the report with the chosen ids rather than writing anything", async () => {
+    const region = await openCheckScoreboard();
+    const games = await within(region).findByRole("group", { name: /Games/ });
+    await waitFor(() => expect(within(games).getByLabelText(/CAR VS ARI/)).toBeInTheDocument());
+    fireEvent.click(within(games).getByLabelText(/CAR VS ARI/));
+
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Show" }));
+    });
+
+    // The report is the result: it opens, and the status line only says what happened.
+    const report = await screen.findByRole("region", { name: /Check scoreboard/ });
+    expect(report).toBeInTheDocument();
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent("Showing 1 game."));
+  });
+
+  it("says scores could not be read rather than showing an empty picker", async () => {
+    // "Nothing is on today" and "we couldn't reach ESPN" are different facts.
+    const region = await openCheckScoreboard({
+      listSportsEvents: () =>
+        Promise.resolve({ events: [], available: true, reason: "Couldn't reach nfl right now." })
+    });
+    await waitFor(() =>
+      expect(within(region).getByText(/Couldn't reach nfl right now\./)).toBeInTheDocument()
+    );
   });
 });
 

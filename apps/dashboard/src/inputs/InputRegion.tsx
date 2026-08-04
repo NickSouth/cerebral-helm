@@ -4,12 +4,16 @@ import {
   initialValues,
   missingRequired,
   renderableFields,
+  formatMultiValue,
+  parseMultiValue,
   type InputField,
   type InputForm,
   type InputOptionSource,
   type InputSelectOption,
   type InputValues
 } from "./inputForm";
+import type { ListLinearOptionsResult } from "../bridge/cerebralBridge";
+import { eventLabel, pickableEvents, useSportsEvents } from "../sports/sportsEvents";
 import { useBridge } from "../state/BridgeProvider";
 import { quickActionLabel } from "../shell/quickActionRegistry";
 import { useActionStatus } from "../state/ActionStatusProvider";
@@ -66,6 +70,13 @@ function InputFormBody({ form, onDone }: { form: InputForm; onDone: () => void }
   const [submitting, setSubmitting] = useState(false);
 
   const fields = renderableFields(form);
+  // Fetched once per form open rather than once per field: three Linear dropdowns would otherwise
+  // make three identical requests. Not cached across opens either — a key pasted in Settings a
+  // moment ago must take effect on the next open, not on the next launch.
+  const linear = useLinearWorkspace(fields.some(usesLinearProvider));
+  // The second remote option source, fetched the same way and for the same reason. A third would
+  // be the point to generalize this into one provider-registry hook rather than a third one-off.
+  const sports = useSportsEvents(fields.some((field) => providerOf(field) === "sportsEvents"));
   const missing = missingRequired(form, values);
   const canSubmit = !readOnly && !submitting && missing.length === 0;
 
@@ -102,6 +113,8 @@ function InputFormBody({ form, onDone }: { form: InputForm; onDone: () => void }
           key={field.name}
           field={field}
           values={values}
+          linear={linear}
+          sports={sports}
           disabled={readOnly || submitting}
           onChange={set}
         />
@@ -134,6 +147,87 @@ function InputFormBody({ form, onDone }: { form: InputForm; onDone: () => void }
       </footer>
     </form>
   );
+}
+
+/** The provider id behind a field's options, or "" for a static list. */
+function providerOf(field: InputField): string {
+  return field.source?.kind === "provider" ? field.source.provider : "";
+}
+
+/** Whether a field's options come from the Linear workspace. */
+function usesLinearProvider(field: InputField): boolean {
+  return providerOf(field).startsWith("linear");
+}
+
+/** Re-exported for the field view's props; the hook itself lives with the sports read. */
+type SportsEventsState = ReturnType<typeof useSportsEvents>;
+
+/** The Linear workspace, or an honest reason it could not be read. */
+interface LinearState {
+  readonly result: ListLinearOptionsResult | null;
+  readonly failed: boolean;
+}
+
+/**
+ * Reads the Linear workspace when a form needs it, and only then.
+ *
+ * One request serves every Linear dropdown in the form, because they are three views of the same
+ * document — the teams, and the projects and labels scoped inside each.
+ */
+function useLinearWorkspace(enabled: boolean): LinearState {
+  const bridge = useBridge();
+  const [state, setState] = useState<LinearState>({ result: null, failed: false });
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    let cancelled = false;
+    void bridge
+      .listLinearOptions()
+      .then((result) => {
+        if (!cancelled) {
+          setState({ result, failed: false });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setState({ result: null, failed: true });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge, enabled]);
+
+  return state;
+}
+
+/**
+ * The options a Linear provider offers, given the workspace and the scoping team.
+ *
+ * Projects and labels are read out of the **selected team**, never flattened across the workspace:
+ * a project belongs to one team, and offering one from another would produce a write Linear
+ * rejects. With no team chosen yet there is nothing to scope by, so the list is empty rather than
+ * a guess.
+ */
+export function linearOptions(
+  provider: string,
+  workspace: ListLinearOptionsResult | null,
+  teamId: string
+): readonly InputSelectOption[] {
+  if (!workspace) {
+    return [];
+  }
+  if (provider === "linearTeams") {
+    return workspace.teams.map((team) => ({ value: team.id, label: team.name }));
+  }
+  const team = workspace.teams.find((candidate) => candidate.id === teamId);
+  if (!team) {
+    return [];
+  }
+  const source = provider === "linearProjects" ? team.projects : team.labels;
+  return source.map((option) => ({ value: option.id, label: option.name }));
 }
 
 /**
@@ -192,17 +286,48 @@ function useOptionSource(source: InputOptionSource | undefined): {
 function FieldView({
   field,
   values,
+  linear,
+  sports,
   disabled,
   onChange
 }: {
   field: InputField;
   values: InputValues;
+  linear: LinearState;
+  sports: SportsEventsState;
   disabled: boolean;
   onChange: (name: string, next: string) => void;
 }) {
   const id = `input-field-${field.name}`;
-  const { options, unavailable } = useOptionSource(field.source);
-  const hint = unavailable ? "Your calendars couldn\u2019t be read — this will use the default." : field.hint;
+  const calendars = useOptionSource(field.source);
+  const isLinear = usesLinearProvider(field);
+  const isSports = providerOf(field) === "sportsEvents";
+  // A scoped field reads the value of the field it depends on, so a project list narrows to the
+  // chosen team instead of spanning the workspace.
+  const scopeValue = field.scopedBy ? (values[field.scopedBy] ?? "") : "";
+  const provider = field.source?.kind === "provider" ? field.source.provider : "";
+  const options = isSports
+    ? pickableEvents(sports.result?.events ?? []).map((event) => ({
+        value: event.id,
+        label: eventLabel(event)
+      }))
+    : isLinear
+      ? linearOptions(provider, linear.result, scopeValue)
+      : calendars.options;
+  const unavailable = isSports
+    ? sports.failed || sports.result?.available === false || sports.result?.reason != null
+    : isLinear
+      ? linear.failed || linear.result?.available === false || linear.result?.reason != null
+      : calendars.unavailable;
+  const hint = unavailable
+    ? isSports
+      ? sports.result?.reason ?? "Scores couldn\u2019t be read right now."
+      : isLinear
+        ? "Your Linear workspace couldn\u2019t be read. Check the API key under Settings \u2192 Setup."
+        : "Your calendars couldn\u2019t be read — this will use the default."
+    : isSports && sports.loading
+      ? "Loading today\u2019s games…"
+      : field.hint;
   const describedBy = hint ? `${id}-hint` : undefined;
   const value = values[field.name] ?? "";
 
@@ -219,6 +344,18 @@ function FieldView({
   // option and the mode-aware default is lost. The stored value is untouched either way.
   const selectedOption = options.find((option) => option.value === value);
   const renderedSelectValue = selectedOption ? value : "";
+
+  // A required select with exactly one real option has no decision to make, so it makes it: the
+  // field stays visible and overridable, but nobody has to click through a dropdown of one. This
+  // is not the same as inferring a value — with two options it stays blank and asks.
+  const onlyOption = field.required && value === "" && options.length === 1 ? options[0] : null;
+  useEffect(() => {
+    if (onlyOption) {
+      onChange(field.name, onlyOption.value);
+      onChange(`${field.name}Label`, onlyOption.label);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onlyOption?.value]);
 
   // Keep the companion label in step with a value the user never touched (the seeded default),
   // so a confirmation can still name the calendar.
@@ -304,6 +441,16 @@ function FieldView({
             onChange={(event) => field.endName && onChange(field.endName, event.target.value)}
           />
         </div>
+      ) : field.kind === "multiSelect" ? (
+        <MultiSelectControl
+          id={id}
+          field={field}
+          options={options}
+          value={value}
+          disabled={disabled}
+          describedBy={describedBy}
+          onChange={onChange}
+        />
       ) : field.kind === "folderPicker" ? (
         <FolderPickerControl
           id={id}
@@ -425,5 +572,86 @@ function FolderPickerControl({
         </p>
       ) : null}
     </>
+  );
+}
+
+/**
+ * A `multiSelect`: one checkbox per option, not a native `<select multiple>`.
+ *
+ * A native multi-select needs cmd-click to add a second value and gives no hint that it can hold
+ * more than one — for a list of labels someone picks two of, that is a control that hides its own
+ * capability. Checkboxes say what they do.
+ *
+ * The chosen ids are packed into this field's single slot, and their **labels** into the companion
+ * `<name>Label` slot, so a confirmation can name them in words the way every other select does.
+ */
+function MultiSelectControl({
+  id,
+  field,
+  options,
+  value,
+  disabled,
+  describedBy,
+  onChange
+}: {
+  id: string;
+  field: InputField;
+  options: readonly InputSelectOption[];
+  value: string;
+  disabled: boolean;
+  describedBy?: string;
+  onChange: (name: string, next: string) => void;
+}) {
+  const chosen = parseMultiValue(value);
+  const atCap = field.maxSelected !== undefined && chosen.length >= field.maxSelected;
+
+  function toggle(optionValue: string, checked: boolean) {
+    // Rebuilt from the option order rather than by appending, so the packed value reads in the
+    // same order as the list however it was clicked.
+    const next = options
+      .map((option) => option.value)
+      .filter((candidate) =>
+        candidate === optionValue ? checked : chosen.includes(candidate)
+      );
+    onChange(field.name, formatMultiValue(next));
+    onChange(
+      `${field.name}Label`,
+      formatMultiValue(
+        next.map((id) => options.find((option) => option.value === id)?.label ?? id)
+      )
+    );
+  }
+
+  if (options.length === 0) {
+    return (
+      <p className="input-field__empty" id={id}>
+        Nothing to choose from.
+      </p>
+    );
+  }
+
+  return (
+    // `aria-label` rather than the sibling `<label for>`: a `for` attribute associates with a form
+    // control, and a checkbox group is not one — without this the group would be unnamed.
+    <div
+      className="input-field__multi"
+      id={id}
+      role="group"
+      aria-label={field.label}
+      aria-describedby={describedBy}
+    >
+      {options.map((option) => (
+        <label className="input-field__check" key={option.value}>
+          <input
+            type="checkbox"
+            checked={chosen.includes(option.value)}
+            // At the cap only the already-chosen boxes stay live, so unchecking is always possible.
+            disabled={disabled || (atCap && !chosen.includes(option.value))}
+            onChange={(event) => toggle(option.value, event.target.checked)}
+          />
+          <span>{option.label}</span>
+        </label>
+      ))}
+    </div>
   );
 }

@@ -39,6 +39,8 @@
 //   let cerebralHelmGoogleSearchOutput = try CerebralHelmGoogleSearchOutput(json)
 //   let cerebralHelmHookRunInput = try CerebralHelmHookRunInput(json)
 //   let cerebralHelmHookRunOutput = try CerebralHelmHookRunOutput(json)
+//   let cerebralHelmLinearCreateIssueInput = try CerebralHelmLinearCreateIssueInput(json)
+//   let cerebralHelmLinearCreateIssueOutput = try CerebralHelmLinearCreateIssueOutput(json)
 //   let cerebralHelmModeApplyInput = try CerebralHelmModeApplyInput(json)
 //   let cerebralHelmModeApplyOutput = try CerebralHelmModeApplyOutput(json)
 //   let cerebralHelmNetworkSpeedTestInput = try CerebralHelmNetworkSpeedTestInput(json)
@@ -53,8 +55,12 @@
 //   let cerebralHelmNoteSearchOutput = try CerebralHelmNoteSearchOutput(json)
 //   let cerebralHelmProjectOpenInput = try CerebralHelmProjectOpenInput(json)
 //   let cerebralHelmProjectOpenOutput = try CerebralHelmProjectOpenOutput(json)
+//   let cerebralHelmProjectScaffoldInput = try CerebralHelmProjectScaffoldInput(json)
+//   let cerebralHelmProjectScaffoldOutput = try CerebralHelmProjectScaffoldOutput(json)
 //   let cerebralHelmSpotifyControlInput = try CerebralHelmSpotifyControlInput(json)
 //   let cerebralHelmSpotifyControlOutput = try CerebralHelmSpotifyControlOutput(json)
+//   let cerebralHelmSpotifyCreatePlaylistInput = try CerebralHelmSpotifyCreatePlaylistInput(json)
+//   let cerebralHelmSpotifyCreatePlaylistOutput = try CerebralHelmSpotifyCreatePlaylistOutput(json)
 //   let cerebralHelmSystemStatusReadInput = try CerebralHelmSystemStatusReadInput(json)
 //   let cerebralHelmSystemStatusReadOutput = try CerebralHelmSystemStatusReadOutput(json)
 //   let cerebralHelmToolDescriptor = try CerebralHelmToolDescriptor(json)
@@ -2214,6 +2220,8 @@ public enum Operation: String, Codable {
     case closeWindow = "closeWindow"
     case connectSpotify = "connectSpotify"
     case createCalendarEvent = "createCalendarEvent"
+    case createLinearIssue = "createLinearIssue"
+    case createSpotifyPlaylist = "createSpotifyPlaylist"
     case decideConfirmation = "decideConfirmation"
     case deleteSecret = "deleteSecret"
     case getBootstrapState = "getBootstrapState"
@@ -2224,7 +2232,9 @@ public enum Operation: String, Codable {
     case listApps = "listApps"
     case listCalendars = "listCalendars"
     case listChromeProfiles = "listChromeProfiles"
+    case listLinearOptions = "listLinearOptions"
     case listNotes = "listNotes"
+    case listSportsEvents = "listSportsEvents"
     case listUrls = "listUrls"
     case listWindows = "listWindows"
     case minimizeWindow = "minimizeWindow"
@@ -2233,6 +2243,7 @@ public enum Operation: String, Codable {
     case rebuildKnowledgeIndex = "rebuildKnowledgeIndex"
     case resetCanvas = "resetCanvas"
     case runSpeedTest = "runSpeedTest"
+    case scaffoldProject = "scaffoldProject"
     case searchNotes = "searchNotes"
     case setCanvasItemHidden = "setCanvasItemHidden"
     case storeSecret = "storeSecret"
@@ -4789,19 +4800,24 @@ public extension Reference {
 // MARK: - CerebralHelmReportDocument
 public struct CerebralHelmReportDocument: Codable {
     public let blocks: [Block]
+    /// Whether this report was composed from a fetch the reader can repeat. The region shows a
+    /// refresh control only for a report that says so — offering one on a document composed from
+    /// ambient state would promise something it cannot do.
+    public let refreshable: Bool?
     /// The quick-action id this document was composed for, so the renderer can key its reveal
     /// and the region can title itself.
     public let reportID: String
     public let schemaVersion: String
 
     public enum CodingKeys: String, CodingKey {
-        case blocks
+        case blocks, refreshable
         case reportID = "reportId"
         case schemaVersion
     }
 
-    public init(blocks: [Block], reportID: String, schemaVersion: String) {
+    public init(blocks: [Block], refreshable: Bool?, reportID: String, schemaVersion: String) {
         self.blocks = blocks
+        self.refreshable = refreshable
         self.reportID = reportID
         self.schemaVersion = schemaVersion
     }
@@ -4827,11 +4843,13 @@ public extension CerebralHelmReportDocument {
 
     func with(
         blocks: [Block]? = nil,
+        refreshable: Bool?? = nil,
         reportID: String? = nil,
         schemaVersion: String? = nil
     ) -> CerebralHelmReportDocument {
         return CerebralHelmReportDocument(
             blocks: blocks ?? self.blocks,
+            refreshable: refreshable ?? self.refreshable,
             reportID: reportID ?? self.reportID,
             schemaVersion: schemaVersion ?? self.schemaVersion
         )
@@ -4863,6 +4881,11 @@ public struct Block: Codable {
     public let blockKind: BlockKind
     public let greetingSize: GreetingSize?
     public let label: String?
+    /// How many rows show before the reader expands. Absent shows all of them.
+    public let leaderboardPreview: Int?
+    /// A `leaderboard` block's ranked field, complete rather than truncated:
+    /// `leaderboardPreview` decides how many show, so expanding needs no second fetch.
+    public let leaderboardRows: [LeaderboardRow]?
     /// `strong` uses weight, never color — inside a report, color means actionable.
     public let lineEmphasis: LineEmphasis?
     public let listItems: [ListItem]?
@@ -4877,17 +4900,22 @@ public struct Block: Codable {
     /// varies).
     public let reportAction: PurpleReportAction?
     public let reportActions: [ReportActionElement]?
+    /// A `scoreboard` block's two sides, away first.
+    public let scoreboardSides: [ScoreboardSide]?
     public let text, value: String?
 
-    public init(blockKind: BlockKind, greetingSize: GreetingSize?, label: String?, lineEmphasis: LineEmphasis?, listItems: [ListItem]?, metricTone: MetricTone?, reportAction: PurpleReportAction?, reportActions: [ReportActionElement]?, text: String?, value: String?) {
+    public init(blockKind: BlockKind, greetingSize: GreetingSize?, label: String?, leaderboardPreview: Int?, leaderboardRows: [LeaderboardRow]?, lineEmphasis: LineEmphasis?, listItems: [ListItem]?, metricTone: MetricTone?, reportAction: PurpleReportAction?, reportActions: [ReportActionElement]?, scoreboardSides: [ScoreboardSide]?, text: String?, value: String?) {
         self.blockKind = blockKind
         self.greetingSize = greetingSize
         self.label = label
+        self.leaderboardPreview = leaderboardPreview
+        self.leaderboardRows = leaderboardRows
         self.lineEmphasis = lineEmphasis
         self.listItems = listItems
         self.metricTone = metricTone
         self.reportAction = reportAction
         self.reportActions = reportActions
+        self.scoreboardSides = scoreboardSides
         self.text = text
         self.value = value
     }
@@ -4915,11 +4943,14 @@ public extension Block {
         blockKind: BlockKind? = nil,
         greetingSize: GreetingSize?? = nil,
         label: String?? = nil,
+        leaderboardPreview: Int?? = nil,
+        leaderboardRows: [LeaderboardRow]?? = nil,
         lineEmphasis: LineEmphasis?? = nil,
         listItems: [ListItem]?? = nil,
         metricTone: MetricTone?? = nil,
         reportAction: PurpleReportAction?? = nil,
         reportActions: [ReportActionElement]?? = nil,
+        scoreboardSides: [ScoreboardSide]?? = nil,
         text: String?? = nil,
         value: String?? = nil
     ) -> Block {
@@ -4927,11 +4958,14 @@ public extension Block {
             blockKind: blockKind ?? self.blockKind,
             greetingSize: greetingSize ?? self.greetingSize,
             label: label ?? self.label,
+            leaderboardPreview: leaderboardPreview ?? self.leaderboardPreview,
+            leaderboardRows: leaderboardRows ?? self.leaderboardRows,
             lineEmphasis: lineEmphasis ?? self.lineEmphasis,
             listItems: listItems ?? self.listItems,
             metricTone: metricTone ?? self.metricTone,
             reportAction: reportAction ?? self.reportAction,
             reportActions: reportActions ?? self.reportActions,
+            scoreboardSides: scoreboardSides ?? self.scoreboardSides,
             text: text ?? self.text,
             value: value ?? self.value
         )
@@ -4951,15 +4985,79 @@ public enum BlockKind: String, Codable {
     case count = "count"
     case empty = "empty"
     case greeting = "greeting"
+    case leaderboard = "leaderboard"
     case line = "line"
     case list = "list"
     case metric = "metric"
     case proposal = "proposal"
+    case scoreboard = "scoreboard"
 }
 
 public enum GreetingSize: String, Codable {
     case hero = "hero"
     case standard = "standard"
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - LeaderboardRow
+public struct LeaderboardRow: Codable {
+    public let rowName: String
+    /// Displayed position ('T4'). Absent on a finished or unranked field.
+    public let rowPosition: String?
+    public let rowScore: String
+    /// Holes played, only while a round is in progress.
+    public let rowThru: String?
+
+    public init(rowName: String, rowPosition: String?, rowScore: String, rowThru: String?) {
+        self.rowName = rowName
+        self.rowPosition = rowPosition
+        self.rowScore = rowScore
+        self.rowThru = rowThru
+    }
+}
+
+// MARK: LeaderboardRow convenience initializers and mutators
+
+public extension LeaderboardRow {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(LeaderboardRow.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        rowName: String? = nil,
+        rowPosition: String?? = nil,
+        rowScore: String? = nil,
+        rowThru: String?? = nil
+    ) -> LeaderboardRow {
+        return LeaderboardRow(
+            rowName: rowName ?? self.rowName,
+            rowPosition: rowPosition ?? self.rowPosition,
+            rowScore: rowScore ?? self.rowScore,
+            rowThru: rowThru ?? self.rowThru
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
 }
 
 /// `strong` uses weight, never color — inside a report, color means actionable.
@@ -5224,6 +5322,76 @@ public extension ReportActionElement {
         return ReportActionElement(
             action: action ?? self.action,
             params: params ?? self.params
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+/// One side of a team game. Carries the team's own colour so a scoreboard can look like one
+/// without fetching a logo.
+// MARK: - ScoreboardSide
+public struct ScoreboardSide: Codable {
+    public let sideAbbreviation: String
+    /// Bare hex, no leading '#', as the provider supplies it.
+    public let sideColor: String?
+    public let sideIsHome: Bool?
+    public let sideName, sideRecord: String?
+    public let sideScore: String
+
+    public init(sideAbbreviation: String, sideColor: String?, sideIsHome: Bool?, sideName: String?, sideRecord: String?, sideScore: String) {
+        self.sideAbbreviation = sideAbbreviation
+        self.sideColor = sideColor
+        self.sideIsHome = sideIsHome
+        self.sideName = sideName
+        self.sideRecord = sideRecord
+        self.sideScore = sideScore
+    }
+}
+
+// MARK: ScoreboardSide convenience initializers and mutators
+
+public extension ScoreboardSide {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(ScoreboardSide.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        sideAbbreviation: String? = nil,
+        sideColor: String?? = nil,
+        sideIsHome: Bool?? = nil,
+        sideName: String?? = nil,
+        sideRecord: String?? = nil,
+        sideScore: String? = nil
+    ) -> ScoreboardSide {
+        return ScoreboardSide(
+            sideAbbreviation: sideAbbreviation ?? self.sideAbbreviation,
+            sideColor: sideColor ?? self.sideColor,
+            sideIsHome: sideIsHome ?? self.sideIsHome,
+            sideName: sideName ?? self.sideName,
+            sideRecord: sideRecord ?? self.sideRecord,
+            sideScore: sideScore ?? self.sideScore
         )
     }
 
@@ -6733,6 +6901,139 @@ public extension CerebralHelmHookRunOutput {
 
 // Do not edit by hand; edit packages/contracts/schemas instead.
 
+/// Property names are prefixed because the code generator derives type names from property
+/// names: a bare `title`/`description`/`priority` would mint or steal a generic type across
+/// the whole shared module.
+// MARK: - CerebralHelmLinearCreateIssueInput
+public struct CerebralHelmLinearCreateIssueInput: Codable {
+    /// Markdown body. Optional.
+    public let issueDescription: String?
+    /// Linear's priority scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low.
+    public let issuePriority: Int?
+    public let issueTitle: String
+    /// Optional labels. A list because Linear issues carry several, and because that is how the
+    /// labels are actually used here — an issue is routinely both a category and a status.
+    public let linearLabelIDs: [String]?
+    /// Optional project. Must belong to the chosen team.
+    public let linearProjectID: String?
+    /// The Linear team the issue belongs to. Required by the API and never inferred: a workspace
+    /// can have several teams, and guessing one would file the ticket somewhere the user did not
+    /// choose.
+    public let linearTeamID: String
+
+    public init(issueDescription: String?, issuePriority: Int?, issueTitle: String, linearLabelIDs: [String]?, linearProjectID: String?, linearTeamID: String) {
+        self.issueDescription = issueDescription
+        self.issuePriority = issuePriority
+        self.issueTitle = issueTitle
+        self.linearLabelIDs = linearLabelIDs
+        self.linearProjectID = linearProjectID
+        self.linearTeamID = linearTeamID
+    }
+}
+
+// MARK: CerebralHelmLinearCreateIssueInput convenience initializers and mutators
+
+public extension CerebralHelmLinearCreateIssueInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmLinearCreateIssueInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        issueDescription: String?? = nil,
+        issuePriority: Int?? = nil,
+        issueTitle: String? = nil,
+        linearLabelIDs: [String]?? = nil,
+        linearProjectID: String?? = nil,
+        linearTeamID: String? = nil
+    ) -> CerebralHelmLinearCreateIssueInput {
+        return CerebralHelmLinearCreateIssueInput(
+            issueDescription: issueDescription ?? self.issueDescription,
+            issuePriority: issuePriority ?? self.issuePriority,
+            issueTitle: issueTitle ?? self.issueTitle,
+            linearLabelIDs: linearLabelIDs ?? self.linearLabelIDs,
+            linearProjectID: linearProjectID ?? self.linearProjectID,
+            linearTeamID: linearTeamID ?? self.linearTeamID
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmLinearCreateIssueOutput
+public struct CerebralHelmLinearCreateIssueOutput: Codable {
+    /// The human-readable identifier Linear assigned, e.g. NIC-176.
+    public let issueIdentifier: String
+    /// The issue's web URL, as returned by Linear — never constructed here.
+    public let issueURL: String
+
+    public init(issueIdentifier: String, issueURL: String) {
+        self.issueIdentifier = issueIdentifier
+        self.issueURL = issueURL
+    }
+}
+
+// MARK: CerebralHelmLinearCreateIssueOutput convenience initializers and mutators
+
+public extension CerebralHelmLinearCreateIssueOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmLinearCreateIssueOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        issueIdentifier: String? = nil,
+        issueURL: String? = nil
+    ) -> CerebralHelmLinearCreateIssueOutput {
+        return CerebralHelmLinearCreateIssueOutput(
+            issueIdentifier: issueIdentifier ?? self.issueIdentifier,
+            issueURL: issueURL ?? self.issueURL
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
 // MARK: - CerebralHelmModeApplyInput
 public struct CerebralHelmModeApplyInput: Codable {
     public let modeID: String
@@ -7815,6 +8116,127 @@ public extension CerebralHelmProjectOpenOutput {
 
 // Do not edit by hand; edit packages/contracts/schemas instead.
 
+// MARK: - CerebralHelmProjectScaffoldInput
+public struct CerebralHelmProjectScaffoldInput: Codable {
+    /// Ordering weight for the Projects widget (higher first). Absent uses the shipped
+    /// template's default.
+    public let projectImportance: Int?
+    /// Optional folder to create it in, relative to the projects root. The adapter joins the
+    /// name onto it and re-checks that the result stays inside that root.
+    public let projectLocation: String?
+    /// The project's display name, which is also its folder name. The adapter refuses a name
+    /// containing a path separator rather than silently mangling it into nested folders.
+    public let projectName: String
+    /// Optional one-line summary, written into the PROJECT.md descriptor.
+    public let projectSummary: String?
+
+    public init(projectImportance: Int?, projectLocation: String?, projectName: String, projectSummary: String?) {
+        self.projectImportance = projectImportance
+        self.projectLocation = projectLocation
+        self.projectName = projectName
+        self.projectSummary = projectSummary
+    }
+}
+
+// MARK: CerebralHelmProjectScaffoldInput convenience initializers and mutators
+
+public extension CerebralHelmProjectScaffoldInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmProjectScaffoldInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        projectImportance: Int?? = nil,
+        projectLocation: String?? = nil,
+        projectName: String? = nil,
+        projectSummary: String?? = nil
+    ) -> CerebralHelmProjectScaffoldInput {
+        return CerebralHelmProjectScaffoldInput(
+            projectImportance: projectImportance ?? self.projectImportance,
+            projectLocation: projectLocation ?? self.projectLocation,
+            projectName: projectName ?? self.projectName,
+            projectSummary: projectSummary ?? self.projectSummary
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmProjectScaffoldOutput
+public struct CerebralHelmProjectScaffoldOutput: Codable {
+    /// The absolute path of the PROJECT.md written into it.
+    public let projectDescriptorPath: String
+    /// The absolute path of the created project folder, always inside the projects root.
+    public let projectPath: String
+
+    public init(projectDescriptorPath: String, projectPath: String) {
+        self.projectDescriptorPath = projectDescriptorPath
+        self.projectPath = projectPath
+    }
+}
+
+// MARK: CerebralHelmProjectScaffoldOutput convenience initializers and mutators
+
+public extension CerebralHelmProjectScaffoldOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmProjectScaffoldOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        projectDescriptorPath: String? = nil,
+        projectPath: String? = nil
+    ) -> CerebralHelmProjectScaffoldOutput {
+        return CerebralHelmProjectScaffoldOutput(
+            projectDescriptorPath: projectDescriptorPath ?? self.projectDescriptorPath,
+            projectPath: projectPath ?? self.projectPath
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
 // MARK: - CerebralHelmSpotifyControlInput
 public struct CerebralHelmSpotifyControlInput: Codable {
     /// The playback command to send to the user's active Spotify device: resume, pause, skip
@@ -7917,6 +8339,126 @@ public extension CerebralHelmSpotifyControlOutput {
             action: action ?? self.action,
             activeDevice: activeDevice ?? self.activeDevice,
             applied: applied ?? self.applied
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+/// Property names are prefixed because the code generator derives type names from property
+/// names: a bare `name`/`description` would mint or steal a generic type across the whole
+/// shared module.
+// MARK: - CerebralHelmSpotifyCreatePlaylistInput
+public struct CerebralHelmSpotifyCreatePlaylistInput: Codable {
+    /// Optional description, as shown in Spotify clients.
+    public let playlistDescription: String?
+    /// Whether the playlist appears on the user's public profile. Absent means private:
+    /// Spotify's own API defaults this to true, and silently publishing something to someone's
+    /// profile is not a default worth inheriting.
+    public let playlistIsPublic: Bool?
+    public let playlistName: String
+
+    public init(playlistDescription: String?, playlistIsPublic: Bool?, playlistName: String) {
+        self.playlistDescription = playlistDescription
+        self.playlistIsPublic = playlistIsPublic
+        self.playlistName = playlistName
+    }
+}
+
+// MARK: CerebralHelmSpotifyCreatePlaylistInput convenience initializers and mutators
+
+public extension CerebralHelmSpotifyCreatePlaylistInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmSpotifyCreatePlaylistInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        playlistDescription: String?? = nil,
+        playlistIsPublic: Bool?? = nil,
+        playlistName: String? = nil
+    ) -> CerebralHelmSpotifyCreatePlaylistInput {
+        return CerebralHelmSpotifyCreatePlaylistInput(
+            playlistDescription: playlistDescription ?? self.playlistDescription,
+            playlistIsPublic: playlistIsPublic ?? self.playlistIsPublic,
+            playlistName: playlistName ?? self.playlistName
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmSpotifyCreatePlaylistOutput
+public struct CerebralHelmSpotifyCreatePlaylistOutput: Codable {
+    public let playlistID, playlistName: String
+    /// The playlist's Spotify URL as returned by the API — never constructed here. Absent when
+    /// Spotify omitted it.
+    public let playlistURL: String?
+
+    public init(playlistID: String, playlistName: String, playlistURL: String?) {
+        self.playlistID = playlistID
+        self.playlistName = playlistName
+        self.playlistURL = playlistURL
+    }
+}
+
+// MARK: CerebralHelmSpotifyCreatePlaylistOutput convenience initializers and mutators
+
+public extension CerebralHelmSpotifyCreatePlaylistOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmSpotifyCreatePlaylistOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        playlistID: String? = nil,
+        playlistName: String? = nil,
+        playlistURL: String?? = nil
+    ) -> CerebralHelmSpotifyCreatePlaylistOutput {
+        return CerebralHelmSpotifyCreatePlaylistOutput(
+            playlistID: playlistID ?? self.playlistID,
+            playlistName: playlistName ?? self.playlistName,
+            playlistURL: playlistURL ?? self.playlistURL
         )
     }
 

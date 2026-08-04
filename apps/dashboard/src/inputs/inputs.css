@@ -17,6 +17,18 @@
   border: 1px solid var(--ch-panel-border);
   border-radius: var(--ch-radius-lg);
   background: var(--ch-surface-raised);
+  /* The tallest form (create-ticket, six fields) can outgrow a short panel and push the
+     quick-action grid off the bottom. Bounding the region makes that impossible: it scrolls
+     inside itself instead. On a tall display the cap never binds, so nothing changes there. */
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Header and footer stay put while the fields scroll — the submit button must never be the thing
+   that scrolls out of reach. */
+.input-region__head,
+.input-region__footer {
+  flex: 0 0 auto;
 }
 
 .input-region__head {
@@ -84,6 +96,10 @@
   font: inherit;
   font-size: var(--ch-font-size-sm);
   width: 100%;
+  /* This repo has no global border-box reset, so `width: 100%` plus padding and a border made
+     every control wider than its own field — invisible until the region became a scroll container,
+     which then showed it as a horizontal scrollbar. */
+  box-sizing: border-box;
   padding: var(--ch-space-2);
   border: 1px solid var(--ch-panel-border);
   border-radius: var(--ch-radius-md);
@@ -212,4 +228,47 @@
 /* A refused selection is a warning, not neutral guidance — the user did pick something. */
 .input-field__hint--warning {
   color: var(--ch-status-warning);
+}
+
+/* A multi-select is a checkbox list, not a native <select multiple>: cmd-click to add a second
+   value is a capability the control never advertises. Bounded and scrollable so a workspace with
+   many labels cannot take over the form. */
+.input-field__multi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  max-height: 9rem;
+  overflow-y: auto;
+  padding: var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-panel);
+}
+
+.input-field__check {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.input-field__check input {
+  flex: 0 0 auto;
+  accent-color: var(--ch-accent-primary);
+  cursor: pointer;
+}
+
+.input-field__check input:disabled,
+.input-field__check input:disabled + span {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* An option source that resolved to nothing says so, rather than rendering an empty box. */
+.input-field__empty {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
 }

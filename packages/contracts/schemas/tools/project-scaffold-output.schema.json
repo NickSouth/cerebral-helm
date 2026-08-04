@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/project-scaffold-output.schema.json",
+  "title": "CerebralHelm Project Scaffold Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["projectPath", "projectDescriptorPath"],
+  "properties": {
+    "projectPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The absolute path of the created project folder, always inside the projects root."
+    },
+    "projectDescriptorPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The absolute path of the PROJECT.md written into it."
+    }
+  }
+}

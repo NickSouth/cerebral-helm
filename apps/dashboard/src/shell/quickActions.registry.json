@@ -30,7 +30,10 @@
     "create-project": {
       "label": "Create project",
       "icon": "folder-plus",
-      "archetype": "input"
+      "archetype": "input",
+      "target": {
+        "kind": "input"
+      }
     },
     "send-text": {
       "label": "Send text",
@@ -77,7 +80,10 @@
     "create-ticket": {
       "label": "Create ticket",
       "icon": "ticket",
-      "archetype": "input"
+      "archetype": "input",
+      "target": {
+        "kind": "input"
+      }
     },
     "check-ondraft": {
       "label": "Check OnDraft",
@@ -136,7 +142,10 @@
     "create-playlist": {
       "label": "Create playlist",
       "icon": "playlist",
-      "archetype": "input"
+      "archetype": "input",
+      "target": {
+        "kind": "input"
+      }
     },
     "search-youtube": {
       "label": "Search YouTube",
@@ -149,7 +158,10 @@
     "check-scoreboard": {
       "label": "Check scoreboard",
       "icon": "ball-football",
-      "archetype": "report"
+      "archetype": "input",
+      "target": {
+        "kind": "input"
+      }
     },
     "suggest-a-movie": {
       "label": "Suggest a movie",

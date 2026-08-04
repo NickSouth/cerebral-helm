@@ -219,6 +219,64 @@ public struct MockGoogleSearchCapability: GoogleSearchCapability {
     }
 }
 
+public struct MockSpotifyPlaylistCapability: SpotifyPlaylistCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func createPlaylist(name: String, description: String?, isPublic: Bool) async throws -> SpotifyPlaylistResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.spotifyPlaylist, matrix: matrix, fault: fault, subject: name)
+        return SpotifyPlaylistResult(id: "mock-playlist", name: name, url: "https://open.spotify.com/playlist/mock-playlist")
+    }
+}
+
+public struct MockLinearIssueCapability: LinearIssueCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func createIssue(
+        title: String,
+        description: String?,
+        teamID: String,
+        projectID: String?,
+        labelIDs: [String],
+        priority: Int?
+    ) async throws -> LinearIssueResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.linearIssue, matrix: matrix, fault: fault, subject: title)
+        return LinearIssueResult(
+            identifier: "MOCK-1",
+            url: "https://linear.app/mock/issue/MOCK-1"
+        )
+    }
+}
+
+public struct MockProjectScaffoldCapability: ProjectScaffoldCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func scaffold(
+        name: String, location: String?, summary: String?, importance: Int?
+    ) async throws -> ProjectScaffoldResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.projectScaffold, matrix: matrix, fault: fault, subject: name)
+        let path = "/mock/Projects/\(location.map { "\($0)/" } ?? "")\(name)"
+        return ProjectScaffoldResult(projectPath: path, descriptorPath: path + "/PROJECT.md")
+    }
+}
+
 public struct MockGitCloneCapability: GitCloneCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault

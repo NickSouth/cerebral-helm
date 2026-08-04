@@ -85,6 +85,15 @@ public struct SpotifyTokenExchange {
         "user-read-currently-playing",
         "user-modify-playback-state",
         "user-read-recently-played",
+        // Playlist creation (quick-actions phase 4). Both are needed because the private/public
+        // choice is the user's at create time, and Spotify scopes those separately — asking for
+        // only one would make half the form fail at the API.
+        //
+        // **Adding these invalidates nothing, but an EXISTING grant does not gain them.** A token
+        // issued before this line was written still works for playback and is refused for
+        // playlists, so the adapter reports that as "reconnect", not as a broken account.
+        "playlist-modify-private",
+        "playlist-modify-public",
     ]
 
     public init(

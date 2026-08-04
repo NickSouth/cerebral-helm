@@ -105,6 +105,98 @@ public struct GoogleSearchResult: Equatable, Sendable {
     }
 }
 
+// MARK: - spotify.createplaylist
+
+/// Creates an empty playlist in the user's connected Spotify account (quick-actions phase 4).
+///
+/// Separate from ``SpotifyControlCapability`` even though both speak to the same account and share
+/// one OAuth session: control is transport (play/pause/skip), this is a **write to the user's
+/// library**, and it needs scopes control does not. Keeping them apart means a playback surface can
+/// never reach the path that creates something.
+public protocol SpotifyPlaylistCapability: Sendable {
+    func createPlaylist(name: String, description: String?, isPublic: Bool) async throws -> SpotifyPlaylistResult
+}
+
+public struct SpotifyPlaylistResult: Equatable, Sendable {
+    public let id: String
+    public let name: String
+    /// The playlist's Spotify URL **as returned by the API** — never constructed here. Nil when
+    /// Spotify omitted it.
+    public let url: String?
+
+    public init(id: String, name: String, url: String?) {
+        self.id = id
+        self.name = name
+        self.url = url
+    }
+}
+
+// MARK: - linear.createissue
+
+/// Creates one issue in the user's Linear workspace (quick-actions phase 4).
+///
+/// **Write only.** Reading the workspace (teams, projects, labels — what the form's dropdowns need)
+/// is a separate concern that never crosses this port, the same split as
+/// ``CalendarWritingCapability`` versus ``CalendarProvider``: a surface that only lists options can
+/// never reach the path that files a ticket.
+///
+/// The API key is resolved by the adapter from the Keychain, never passed in — a token travelling
+/// through the tool boundary would end up in a disclosure or a log.
+public protocol LinearIssueCapability: Sendable {
+    func createIssue(
+        title: String,
+        description: String?,
+        teamID: String,
+        projectID: String?,
+        labelIDs: [String],
+        priority: Int?
+    ) async throws -> LinearIssueResult
+}
+
+public struct LinearIssueResult: Equatable, Sendable {
+    /// The identifier Linear assigned, e.g. `NIC-176`.
+    public let identifier: String
+    /// The issue's web URL **as returned by Linear** — never constructed here, so a workspace
+    /// slug we do not know can never be guessed wrong.
+    public let url: String
+
+    public init(identifier: String, url: String) {
+        self.identifier = identifier
+        self.url = url
+    }
+}
+
+// MARK: - project.scaffold
+
+/// Creates a new project folder under the projects root, with a `PROJECT.md` descriptor
+/// (quick-actions phase 4).
+///
+/// A **project folder is a container, not a repository** (``ActiveProjectsProvider``): the repos
+/// live one level inside it. So this deliberately does not `git init` anything — a project folder
+/// that was itself a repo would be a different shape from every project the widget already reads.
+///
+/// Same containment invariant as ``GitCloneCapability``: the destination is resolved inside the
+/// projects root and re-checked after standardizing, and an existing path is a refusal rather than
+/// an overwrite. Nothing here runs a process.
+public protocol ProjectScaffoldCapability: Sendable {
+    func scaffold(
+        name: String,
+        location: String?,
+        summary: String?,
+        importance: Int?
+    ) async throws -> ProjectScaffoldResult
+}
+
+public struct ProjectScaffoldResult: Equatable, Sendable {
+    public let projectPath: String
+    public let descriptorPath: String
+
+    public init(projectPath: String, descriptorPath: String) {
+        self.projectPath = projectPath
+        self.descriptorPath = descriptorPath
+    }
+}
+
 // MARK: - git.clone
 
 /// Clones a git repository into a folder under the projects root (quick-actions phase 4).

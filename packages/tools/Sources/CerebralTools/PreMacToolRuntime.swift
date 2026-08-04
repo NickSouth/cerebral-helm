@@ -44,6 +44,9 @@ public enum PreMacToolRuntime {
             "google.search": GoogleSearchHandler(capability: capabilities.googleSearch),
             "youtube.search": YouTubeSearchHandler(capability: capabilities.youtubeSearch),
             "git.clone": GitCloneHandler(capability: capabilities.gitClone),
+            "project.scaffold": ProjectScaffoldHandler(capability: capabilities.projectScaffold),
+            "linear.createissue": LinearCreateIssueHandler(capability: capabilities.linearIssue),
+            "spotify.createplaylist": SpotifyCreatePlaylistHandler(capability: capabilities.spotifyPlaylist),
             "spotify.control": SpotifyControlHandler(capability: capabilities.spotifyControl),
             "web.open": WebOpenHandler(capability: capabilities.webOpen),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
@@ -135,6 +138,9 @@ public enum PreMacToolRuntime {
         case "google.search": _ = try CerebralHelmGoogleSearchInput(data: data)
         case "youtube.search": _ = try CerebralHelmYouTubeSearchInput(data: data)
         case "git.clone": _ = try CerebralHelmGitCloneInput(data: data)
+        case "project.scaffold": _ = try CerebralHelmProjectScaffoldInput(data: data)
+        case "linear.createissue": _ = try CerebralHelmLinearCreateIssueInput(data: data)
+        case "spotify.createplaylist": _ = try CerebralHelmSpotifyCreatePlaylistInput(data: data)
         case "spotify.control": _ = try CerebralHelmSpotifyControlInput(data: data)
         case "web.open": _ = try CerebralHelmWebOpenInput(data: data)
         default: break

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_createPlaylistReq00000001",
+  "type": "bridge.operation.request",
+  "operation": "createSpotifyPlaylist",
+  "payload": {
+    "name": "Late night focus",
+    "description": "Long instrumentals, no vocals.",
+    "isPublic": false
+  }
+}

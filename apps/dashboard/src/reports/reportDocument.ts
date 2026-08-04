@@ -21,7 +21,9 @@ export type ReportBlockKind =
   | "checklist"
   | "empty"
   | "count"
-  | "proposal";
+  | "proposal"
+  | "scoreboard"
+  | "leaderboard";
 
 /**
  * A clickable destination inside a report — **never a URL**. It names a registered quick action,
@@ -43,6 +45,26 @@ export interface ReportListItem {
   readonly reportAction?: ReportActionReference;
 }
 
+/** One side of a team game. The colour is the team's own, so a scoreboard needs no logo fetch. */
+export interface ReportScoreboardSide {
+  readonly sideAbbreviation: string;
+  readonly sideName?: string;
+  readonly sideScore: string;
+  /** Bare hex, no leading `#`, as the provider supplies it. */
+  readonly sideColor?: string;
+  readonly sideIsHome?: boolean;
+  readonly sideRecord?: string;
+}
+
+export interface ReportLeaderboardRow {
+  /** Displayed position (`T4`). Absent on a finished or unranked field. */
+  readonly rowPosition?: string;
+  readonly rowName: string;
+  readonly rowScore: string;
+  /** Holes played, only while a round is in progress. */
+  readonly rowThru?: string;
+}
+
 export interface ReportBlock {
   readonly blockKind: ReportBlockKind;
   readonly text?: string;
@@ -55,12 +77,26 @@ export interface ReportBlock {
   readonly listItems?: readonly ReportListItem[];
   readonly reportAction?: ReportActionReference;
   readonly reportActions?: readonly ReportActionReference[];
+  /** A `scoreboard` block's two sides, away first. */
+  readonly scoreboardSides?: readonly ReportScoreboardSide[];
+  /**
+   * A `leaderboard` block's ranked field — **complete**, not truncated. `leaderboardPreview`
+   * decides how many show, so expanding is a render decision rather than a second fetch.
+   */
+  readonly leaderboardRows?: readonly ReportLeaderboardRow[];
+  readonly leaderboardPreview?: number;
 }
 
 export interface ReportDocument {
   readonly schemaVersion: string;
   readonly reportId: string;
   readonly blocks: readonly ReportBlock[];
+  /**
+   * Whether this document came from a fetch the reader can repeat. The region shows a refresh
+   * control only when a report says so — offering one on a document composed from ambient state
+   * would promise something it cannot do.
+   */
+  readonly refreshable?: boolean;
 }
 
 export const REPORT_DOCUMENT_SCHEMA_VERSION = "1.0.0";
@@ -87,6 +123,11 @@ export function isRenderable(block: ReportBlock): boolean {
     case "list":
     case "checklist":
       return (block.listItems?.length ?? 0) > 0;
+    // A scoreboard needs both sides: one team and a score is not a scoreboard, it is a fragment.
+    case "scoreboard":
+      return (block.scoreboardSides?.length ?? 0) === 2;
+    case "leaderboard":
+      return (block.leaderboardRows?.length ?? 0) > 0;
     default:
       // An unknown kind from a future composer: skip it rather than guessing.
       return false;

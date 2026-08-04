@@ -397,6 +397,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // (`spotify_client_id`, entered in Settings) at connect time — absent → an honest "add your
         // Client ID". The tokens never cross back through the bridge; only the granted scope does.
         let spotifyCoordinator = SpotifyAuthCoordinator(secretStore: composition.secretStore)
+        let linearClient = composition.linear
         let spotifySecretStore = composition.secretStore
         // Which widget ids each mode's left/right slots show (config/modes, through the same
         // layered loader bootstrap composes from) — drives the mode-entry widget refresh below.
@@ -498,13 +499,36 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 await spotify.refresh()
                 return SpotifyConnectionInfo(scope: connection.scope)
             },
+            chooseFolder: {
+                await MainActor.run { ProjectsFolderChooser() }.choose()
+            },
+            // The `create-ticket` form's dropdowns (quick-actions phase 4): teams, and each
+            // team's projects and labels. A READ closure — separate from the `linear.createissue`
+            // tool that writes — so loading a form's options can never reach the write path, and
+            // so opening a form does not put a command in the log.
+            linearWorkspace: {
+                // The client is captured directly rather than through `composition`, which is not
+                // Sendable — the same pattern the Spotify and Canvas closures use.
+                let workspace = try await linearClient.workspace()
+                return LinearWorkspaceInfo(teams: workspace.teams.map { team in
+                    LinearWorkspaceInfo.Team(
+                        id: team.id,
+                        key: team.key,
+                        name: team.name,
+                        projects: team.projects.map { .init(id: $0.id, name: $0.name) },
+                        labels: team.labels.map { .init(id: $0.id, name: $0.name) }
+                    )
+                })
+            },
+            // The `check-scoreboard` picker and the report it opens (quick-actions phase 4):
+            // current NFL games and PGA tournaments from ESPN's public site API. A read, fetched
+            // on demand — golf's payload is a megabyte and cannot be narrowed at the source, so
+            // trimming happens in the adapter and nothing polls it.
+            sportsEvents: { try await ESPNScoreboardProvider().events() },
             // The `git-clone` form's location field (quick-actions phase 4): a native folder
             // picker rooted at the projects root. The chooser — not the caller — decides where the
             // panel opens and refuses a selection outside that root, so the tool's containment
             // guarantee is never delegated to the web layer. Main actor: it presents a panel.
-            chooseFolder: {
-                await MainActor.run { ProjectsFolderChooser() }.choose()
-            },
             // The Canvas connect/status surface (NIC-132): getCanvasStatus shows the pairing
             // endpoint/token + last-scrape summary; resetCanvas purges the scrape and rotates the token.
             canvasStatus: canvasStatusClosure,

@@ -118,7 +118,7 @@ public struct CommandSuggestionEngine: Sendable {
         // it can neither appear in the palette nor be re-run from history.
         case .captureNote, .searchNotes, .listNotes, .readNote,
              .googleSearch, .youtubeSearch, .spotifyControl, .webOpen, .openProject, .createCalendarEvent,
-             .cloneRepository:
+             .cloneRepository, .createLinearIssue, .createSpotifyPlaylist, .scaffoldProject:
             return false
         }
     }
@@ -257,7 +257,8 @@ public struct CommandSuggestionEngine: Sendable {
             return CommandSuggestion(command: command, label: entry.label, kind: .hook)
         case .captureNote, .searchNotes, .listNotes, .readNote,
              .googleSearch, .youtubeSearch, .spotifyControl, .webOpen, .openProject,
-             .listApps, .runSpeedTest, .quitAllApps, .createCalendarEvent, .cloneRepository:
+             .listApps, .runSpeedTest, .quitAllApps, .createCalendarEvent, .cloneRepository,
+             .createLinearIssue, .createSpotifyPlaylist, .scaffoldProject:
             let verb = splitFirstToken(command).first
             let label = Verb.all.first { $0.token == verb }?.description ?? command
             return CommandSuggestion(command: command, label: label, kind: .command)

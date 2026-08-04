@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "project.scaffold",
+  "version": "1.0.0",
+  "purpose": "Create a new project folder under the projects root with a PROJECT.md descriptor.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/project-scaffold-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/project-scaffold-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "local_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_local_write",
+  "requiredPermissions": ["projects_root_write"],
+  "secretReferences": [],
+  "timeoutMs": 15000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "non_idempotent",
+  "adapterRequirements": {
+    "capabilities": ["project.scaffold"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "denied", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

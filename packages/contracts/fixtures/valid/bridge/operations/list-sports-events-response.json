@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_listSportsEventsRes00001",
+  "type": "bridge.operation.response",
+  "operation": "listSportsEvents",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "events": [
+      {
+        "id": "401873271",
+        "league": "nfl",
+        "name": "Carolina Panthers at Arizona Cardinals",
+        "shortName": "CAR VS ARI",
+        "state": "pre",
+        "detail": "8/6 - 8:00 PM EDT",
+        "competitors": [
+          {
+            "abbreviation": "ARI",
+            "name": "Arizona Cardinals",
+            "score": "0",
+            "color": "a40227",
+            "isHome": true,
+            "record": "0-0"
+          },
+          {
+            "abbreviation": "CAR",
+            "name": "Carolina Panthers",
+            "score": "0",
+            "color": "0085ca",
+            "isHome": false,
+            "record": "0-0"
+          }
+        ],
+        "leaderboard": []
+      },
+      {
+        "id": "401811960",
+        "league": "pga",
+        "name": "Rocket Classic",
+        "shortName": "Rocket Classic",
+        "state": "post",
+        "detail": "Final",
+        "competitors": [],
+        "leaderboard": [
+          {
+            "order": 1,
+            "position": null,
+            "name": "Michael Thorbjornsen",
+            "score": "-18",
+            "thru": null
+          }
+        ]
+      }
+    ],
+    "available": true,
+    "reason": null
+  }
+}

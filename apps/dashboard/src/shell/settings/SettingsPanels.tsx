@@ -758,6 +758,7 @@ const TMDB_SECRET_REFERENCE = "tmdb_api_key";
 const FINNHUB_SECRET_REFERENCE = "finnhub_api_key";
 const NEWSDATA_SECRET_REFERENCE = "newsdata_api_key";
 const GITHUB_SECRET_REFERENCE = "github_api_token";
+const LINEAR_SECRET_REFERENCE = "linear_api_token";
 const SPOTIFY_CLIENT_ID_REFERENCE = "spotify_client_id";
 const SPOTIFY_OAUTH_REFERENCE = "spotify_oauth";
 
@@ -920,7 +921,7 @@ function SpotifyConnectField() {
   return (
     <Field
       label="Spotify account"
-      hint="Connect Spotify to show your now-playing track (and controls) on the Entertainment dashboard. Uses the Client ID above; opens your browser to sign in. Tokens are stored in your macOS Keychain — never in config or logs."
+      hint="Connect Spotify to show your now-playing track (and controls) on the Entertainment dashboard, and to create playlists. Uses the Client ID above; opens your browser to sign in. Tokens are stored in your macOS Keychain — never in config or logs. If you connected before playlists existed, reconnect once to grant them — playback keeps working either way."
     >
       <div className="settings-secret">
         <span className="settings-secret__status" data-bound={connected === true}>
@@ -1580,6 +1581,12 @@ function SetupPanelBody() {
           label="GitHub personal access token"
           hint="Powers the Developer Project Git Status widget (read-only: pull requests, Actions, commits). Stored in your macOS Keychain — never in config or logs. Create a fine-grained token at github.com/settings/tokens."
           placeholder="Paste your GitHub token"
+        />
+        <ProviderKeyField
+          reference={LINEAR_SECRET_REFERENCE}
+          label="Linear API key"
+          hint="Powers the Developer Create ticket action. Stored in your macOS Keychain — never in config or logs. Create a personal API key under Linear → Settings → Security & access."
+          placeholder="Paste your Linear API key"
         />
         <ProviderKeyField
           reference={SPOTIFY_CLIENT_ID_REFERENCE}

@@ -181,16 +181,16 @@ describe("DashboardShell structure", () => {
       "button"
     );
     expect(slots).toHaveLength(8);
-    // daily-brief, capture-note, create-event and shut-down are built; the rest are registered
-    // but targetless.
-    for (const name of ["Daily brief", "Capture note", "Create event", "Shut down"]) {
+    // Built: daily-brief, capture-note, create-event, create-project, shut-down. Still registered
+    // but targetless: send-text, email-report, system-status-checks.
+    for (const name of ["Daily brief", "Capture note", "Create event", "Create project", "Shut down"]) {
       expect(screen.getByRole("button", { name })).toBeEnabled();
     }
-    expect(screen.getByRole("button", { name: "Create project" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send text" })).toBeDisabled();
     // Labels come from the dispatch registry, not from humanizing the id.
     expect(screen.getByRole("button", { name: "System status" })).toBeInTheDocument();
     const disabled = slots.filter((slot) => slot.hasAttribute("disabled"));
-    expect(disabled).toHaveLength(4);
+    expect(disabled).toHaveLength(3);
   });
 
   it("paints only shut-down with the danger tone, and only while it is live", () => {

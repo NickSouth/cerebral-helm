@@ -13,6 +13,44 @@ public struct SpotifyConnectionInfo: Sendable, Equatable {
     }
 }
 
+/// The Linear workspace the `create-ticket` form's dropdowns read (quick-actions phase 4).
+///
+/// Projects and labels are nested **inside** their team, not flattened, because they are scoped to
+/// it: a flat list would let the form offer a project belonging to another team, which Linear
+/// rejects at write time. `available` is false when the host has no Linear client at all, which is
+/// a different fact from "you have no teams".
+public struct LinearWorkspaceInfo: Sendable, Equatable {
+    public struct Option: Sendable, Equatable {
+        public let id: String
+        public let name: String
+        public init(id: String, name: String) {
+            self.id = id
+            self.name = name
+        }
+    }
+
+    public struct Team: Sendable, Equatable {
+        public let id: String
+        public let key: String
+        public let name: String
+        public let projects: [Option]
+        public let labels: [Option]
+
+        public init(id: String, key: String, name: String, projects: [Option], labels: [Option]) {
+            self.id = id
+            self.key = key
+            self.name = name
+            self.projects = projects
+            self.labels = labels
+        }
+    }
+
+    public let teams: [Team]
+    public init(teams: [Team]) {
+        self.teams = teams
+    }
+}
+
 /// A folder the user picked in a native open panel (quick-actions phase 4, `git-clone`).
 ///
 /// `relativePath` is the selection expressed relative to the projects root — the empty string when
@@ -217,6 +255,18 @@ public final class BridgeSession: @unchecked Sendable {
     /// comes back refused rather than as a path the tool would then have to reject.
     private let chooseFolder: (@Sendable () async -> FolderSelectionInfo)?
 
+    /// Reads the Linear workspace for `listLinearOptions` (quick-actions phase 4) — the teams,
+    /// projects and labels the `create-ticket` dropdowns offer. Optional: a host without the Linear
+    /// client reports the surface unavailable. Deliberately a **read** closure, separate from the
+    /// `linear.createissue` tool that writes, so listing options can never reach the write path.
+    private let linearWorkspace: (@Sendable () async throws -> LinearWorkspaceInfo)?
+
+    /// Reads current sports events for `listSportsEvents` (quick-actions phase 4) — the
+    /// `check-scoreboard` picker and the report it opens. Optional: a host without the provider
+    /// reports the surface unavailable. A read, never the command bus: the user is choosing games
+    /// and reading scores, not acting on the world.
+    private let sportsEvents: (@Sendable () async throws -> [SportsEvent])?
+
     private let canvasStatus: (@Sendable () async -> CanvasStatusInfo)?
     private let canvasReset: (@Sendable () async -> CanvasStatusInfo)?
     /// Hides or unhides a scraped Canvas item by id (NIC-132), returning the fresh status. Optional —
@@ -292,6 +342,8 @@ public final class BridgeSession: @unchecked Sendable {
         onModeApplied: (@Sendable (String) -> Void)? = nil,
         spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil,
         chooseFolder: (@Sendable () async -> FolderSelectionInfo)? = nil,
+        linearWorkspace: (@Sendable () async throws -> LinearWorkspaceInfo)? = nil,
+        sportsEvents: (@Sendable () async throws -> [SportsEvent])? = nil,
         canvasStatus: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasReset: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)? = nil,
@@ -318,6 +370,8 @@ public final class BridgeSession: @unchecked Sendable {
         self.onModeApplied = onModeApplied
         self.spotifyConnect = spotifyConnect
         self.chooseFolder = chooseFolder
+        self.linearWorkspace = linearWorkspace
+        self.sportsEvents = sportsEvents
         self.canvasStatus = canvasStatus
         self.canvasReset = canvasReset
         self.canvasSetHidden = canvasSetHidden
@@ -456,6 +510,16 @@ public final class BridgeSession: @unchecked Sendable {
             return await cloneRepository(request)
         case .chooseFolder:
             return await chooseFolderOperation(request)
+        case .listLinearOptions:
+            return await listLinearOptions(request)
+        case .listSportsEvents:
+            return await listSportsEvents(request)
+        case .createLinearIssue:
+            return await createLinearIssue(request)
+        case .createSpotifyPlaylist:
+            return await createSpotifyPlaylist(request)
+        case .scaffoldProject:
+            return await scaffoldProject(request)
         case .getCanvasStatus:
             return await getCanvasStatus(request)
         case .resetCanvas:
@@ -1962,6 +2026,238 @@ public final class BridgeSession: @unchecked Sendable {
         ))
     }
 
+    /// Lists current sports events for the `check-scoreboard` picker and the report it opens.
+    ///
+    /// **One operation serves both** because they read the same document: the picker shows the
+    /// names, the report shows the detail already inside them. Fetching twice would pay golf's
+    /// megabyte twice for data the host had in hand. The report re-calls it on submit so the
+    /// scores are current at the moment the user asked for them — the snapshot semantics the
+    /// action was designed around.
+    private func listSportsEvents(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let sportsEvents else {
+            return ok(request, payload: SportsEventsResult(events: [], available: false, reason: nil))
+        }
+        do {
+            let events = try await sportsEvents()
+            return ok(request, payload: SportsEventsResult(
+                events: events.map(SportsEventsResult.Event.init), available: true, reason: nil
+            ))
+        } catch {
+            // Unreadable is not the same fact as "nothing is on today", and the picker says which.
+            let reason: String
+            if case let SportsScoreboardError.providerFailed(message) = error {
+                reason = message
+            } else {
+                reason = "Scores couldn't be read right now."
+            }
+            return ok(request, payload: SportsEventsResult(events: [], available: true, reason: reason))
+        }
+    }
+
+    /// Lists the Linear workspace for the `create-ticket` form's dropdowns.
+    ///
+    /// A read that never touches the command bus, like `listCalendars`: the user is filling in a
+    /// form, not performing an action, and routing option-loading through the executor would put a
+    /// command in the log every time a form opens.
+    private func listLinearOptions(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let linearWorkspace else {
+            return ok(request, payload: LinearOptionsResult(teams: [], available: false, reason: nil))
+        }
+        do {
+            let workspace = try await linearWorkspace()
+            return ok(request, payload: LinearOptionsResult(
+                teams: workspace.teams.map(LinearOptionsResult.Team.init),
+                available: true,
+                reason: nil
+            ))
+        } catch {
+            // An unreadable workspace is reported as such rather than as an empty one: "you have no
+            // teams" and "we could not read your teams" are different facts, and the form says which.
+            return ok(request, payload: LinearOptionsResult(
+                teams: [], available: true, reason: "\(error)"
+            ))
+        }
+    }
+
+    /// Creates a project folder from the `create-project` form.
+    ///
+    /// Structured for the same reason as the others: a name, a location, a summary and an
+    /// importance do not survive a text grammar without becoming lossy about quoting.
+    private func scaffoldProject(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: ScaffoldProjectInput = decodePayload(request),
+              !input.name.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "scaffoldProject requires a name.")
+        }
+        let name = input.name.trimmingCharacters(in: .whitespaces)
+        let location = input.location?.trimmingCharacters(in: .whitespaces)
+
+        let outcome = await runtime.submit(
+            intent: .scaffoldProject(
+                name: name,
+                location: (location?.isEmpty ?? true) ? nil : location,
+                summary: input.summary,
+                importance: input.importance
+            ),
+            source: .dashboard,
+            summary: "Create project \"\(name)\""
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(_, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmProjectScaffoldOutput(data: data) {
+                return ok(request, payload: ScaffoldProjectResult(
+                    projectPath: output.projectPath, awaitingConfirmation: false
+                ))
+            }
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "project_not_created",
+                message: "The project was not created (\(status.rawValue))."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            return ok(request, payload: ScaffoldProjectResult(
+                projectPath: commandID, awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "project_rejected", message: reason
+            )
+        }
+    }
+
+    /// Creates one Spotify playlist from the `create-playlist` form.
+    ///
+    /// A `403` from Spotify is the **scope gap**, not a broken account: the playlist scopes were
+    /// added alongside this action, so a grant made earlier still works for playback and is refused
+    /// here. That is reported as its own code so the form can say "reconnect" rather than
+    /// "something went wrong".
+    private func createSpotifyPlaylist(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: CreateSpotifyPlaylistInput = decodePayload(request),
+              !input.name.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "createSpotifyPlaylist requires a name.")
+        }
+        let name = input.name.trimmingCharacters(in: .whitespaces)
+
+        let outcome = await runtime.submit(
+            intent: .createSpotifyPlaylist(
+                name: name,
+                description: input.description,
+                // Absent means private: Spotify defaults this to true, and publishing to someone's
+                // profile because a field was omitted is not a default worth inheriting.
+                isPublic: input.isPublic ?? false
+            ),
+            source: .dashboard,
+            summary: "Create Spotify playlist \"\(name)\""
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(_, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmSpotifyCreatePlaylistOutput(data: data) {
+                return ok(request, payload: CreateSpotifyPlaylistResult(
+                    playlistId: output.playlistID,
+                    name: output.playlistName,
+                    url: output.playlistURL,
+                    awaitingConfirmation: false,
+                    needsReconnect: false
+                ))
+            }
+            // `denied` is specifically the scope gap or a dead authorization, which the user can
+            // fix in one step — so it is reported apart from a generic failure.
+            let denied = result?.status == .denied
+            return errorResponse(
+                request, category: denied ? .permissionDenied : .unavailableCapability,
+                code: denied ? "spotify_reconnect_required" : "playlist_not_created",
+                message: denied
+                    ? "Spotify refused the write. Reconnect Spotify under Settings → Setup to allow playlists."
+                    : "The playlist was not created (\(status.rawValue))."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            return ok(request, payload: CreateSpotifyPlaylistResult(
+                playlistId: commandID, name: name, url: nil,
+                awaitingConfirmation: true, needsReconnect: false
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "playlist_rejected", message: reason
+            )
+        }
+    }
+
+    /// Creates one Linear issue from the `create-ticket` form.
+    ///
+    /// Structured, like `createCalendarEvent`, because no text grammar carries a title, a body, a
+    /// team, a project, a label and a priority without becoming lossy about quoting. The display
+    /// names ride along purely so a confirmation can name the destination in words.
+    private func createLinearIssue(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: CreateLinearIssueInput = decodePayload(request),
+              !input.title.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "createLinearIssue requires a title.")
+        }
+        guard !input.teamId.trimmingCharacters(in: .whitespaces).isEmpty else {
+            // Never inferred: a workspace can have several teams, and picking one would file the
+            // ticket somewhere the user did not choose.
+            return invalidInput(request, "createLinearIssue requires a team.")
+        }
+
+        let draft = LinearIssueDraft(
+            title: input.title.trimmingCharacters(in: .whitespaces),
+            description: input.description,
+            teamID: input.teamId,
+            teamName: input.teamName,
+            projectID: input.projectId,
+            projectName: input.projectName,
+            labelIDs: input.labelIds ?? [],
+            labelNames: input.labelNames ?? [],
+            priority: input.priority
+        )
+        let outcome = await runtime.submit(
+            intent: .createLinearIssue(draft),
+            source: .dashboard,
+            summary: "Create Linear issue \"\(draft.title)\""
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(_, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmLinearCreateIssueOutput(data: data) {
+                return ok(request, payload: CreateLinearIssueResult(
+                    identifier: output.issueIdentifier, url: output.issueURL, awaitingConfirmation: false
+                ))
+            }
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "linear_issue_not_created",
+                message: "The ticket was not created (\(status.rawValue))."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            return ok(request, payload: CreateLinearIssueResult(
+                identifier: commandID, url: nil, awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "linear_issue_rejected", message: reason
+            )
+        }
+    }
+
     /// Reports the Canvas ingest connection state (NIC-132): the loopback endpoint + pairing token to
     /// paste into the Chrome extension, and the last scrape's age/counts. A host without the Mac
     /// ingest store reports `available: false`, so the settings surface shows "requires the macOS
@@ -2615,6 +2911,144 @@ public final class BridgeSession: @unchecked Sendable {
     /// The `create-event` form's collected values. `calendarTitle` is carried alongside the id
     /// purely so a confirmation disclosure can name the calendar in words — the id alone would be
     /// unreadable in a prompt.
+    private struct SportsEventsResult: Encodable {
+        struct Competitor: Encodable {
+            let abbreviation: String
+            let name: String
+            let score: String
+            let color: String?
+            let isHome: Bool
+            let record: String?
+        }
+
+        struct LeaderboardEntry: Encodable {
+            let order: Int
+            let position: String?
+            let name: String
+            let score: String
+            let thru: String?
+        }
+
+        struct Event: Encodable {
+            let id: String
+            let league: String
+            let name: String
+            let shortName: String
+            let state: String
+            let detail: String
+            let venue: String?
+            let competitors: [Competitor]
+            let leaderboard: [LeaderboardEntry]
+
+            init(_ event: SportsEvent) {
+                id = event.id
+                league = event.league
+                name = event.name
+                shortName = event.shortName
+                state = event.state.rawValue
+                detail = event.detail
+                venue = event.venue
+                competitors = event.competitors.map {
+                    Competitor(
+                        abbreviation: $0.abbreviation, name: $0.name, score: $0.score,
+                        color: $0.color, isHome: $0.isHome, record: $0.record
+                    )
+                }
+                leaderboard = event.leaderboard.map {
+                    LeaderboardEntry(
+                        order: $0.order, position: $0.position, name: $0.name,
+                        score: $0.score, thru: $0.thru
+                    )
+                }
+            }
+        }
+
+        let events: [Event]
+        /// False on a host with no sports provider at all — different from "nothing is on today".
+        let available: Bool
+        /// Present when the read failed, so the picker says so rather than showing an empty list.
+        let reason: String?
+    }
+
+    private struct LinearOptionsResult: Encodable {
+        struct Option: Encodable {
+            let id: String
+            let name: String
+        }
+
+        struct Team: Encodable {
+            let id: String
+            let key: String
+            let name: String
+            let projects: [Option]
+            let labels: [Option]
+
+            init(_ team: LinearWorkspaceInfo.Team) {
+                id = team.id
+                key = team.key
+                name = team.name
+                projects = team.projects.map { Option(id: $0.id, name: $0.name) }
+                labels = team.labels.map { Option(id: $0.id, name: $0.name) }
+            }
+        }
+
+        let teams: [Team]
+        /// False on a host with no Linear client at all — a different fact from an empty workspace.
+        let available: Bool
+        /// Present when the workspace could not be read, so the form can say so rather than
+        /// rendering empty dropdowns that look like the user has no teams.
+        let reason: String?
+    }
+
+    private struct ScaffoldProjectInput: Decodable {
+        let name: String
+        let location: String?
+        let summary: String?
+        let importance: Int?
+    }
+
+    private struct ScaffoldProjectResult: Encodable {
+        /// The created folder's path, or — when the action gated — the pending command id.
+        let projectPath: String
+        let awaitingConfirmation: Bool
+    }
+
+    private struct CreateSpotifyPlaylistInput: Decodable {
+        let name: String
+        let description: String?
+        let isPublic: Bool?
+    }
+
+    private struct CreateSpotifyPlaylistResult: Encodable {
+        /// The playlist id, or — when the action gated — the pending command id.
+        let playlistId: String
+        let name: String
+        let url: String?
+        let awaitingConfirmation: Bool
+        /// Reserved for the ok-path shape; the reconnect case is an error response.
+        let needsReconnect: Bool
+    }
+
+    private struct CreateLinearIssueInput: Decodable {
+        let title: String
+        let description: String?
+        let teamId: String
+        let teamName: String?
+        let projectId: String?
+        let projectName: String?
+        let labelIds: [String]?
+        let labelNames: [String]?
+        let priority: Int?
+    }
+
+    private struct CreateLinearIssueResult: Encodable {
+        /// The issue identifier (`NIC-176`), or — when the action gated — the command id whose
+        /// confirmation is pending. `awaitingConfirmation` says which.
+        let identifier: String
+        let url: String?
+        let awaitingConfirmation: Bool
+    }
+
     private struct FolderSelectionResult: Encodable {
         let folderPath: String?
         let relativeFolder: String?

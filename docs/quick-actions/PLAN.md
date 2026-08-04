@@ -89,7 +89,9 @@ This unifies with the `proposal` block — an inline link and a proposed follow-
 
 An Input is `{title, fields[], submitAction}`. Seven field kinds cover every planned action:
 
-`text` · `textarea` · `select` · `number` · `datetimeRange` · `combobox` · `folderPicker`
+`text` · `textarea` · `select` · `multiSelect` · `number` · `datetimeRange` · `combobox` · `folderPicker`
+
+`multiSelect` was added in phase 4 for `create-ticket`'s labels — a Linear issue routinely carries several. It renders as a checkbox list rather than a native `<select multiple>`, which needs cmd-click to add a second value and never advertises that it can hold one. Its chosen values are packed into the single string its slot in `InputValues` holds (newline-separated), rather than widening that map to `string | string[]` and rippling the change through seeding, validation and every action's submit.
 
 `folderPicker` requires a native round trip (the `chooseFolder` bridge op) — the only field kind that does, and therefore the only one that can be *unavailable at runtime* rather than merely undrawn. It degrades to a plain text box where there is no window server. *Built in phase 4 with `git-clone`.*
 
@@ -277,9 +279,9 @@ Each is now "wire an integration into an existing surface", independent of the o
 |---|---|---|---|
 | 1 | ~~`search-youtube`~~ **Built** | `youtube.search` tool — a near-copy of `google.search`, host fixed server-side | No new integration, no credential. Warm-up. |
 | 2 | ~~`git-clone`~~ **Built** | `git.clone`, narrow and typed, constrained to the projects root | New local tool, no external service. Deliberately **not** a shell-hook wrapper, which would land in the `shell` risk class and demand a confirmation on every clone. |
-| 3 | `create-ticket` | Linear API + the first provider-backed `combobox` against a live source (projects, labels) | First credential of the batch, and the first real exercise of remote option sources. Low blast radius — a ticket in your own workspace. |
-| 4 | `create-playlist` | Spotify playlist scope | Forces **re-authorization**: the existing grant lacks the scope, so this disturbs something that currently works. Do it when you are ready to reconnect. |
-| 5 | `check-scoreboard` | A sports API | Blocked on the API choice (see *Deferred to build time*). Verify the actual contract before writing the provider — never infer endpoint shapes. |
+| 3 | ~~`create-ticket`~~ **Built** | Linear API + the first provider-backed dropdowns against a live source (teams, projects, labels) | First credential of the batch, and the first real exercise of remote option sources. Low blast radius — a ticket in your own workspace. |
+| 4 | ~~`create-playlist`~~ **Built** | Spotify playlist scope | Forces **re-authorization**: the existing grant lacks the scope, so this disturbs something that currently works. Do it when you are ready to reconnect. |
+| 5 | ~~`check-scoreboard`~~ **Built** | ESPN site API + the first parameterized Report + two new block kinds | Unblocked 2026-08-03 (see *Deferred to build time*). |
 | 6 | `send-text` | iMessage send + Contacts | Highest risk in the phase: outward communication to a real person, two permission grants, and confirmation-gated with recipient and full message body disclosed. Wants its own careful pass. |
 
 **1 — `search-youtube` is built.** A full vertical slice with no new architecture, exactly as predicted: two schemas, a descriptor plus its stricter-only overlay, a `YouTubeSearchCapability` port and mock, a `youtube.search` handler, a `youtubeSearch` intent and verb, a resolve case, an `NSWorkspace` adapter, and a one-field form. No credential, no bridge op, no new field kind.
@@ -310,7 +312,30 @@ The `chooseFolder` bridge operation takes **no input**. A caller-supplied starti
 
 The `clone <url>` text grammar deliberately carries **no destination** — a palette command should not be able to choose where a clone lands even in principle. The form's optional folder field therefore needed a structured route, so this is the second user of `CommandRuntime.submit(intent:)` and the first new bridge operation since `createCalendarEvent`.
 
-`create-project` (`project.scaffold` plus a `folderPicker`, the one field kind needing a native open-panel round trip) slots in wherever convenient — it has no external dependency.
+**3 — `create-ticket` is built.** The contract was **verified live against `api.linear.app`** rather than inferred, which mattered: a personal API key is sent as a bare `Authorization: <key>` with **no `Bearer` prefix** — the prefix is the OAuth form and would have failed. The endpoint, the `issueCreate(input:)` mutation, the `IssueCreateInput` field names, and `Issue.identifier`/`url` were all confirmed against the real workspace, the last by introspecting the input type.
+
+Two calls diverged from what this plan expected, each because the workspace turned out not to justify the machinery:
+
+- **`select`, not `combobox`.** Typeahead over one project and ten labels is worse than a dropdown, not better. `combobox` stays deferred until a list is genuinely long — contacts, for `send-text`.
+- **Team is a field, not an inference.** There is exactly one team today, which is precisely the argument for asking: a silent "use the first team" keeps working right up until a second team exists, and then files tickets somewhere they were never meant to go. One entry in a dropdown costs a glance and buys correctness.
+
+What *was* built beyond the plan is **`scopedBy`** — a field whose options are narrowed by another field's value. It is not decoration: a Linear project belongs to exactly one team, so a flat list would offer projects the API rejects at write time. With one team the scoping is invisible, which is exactly why it had to be built now rather than discovered later — the wrong behaviour would have been silent.
+
+Two shapes worth keeping. The workspace is fetched **once per form open**, not once per field, because the three dropdowns are three views of one document; and it is deliberately **not cached across opens**, so a key pasted in Settings a moment ago takes effect on the next open rather than the next launch — the same lesson the Spotify Client ID taught. And reading the workspace is a **separate port** from writing an issue, the third instance of that split after calendars and the folder picker: a surface that only lists options can never reach the path that files a ticket.
+
+**4 — `create-playlist` is built.** `POST /v1/me/playlists`, from Spotify's Web API reference. This one is **not smoke-tested**: the round trip needs a re-authorized token and would create a real playlist in a real account, so unlike Linear's read path there was no safe live check. That is stated in the adapter rather than left for someone to assume.
+
+**The re-authorization is the whole shape of this action.** `playlist-modify-private` and `playlist-modify-public` were added to the requested scope set, which means a grant made before that still drives the now-playing widget and the playback controls perfectly and is refused for playlists. Spotify answers `403`; the adapter reports `permissionDenied`; the bridge gives it its own error code; the form says **"Spotify needs reconnecting"** rather than "something went wrong". A user whose playback still works should never be told their account is broken.
+
+Two smaller calls. The playlist is created **empty** — seeding it means searching the catalogue and choosing from results, which is a picker with its own surface, not a field on this form; Spotify is good at the filling part. And it is **private unless asked otherwise**: Spotify's API defaults `public` to `true`, so omitting the field would publish to someone's profile because nobody said anything. The form asks, the adapter always sends the answer explicitly, and the confirmation discloses it in words.
+
+Playlist creation is a **separate capability** from playback control even though both share one OAuth session — control is transport, this writes to the library, and it needs scopes control never asked for.
+
+**`create-project` is built.** `project.scaffold` writes a folder and its `PROJECT.md`, and nothing else — no process, no network, two filesystem writes.
+
+**A project folder is a container, not a repository**, which is the decision that shaped it. `FileSystemActiveProjectsProvider` reads projects at depth 1 and `FileSystemActiveReposProvider` finds the git repos one level *inside* them, so `git init`-ing the project folder would have produced a shape unlike every project already listed. Putting a repo in it is what `git-clone`'s location picker is for, and the two actions compose: create the project, then clone into it.
+
+It inherits the `folderPicker` from `git-clone` with the same parent semantics and the same containment invariant. Two details worth keeping. A name containing a path separator is **refused, not sanitized** — silently turning "Helm / v2" into a nested folder would put it somewhere the user never asked for, and a name they can see is wrong beats a path they cannot. And the descriptor is **composed in code rather than substituted into `config/templates/PROJECT.md`**: that template is a hand-authoring reference full of prose placeholders, and string-replacing into prose works right up until someone edits a sentence. A test holds the generated descriptor to the template's *structure*, which survives edits to either, and another asserts the `importance` it writes survives the same frontmatter parser the widget reads with — the value is what orders the panel, so it has to parse, not merely look right.
 
 **`email-report` and the daily brief's unread count are deferred out of this phase.** Both need Gmail OAuth, which the plan already calls the largest single lift, and which the PRD **excludes from MVP scope**. Neither belongs ahead of the tech-debt and Mac hardening/release work.
 
@@ -353,7 +378,43 @@ Bullet colour comes from the **course**, not the calendar, so a course keeps one
 
 ## Deferred to build time
 
-**Sports API choice** (`check-scoreboard`, phase 5). No decision is needed now and an early one would go stale. When it comes up, the criteria are: a documented contract with a stated free tier beats a widely-used but undocumented endpoint that can change without notice; coverage must include both team schedules/scores and individual-event leaderboards, since NFL and PGA are structurally different; and it must be reachable without a paid plan for personal use. Verify the actual contract before writing the provider — never infer endpoint shapes.
+**Sports API choice — decided 2026-08-03: ESPN's undocumented site API.** `site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard` and `.../golf/pga/scoreboard`, both 200 unauthenticated with no key, both probed live before this was written.
+
+This **overrides the criterion above**, knowingly: the endpoints are undocumented and can change without notice. Nothing else free covers both a team sport and an individual leaderboard, and a shape change is survivable if the mapper degrades rather than throws. That is the trade, stated once so nobody re-litigates it later.
+
+What the probes established:
+
+- **NFL is 17 KB.** Each event carries `shortName`, `status.type.{state, shortDetail, completed}`, `status.period`/`displayClock`, and per-competitor `homeAway`, `score`, and team `abbreviation` / `color` / `logo` / `records`. The hex colour arrives in the same payload, which is why teams render as **colour + abbreviation** and no logo fetch is needed (owner decision; the logo URLs would each need a data-URI round trip under the webview's CSP, like the Spotify artwork).
+- **Golf is 1.2 MB, unavoidably.** `/leaderboard` 404s and `?limit=` is ignored. Fine for an on-demand fetch that the host trims before anything crosses the bridge; it rules out polling on a widget cadence. Hence **snapshot + manual refresh** (owner decision) rather than a live publisher.
+- **The in-progress shape is unverifiable until a tournament is live.** On a `Final` event `position` and `thru` come back empty, so the live-round rendering is written against the documented field names and confirmed in season.
+
+`check-scoreboard` is therefore a **Report opened from an Input** — a picker of up to three active events, then a composed report. Owner decision: **top 10, expandable to the full field**.
+
+Three surface extensions it needs, none of them ESPN-specific:
+
+1. **Reports become parameterizable.** `ReportProvider` holds one id and composers read ambient dashboard state; this one is opened *with* the chosen event ids.
+2. **An Input whose submit opens a Report** — the symmetric direction of the `ActionLink` that already opens an Input from a report.
+3. **A `scoreboard` and a `leaderboard` block kind**, plus the scroll treatment the Input region already has. Exactly the additive change the flat block shape exists to absorb.
+
+**Increment 1 is built**: the provider, the `listSportsEvents` read, the picker, and reports that carry arguments — composed with the block types that already exist, so the data can be judged before any effort goes into how it looks. Three things worth keeping from it.
+
+`openReport(id, params)` **re-opens rather than toggles when the arguments change**. Every other slot toggles its own report closed on a second press, which is right for a parameterless one; picking a different set of games and pressing Show has to render them, not close the panel.
+
+**One cached fetch serves the picker and the report.** They read the same document — the picker shows the names, the report shows the detail already inside them — so a module-level cache with a 60-second life stops each use from paying golf's megabyte twice. The *promise* is cached rather than its result, so the report joins the picker's in-flight request instead of starting a second; and a failure is never cached, so the next attempt can succeed. The window is deliberately short: a cache long enough to hide a score change would make the report quietly wrong, which is worse than slow.
+
+**The picker orders rather than filters.** Live events come first, then scheduled, then finished — but nothing is hidden, because "nothing is live right now" is the normal state for most of the year and an empty picker all summer reads as broken rather than as out of season.
+
+`sportsEvents` is the **second** bespoke remote option source in the Input region, alongside Linear's. A third is the point to collapse them into one provider-registry hook rather than write another one-off.
+
+**Increment 2 is built**: the `scoreboard` and `leaderboard` block kinds, the expand-to-full-field control, and the refresh.
+
+The **leaderboard block carries the complete field with a `leaderboardPreview` count**, so expanding is a render decision rather than a second megabyte — a block that held only ten rows could not expand at all. That is the shape any future paginated block should copy.
+
+**Team colour is a thin accent bar, not a fill.** A tile flooded with team colour would be the loudest thing in a dashboard built on one accent per mode, and the report's own rule is that colour means *actionable*. A bar reads as identity without pretending to be a link; a team with no colour keeps the bar, unpainted, so the rows still line up.
+
+**`refreshable` is declared by the document, not assumed by the region.** Only a report composed from a fetch can honestly offer to repeat it — showing the control on a document built from ambient state would promise something it cannot do.
+
+`venue` is carried through even though only NFL supplies it, and even though nothing but one muted line renders it today. That is deliberate: **the assemble stage should hold more than the renderer needs**, because the reader after the renderer is a model. Golf's payload has no course at all, which is the concrete case — "what course is this?" genuinely needs another source, and the report says nothing rather than inventing one.
 
 ## Design spec edits owed
 

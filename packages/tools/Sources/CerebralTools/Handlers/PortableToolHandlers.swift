@@ -134,6 +134,100 @@ public struct GoogleSearchHandler: ToolHandler {
     }
 }
 
+// MARK: - spotify.createplaylist
+
+public struct SpotifyCreatePlaylistHandler: ToolHandler {
+    public let toolID = "spotify.createplaylist"
+    private let capability: any SpotifyPlaylistCapability
+
+    public init(capability: any SpotifyPlaylistCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmSpotifyCreatePlaylistInput
+        do { decoded = try CerebralHelmSpotifyCreatePlaylistInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("spotify.createplaylist input does not match its contract.")
+        }
+        do {
+            let result = try await capability.createPlaylist(
+                name: decoded.playlistName,
+                description: decoded.playlistDescription,
+                // Absent means private. Spotify's API defaults this to true, and silently
+                // publishing to someone's profile is not a default worth inheriting.
+                isPublic: decoded.playlistIsPublic ?? false
+            )
+            return try CerebralHelmSpotifyCreatePlaylistOutput(
+                playlistID: result.id,
+                playlistName: result.name,
+                playlistURL: result.url
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+// MARK: - linear.createissue
+
+public struct LinearCreateIssueHandler: ToolHandler {
+    public let toolID = "linear.createissue"
+    private let capability: any LinearIssueCapability
+
+    public init(capability: any LinearIssueCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmLinearCreateIssueInput
+        do { decoded = try CerebralHelmLinearCreateIssueInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("linear.createissue input does not match its contract.")
+        }
+        do {
+            let result = try await capability.createIssue(
+                title: decoded.issueTitle,
+                description: decoded.issueDescription,
+                teamID: decoded.linearTeamID,
+                projectID: decoded.linearProjectID,
+                labelIDs: decoded.linearLabelIDs ?? [],
+                priority: decoded.issuePriority
+            )
+            return try CerebralHelmLinearCreateIssueOutput(
+                issueIdentifier: result.identifier,
+                issueURL: result.url
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+// MARK: - project.scaffold
+
+public struct ProjectScaffoldHandler: ToolHandler {
+    public let toolID = "project.scaffold"
+    private let capability: any ProjectScaffoldCapability
+
+    public init(capability: any ProjectScaffoldCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmProjectScaffoldInput
+        do { decoded = try CerebralHelmProjectScaffoldInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("project.scaffold input does not match its contract.")
+        }
+        do {
+            let result = try await capability.scaffold(
+                name: decoded.projectName,
+                location: decoded.projectLocation,
+                summary: decoded.projectSummary,
+                importance: decoded.projectImportance
+            )
+            return try CerebralHelmProjectScaffoldOutput(
+                projectDescriptorPath: result.descriptorPath,
+                projectPath: result.projectPath
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 // MARK: - git.clone
 
 public struct GitCloneHandler: ToolHandler {

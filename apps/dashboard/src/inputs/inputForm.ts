@@ -28,6 +28,7 @@ export type InputFieldKind =
   | "text"
   | "textarea"
   | "select"
+  | "multiSelect"
   | "number"
   | "combobox"
   | "datetimeRange"
@@ -38,10 +39,31 @@ export const RENDERABLE_FIELD_KINDS: ReadonlySet<InputFieldKind> = new Set<Input
   "text",
   "textarea",
   "select",
+  "multiSelect",
   "number",
   "datetimeRange",
   "folderPicker"
 ]);
+
+/**
+ * How a `multiSelect` packs several chosen ids into the one string its slot in `InputValues` holds.
+ *
+ * The values map is a flat `Record<string, string>` by design, so a multi-value field encodes
+ * rather than widening the type — a change that would ripple through seeding, validation and every
+ * action's submit for the sake of one field kind. A newline is the separator because no option id
+ * or label can contain one, which a comma cannot promise.
+ */
+export const MULTI_VALUE_SEPARATOR = "\n";
+
+/** The chosen values of a `multiSelect`, in the order they were packed. */
+export function parseMultiValue(packed: string | undefined): readonly string[] {
+  return (packed ?? "").split(MULTI_VALUE_SEPARATOR).filter((part) => part.length > 0);
+}
+
+/** Packs chosen values back into the single string the field's slot holds. */
+export function formatMultiValue(values: readonly string[]): string {
+  return values.filter((value) => value.length > 0).join(MULTI_VALUE_SEPARATOR);
+}
 
 /**
  * Where a `select`/`combobox` gets its options. A static list, or a **provider id** resolved at
@@ -51,9 +73,16 @@ export const RENDERABLE_FIELD_KINDS: ReadonlySet<InputFieldKind> = new Set<Input
  * A provider that fails or is unauthorized yields no options, and the field says so rather than
  * rendering an empty dropdown that looks like the user has no calendars.
  */
+export type InputOptionProvider =
+  | "calendars"
+  | "linearTeams"
+  | "linearProjects"
+  | "linearLabels"
+  | "sportsEvents";
+
 export type InputOptionSource =
   | { readonly kind: "static"; readonly options: readonly InputSelectOption[] }
-  | { readonly kind: "provider"; readonly provider: "calendars" };
+  | { readonly kind: "provider"; readonly provider: InputOptionProvider };
 
 export interface InputSelectOption {
   readonly value: string;
@@ -78,6 +107,22 @@ export interface InputField {
    * blank option is offered, so a field where every choice is real cannot be left unanswered.
    */
   readonly emptyOptionLabel?: string;
+  /**
+   * The name of another field whose value **scopes** this one's options — a Linear project list
+   * narrowed to the chosen team.
+   *
+   * It exists because the scoping is real, not cosmetic: a project belongs to exactly one team, and
+   * offering one from another team would produce a write Linear rejects. A workspace with a single
+   * team makes this invisible, which is precisely why it has to be built rather than discovered
+   * later — the wrong behaviour would be silent.
+   */
+  readonly scopedBy?: string;
+  /**
+   * The most options a `multiSelect` will accept. At the cap the unchosen boxes disable rather
+   * than silently refusing a click — a control that ignores you is worse than one that shows it
+   * is full.
+   */
+  readonly maxSelected?: number;
   /**
    * `datetimeRange` writes two values: this field's `name` holds the start, and `endName` holds
    * the end. One field rather than two because a range is one idea, and the renderer can then

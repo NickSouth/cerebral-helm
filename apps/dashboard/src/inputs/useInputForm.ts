@@ -4,6 +4,11 @@ import { useDashboardState } from "../state/DashboardStateProvider";
 import { toModeId } from "../tokens/tokens";
 import { createEventForm } from "./createEvent";
 import { gitCloneForm } from "./gitClone";
+import { createTicketForm } from "./createTicket";
+import { createPlaylistForm } from "./createPlaylist";
+import { createProjectForm } from "./createProject";
+import { checkScoreboardForm } from "./checkScoreboard";
+import { useReports } from "../state/ReportProvider";
 import { submitYouTubeSearch } from "../shell/youtubeSearch";
 import type { CerebralBridge } from "../bridge/cerebralBridge";
 import type { InputForm, InputValues } from "./inputForm";
@@ -19,6 +24,7 @@ import type { InputForm, InputValues } from "./inputForm";
 export function useInputForm(actionId: string): { form: InputForm | null; loading: boolean } {
   const bridge = useBridge();
   const { mode, modes } = useDashboardState();
+  const { openReport } = useReports();
   const calendarModeMap = useCalendarModeMap(actionId === "create-event");
 
   switch (actionId) {
@@ -28,6 +34,14 @@ export function useInputForm(actionId: string): { form: InputForm | null; loadin
       return { form: searchYouTubeForm(bridge), loading: false };
     case "git-clone":
       return { form: gitCloneForm(bridge), loading: false };
+    case "create-ticket":
+      return { form: createTicketForm(bridge), loading: false };
+    case "create-playlist":
+      return { form: createPlaylistForm(bridge), loading: false };
+    case "create-project":
+      return { form: createProjectForm(bridge), loading: false };
+    case "check-scoreboard":
+      return { form: checkScoreboardForm(openReport), loading: false };
     case "create-event":
       return calendarModeMap.loading
         ? { form: null, loading: true }

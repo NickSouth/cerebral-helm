@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useReportDocument } from "./useReportDocument";
 import { renderableBlocks, type ReportActionReference, type ReportBlock } from "./reportDocument";
 import { quickActionLabel } from "../shell/quickActionRegistry";
@@ -18,8 +19,8 @@ import { useInputs } from "../state/InputProvider";
  * and maps directly onto a model streaming blocks in later, with no second surface to build.
  */
 export function ReportRegion() {
-  const { openReportId, closeReport } = useReports();
-  const document = useReportDocument(openReportId ?? "");
+  const { openReportId, openReportParams, closeReport } = useReports();
+  const { document, refresh } = useReportDocument(openReportId ?? "", undefined, openReportParams);
 
   if (!openReportId) {
     return null;
@@ -35,6 +36,18 @@ export function ReportRegion() {
     >
       <header className="report-region__head">
         <h2 className="report-region__title">{quickActionLabel(openReportId)}</h2>
+        {/* Only for a report composed from a fetch: offering a refresh on a document built from
+            ambient state would promise something it cannot do. */}
+        {document?.refreshable ? (
+          <button
+            type="button"
+            className="report-region__refresh"
+            aria-label={`Refresh the ${quickActionLabel(openReportId)} report`}
+            onClick={refresh}
+          >
+            Refresh
+          </button>
+        ) : null}
         <button
           type="button"
           className="report-region__close"
@@ -209,6 +222,10 @@ function BlockView({ block }: { block: ReportBlock }) {
     case "empty":
       return <p className="report-empty">{block.text}</p>;
 
+    case "scoreboard":
+      return <ScoreboardView block={block} />;
+    case "leaderboard":
+      return <LeaderboardView block={block} />;
     case "proposal":
       return (
         <div className="report-proposal">
@@ -232,4 +249,80 @@ function BlockView({ block }: { block: ReportBlock }) {
       // and deliberately silent rather than throwing if a future composer invents one.
       return null;
   }
+}
+
+/**
+ * A team game: two sides, each carrying its own colour.
+ *
+ * The colour is a thin accent bar rather than a fill — a scoreboard tile flooded with team colour
+ * would be the loudest thing in a dashboard built on one accent per mode, and the report's own
+ * rule is that colour means *actionable*. A bar reads as identity without claiming to be a link.
+ */
+function ScoreboardView({ block }: { block: ReportBlock }) {
+  const sides = block.scoreboardSides ?? [];
+  return (
+    <div className="report-scoreboard">
+      {sides.map((side) => (
+        <div className="report-scoreboard__side" key={side.sideAbbreviation}>
+          <span
+            className="report-scoreboard__accent"
+            aria-hidden="true"
+            /* The provider sends bare hex; the `#` is added here rather than stored, so a value
+               that is not a colour at all simply fails to apply instead of corrupting the style. */
+            style={side.sideColor ? { background: `#${side.sideColor}` } : undefined}
+          />
+          <span className="report-scoreboard__abbr">{side.sideAbbreviation}</span>
+          {side.sideRecord ? (
+            <span className="report-scoreboard__record">{side.sideRecord}</span>
+          ) : null}
+          <span className="report-scoreboard__score">{side.sideScore}</span>
+        </div>
+      ))}
+      {block.text ? <p className="report-scoreboard__status">{block.text}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * A ranked field, showing `leaderboardPreview` rows until the reader expands it.
+ *
+ * The expansion is **local render state over a complete list**, not a re-fetch: the document
+ * already holds every row, because the host paid for them once and re-reading a megabyte to
+ * reveal rows it already had would be absurd. That is also why the block carries the whole field
+ * rather than a truncated one — a document that only contained ten rows could not expand at all.
+ */
+function LeaderboardView({ block }: { block: ReportBlock }) {
+  const rows = block.leaderboardRows ?? [];
+  const preview = block.leaderboardPreview ?? rows.length;
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? rows : rows.slice(0, preview);
+  const hidden = rows.length - shown.length;
+
+  return (
+    <div className="report-leaderboard">
+      <ol className="report-leaderboard__rows">
+        {shown.map((row, index) => (
+          <li className="report-leaderboard__row" key={`${row.rowName}-${index}`}>
+            <span className="report-leaderboard__position">{row.rowPosition ?? index + 1}</span>
+            <span className="report-leaderboard__name">{row.rowName}</span>
+            {/* `thru` exists only mid-round, so its absence shortens the row rather than
+                printing an empty column. */}
+            {row.rowThru ? (
+              <span className="report-leaderboard__thru">thru {row.rowThru}</span>
+            ) : null}
+            <span className="report-leaderboard__score">{row.rowScore}</span>
+          </li>
+        ))}
+      </ol>
+      {hidden > 0 || expanded ? (
+        <button
+          type="button"
+          className="report-leaderboard__more"
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? "Show less" : `Show all ${rows.length}`}
+        </button>
+      ) : null}
+    </div>
+  );
 }

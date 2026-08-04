@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_createPlaylistRes00000001",
+  "type": "bridge.operation.response",
+  "operation": "createSpotifyPlaylist",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "playlistId": "3cEYpjA9oz9GiPac4AsH4n",
+    "name": "Late night focus",
+    "url": "https://open.spotify.com/playlist/3cEYpjA9oz9GiPac4AsH4n",
+    "awaitingConfirmation": false,
+    "needsReconnect": false
+  }
+}

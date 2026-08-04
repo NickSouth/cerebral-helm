@@ -139,6 +139,120 @@ export interface ChooseFolderResult {
   readonly available: boolean;
 }
 
+/** One Linear team and the projects/labels scoped to it (quick actions phase 4). Nested rather
+ *  than flattened: a project belongs to exactly one team, and a flat list would let the form offer
+ *  one from another team, which Linear rejects at write time. */
+export interface LinearOption {
+  readonly id: string;
+  readonly name: string;
+}
+export interface LinearTeam {
+  readonly id: string;
+  readonly key: string;
+  readonly name: string;
+  readonly projects: readonly LinearOption[];
+  readonly labels: readonly LinearOption[];
+}
+export interface ListLinearOptionsResult {
+  readonly teams: readonly LinearTeam[];
+  /** False on a host with no Linear client at all — different from an empty workspace. */
+  readonly available: boolean;
+  /** Present when the workspace could not be read, so the form says so rather than rendering
+   *  empty dropdowns that look like the user has no teams. */
+  readonly reason: string | null;
+}
+
+export interface CreateLinearIssueInput {
+  readonly title: string;
+  readonly description?: string;
+  readonly teamId: string;
+  /** Display names ride along so a confirmation can name the destination in words. */
+  readonly teamName?: string;
+  readonly projectId?: string;
+  readonly projectName?: string;
+  /** A list: a Linear issue routinely carries several labels. */
+  readonly labelIds?: readonly string[];
+  readonly labelNames?: readonly string[];
+  /** Linear's scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low. */
+  readonly priority?: number;
+}
+export interface CreateLinearIssueResult {
+  /** The issue identifier, or the pending command id when the action gated on confirmation. */
+  readonly identifier: string;
+  readonly url: string | null;
+  /** True when a confirmation is now pending — never report "created" in that case. */
+  readonly awaitingConfirmation: boolean;
+}
+
+export interface CreateSpotifyPlaylistInput {
+  readonly name: string;
+  readonly description?: string;
+  /** Absent means private — Spotify's own API defaults this to true, which is not a default worth
+   *  inheriting when it publishes to someone's profile. */
+  readonly isPublic?: boolean;
+}
+export interface CreateSpotifyPlaylistResult {
+  /** The playlist id, or the pending command id when the action gated on confirmation. */
+  readonly playlistId: string;
+  readonly name: string;
+  readonly url: string | null;
+  readonly awaitingConfirmation: boolean;
+  readonly needsReconnect: boolean;
+}
+
+export interface ScaffoldProjectInput {
+  readonly name: string;
+  /** Optional folder under the projects root; the host joins the name onto it. */
+  readonly location?: string;
+  readonly summary?: string;
+  /** Ordering weight for the Projects widget (higher first). */
+  readonly importance?: number;
+}
+export interface ScaffoldProjectResult {
+  /** The created folder's path, or the pending command id when the action gated. */
+  readonly projectPath: string;
+  readonly awaitingConfirmation: boolean;
+}
+
+/** One side of a team game. `color` is bare hex with no leading `#`, as the provider sends it. */
+export interface SportsCompetitor {
+  readonly abbreviation: string;
+  readonly name: string;
+  readonly score: string;
+  readonly color: string | null;
+  readonly isHome: boolean;
+  readonly record: string | null;
+}
+/** One row of an individual-event leaderboard. `position` is empty on a finished event. */
+export interface SportsLeaderboardEntry {
+  readonly order: number;
+  readonly position: string | null;
+  readonly name: string;
+  readonly score: string;
+  readonly thru: string | null;
+}
+/** A game or tournament. `competitors` is filled for a team sport, `leaderboard` for an individual
+ *  one — they differ in which collection is populated, not in shape. */
+export interface SportsEvent {
+  readonly id: string;
+  readonly league: string;
+  readonly name: string;
+  readonly shortName: string;
+  readonly state: "pre" | "in" | "post";
+  readonly detail: string;
+  /** Where it is played, when the source says. NFL supplies a stadium; golf carries no course. */
+  readonly venue?: string | null;
+  readonly competitors: readonly SportsCompetitor[];
+  readonly leaderboard: readonly SportsLeaderboardEntry[];
+}
+export interface ListSportsEventsResult {
+  readonly events: readonly SportsEvent[];
+  /** False on a host with no sports provider — different from "nothing is on today". */
+  readonly available: boolean;
+  /** Present when the read failed, so the picker says so rather than showing an empty list. */
+  readonly reason: string | null;
+}
+
 export interface SearchNotesInput {
   readonly text: string;
   readonly limit?: number;
@@ -654,6 +768,19 @@ export interface CerebralBridge {
    *  input by design: a caller-supplied starting directory is the first step toward a
    *  caller-chosen destination, which the root constraint exists to prevent. */
   chooseFolder(): Promise<ChooseFolderResult>;
+  /** Read the Linear workspace for the `create-ticket` form's dropdowns (quick actions phase 4).
+   *  A read that never touches the command bus, like `listCalendars`. */
+  listLinearOptions(): Promise<ListLinearOptionsResult>;
+  /** Create one Linear issue from the `create-ticket` form. */
+  createLinearIssue(input: CreateLinearIssueInput): Promise<CreateLinearIssueResult>;
+  /** Create one Spotify playlist from the `create-playlist` form (quick actions phase 4). Rejects
+   *  with `spotify_reconnect_required` when the stored grant predates the playlist scopes. */
+  createSpotifyPlaylist(input: CreateSpotifyPlaylistInput): Promise<CreateSpotifyPlaylistResult>;
+  /** Create a project folder with a PROJECT.md descriptor (quick actions phase 4). */
+  scaffoldProject(input: ScaffoldProjectInput): Promise<ScaffoldProjectResult>;
+  /** Read current NFL games and PGA tournaments for `check-scoreboard` (quick actions phase 4).
+   *  One call serves both the picker and the report it opens — they read the same document. */
+  listSportsEvents(): Promise<ListSportsEventsResult>;
   /** The Canvas ingest connection state for the Settings connect card (NIC-132) — the pairing
    *  endpoint/token (minted on demand) plus the last scrape's age/counts. */
   getCanvasStatus(): Promise<CanvasStatus>;

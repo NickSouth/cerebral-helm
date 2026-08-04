@@ -33,6 +33,17 @@ public enum CommandIntent: Equatable, Sendable {
     /// derives one from the repository name when it is nil, and re-checks containment either way.
     /// The `clone <url>` grammar produces a nil directory; the form can supply one.
     case cloneRepository(url: String, directory: String?)
+    /// Create one Linear issue — a single `linear.createissue` tool call, from the `create-ticket`
+    /// Input form. Like ``createCalendarEvent`` the parser never produces it: no text grammar
+    /// carries a title, a body, a team, a project, a label and a priority without becoming lossy.
+    case createLinearIssue(LinearIssueDraft)
+    /// Create one Spotify playlist — a single `spotify.createplaylist` tool call, from the
+    /// `create-playlist` Input form. Form-submitted only: no text grammar carries a name, a
+    /// description and a visibility choice without becoming lossy about quoting.
+    case createSpotifyPlaylist(name: String, description: String?, isPublic: Bool)
+    /// Scaffold a new project folder — a single `project.scaffold` tool call, from the
+    /// `create-project` Input form. Form-submitted only.
+    case scaffoldProject(name: String, location: String?, summary: String?, importance: Int?)
     /// Control the user's Spotify playback (NIC-133) — a single `spotify.control` tool call. The
     /// action is one of play/pause/next/previous; the adapter sends it to the active device.
     case spotifyControl(action: String)
@@ -122,6 +133,46 @@ public struct AmbiguousReference: Equatable, Sendable {
 /// side (NIC-126): the time a user typed is the time they meant, and the platform adapter resolves
 /// it in the host's zone. Optional fields are omitted rather than defaulted, so nothing is
 /// invented on the user's behalf.
+/// Everything the `create-ticket` form collected (quick-actions phase 4). Team is not optional and
+/// is never inferred: a workspace can have several teams, and guessing one would file the ticket
+/// somewhere the user did not choose. `teamName`/`projectName`/`labelName` ride along purely so a
+/// confirmation can name the destination in words — an id alone is unreadable in a prompt. Labels
+/// are a list because a Linear issue routinely carries several (a category and a status).
+public struct LinearIssueDraft: Equatable, Sendable {
+    public let title: String
+    public let description: String?
+    public let teamID: String
+    public let teamName: String?
+    public let projectID: String?
+    public let projectName: String?
+    public let labelIDs: [String]
+    public let labelNames: [String]
+    /// Linear's scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low. Nil leaves it unset.
+    public let priority: Int?
+
+    public init(
+        title: String,
+        description: String? = nil,
+        teamID: String,
+        teamName: String? = nil,
+        projectID: String? = nil,
+        projectName: String? = nil,
+        labelIDs: [String] = [],
+        labelNames: [String] = [],
+        priority: Int? = nil
+    ) {
+        self.title = title
+        self.description = description
+        self.teamID = teamID
+        self.teamName = teamName
+        self.projectID = projectID
+        self.projectName = projectName
+        self.labelIDs = labelIDs
+        self.labelNames = labelNames
+        self.priority = priority
+    }
+}
+
 public struct CalendarEventDraft: Equatable, Sendable {
     public let title: String
     public let startsAt: String
