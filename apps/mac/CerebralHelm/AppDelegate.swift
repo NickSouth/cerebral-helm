@@ -78,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // The single live runtime + bridge session for this app session (NIC-75). Both
-        // the dashboard and the command-palette webview submit through it.
+        // the dashboard and the sidebar webview submit through it.
         guard let bridgeRuntime = AppBridgeRuntime(paths: paths) else {
             coordinator.enterRecovery(Bootstrap.Recovery(
                 reason: "startup_validation_failed",
@@ -90,11 +90,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         self.bridgeRuntime = bridgeRuntime
 
-        // Hand the window roles to the coordinator (dashboard + pre-warmed palette).
+        // Hand the window roles to the coordinator (dashboard + pre-warmed sidebar).
         coordinator.enterReady(dashboardRoot: dashboardRoot, paths: paths, session: bridgeRuntime.session)
 
         // Route the shared session's event stream to the coordinator, which fans it to the
-        // dashboard (and mode changes to the palette).
+        // dashboard and the sidebar.
         bridgeRuntime.setEventSink { [weak self] json in
             self?.coordinator.deliverBridgeEvent(json)
         }
@@ -139,10 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowSnap.start()
         self.windowSnap = windowSnap
 
-        // The menu-bar item + global summon hotkey (NIC-75 / FR-SHL-02). Both the menu
-        // item and the hotkey drive the coordinator.
+        // The menu-bar item + global summon hotkey (NIC-75 / FR-SHL-02). Both drive the sidebar,
+        // which replaced the command palette as the app's command surface.
         menuBar = MenuBarController(
-            summon: { [weak self] in self?.coordinator.summonPalette() },
+            summonSidebar: { [weak self] in self?.coordinator.toggleSidebar() },
             openSettings: { [weak self] in self?.coordinator.openSettings() }
         )
     }

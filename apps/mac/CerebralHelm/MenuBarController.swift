@@ -3,29 +3,33 @@ import KeyboardShortcuts
 
 /// Owns the menu-bar presence and the global summon hotkey (NIC-75 / FR-SHL-02).
 ///
-/// An `NSStatusItem` gives CerebralHelm a persistent menu-bar affordance — summon the
-/// command palette, open settings, quit — and the global `KeyboardShortcuts` hotkey
-/// (`.summonPalette`) summons the palette from anywhere. Both the menu item and the
-/// hotkey call the **same** injected `summon` closure, so there is exactly one summon
-/// entry point; the single-palette guarantee (FR-SHL-02) is enforced by the palette
-/// controller that closure drives, not here. This type is UI wiring only — all behavior
-/// is injected by the app layer.
+/// An `NSStatusItem` gives CerebralHelm a persistent menu-bar affordance — show the sidebar,
+/// open settings, quit — and the global `KeyboardShortcuts` hotkey summons the sidebar from
+/// anywhere. Both the menu item and the hotkey call the **same** injected closure, so there is
+/// exactly one summon entry point; the single-sidebar guarantee is enforced by the controller
+/// that closure drives, not here.
+///
+/// The shortcut's persistence key is still `summonPalette` (see `PaletteShortcut`): it is durable
+/// storage that predates the command palette's removal, and renaming it would silently reset every
+/// user's existing binding.
+///
+/// This type is UI wiring only — all behavior is injected by the app layer.
 final class MenuBarController {
     private let statusItem: NSStatusItem
-    private let summon: () -> Void
+    private let summonSidebar: () -> Void
     private let openSettings: () -> Void
 
-    init(summon: @escaping () -> Void, openSettings: @escaping () -> Void) {
-        self.summon = summon
+    init(summonSidebar: @escaping () -> Void, openSettings: @escaping () -> Void) {
+        self.summonSidebar = summonSidebar
         self.openSettings = openSettings
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         configureButton()
         statusItem.menu = buildMenu()
 
-        // Global hotkey → the same summon path as the menu item. onKeyDown (not up) keeps
-        // the summon snappy against the ~200ms latency target (FR-SHL-02 AC).
+        // Global hotkey → the sidebar. onKeyDown (not up) keeps the summon snappy against the
+        // ~200ms latency target (FR-SHL-02 AC).
         KeyboardShortcuts.onKeyDown(for: .summonPalette) { [weak self] in
-            self?.summon()
+            self?.summonSidebar()
         }
     }
 
@@ -39,11 +43,11 @@ final class MenuBarController {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let summonItem = NSMenuItem(
-            title: "Summon Command Palette", action: #selector(summonAction), keyEquivalent: ""
+        let sidebarItem = NSMenuItem(
+            title: "Show Sidebar", action: #selector(summonSidebarAction), keyEquivalent: ""
         )
-        summonItem.target = self
-        menu.addItem(summonItem)
+        sidebarItem.target = self
+        menu.addItem(sidebarItem)
 
         menu.addItem(.separator())
 
@@ -64,7 +68,7 @@ final class MenuBarController {
         return menu
     }
 
-    @objc private func summonAction() { summon() }
+    @objc private func summonSidebarAction() { summonSidebar() }
     @objc private func settingsAction() { openSettings() }
     @objc private func quitAction() { NSApp.terminate(nil) }
 }

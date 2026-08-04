@@ -25,13 +25,32 @@ interface ReportContextValue {
 
 const ReportContext = createContext<ReportContextValue | null>(null);
 
-export function ReportProvider({ children }: { children: ReactNode }) {
+/**
+ * `handoff` lets a host open reports somewhere other than itself. The edge sidebar uses it: a
+ * report is a reading surface sized for the centre panel, so opening one from the column reveals
+ * the dashboard and renders it there instead of cramming a second copy into 340px (owner decision,
+ * 2026-08-03). Returning true means "handled elsewhere" and suppresses the local open; returning
+ * false falls through to normal behavior.
+ */
+export function ReportProvider({
+  children,
+  handoff
+}: {
+  children: ReactNode;
+  handoff?: (reportId: string) => boolean;
+}) {
   const [openReportId, setOpenReportId] = useState<string | null>(null);
   const { mode } = useDashboardState();
 
-  const openReport = useCallback((reportId: string) => {
-    setOpenReportId((current) => (current === reportId ? null : reportId));
-  }, []);
+  const openReport = useCallback(
+    (reportId: string) => {
+      if (handoff?.(reportId)) {
+        return;
+      }
+      setOpenReportId((current) => (current === reportId ? null : reportId));
+    },
+    [handoff]
+  );
   const closeReport = useCallback(() => setOpenReportId(null), []);
 
   // A report is opened from a mode's slot and belongs to it: modes have different slot maps, so

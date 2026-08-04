@@ -191,15 +191,26 @@ const PALETTE_SHORTCUT_PRESETS: ReadonlyArray<{ id: string; label: string }> = [
 interface HotkeyWindow extends Window {
   webkit?: { messageHandlers?: { shellControl?: { postMessage(message: unknown): void } } };
   __cerebralHotkey?: { preset?: string; label?: string };
+  /** Seeded by the shell from `SidebarEdgePreference` (UserDefaults, not the settings snapshot —
+   *  the edge reveal is Mac-only window behavior, like the hotkey above). */
+  __cerebralSidebar?: { edgeReveal?: boolean; dwell?: string };
 }
 
-/** Ask the native shell to rebind the palette hotkey (a Mac-only concern, off the bridge). */
+/** Ask the native shell to rebind the summon hotkey (a Mac-only concern, off the bridge). */
 function setPaletteShortcut(preset: string): void {
   (window as HotkeyWindow).webkit?.messageHandlers?.shellControl?.postMessage({
     action: "setPaletteShortcut",
     preset
   });
 }
+
+/** The dwell durations the shell accepts (`SidebarEdgePreference.Dwell`). A closed set, like the
+ *  shortcut presets: no arbitrary value from here can make the edge un-triggerable or hair-trigger. */
+const SIDEBAR_DWELL_PRESETS = [
+  { id: "fast", label: "Fast" },
+  { id: "standard", label: "Standard" },
+  { id: "relaxed", label: "Relaxed" }
+] as const;
 
 // --- General --------------------------------------------------------------
 
@@ -223,6 +234,14 @@ function GeneralPanelBody() {
   );
   const [preset, setPreset] = useState(
     () => (window as HotkeyWindow).__cerebralHotkey?.preset ?? "option-space"
+  );
+  // Seeded from the shell's injected globals; the defaults here match the shell's own defaults so
+  // a plain browser preview shows the same state the app would.
+  const [edgeReveal, setEdgeReveal] = useState(
+    () => (window as HotkeyWindow).__cerebralSidebar?.edgeReveal ?? true
+  );
+  const [dwell, setDwell] = useState(
+    () => (window as HotkeyWindow).__cerebralSidebar?.dwell ?? "standard"
   );
   // Only stable identities may be persisted (NIC-87 safe-degradation rule): a
   // session-scoped fallback id would silently stop matching after reconnect.
@@ -255,6 +274,16 @@ function GeneralPanelBody() {
   function onShortcutChange(next: string) {
     setPreset(next);
     setPaletteShortcut(next);
+  }
+
+  function onEdgeRevealToggle(next: boolean) {
+    setEdgeReveal(next);
+    postShellControl("setSidebarEdge", { enabled: next });
+  }
+
+  function onDwellChange(next: string) {
+    setDwell(next);
+    postShellControl("setSidebarEdge", { dwell: next });
   }
 
   return (
@@ -318,15 +347,50 @@ function GeneralPanelBody() {
           </label>
         </Field>
       </Section>
-      <Section title="Command palette">
-        <Field label="Summon shortcut" hint="Press this from anywhere to open the command palette.">
+      <Section title="Sidebar">
+        <Field
+          label="Summon shortcut"
+          hint="Press this from anywhere to open the sidebar with its command box ready to type — including over a fullscreen app."
+        >
           <select
             className="settings-select"
             value={preset}
-            aria-label="Command palette shortcut"
+            aria-label="Sidebar shortcut"
             onChange={(event) => onShortcutChange(event.target.value)}
           >
             {PALETTE_SHORTCUT_PRESETS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field
+          label="Reveal at screen edge"
+          hint="Rest the pointer against the left edge of your leftmost display to slide the sidebar out."
+        >
+          <label className="settings-switch">
+            <input
+              type="checkbox"
+              checked={edgeReveal}
+              aria-label="Reveal at screen edge"
+              onChange={(event) => onEdgeRevealToggle(event.target.checked)}
+            />
+            <span className="settings-switch__track" aria-hidden="true" />
+          </label>
+        </Field>
+        <Field
+          label="Edge sensitivity"
+          hint="How long the pointer must rest at the edge before the sidebar appears. Raise this if it opens when you didn’t mean it to."
+        >
+          <select
+            className="settings-select"
+            value={dwell}
+            aria-label="Edge sensitivity"
+            disabled={!edgeReveal}
+            onChange={(event) => onDwellChange(event.target.value)}
+          >
+            {SIDEBAR_DWELL_PRESETS.map((option) => (
               <option key={option.id} value={option.id}>
                 {option.label}
               </option>

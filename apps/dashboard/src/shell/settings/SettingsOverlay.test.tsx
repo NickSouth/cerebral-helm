@@ -995,10 +995,11 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
     render(<SettingsApp />);
     const surface = screen.getByRole("main", { name: "Settings" });
 
-    // The palette shortcut now lives in General (the default tab); it seeds once the read settles.
-    const select = await within(surface).findByRole("combobox", {
-      name: "Command palette shortcut"
-    });
+    // The summon shortcut lives in General (the default tab); it seeds once the read settles.
+    // It now opens the sidebar rather than the palette (owner decision, 2026-08-03), hence the
+    // control's label — the shellControl action keeps its `setPaletteShortcut` name because that
+    // is also the durable persistence key, and renaming it would reset every stored binding.
+    const select = await within(surface).findByRole("combobox", { name: "Sidebar shortcut" });
     fireEvent.change(select, { target: { value: "command-shift-space" } });
     expect(postMessage).toHaveBeenCalledWith({
       action: "setPaletteShortcut",
@@ -1007,6 +1008,30 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
 
     fireEvent.click(within(surface).getByRole("button", { name: "Close settings" }));
     expect(postMessage).toHaveBeenCalledWith({ action: "closeSettings" });
+  });
+
+  it("drives the sidebar's edge reveal through the shell, and gates sensitivity on it", async () => {
+    const postMessage = vi.fn();
+    (window as unknown as ShellControlWindow).webkit = {
+      messageHandlers: { shellControl: { postMessage } }
+    };
+    const { SettingsApp } = await import("../../app/SettingsApp");
+    render(<SettingsApp />);
+    const surface = screen.getByRole("main", { name: "Settings" });
+
+    // Both controls are shell state (UserDefaults), not settings-snapshot fields, so they travel
+    // over shellControl rather than the settings patch.
+    const sensitivity = await within(surface).findByRole("combobox", { name: "Edge sensitivity" });
+    fireEvent.change(sensitivity, { target: { value: "relaxed" } });
+    expect(postMessage).toHaveBeenCalledWith({ action: "setSidebarEdge", dwell: "relaxed" });
+
+    const toggle = within(surface).getByRole("checkbox", { name: "Reveal at screen edge" });
+    fireEvent.click(toggle);
+    expect(postMessage).toHaveBeenCalledWith({ action: "setSidebarEdge", enabled: false });
+
+    // Turning the reveal off leaves the dwell control visible but inert — a dead setting should
+    // read as unavailable rather than silently doing nothing.
+    expect(within(surface).getByRole("combobox", { name: "Edge sensitivity" })).toBeDisabled();
   });
 
   it("chooses the knowledge root through the native Finder picker and persists it (NIC-138)", async () => {

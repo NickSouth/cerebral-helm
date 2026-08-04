@@ -25,13 +25,27 @@ interface InputContextValue {
 
 const InputContext = createContext<InputContextValue | null>(null);
 
-export function InputProvider({ children }: { children: ReactNode }) {
+/** `handoff` mirrors `ReportProvider`'s: the sidebar opens forms on the dashboard instead of in
+ *  its own column. Returning true suppresses the local open. */
+export function InputProvider({
+  children,
+  handoff
+}: {
+  children: ReactNode;
+  handoff?: (actionId: string) => boolean;
+}) {
   const [openInputId, setOpenInputId] = useState<string | null>(null);
   const { mode } = useDashboardState();
 
-  const openInput = useCallback((actionId: string) => {
-    setOpenInputId((current) => (current === actionId ? null : actionId));
-  }, []);
+  const openInput = useCallback(
+    (actionId: string) => {
+      if (handoff?.(actionId)) {
+        return;
+      }
+      setOpenInputId((current) => (current === actionId ? null : actionId));
+    },
+    [handoff]
+  );
   const closeInput = useCallback(() => setOpenInputId(null), []);
 
   // A form is opened from a mode's slot and belongs to it, exactly as a Report does. Switching

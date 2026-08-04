@@ -224,6 +224,28 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         webView.evaluateJavaScript(script)
     }
 
+    /// Open a Report or Input on the dashboard on behalf of another surface. The edge sidebar
+    /// hands these over rather than rendering them in its own column (owner decision, 2026-08-03):
+    /// both are designed for the centre panel, and a report inside a 340px column read as a
+    /// window-inside-a-window.
+    func openReport(_ reportID: String) {
+        evaluateShellIntent("openReport", argument: reportID)
+    }
+
+    func openInput(_ actionID: String) {
+        evaluateShellIntent("openInput", argument: actionID)
+    }
+
+    /// Call one `window.__cerebralShell` function with a single string argument, JSON-encoded so
+    /// an id containing a quote can never break out of the expression.
+    private func evaluateShellIntent(_ function: String, argument: String) {
+        guard let literal = try? JSONEncoder().encode(argument),
+              let literalString = String(data: literal, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.__cerebralShell && window.__cerebralShell.\(function)(\(literalString));"
+        )
+    }
+
     /// Opens the web settings overlay over the dashboard (NIC-76 / FR-UI-06). The native
     /// settings window is retired; the menu-bar "Settings…" routes here.
     func openSettings() {

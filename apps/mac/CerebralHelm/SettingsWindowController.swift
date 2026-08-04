@@ -67,6 +67,19 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
             forMainFrameOnly: true
         ))
 
+        // Seed the Sidebar panel with the persisted edge-reveal preference. Same reasoning as the
+        // hotkey above: a Mac-only shell behavior, stored in UserDefaults and surfaced through an
+        // injected global rather than the portable settings snapshot.
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: """
+            window.__cerebralSidebar = { \
+            edgeReveal: \(SidebarEdgePreference.isEnabled ? "true" : "false"), \
+            dwell: "\(SidebarEdgePreference.dwell.rawValue)" };
+            """,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+
         // Seed the Startup panel with the LIVE login-item status (NIC-89): the OS
         // is the source of truth — the settings store never carries this flag.
         configuration.userContentController.addUserScript(WKUserScript(

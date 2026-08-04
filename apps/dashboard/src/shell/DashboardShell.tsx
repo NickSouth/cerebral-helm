@@ -10,6 +10,8 @@ import { SystemStatusBanner } from "./SystemStatusBanner";
 import { BrandMark, BrandWordmark } from "./BrandMark";
 import { DashboardSkeleton } from "./DashboardSkeleton";
 import { useBridge } from "../state/BridgeProvider";
+import { useReports } from "../state/ReportProvider";
+import { useInputs } from "../state/InputProvider";
 import { useActionStatus } from "../state/ActionStatusProvider";
 import { useSettings } from "../state/SettingsProvider";
 import { useUiPosture } from "../state/useUiPosture";
@@ -21,6 +23,11 @@ interface ShellIntentWindow extends Window {
   __cerebralShell?: {
     submitCommand?: (text: string) => void;
     openSettings?: () => void;
+    /** Open a Report / Input here rather than in the surface that asked. The edge sidebar uses
+     *  these: its column is too narrow to read a brief or fill in a form, so it reveals the
+     *  dashboard and hands the surface over (owner decision, 2026-08-03). */
+    openReport?: (reportId: string) => void;
+    openInput?: (actionId: string) => void;
   };
 }
 
@@ -42,6 +49,8 @@ export function DashboardShell() {
   const bridge = useBridge();
   const { announce } = useActionStatus();
   const settings = useSettings();
+  const reports = useReports();
+  const inputs = useInputs();
   const posture = useUiPosture();
   const shellRef = useRef<HTMLDivElement>(null);
   useAmbientBeam(shellRef);
@@ -86,11 +95,17 @@ export function DashboardShell() {
   runCommandRef.current = runCommand;
   const openSettingsRef = useRef(settings.openSettings);
   openSettingsRef.current = settings.openSettings;
+  const openReportRef = useRef(reports.openReport);
+  openReportRef.current = reports.openReport;
+  const openInputRef = useRef(inputs.openInput);
+  openInputRef.current = inputs.openInput;
   useEffect(() => {
     const shellWindow = window as ShellIntentWindow;
     shellWindow.__cerebralShell = {
       submitCommand: (text: string) => runCommandRef.current(text),
-      openSettings: () => openSettingsRef.current()
+      openSettings: () => openSettingsRef.current(),
+      openReport: (reportId: string) => openReportRef.current(reportId),
+      openInput: (actionId: string) => openInputRef.current(actionId)
     };
     return () => {
       delete shellWindow.__cerebralShell;
