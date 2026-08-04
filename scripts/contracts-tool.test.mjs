@@ -27,6 +27,8 @@ const mvpToolIds = new Set([
   "app.quit",
   "calendar.createevent",
   "google.search",
+  "youtube.search",
+  "git.clone",
   "web.open",
   "spotify.control"
 ]);

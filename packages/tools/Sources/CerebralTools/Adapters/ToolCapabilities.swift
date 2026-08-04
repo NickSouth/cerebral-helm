@@ -29,6 +29,14 @@ public struct ToolCapabilities: Sendable {
     /// Opens a Google search in the browser (NIC-134), preferring a running Chrome instance.
     /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
     public let googleSearch: any GoogleSearchCapability
+    /// Opens a YouTube search in the browser (quick-actions phase 4). A separate port from
+    /// ``googleSearch`` so each adapter's destination host stays a literal constant.
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let youtubeSearch: any YouTubeSearchCapability
+    /// Clones a repository into the projects root (quick-actions phase 4). A fixed executable with
+    /// a typed argument list — never a shell. `.none`-matrix mock by default (pre-Mac/tests); the
+    /// macOS shell binds the honest adapter.
+    public let gitClone: any GitCloneCapability
     /// Opens an arbitrary https web address in the browser (NIC-127), for news article links,
     /// preferring a running Chrome instance. `.none`-matrix mock by default (pre-Mac/tests); the
     /// macOS shell binds the honest adapter.
@@ -56,6 +64,8 @@ public struct ToolCapabilities: Sendable {
         applicationLifecycle: any ApplicationLifecycleCapability = MockApplicationLifecycleCapability(matrix: .none),
         appWindows: any AppWindowsCapability = MockAppWindowsCapability(groups: []),
         googleSearch: any GoogleSearchCapability = MockGoogleSearchCapability(matrix: .none),
+        youtubeSearch: any YouTubeSearchCapability = MockYouTubeSearchCapability(matrix: .none),
+        gitClone: any GitCloneCapability = MockGitCloneCapability(matrix: .none),
         webOpen: any WebOpenCapability = MockWebOpenCapability(matrix: .none),
         calendarWrite: any CalendarWritingCapability = MockCalendarWritingCapability(matrix: .none),
         spotifyControl: any SpotifyControlCapability = MockSpotifyControlCapability(matrix: .none),
@@ -73,6 +83,8 @@ public struct ToolCapabilities: Sendable {
         self.applicationLifecycle = applicationLifecycle
         self.appWindows = appWindows
         self.googleSearch = googleSearch
+        self.youtubeSearch = youtubeSearch
+        self.gitClone = gitClone
         self.webOpen = webOpen
         self.calendarWrite = calendarWrite
         self.spotifyControl = spotifyControl
@@ -95,6 +107,8 @@ public struct ToolCapabilities: Sendable {
             applicationLifecycle: MockApplicationLifecycleCapability(matrix: matrix),
             appWindows: MockAppWindowsCapability(groups: []),
             googleSearch: MockGoogleSearchCapability(matrix: matrix),
+            youtubeSearch: MockYouTubeSearchCapability(matrix: matrix),
+            gitClone: MockGitCloneCapability(matrix: matrix),
             webOpen: MockWebOpenCapability(matrix: matrix),
             calendarWrite: MockCalendarWritingCapability(matrix: matrix),
             spotifyControl: MockSpotifyControlCapability(matrix: matrix)

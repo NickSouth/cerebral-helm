@@ -31,7 +31,8 @@ export interface QuickActionEntry {
   readonly label: string;
   /**
    * Icon name for the slot's leading glyph. Carried here (beside `label` and `archetype`) because the
-   * registry is the one place that knows what an action *is*; slot icons render in a later increment.
+   * registry is the one place that knows what an action *is*. Drawn by `QuickActionGlyph`, which a
+   * test holds to covering every registered name.
    */
   readonly icon: string;
   readonly archetype: QuickActionArchetype;
@@ -60,6 +61,22 @@ export function quickActionEntry(id: string): QuickActionEntry | null {
  */
 export function quickActionLabel(id: string): string {
   return ACTIONS[id]?.label ?? humanizeId(id);
+}
+
+/**
+ * The icon name for a slot's leading glyph, or `null` for an unregistered id — which renders the
+ * label alone rather than a placeholder box.
+ */
+export function quickActionIcon(id: string): string | null {
+  return ACTIONS[id]?.icon ?? null;
+}
+
+/**
+ * Every registered entry, keyed by id. For gates and tests only — a renderer looks one id up rather
+ * than walking the catalog.
+ */
+export function quickActionEntries(): Readonly<Record<string, QuickActionEntry>> {
+  return ACTIONS;
 }
 
 /** Whether an action is built (has a dispatch target) rather than planned. */

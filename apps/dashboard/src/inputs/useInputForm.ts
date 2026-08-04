@@ -3,6 +3,8 @@ import { useBridge } from "../state/BridgeProvider";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { toModeId } from "../tokens/tokens";
 import { createEventForm } from "./createEvent";
+import { gitCloneForm } from "./gitClone";
+import { submitYouTubeSearch } from "../shell/youtubeSearch";
 import type { CerebralBridge } from "../bridge/cerebralBridge";
 import type { InputForm, InputValues } from "./inputForm";
 
@@ -16,12 +18,16 @@ import type { InputForm, InputValues } from "./inputForm";
  */
 export function useInputForm(actionId: string): { form: InputForm | null; loading: boolean } {
   const bridge = useBridge();
-  const { mode } = useDashboardState();
+  const { mode, modes } = useDashboardState();
   const calendarModeMap = useCalendarModeMap(actionId === "create-event");
 
   switch (actionId) {
     case "capture-note":
       return { form: captureNoteForm(bridge), loading: false };
+    case "search-youtube":
+      return { form: searchYouTubeForm(bridge), loading: false };
+    case "git-clone":
+      return { form: gitCloneForm(bridge), loading: false };
     case "create-event":
       return calendarModeMap.loading
         ? { form: null, loading: true }
@@ -30,6 +36,9 @@ export function useInputForm(actionId: string): { form: InputForm | null; loadin
               bridge,
               now: new Date(),
               modeId: toModeId(mode),
+              // The Mode field's options are the resolved modes from bootstrap, not a hardcoded
+              // four: config decides which modes exist, and the tag it writes is the raw mode id.
+              modes: modes.map(({ id, label }) => ({ id, label })),
               calendarModeMap: calendarModeMap.map
             }),
             loading: false
@@ -84,6 +93,39 @@ function useCalendarModeMap(enabled: boolean): {
   // still closed, so it would read `false` on the render that builds the form — and the default
   // would arrive after the body had already seeded its values, silently losing it.
   return { map, loading: enabled && map === undefined };
+}
+
+/**
+ * `search-youtube` — one field, one bus command, no new surface (quick actions phase 4, action 1).
+ *
+ * It reports only that the search was **dispatched**, never that a page opened: the receipt says
+ * whether the command was accepted, and nothing more. The tool is macOS-only, so in the browser the
+ * command is accepted and then fails downstream as unavailable-in-phase — claiming "Opened YouTube"
+ * off the host would be a fabricated success.
+ */
+function searchYouTubeForm(bridge: CerebralBridge): InputForm {
+  return {
+    actionId: "search-youtube",
+    title: "Search YouTube",
+    submitLabel: "Search",
+    fields: [
+      {
+        name: "query",
+        label: "Search",
+        kind: "text",
+        required: true,
+        placeholder: "What are you looking for?"
+      }
+    ],
+    async submit(values: InputValues) {
+      const query = values.query.trim();
+      const receipt = await submitYouTubeSearch(bridge, query);
+      if (!receipt.accepted) {
+        return { message: `I couldn't search for “${query}” — the command wasn't accepted.`, failed: true };
+      }
+      return { message: `Searching YouTube for “${query}”.` };
+    }
+  };
 }
 
 /**

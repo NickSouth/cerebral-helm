@@ -134,6 +134,60 @@ public struct GoogleSearchHandler: ToolHandler {
     }
 }
 
+// MARK: - git.clone
+
+public struct GitCloneHandler: ToolHandler {
+    public let toolID = "git.clone"
+    private let capability: any GitCloneCapability
+
+    public init(capability: any GitCloneCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmGitCloneInput
+        do { decoded = try CerebralHelmGitCloneInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("git.clone input does not match its contract.")
+        }
+        do {
+            let result = try await capability.clone(
+                repositoryURL: decoded.repositoryURL,
+                directory: decoded.cloneDirectory
+            )
+            return try CerebralHelmGitCloneOutput(
+                clonedPath: result.clonedPath,
+                clonedRepositoryName: result.repositoryName
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+// MARK: - youtube.search
+
+public struct YouTubeSearchHandler: ToolHandler {
+    public let toolID = "youtube.search"
+    private let capability: any YouTubeSearchCapability
+
+    public init(capability: any YouTubeSearchCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmYouTubeSearchInput
+        do { decoded = try CerebralHelmYouTubeSearchInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("youtube.search input does not match its contract.")
+        }
+        do {
+            let result = try await capability.search(query: decoded.youtubeQuery)
+            return try CerebralHelmYouTubeSearchOutput(
+                youtubeOpened: result.opened,
+                youtubeQuery: result.query,
+                youtubeResolvedURL: result.resolvedURL
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 public struct SpotifyControlHandler: ToolHandler {
     public let toolID = "spotify.control"
     private let capability: any SpotifyControlCapability

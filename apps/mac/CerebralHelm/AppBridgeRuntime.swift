@@ -488,6 +488,13 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 await spotify.refresh()
                 return SpotifyConnectionInfo(scope: connection.scope)
             },
+            // The `git-clone` form's location field (quick-actions phase 4): a native folder
+            // picker rooted at the projects root. The chooser — not the caller — decides where the
+            // panel opens and refuses a selection outside that root, so the tool's containment
+            // guarantee is never delegated to the web layer. Main actor: it presents a panel.
+            chooseFolder: {
+                await MainActor.run { ProjectsFolderChooser() }.choose()
+            },
             // The Canvas connect/status surface (NIC-132): getCanvasStatus shows the pairing
             // endpoint/token + last-scrape summary; resetCanvas purges the scrape and rotates the token.
             canvasStatus: canvasStatusClosure,

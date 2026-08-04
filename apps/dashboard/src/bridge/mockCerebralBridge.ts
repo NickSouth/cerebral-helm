@@ -605,6 +605,30 @@ export function createMockCerebralBridge(
         awaitingConfirmation: false
       });
     },
+    cloneRepository(input: { repositoryUrl: string; directory?: string }) {
+      // The browser preview clones nothing — it reports the path the host WOULD use, so the form's
+      // wiring can be exercised without a network or a projects folder. Reported as done rather
+      // than pending because the mock never gates; the real policy engine lives in Swift.
+      const derived = input.repositoryUrl.replace(/\/+$/, "").split("/").pop() ?? "repository";
+      const name = input.directory || derived.replace(/\.git$/, "");
+      return Promise.resolve({
+        clonedPath: `/mock/Projects/${name}`,
+        repositoryName: name,
+        awaitingConfirmation: false
+      });
+    },
+    chooseFolder() {
+      // The browser has no Finder. Reporting the picker as unavailable is the honest answer, and
+      // it also exercises the fallback the macOS host will never show: the form keeps its typed
+      // location field instead of offering a button that does nothing.
+      return Promise.resolve({
+        folderPath: null,
+        relativeFolder: null,
+        cancelled: true,
+        outsideRoot: false,
+        available: false
+      });
+    },
     listCalendars() {
       // A representative calendar set for browser previews of the Settings calendar→mode mapping
       // (NIC-126). `authorized: true` so the mapping UI renders its rows rather than the

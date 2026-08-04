@@ -583,6 +583,35 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [ConfirmationArgument(name: "query", value: query, sensitive: false)],
                 actionSummary: "Search Google for \(query)."
             )
+        case let .youtubeSearch(query):
+            // Same shape and same risk as google.search, and for the same reason: the adapter
+            // builds the youtube.com URL host-side, so the query is data, never the destination.
+            return make(
+                toolID: "youtube.search",
+                input: try? CerebralHelmYouTubeSearchInput(youtubeQuery: query).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "query", value: query, sensitive: false)],
+                actionSummary: "Search YouTube for \(query)."
+            )
+        case let .cloneRepository(url, directory):
+            // `local_write`, like project.open: one fixed executable, a typed argument list, no
+            // shell, and a destination the adapter confines to the projects root. A hook wrapper
+            // would have been `shell`-class and confirmed on every clone for no added safety.
+            var arguments = [ConfirmationArgument(name: "repository", value: url, sensitive: false)]
+            if let directory, !directory.isEmpty {
+                arguments.append(ConfirmationArgument(name: "folder", value: directory, sensitive: false))
+            }
+            return make(
+                toolID: "git.clone",
+                input: try? CerebralHelmGitCloneInput(cloneDirectory: directory, repositoryURL: url).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: arguments,
+                actionSummary: "Clone \(url) into your projects folder."
+            )
         case let .createCalendarEvent(draft):
             // Everything the user typed is disclosed, so a confirmation (an agent-proposed one,
             // or any invocation while "ask before all actions" is on) shows the actual event

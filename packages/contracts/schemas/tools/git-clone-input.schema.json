@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/git-clone-input.schema.json",
+  "title": "CerebralHelm Git Clone Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repositoryURL"],
+  "properties": {
+    "repositoryURL": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The https URL of the repository to clone. The adapter refuses any other scheme, and refuses a URL carrying embedded credentials (user:token@host) so a secret can never reach the command log."
+    },
+    "cloneDirectory": {
+      "type": "string",
+      "description": "Optional folder for the clone, relative to the projects root. Omit it and the folder is derived from the repository name. Whatever is supplied, the adapter re-checks that the resolved path stays inside the projects root, so no relative escape can place a clone elsewhere."
+    }
+  }
+}

@@ -449,6 +449,12 @@
 .quick-action {
   flex: 0 0 calc((100% - 3 * var(--ch-space-2)) / 4);
   min-width: 0;
+  /* Leading glyph, then label, centred as a pair. `inline-flex` on a button rather than `flex` so
+     the pair still centres inside the fixed-basis track. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-2);
   font: inherit;
   font-size: var(--ch-font-size-sm);
   color: var(--ch-status-neutral);
@@ -462,6 +468,31 @@
 
 .quick-action--box {
   min-height: 3.5rem;
+}
+
+/* The glyph never shrinks — a squashed icon reads as a rendering fault. The label absorbs the
+   pressure instead, wrapping as it already did. */
+.quick-action__glyph {
+  flex: none;
+  color: var(--ch-text-muted);
+  transition: color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.quick-action__label {
+  min-width: 0;
+}
+
+/* Muted by default so the label leads; the mode accent means "this slot's surface is open right
+   now" (docs/quick-actions/PLAN.md § Visual rules). Colour is the only change — the tile geometry
+   stays put so an opening surface never nudges the row. */
+.quick-action--open .quick-action__glyph {
+  color: var(--ch-accent-primary);
+}
+
+/* A disabled placeholder's glyph follows its label into the neutral tone rather than staying at
+   text-muted, which would make an unpressable slot look more present than a live one. */
+.quick-action:disabled .quick-action__glyph {
+  color: inherit;
 }
 
 /* The thin top row is inset and centered so the 4+4 stack tapers to a slight pyramid: narrower,
@@ -501,6 +532,12 @@
 .quick-action--danger {
   color: var(--ch-status-error);
   border-color: var(--ch-status-error);
+}
+
+/* The one coloured slot colours its glyph too: a red-outlined tile with a grey power icon would
+   read as two different states on one control. */
+.quick-action--danger .quick-action__glyph {
+  color: inherit;
 }
 
 .quick-action--danger:hover {

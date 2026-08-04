@@ -55,6 +55,8 @@ const bridgeOperations = new Set([
   "listWindows",
   "listCalendars",
   "createCalendarEvent",
+  "cloneRepository",
+  "chooseFolder",
   "minimizeWindow",
   "surfaceWindow",
   "closeWindow",

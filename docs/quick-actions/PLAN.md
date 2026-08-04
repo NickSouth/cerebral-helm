@@ -91,7 +91,7 @@ An Input is `{title, fields[], submitAction}`. Seven field kinds cover every pla
 
 `text` · `textarea` · `select` · `number` · `datetimeRange` · `combobox` · `folderPicker`
 
-`folderPicker` requires a native round trip (an open-panel bridge op) — the only field kind that does.
+`folderPicker` requires a native round trip (the `chooseFolder` bridge op) — the only field kind that does, and therefore the only one that can be *unavailable at runtime* rather than merely undrawn. It degrades to a plain text box where there is no window server. *Built in phase 4 with `git-clone`.*
 
 `select` and `combobox` take a **source** that is either a static list or a **provider id**. One mechanism serves four actions: calendars for `create-event`, contacts for `send-text`, projects and labels for `create-ticket`, courses for `take-notes`.
 
@@ -119,7 +119,7 @@ This generalizes the one-off exemption NIC-133 introduced for the Spotify widget
 
 ## Visual rules
 
-- **Leading icons on every slot**, muted by default so the label leads. The icon takes the mode accent only while that slot's surface is open — a free, consistent open-state indicator across all 32 slots. The icon belongs in the dispatch registry beside `label` and `archetype`.
+- **Leading icons on every slot**, muted by default so the label leads. The icon takes the mode accent only while that slot's surface is open — a free, consistent open-state indicator across all 32 slots. The icon belongs in the dispatch registry beside `label` and `archetype`. *Built after phase 3; see phase 0 item 4.*
 - **`shut-down` is red, and is the only differently-coloured slot.** Outline red, not filled: a solid red button reads as *danger, do not touch*, but this one is pressed on purpose. The weight belongs on the confirmation. *Built in phase 0/1 as a registry `tone` field, validated against a one-value enum so this stays the only coloured slot; a greyed placeholder never takes the tone.*
 - **Accent colour means actionable** inside a report. Emphasis without a target uses weight or a lighter neutral. One meaning per colour, and it scales to whatever a model writes later.
 - **Empty slots are omitted, not rendered as placeholders.** Remaining slots re-centre within their row, preserving the bar/box split. Nulls stay in config; only the renderer changes.
@@ -221,7 +221,9 @@ Course-to-Obsidian-folder mapping · an optional manual course-to-event override
 2. ~~**Empty-slot omit-and-recentre.**~~ **Built** in the same increment — the slot-map rewrite is what introduces the null slots.
 3. ~~**Provenance confirmation tier.**~~ **Built.** `ActionProvenance` (portable core) is derived from the command envelope's source; `PolicyRequest` carries it alongside the descriptor opt-in. The NIC-133 one-off collapsed into it: `allow_external_write_without_confirmation` became `allow_external_write_when_user_authored`, so the exemption now needs both halves and an agent-proposed call to the same tool confirms. No UI, as planned.
 
-Icons are carried in the registry but not yet rendered — the Tabler glyphs need vendoring (no external CDN), which belongs with the visual pass, not the dispatch spine.
+4. ~~**Slot icons.**~~ **Built** (after phase 3, before phase 4 — it touches all 32 slots at once, so doing it while three phases of actions already existed was cheaper than revisiting each one). `QuickActionGlyph` draws the icon name each registry entry already carried: hand-authored 24×24 line paths in the same house construction as `AppGlyph`/`PanelGlyph`, inheriting `currentColor`, so no icon package and no external CDN is involved. The names follow Tabler's, so a real Tabler path can replace an entry without touching a call site.
+
+   The glyph is muted so the label still leads, and takes the mode accent **only while that slot's own surface is open** — one comparison against `openReportId`/`openInputId` covers Reports and Inputs alike, and a slot that opens neither can never light up. The `danger` slot colours its glyph too: a red-outlined tile with a grey power icon reads as two states on one control. A `vitest` gate asserts every registered icon resolves to a drawing, closing the one seam the config gate cannot check — it can see the name is a non-empty string, but only TypeScript knows which names have paths.
 
 ### Phase 1 — free wins
 
@@ -261,11 +263,58 @@ Two things worth keeping:
 
 **It is also the provenance tier's first real payoff.** `calendar.createevent` is honestly `external_write`, but opts into the user-authored exemption: a person who filled in the form and pressed Create already authored exactly what happens, so re-confirming would restate what they just typed. The same call from an agent still gates, with its values disclosed. Writing is a **separate port** from reading (`CalendarWritingCapability` vs `CalendarProvider`), and the adapter asks for EventKit **write-only** access — creating an event does not require the ability to read the user's calendar.
 
+**`create-event` writes the mode tag, because the calendar mapping alone could not carry it.** Found in review, fixed before phase 4. `CalendarRelevanceResolver` resolves an event to a mode in three layers — a `#[mode]` tag in the notes, else the calendar→mode mapping, else the default mode — and the form was writing through layer 2 only. Consequence on live settings, where exactly one calendar was mapped and it was mapped to Executive: **an event created in School did not appear in School.** It fell to Executive, whose `all` profile is the catch-all, and School's `academic` profile filtered it out. Even fully mapped, changing the Calendar dropdown silently moved the event to a different mode's schedule.
+
+So the form carries an explicit, overridable **Mode** field defaulting to the active mode, and appends its tag to the notes on submit. Three reasons for the tag over the alternatives: it is the layer that *wins*, so the choice is honest whatever calendar the event lands in; it travels with the event, surviving an edit made later in Calendar.app or on a phone, which a local `eventId → mode` sidecar would not; and the token is the **raw mode id**, which `CalendarProfileCatalog.mode(forTag:)` already resolves directly, so no alias table is mirrored into the web layer. Mode and Calendar are deliberately independent — one decides which schedule shows the event, the other where it is stored — and the success line names both, since the tag is invisible in the schedule. This also gave `select` an `emptyOptionLabel`: a blank choice is real for a calendar (the system default) and meaningless for a mode, so it is now declared per field rather than hardcoded as "Default calendar" for every select.
+
 Two bugs worth remembering, both found in the browser and now regression-tested: a form whose defaults depend on a persisted read must not be **built** before that read resolves (the body seeds its values once, so a late default is silently lost), and a provider-backed `select` must render its value only once the matching option exists, or the preselection is dropped when the options land.
 
 ### Phase 4 — integration-gated
 
-Each is now "wire an integration into an existing surface", independent of the others: `git-clone`, `create-project`, `search-youtube`, `create-ticket`, `send-text`, `create-playlist`, `check-scoreboard`, `email-report`, and the daily brief's unread count.
+Each is now "wire an integration into an existing surface", independent of the others — so they are built **one at a time, one commit each**, ordered by risk rather than by convenience. Every one of them lands on surfaces that already exist; none needs new architecture.
+
+| # | Action | What it adds | Why here |
+|---|---|---|---|
+| 1 | ~~`search-youtube`~~ **Built** | `youtube.search` tool — a near-copy of `google.search`, host fixed server-side | No new integration, no credential. Warm-up. |
+| 2 | ~~`git-clone`~~ **Built** | `git.clone`, narrow and typed, constrained to the projects root | New local tool, no external service. Deliberately **not** a shell-hook wrapper, which would land in the `shell` risk class and demand a confirmation on every clone. |
+| 3 | `create-ticket` | Linear API + the first provider-backed `combobox` against a live source (projects, labels) | First credential of the batch, and the first real exercise of remote option sources. Low blast radius — a ticket in your own workspace. |
+| 4 | `create-playlist` | Spotify playlist scope | Forces **re-authorization**: the existing grant lacks the scope, so this disturbs something that currently works. Do it when you are ready to reconnect. |
+| 5 | `check-scoreboard` | A sports API | Blocked on the API choice (see *Deferred to build time*). Verify the actual contract before writing the provider — never infer endpoint shapes. |
+| 6 | `send-text` | iMessage send + Contacts | Highest risk in the phase: outward communication to a real person, two permission grants, and confirmation-gated with recipient and full message body disclosed. Wants its own careful pass. |
+
+**1 — `search-youtube` is built.** A full vertical slice with no new architecture, exactly as predicted: two schemas, a descriptor plus its stricter-only overlay, a `YouTubeSearchCapability` port and mock, a `youtube.search` handler, a `youtubeSearch` intent and verb, a resolve case, an `NSWorkspace` adapter, and a one-field form. No credential, no bridge op, no new field kind.
+
+The one real decision was **not** to generalize `google.search` into a host-parameterized search tool. The entire safety property of both adapters is that the destination host is a *literal constant in the adapter* — a host chosen by the caller, even from a closed set, gives that up for nothing. So the duplication is deliberate, it is stated in both adapters' doc comments, and a test asserts that a query which looks like a URL still resolves to `www.youtube.com`.
+
+Codegen note, following the phase-2 trap: the input property is `youtubeQuery`, not `query`, and the output fields are likewise prefixed. quicktype names types from property names, and a schema structurally identical to `google-search-input` risks collapsing into one shared type. The generated diff was verified additive — zero deletions.
+
+**2 — `git-clone` is built.** The not-a-hook decision held up, and it is what makes the action usable: `hook.run` is `shell`-class and confirms every run, while `git.clone` is one fixed executable (`/usr/bin/git`, absolute so `PATH` can never choose the binary) with a typed argument list and no shell, which is honestly `local_write` and runs one-click.
+
+It **composes over `ProcessCapability`** rather than re-implementing process management. That adapter already guarantees an exactly-specified environment, every inherited descriptor closed, a dedicated process group so a timeout kills the whole tree, drained output, and no blocked cooperative-pool thread — all of which a second hand-rolled runner would have had to re-earn. Reusing the *runner* is not the same as reusing the `hook.run` *tool*, and only the latter would have been the mistake.
+
+Four invariants live in the adapter, never in the caller:
+
+- **https only.** `ssh://` and git's scp-like `host:path` reach for credentials this has no business using; `file://` would turn "clone" into a local copy tool with a caller-chosen source path.
+- **A URL with embedded credentials is refused, not redacted.** A rejected token never reaches the command log; a redacted one already did.
+- **Containment is re-checked after standardizing**, so a `..` in a folder name cannot place a clone outside the projects root — and an existing path is a refusal, never an overwrite. A failed clone's partial checkout is removed, so it can't masquerade as a repository in the projects widget.
+- **No interactive prompt.** `GIT_TERMINAL_PROMPT=0` and no credential helper: a private repo fails fast with git's own message instead of blocking forever on a dialog nobody can see.
+
+**Location is the parent, picked in Finder** (owner decisions, 2026-08-03). The form's location field is the plan's `folderPicker` — the one kind needing a native open-panel round trip — pulled forward from `create-project`, which now inherits it. Two calls shaped it:
+
+- **The panel selects the parent**, and the clone lands in `<picked>/<repository name>`, the way Xcode and GitHub Desktop do it. An open panel selects folders that already exist while a clone target must not, so "pick the destination itself" would mean using New Folder on every clone.
+- **Inside `~/Projects` only.** A panel can navigate anywhere, so `directoryURL` decides only where it *starts*; the selection is re-checked host-side after standardizing and resolving symlinks, and one outside the root comes back refused. That keeps the containment guarantee that lets `git.clone` run one-click. Refused and cancelled stay distinct facts — one gets an explanation, the other silence.
+
+Two things worth keeping. The picker is the **first field kind that can be unavailable at runtime** rather than merely undrawn: it needs a window server the browser preview has no equivalent for. So the typed box is always rendered and always authoritative, the button is what disappears — a button that silently does nothing is worse than no button. And the join happens **at submit time**, so editing the URL after picking a location cannot leave a stale repository name baked into the destination; with no location the form sends nothing at all and lets the host derive the name, rather than putting the naming rule in two places that could disagree.
+
+The `chooseFolder` bridge operation takes **no input**. A caller-supplied starting directory is the first step toward a caller-chosen destination, which is the thing the root constraint exists to prevent.
+
+The `clone <url>` text grammar deliberately carries **no destination** — a palette command should not be able to choose where a clone lands even in principle. The form's optional folder field therefore needed a structured route, so this is the second user of `CommandRuntime.submit(intent:)` and the first new bridge operation since `createCalendarEvent`.
+
+`create-project` (`project.scaffold` plus a `folderPicker`, the one field kind needing a native open-panel round trip) slots in wherever convenient — it has no external dependency.
+
+**`email-report` and the daily brief's unread count are deferred out of this phase.** Both need Gmail OAuth, which the plan already calls the largest single lift, and which the PRD **excludes from MVP scope**. Neither belongs ahead of the tech-debt and Mac hardening/release work.
+
+**`send-text` design note (verified 2026-08-03 against the Messages scripting dictionary on this Mac).** `send … to` accepts a **chat** as well as a participant, and `chat` exposes `id`, `name` and `participants`, so messaging an **existing group thread is supported**. There is no creation command — `chats` is read-only — so a *new* group cannot be assembled from a set of contacts. Two consequences: the recipient source is **contacts plus existing chats**, and the confirmation disclosure should name the resolved recipient *and*, for a group, its size — sending to a thread of nine is a materially bigger action than sending to one (FR-SAF-04). The API surface was verified, not an end-to-end send; that needs an Automation grant and is a manual step.
 
 ### Phase 5 — lowest reuse, last
 

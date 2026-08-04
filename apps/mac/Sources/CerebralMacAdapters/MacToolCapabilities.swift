@@ -83,6 +83,8 @@ public enum MacToolCapabilities {
                 applicationLifecycle: MacApplicationLifecycleCapability(),
                 appWindows: MacAppWindowsCapability(),
                 googleSearch: NSWorkspaceGoogleSearchCapability(workspace: workspace),
+                youtubeSearch: NSWorkspaceYouTubeSearchCapability(workspace: workspace),
+                gitClone: MacGitCloneCapability(),
                 webOpen: NSWorkspaceWebOpenCapability(workspace: workspace),
                 calendarWrite: EventKitCalendarWriter(),
                 // Playback control (NIC-133): resolves a valid token from the same Keychain-backed
@@ -104,6 +106,8 @@ public enum MacToolCapabilities {
                     CapabilityMatrix.Capability.window,
                     CapabilityMatrix.Capability.appsList,
                     CapabilityMatrix.Capability.googleSearch,
+                    CapabilityMatrix.Capability.youtubeSearch,
+                    CapabilityMatrix.Capability.gitClone,
                     CapabilityMatrix.Capability.webOpen,
                     CapabilityMatrix.Capability.calendarWrite,
                     CapabilityMatrix.Capability.spotifyControl,

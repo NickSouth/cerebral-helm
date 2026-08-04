@@ -42,6 +42,8 @@ public enum PreMacToolRuntime {
             "calendar.createevent": CalendarCreateEventHandler(capability: capabilities.calendarWrite),
             "apps.quitall": AppsQuitAllHandler(capability: capabilities.applicationLifecycle),
             "google.search": GoogleSearchHandler(capability: capabilities.googleSearch),
+            "youtube.search": YouTubeSearchHandler(capability: capabilities.youtubeSearch),
+            "git.clone": GitCloneHandler(capability: capabilities.gitClone),
             "spotify.control": SpotifyControlHandler(capability: capabilities.spotifyControl),
             "web.open": WebOpenHandler(capability: capabilities.webOpen),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
@@ -131,6 +133,8 @@ public enum PreMacToolRuntime {
         case "calendar.createevent": _ = try CerebralHelmCalendarCreateEventInput(data: data)
         case "apps.quitall": _ = try CerebralHelmAppsQuitAllInput(data: data)
         case "google.search": _ = try CerebralHelmGoogleSearchInput(data: data)
+        case "youtube.search": _ = try CerebralHelmYouTubeSearchInput(data: data)
+        case "git.clone": _ = try CerebralHelmGitCloneInput(data: data)
         case "spotify.control": _ = try CerebralHelmSpotifyControlInput(data: data)
         case "web.open": _ = try CerebralHelmWebOpenInput(data: data)
         default: break

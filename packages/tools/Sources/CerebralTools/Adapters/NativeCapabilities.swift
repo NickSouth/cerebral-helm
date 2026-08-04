@@ -105,6 +105,59 @@ public struct GoogleSearchResult: Equatable, Sendable {
     }
 }
 
+// MARK: - git.clone
+
+/// Clones a git repository into a folder under the projects root (quick-actions phase 4).
+///
+/// Deliberately **not** a wrapper over ``ProcessCapability``'s hook path: a hook is free-form
+/// configured shell, which is why `hook.run` is `shell`-class and confirms every run. This is one
+/// fixed executable with a typed argument list — no shell, no caller-chosen program — so it is
+/// honestly `local_write` and runs one-click, exactly like `project.open`.
+///
+/// Two invariants belong to the adapter, not the caller: the destination is resolved *inside* the
+/// projects root and re-checked after standardizing (so `..` cannot escape), and a URL carrying
+/// embedded credentials is refused outright rather than redacted, so a token can never reach the
+/// command log in the first place.
+public protocol GitCloneCapability: Sendable {
+    func clone(repositoryURL: String, directory: String?) async throws -> GitCloneResult
+}
+
+public struct GitCloneResult: Equatable, Sendable {
+    /// The absolute path the repository was cloned to, always inside the projects root.
+    public let clonedPath: String
+    /// The folder name the clone landed in.
+    public let repositoryName: String
+
+    public init(clonedPath: String, repositoryName: String) {
+        self.clonedPath = clonedPath
+        self.repositoryName = repositoryName
+    }
+}
+
+// MARK: - youtube.search
+
+/// Opens a YouTube search for a query in the browser (quick-actions phase 4). Deliberately a
+/// **separate port** from ``GoogleSearchCapability`` rather than a `site:` parameter on it: the
+/// whole safety property of both is that the destination host is a literal constant in the adapter,
+/// and a host chosen by the caller — even from a closed set — would give that up for nothing. Two
+/// small adapters keep "the query is only ever data" true by construction.
+public protocol YouTubeSearchCapability: Sendable {
+    func search(query: String) async throws -> YouTubeSearchResult
+}
+
+public struct YouTubeSearchResult: Equatable, Sendable {
+    public let query: String
+    public let opened: Bool
+    /// The YouTube results URL that was opened.
+    public let resolvedURL: String
+
+    public init(query: String, opened: Bool, resolvedURL: String) {
+        self.query = query
+        self.opened = opened
+        self.resolvedURL = resolvedURL
+    }
+}
+
 // MARK: - spotify.control
 
 /// Controls the user's Spotify playback (NIC-133): play/pause/next/previous, sent to the active

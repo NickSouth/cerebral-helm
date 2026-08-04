@@ -219,6 +219,41 @@ public struct MockGoogleSearchCapability: GoogleSearchCapability {
     }
 }
 
+public struct MockGitCloneCapability: GitCloneCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func clone(repositoryURL: String, directory: String?) async throws -> GitCloneResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.gitClone, matrix: matrix, fault: fault, subject: repositoryURL)
+        let name = directory ?? "repository"
+        return GitCloneResult(clonedPath: "/mock/Projects/\(name)", repositoryName: name)
+    }
+}
+
+public struct MockYouTubeSearchCapability: YouTubeSearchCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func search(query: String) async throws -> YouTubeSearchResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.youtubeSearch, matrix: matrix, fault: fault, subject: query)
+        return YouTubeSearchResult(
+            query: query,
+            opened: true,
+            resolvedURL: "https://www.youtube.com/results?search_query=\(query)"
+        )
+    }
+}
+
 public struct MockSpotifyControlCapability: SpotifyControlCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault

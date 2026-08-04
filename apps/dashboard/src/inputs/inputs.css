@@ -169,3 +169,47 @@
   font-size: var(--ch-font-size-label);
   color: var(--ch-text-muted);
 }
+
+/* A folder picker is one row: the typed path, then the panel button. The input keeps the
+   remaining width so a long nested path stays readable. */
+.input-field__picker {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.input-field__picker .input-field__control {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.input-field__picker-button {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: var(--ch-font-size-label);
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.input-field__picker-button:hover:not(:disabled) {
+  border-color: var(--ch-accent-primary);
+}
+
+.input-field__picker-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input-field__picker-button:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* A refused selection is a warning, not neutral guidance — the user did pick something. */
+.input-field__hint--warning {
+  color: var(--ch-status-warning);
+}

@@ -189,6 +189,44 @@ func googleSearchRunsThenPhaseUnavailable() async throws {
     #expect(recorder.statuses == [.received, .planned, .running, .failed])
 }
 
+@Test("a youtube command maps to youtube.search, runs without confirmation, and is phase-unavailable pre-Mac")
+func youtubeSearchRunsThenPhaseUnavailable() async throws {
+    // Same shape as the google case: `youtube <query>` parses to the youtube.search tool
+    // (local_write → no confirmation), and being Mac-only it is refused as unavailable-in-phase
+    // pre-Mac — which proves the grammar routes to youtube.search, not to google.search.
+    let recorder = EventRecorder()
+    let runtime = try makeRuntime(recorder: recorder)
+
+    let outcome = await runtime.submit("youtube lo-fi study mix", source: .cli)
+    guard case let .completed(_, status, result) = outcome else {
+        Issue.record("Expected completed (no confirmation), got \(outcome)"); return
+    }
+    #expect(status == .failed)
+    #expect(result?.toolID == "youtube.search")
+    #expect(result?.status == .unavailable)
+    #expect(result?.error?.code == "tool.unavailable_in_phase")
+    #expect(recorder.statuses == [.received, .planned, .running, .failed])
+}
+
+@Test("a clone command maps to git.clone and runs WITHOUT confirmation")
+func cloneRunsWithoutConfirmation() async throws {
+    // The point of not wrapping a hook: `hook.run` is shell-class and confirms every run, while
+    // git.clone is local_write and runs one-click. Being Mac-only it is then refused as
+    // unavailable-in-phase — which proves it reached the tool without ever gating.
+    let recorder = EventRecorder()
+    let runtime = try makeRuntime(recorder: recorder)
+
+    let outcome = await runtime.submit("clone https://github.com/o/r.git", source: .cli)
+    guard case let .completed(_, status, result) = outcome else {
+        Issue.record("Expected completed (no confirmation), got \(outcome)"); return
+    }
+    #expect(status == .failed)
+    #expect(result?.toolID == "git.clone")
+    #expect(result?.status == .unavailable)
+    #expect(result?.error?.code == "tool.unavailable_in_phase")
+    #expect(recorder.statuses == [.received, .planned, .running, .failed])
+}
+
 @Test("a web command maps to web.open, runs without confirmation, and is phase-unavailable pre-Mac (NIC-127)")
 func webOpenRunsThenPhaseUnavailable() async throws {
     // `web <url>` parses to the web.open tool (local_write → no confirmation). web.open is

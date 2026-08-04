@@ -31,7 +31,8 @@ public struct MacPermissionChecker: PermissionChecking {
              "knowledge_root_read",
              "knowledge_root_write",
              "system_metrics_read",
-             "mode_plan_execute":
+             "mode_plan_execute",
+             "projects_root_write":
             return .notRequired
         case "accessibility":
             return AXIsProcessTrusted() ? .granted : .denied

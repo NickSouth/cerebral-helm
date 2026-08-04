@@ -24,6 +24,15 @@ public enum CommandIntent: Equatable, Sendable {
     /// Open a Google search for the query in the browser (NIC-134) — a single `google.search`
     /// tool call. The host is fixed to google.com by the adapter; only the query varies.
     case googleSearch(query: String)
+    /// Open a YouTube search for the query in the browser (quick-actions phase 4) — a single
+    /// `youtube.search` tool call. The host is fixed to youtube.com by the adapter; only the
+    /// query varies.
+    case youtubeSearch(query: String)
+    /// Clone a git repository into the projects root (quick-actions phase 4) — a single
+    /// `git.clone` tool call. `directory` is the optional folder under that root; the adapter
+    /// derives one from the repository name when it is nil, and re-checks containment either way.
+    /// The `clone <url>` grammar produces a nil directory; the form can supply one.
+    case cloneRepository(url: String, directory: String?)
     /// Control the user's Spotify playback (NIC-133) — a single `spotify.control` tool call. The
     /// action is one of play/pause/next/previous; the adapter sends it to the active device.
     case spotifyControl(action: String)

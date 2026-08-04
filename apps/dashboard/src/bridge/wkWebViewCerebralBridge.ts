@@ -15,6 +15,8 @@ import type {
   CaptureLayoutResult,
   ListAppsResult,
   ListCalendarsResult,
+  ChooseFolderResult,
+  CloneRepositoryResult,
   CreateCalendarEventResult,
   CanvasStatus,
   KnowledgeRebuildResult,
@@ -317,6 +319,12 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     createCalendarEvent(input) {
       return operation<CreateCalendarEventResult>("createCalendarEvent", { ...input });
+    },
+    cloneRepository(input) {
+      return operation<CloneRepositoryResult>("cloneRepository", { ...input });
+    },
+    chooseFolder() {
+      return operation<ChooseFolderResult>("chooseFolder", {});
     },
     updateQuickApps(input) {
       return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });

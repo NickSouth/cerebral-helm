@@ -112,6 +112,33 @@ export interface CreateCalendarEventResult {
   readonly awaitingConfirmation: boolean;
 }
 
+export interface CloneRepositoryInput {
+  readonly repositoryUrl: string;
+  /** Optional folder under the projects root; the host derives one from the repository otherwise. */
+  readonly directory?: string;
+}
+export interface CloneRepositoryResult {
+  /** The cloned path, or the pending command id when the action gated on confirmation. */
+  readonly clonedPath: string;
+  readonly repositoryName: string;
+  /** True when a confirmation is now pending — never report "cloned" in that case. */
+  readonly awaitingConfirmation: boolean;
+}
+
+/**
+ * What a native folder picker returned (quick actions phase 4). `relativeFolder` is the selection
+ * relative to the projects root — `""` for the root itself. `outsideRoot` is a refused selection,
+ * which is a different fact from `cancelled`: one deserves an explanation, the other silence.
+ * `available: false` means the host has no picker at all, so the form falls back to typing.
+ */
+export interface ChooseFolderResult {
+  readonly folderPath: string | null;
+  readonly relativeFolder: string | null;
+  readonly cancelled: boolean;
+  readonly outsideRoot: boolean;
+  readonly available: boolean;
+}
+
 export interface SearchNotesInput {
   readonly text: string;
   readonly limit?: number;
@@ -619,6 +646,14 @@ export interface CerebralBridge {
   listCalendars(): Promise<ListCalendarsResult>;
   /** Create one calendar event from the `create-event` form (quick actions phase 3). */
   createCalendarEvent(input: CreateCalendarEventInput): Promise<CreateCalendarEventResult>;
+  /** Clone a repository into the projects root from the `git-clone` form (quick actions phase 4).
+   *  Structured rather than a `clone <url>` text submit because the form carries an optional folder
+   *  name, which no text grammar carries without becoming lossy about quoting. */
+  cloneRepository(input: CloneRepositoryInput): Promise<CloneRepositoryResult>;
+  /** Open a native folder picker rooted at the projects root (quick actions phase 4). Takes no
+   *  input by design: a caller-supplied starting directory is the first step toward a
+   *  caller-chosen destination, which the root constraint exists to prevent. */
+  chooseFolder(): Promise<ChooseFolderResult>;
   /** The Canvas ingest connection state for the Settings connect card (NIC-132) — the pairing
    *  endpoint/token (minted on demand) plus the last scrape's age/counts. */
   getCanvasStatus(): Promise<CanvasStatus>;

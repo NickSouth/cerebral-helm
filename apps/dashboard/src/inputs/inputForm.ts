@@ -16,9 +16,13 @@
 
 /**
  * The seven planned field kinds. `combobox` (typeahead over a long list — contacts, Linear
- * projects) and `folderPicker` (the only kind needing a native open-panel round trip) are declared
- * but not yet rendered; they arrive with the first action that needs them. The renderer skips an
- * unrendered kind rather than drawing a broken control.
+ * projects) is declared but not yet rendered; it arrives with the first action that needs it. The
+ * renderer skips an unrendered kind rather than drawing a broken control.
+ *
+ * `folderPicker` is the one kind needing a **native open-panel round trip**, so it is the one kind
+ * that can be unavailable at runtime rather than merely undrawn: a host without a window server
+ * has no Finder to open. It degrades to a plain text box in that case, so the field still works
+ * where the panel does not.
  */
 export type InputFieldKind =
   | "text"
@@ -35,7 +39,8 @@ export const RENDERABLE_FIELD_KINDS: ReadonlySet<InputFieldKind> = new Set<Input
   "textarea",
   "select",
   "number",
-  "datetimeRange"
+  "datetimeRange",
+  "folderPicker"
 ]);
 
 /**
@@ -67,6 +72,12 @@ export interface InputField {
   readonly required?: boolean;
   /** `select` and `combobox` options: a static list, or a provider resolved at render time. */
   readonly source?: InputOptionSource;
+  /**
+   * Label for a `select`'s blank option — the "choose nothing in particular" choice, which only
+   * some fields actually have (a calendar has a system default; a mode does not). Omit it and no
+   * blank option is offered, so a field where every choice is real cannot be left unanswered.
+   */
+  readonly emptyOptionLabel?: string;
   /**
    * `datetimeRange` writes two values: this field's `name` holds the start, and `endName` holds
    * the end. One field rather than two because a range is one idea, and the renderer can then

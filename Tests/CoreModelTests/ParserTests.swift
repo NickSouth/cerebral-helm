@@ -118,6 +118,37 @@ func googleGrammar() {
     }
 }
 
+@Test("youtube takes the whole remainder as the query and requires an argument")
+func youtubeGrammar() {
+    let parser = sampleParser()
+
+    #expect(
+        parser.parse("youtube how to poach an egg")
+            == .parsed(.youtubeSearch(query: "how to poach an egg"))
+    )
+    // A separate verb from `google`, so each routes to the adapter that owns its host.
+    #expect(parser.parse("google how to poach an egg") == .parsed(.googleSearch(query: "how to poach an egg")))
+    // An argument-less `youtube` never executes.
+    if case .parsed = parser.parse("youtube") {
+        Issue.record("argument-less youtube must not execute")
+    }
+}
+
+@Test("clone takes the URL as the remainder and never carries a destination")
+func cloneGrammar() {
+    let parser = sampleParser()
+
+    // The typed grammar deliberately has no folder argument: a clone typed into the palette
+    // cannot choose where it lands, so containment is the adapter's alone to enforce.
+    #expect(
+        parser.parse("clone https://github.com/NickSouth/cerebral-helm.git")
+            == .parsed(.cloneRepository(url: "https://github.com/NickSouth/cerebral-helm.git", directory: nil))
+    )
+    if case .parsed = parser.parse("clone") {
+        Issue.record("argument-less clone must not execute")
+    }
+}
+
 @Test("spotify takes the action as the remainder and requires an argument (NIC-133)")
 func spotifyGrammar() {
     let parser = sampleParser()

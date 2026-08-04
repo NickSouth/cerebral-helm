@@ -69,7 +69,10 @@
     "git-clone": {
       "label": "Clone repo",
       "icon": "git-branch",
-      "archetype": "input"
+      "archetype": "input",
+      "target": {
+        "kind": "input"
+      }
     },
     "create-ticket": {
       "label": "Create ticket",
@@ -138,7 +141,10 @@
     "search-youtube": {
       "label": "Search YouTube",
       "icon": "brand-youtube",
-      "archetype": "input"
+      "archetype": "input",
+      "target": {
+        "kind": "input"
+      }
     },
     "check-scoreboard": {
       "label": "Check scoreboard",

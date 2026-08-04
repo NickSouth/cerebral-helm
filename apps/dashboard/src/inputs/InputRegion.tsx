@@ -257,9 +257,13 @@ function FieldView({
           aria-describedby={describedBy}
           onChange={(event) => selectOption(event.target.value)}
         >
-          {/* Writing nowhere in particular is a real choice, and the honest one when the mode
-              maps to no calendar — better than preselecting one the user never picked. */}
-          <option value="">Default calendar</option>
+          {/* A blank option only where "nothing in particular" is a real choice — the honest
+              default when the mode maps to no calendar, better than preselecting one the user
+              never picked. A field without one still gets a blank placeholder while its stored
+              value has no matching option, so the control never shows a choice nobody made. */}
+          {field.emptyOptionLabel !== undefined || renderedSelectValue === "" ? (
+            <option value="">{field.emptyOptionLabel ?? "Select…"}</option>
+          ) : null}
           {options.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -300,6 +304,15 @@ function FieldView({
             onChange={(event) => field.endName && onChange(field.endName, event.target.value)}
           />
         </div>
+      ) : field.kind === "folderPicker" ? (
+        <FolderPickerControl
+          id={id}
+          field={field}
+          value={value}
+          disabled={disabled}
+          describedBy={describedBy}
+          onChange={onChange}
+        />
       ) : (
         <input
           id={id}
@@ -319,5 +332,98 @@ function FieldView({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * A native folder picker, with the typed box still underneath it.
+ *
+ * The button is the whole point — but it is the *only* part that can be unavailable, because it
+ * needs a window server the browser preview does not have. So the text input is always rendered
+ * and always authoritative: the panel writes into it, and where there is no panel the field still
+ * works by typing. A button that silently does nothing would be worse than no button.
+ *
+ * What the panel returns is a **relative** path inside the projects root, because the host resolves
+ * and range-checks it there. Nothing here validates the path: the adapter re-checks containment
+ * after standardizing whatever finally arrives, and a second rule in the web layer could only
+ * disagree with the first.
+ */
+function FolderPickerControl({
+  id,
+  field,
+  value,
+  disabled,
+  describedBy,
+  onChange
+}: {
+  id: string;
+  field: InputField;
+  value: string;
+  disabled: boolean;
+  describedBy?: string;
+  onChange: (name: string, next: string) => void;
+}) {
+  const bridge = useBridge();
+  const [picking, setPicking] = useState(false);
+  // `null` until a pick has been attempted: the button renders hopefully rather than needing a
+  // probe on mount for a capability most opens never use.
+  const [unavailable, setUnavailable] = useState(false);
+  const [refused, setRefused] = useState(false);
+
+  async function pick() {
+    setPicking(true);
+    setRefused(false);
+    try {
+      const result = await bridge.chooseFolder();
+      if (!result.available) {
+        setUnavailable(true);
+        return;
+      }
+      if (result.outsideRoot) {
+        // Refused, not cancelled — the user did choose something, and deserves to know why it
+        // did not take.
+        setRefused(true);
+        return;
+      }
+      if (!result.cancelled && result.relativeFolder !== null) {
+        onChange(field.name, result.relativeFolder);
+      }
+    } catch {
+      setUnavailable(true);
+    } finally {
+      setPicking(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="input-field__picker">
+        <input
+          id={id}
+          className="input-field__control"
+          type="text"
+          value={value}
+          disabled={disabled}
+          placeholder={field.placeholder}
+          aria-describedby={describedBy}
+          onChange={(event) => onChange(field.name, event.target.value)}
+        />
+        {unavailable ? null : (
+          <button
+            type="button"
+            className="input-field__picker-button"
+            disabled={disabled || picking}
+            onClick={() => void pick()}
+          >
+            {picking ? "Choosing…" : "Choose…"}
+          </button>
+        )}
+      </div>
+      {refused ? (
+        <p className="input-field__hint input-field__hint--warning">
+          That folder is outside your projects folder. Pick one inside it.
+        </p>
+      ) : null}
+    </>
   );
 }

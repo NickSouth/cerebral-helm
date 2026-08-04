@@ -63,6 +63,8 @@
         "closeWindow",
         "listCalendars",
         "createCalendarEvent",
+        "cloneRepository",
+        "chooseFolder",
         "getCanvasStatus",
         "resetCanvas",
         "setCanvasItemHidden",

@@ -161,6 +161,45 @@ describe("create-event in the region", () => {
     await waitFor(() => expect(calendar.selectedOptions[0]?.textContent).toBe("Default calendar"));
   });
 
+  it("preselects the active mode and offers the others — no blank choice", async () => {
+    // The tag this writes is what decides which mode's schedule shows the event, so leaving it
+    // unanswered is not a real option the way "Default calendar" is.
+    renderShell();
+    const region = await openCreateEvent();
+
+    // Scoped to the form: the right rail's MODE panel carries the same word.
+    const modeField = within(region).getByLabelText("Mode") as HTMLSelectElement;
+    await waitFor(() => expect(modeField.value).toBe("executive"));
+    const labels = [...modeField.options].map((option) => option.textContent);
+    expect(labels).toEqual(["Executive", "Developer", "School", "Entertainment"]);
+  });
+
+  it("writes the chosen mode's tag into the notes", async () => {
+    // Without it, an event created in a mode with no mapped calendar falls to the default mode
+    // and disappears from the mode it was made in.
+    const created: { notes?: string }[] = [];
+    renderShell({
+      createCalendarEvent: (input) => {
+        created.push(input);
+        return Promise.resolve({
+          eventId: "evt_1",
+          calendarTitle: "Work",
+          awaitingConfirmation: false
+        });
+      }
+    });
+    const region = await openCreateEvent();
+
+    fireEvent.change(within(region).getByLabelText(/Event/), { target: { value: "Stats final" } });
+    fireEvent.change(within(region).getByLabelText("Mode"), { target: { value: "school" } });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Create" }));
+    });
+
+    await waitFor(() => expect(created).toHaveLength(1));
+    expect(created[0].notes).toBe("#school");
+  });
+
   it("seeds a usable range and blocks only on the title", async () => {
     renderShell();
     const region = await openCreateEvent();
@@ -189,6 +228,200 @@ describe("create-event in the region", () => {
   });
 });
 
+describe("search-youtube in the region", () => {
+  async function openSearchYouTube() {
+    const { bridge, submitted } = (() => {
+      const submitted: string[] = [];
+      const rendered = renderShell({
+        submitCommand: (input: { rawInput: string }) => {
+          submitted.push(input.rawInput);
+          return Promise.resolve({ commandId: "cmd_1", accepted: true });
+        }
+      });
+      return { bridge: rendered.bridge, submitted };
+    })();
+
+    // The slot lives in Entertainment, not the default mode.
+    await act(async () => {
+      await bridge.applyMode({ modeId: "entertainment" });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search YouTube" }));
+    return { submitted, region: await screen.findByRole("region", { name: "Search YouTube form" }) };
+  }
+
+  it("dispatches the youtube verb, so the adapter — not the query — owns the destination", async () => {
+    const { submitted, region } = await openSearchYouTube();
+
+    fireEvent.change(within(region).getByLabelText("Search *"), { target: { value: "  lo-fi mix  " } });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Search" }));
+    });
+
+    await waitFor(() => expect(submitted).toEqual(["youtube lo-fi mix"]));
+  });
+
+  it("blocks on an empty query rather than dispatching a bare search", async () => {
+    const { submitted, region } = await openSearchYouTube();
+    expect(within(region).getByRole("button", { name: "Search" })).toBeDisabled();
+    expect(submitted).toEqual([]);
+  });
+
+  it("reports the search as dispatched, never as opened", async () => {
+    // The receipt says the command was accepted and nothing more; the tool is macOS-only, so
+    // claiming a page opened would be a fabricated success off the host.
+    const { region } = await openSearchYouTube();
+    fireEvent.change(within(region).getByLabelText("Search *"), { target: { value: "guitar tuning" } });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Search" }));
+    });
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent(/Searching YouTube for/));
+    expect(status).not.toHaveTextContent(/Opened/);
+  });
+});
+
+describe("git-clone in the region", () => {
+  async function openGitClone(overrides: Parameters<typeof renderShell>[0] = {}) {
+    const { bridge } = renderShell(overrides);
+    // The slot lives in Developer.
+    await act(async () => {
+      await bridge.applyMode({ modeId: "developer" });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Clone repo" }));
+    return screen.findByRole("region", { name: "Clone repo form" });
+  }
+
+  it("joins the picked location with the repository name — the picker chooses the PARENT", async () => {
+    // An open panel selects folders that already exist; a clone target must not. So the panel
+    // picks where to put it, and the repo gets its own folder inside that.
+    const sent: { repositoryUrl: string; directory?: string }[] = [];
+    const region = await openGitClone({
+      cloneRepository: (input) => {
+        sent.push(input);
+        return Promise.resolve({
+          clonedPath: "/Users/example/Projects/CerebralHelm/repo",
+          repositoryName: "repo",
+          awaitingConfirmation: false
+        });
+      },
+      chooseFolder: () =>
+        Promise.resolve({
+          folderPath: "/Users/example/Projects/CerebralHelm",
+          relativeFolder: "CerebralHelm",
+          cancelled: false,
+          outsideRoot: false,
+          available: true
+        })
+    });
+
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Choose…" }));
+    });
+    await waitFor(() =>
+      expect(within(region).getByLabelText(/Location/)).toHaveValue("CerebralHelm")
+    );
+
+    fireEvent.change(within(region).getByLabelText(/Repository/), {
+      target: { value: "https://github.com/owner/repo.git" }
+    });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Clone" }));
+    });
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].directory).toBe("CerebralHelm/repo");
+  });
+
+  it("explains a refused folder rather than silently ignoring it", async () => {
+    // Cancelling and being refused are different: the user did choose something here.
+    const region = await openGitClone({
+      chooseFolder: () =>
+        Promise.resolve({
+          folderPath: null,
+          relativeFolder: null,
+          cancelled: false,
+          outsideRoot: true,
+          available: true
+        })
+    });
+
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Choose…" }));
+    });
+    await waitFor(() =>
+      expect(within(region).getByText(/outside your projects folder/)).toBeInTheDocument()
+    );
+    expect(within(region).getByLabelText(/Location/)).toHaveValue("");
+  });
+
+  it("drops the Choose button where there is no panel, leaving the field typeable", async () => {
+    // The browser preview has no Finder. A button that silently does nothing would be worse than
+    // no button — the typed field still works.
+    const region = await openGitClone();
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Choose…" }));
+    });
+    await waitFor(() =>
+      expect(within(region).queryByRole("button", { name: "Choose…" })).toBeNull()
+    );
+
+    fireEvent.change(within(region).getByLabelText(/Location/), { target: { value: "typed" } });
+    expect(within(region).getByLabelText(/Location/)).toHaveValue("typed");
+  });
+
+  it("sends the URL and omits a blank folder, letting the host derive one", async () => {
+    const sent: { repositoryUrl: string; directory?: string }[] = [];
+    const region = await openGitClone({
+      cloneRepository: (input) => {
+        sent.push(input);
+        return Promise.resolve({
+          clonedPath: "/Users/example/Projects/repo",
+          repositoryName: "repo",
+          awaitingConfirmation: false
+        });
+      }
+    });
+
+    fireEvent.change(within(region).getByLabelText(/Repository/), {
+      target: { value: "  https://github.com/owner/repo.git  " }
+    });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Clone" }));
+    });
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({ repositoryUrl: "https://github.com/owner/repo.git", directory: undefined });
+  });
+
+  it("blocks on an empty URL — the folder alone is not a clone", async () => {
+    const region = await openGitClone();
+    expect(within(region).getByRole("button", { name: "Clone" })).toBeDisabled();
+
+    fireEvent.change(within(region).getByLabelText(/Location/), { target: { value: "somewhere" } });
+    expect(within(region).getByRole("button", { name: "Clone" })).toBeDisabled();
+  });
+
+  it("never claims 'cloned' while a confirmation is still pending", async () => {
+    // The gated case: any invocation while "ask before all actions" is on.
+    const region = await openGitClone({
+      cloneRepository: () =>
+        Promise.resolve({ clonedPath: "cmd_1", repositoryName: "", awaitingConfirmation: true })
+    });
+
+    fireEvent.change(within(region).getByLabelText(/Repository/), {
+      target: { value: "https://github.com/owner/repo.git" }
+    });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Clone" }));
+    });
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent(/needs your confirmation/));
+    expect(status).not.toHaveTextContent(/Cloned into/);
+  });
+});
+
 describe("Input field schema", () => {
   const form: InputForm = {
     actionId: "example",
@@ -206,15 +439,15 @@ describe("Input field schema", () => {
         initialValue: "2026-08-03T14:00",
         initialEndValue: "2026-08-03T15:00"
       },
-      // Declared but not yet rendered — they arrive with the actions that need them.
-      { name: "c", label: "C", kind: "combobox", required: true },
-      { name: "d", label: "D", kind: "folderPicker" }
+      { name: "d", label: "D", kind: "folderPicker" },
+      // Declared but not yet rendered — it arrives with the action that needs it (create-ticket).
+      { name: "c", label: "C", kind: "combobox", required: true }
     ],
     submit: () => Promise.resolve({ message: "done" })
   };
 
   it("skips a field kind the renderer cannot draw rather than showing a broken control", () => {
-    expect(renderableFields(form).map((field) => field.name)).toEqual(["a", "b", "r"]);
+    expect(renderableFields(form).map((field) => field.name)).toEqual(["a", "b", "r", "d"]);
   });
 
   it("seeds values from declared initial values", () => {
@@ -223,12 +456,13 @@ describe("Input field schema", () => {
       a: "",
       b: "seeded",
       r: "2026-08-03T14:00",
-      rEnd: "2026-08-03T15:00"
+      rEnd: "2026-08-03T15:00",
+      d: ""
     });
   });
 
   it("only blocks on required fields it can actually render", () => {
-    const filled = { a: "x", b: "", r: "2026-08-03T14:00", rEnd: "2026-08-03T15:00" };
+    const filled = { a: "x", b: "", r: "2026-08-03T14:00", rEnd: "2026-08-03T15:00", d: "" };
     // An unrendered required field must not deadlock the form — the user could never fill it in.
     expect(missingRequired(form, { ...filled, a: "" }).map((field) => field.name)).toEqual(["a"]);
     expect(missingRequired(form, filled)).toEqual([]);

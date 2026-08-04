@@ -13,6 +13,30 @@ public struct SpotifyConnectionInfo: Sendable, Equatable {
     }
 }
 
+/// A folder the user picked in a native open panel (quick-actions phase 4, `git-clone`).
+///
+/// `relativePath` is the selection expressed relative to the projects root — the empty string when
+/// the root itself was chosen. `outsideRoot` reports a selection the host refused for being outside
+/// that root, which is a different fact from cancelling: one deserves an explanation, the other
+/// deserves silence. Both are false when nothing was picked at all.
+public struct FolderSelectionInfo: Sendable, Equatable {
+    public let absolutePath: String?
+    public let relativePath: String?
+    public let cancelled: Bool
+    public let outsideRoot: Bool
+
+    public init(absolutePath: String?, relativePath: String?, cancelled: Bool, outsideRoot: Bool) {
+        self.absolutePath = absolutePath
+        self.relativePath = relativePath
+        self.cancelled = cancelled
+        self.outsideRoot = outsideRoot
+    }
+
+    public static let cancelledSelection = FolderSelectionInfo(
+        absolutePath: nil, relativePath: nil, cancelled: true, outsideRoot: false
+    )
+}
+
 /// The Canvas ingest connection state (NIC-132), returned by the host's status/reset closures to the
 /// `getCanvasStatus`/`resetCanvas` ops. `endpoint` and `token` are what the user pairs the Chrome
 /// extension with; `lastScrapedAt` (ISO-8601, nil when never) and the counts describe the last
@@ -186,6 +210,13 @@ public final class BridgeSession: @unchecked Sendable {
     /// endpoint/token plus the last-scrape summary. Optional: a host without the Mac ingest store
     /// reports the surface unavailable. `canvasReset` purges the scraped data and rotates the token
     /// (the disconnect path), returning the fresh state.
+    /// Opens a native folder picker rooted at the projects root and returns what the user chose
+    /// (quick-actions phase 4). Optional: a host with no window server — pre-Mac, tests, the
+    /// browser preview — reports the picker unavailable rather than pretending to open one. The
+    /// **root constraint is enforced host-side**, not by the caller, so a selection outside it
+    /// comes back refused rather than as a path the tool would then have to reject.
+    private let chooseFolder: (@Sendable () async -> FolderSelectionInfo)?
+
     private let canvasStatus: (@Sendable () async -> CanvasStatusInfo)?
     private let canvasReset: (@Sendable () async -> CanvasStatusInfo)?
     /// Hides or unhides a scraped Canvas item by id (NIC-132), returning the fresh status. Optional —
@@ -260,6 +291,7 @@ public final class BridgeSession: @unchecked Sendable {
         onSettingsChanged: (@Sendable (SettingsChanges) -> Void)? = nil,
         onModeApplied: (@Sendable (String) -> Void)? = nil,
         spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil,
+        chooseFolder: (@Sendable () async -> FolderSelectionInfo)? = nil,
         canvasStatus: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasReset: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)? = nil,
@@ -285,6 +317,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.onSettingsChanged = onSettingsChanged
         self.onModeApplied = onModeApplied
         self.spotifyConnect = spotifyConnect
+        self.chooseFolder = chooseFolder
         self.canvasStatus = canvasStatus
         self.canvasReset = canvasReset
         self.canvasSetHidden = canvasSetHidden
@@ -419,6 +452,10 @@ public final class BridgeSession: @unchecked Sendable {
             return await listCalendars(request)
         case .createCalendarEvent:
             return await createCalendarEvent(request)
+        case .cloneRepository:
+            return await cloneRepository(request)
+        case .chooseFolder:
+            return await chooseFolderOperation(request)
         case .getCanvasStatus:
             return await getCanvasStatus(request)
         case .resetCanvas:
@@ -1846,6 +1883,85 @@ public final class BridgeSession: @unchecked Sendable {
         }
     }
 
+    /// Clones a repository into the projects root (quick-actions phase 4), from the `git-clone`
+    /// Input form.
+    ///
+    /// Structured rather than a `clone <url>` text submit because the form carries an optional
+    /// folder name, and no text grammar carries an optional second argument without becoming lossy
+    /// about quoting. `git.clone` is `local_write`, so it runs one-click — but the gated path is
+    /// still handled: "ask before all actions" re-arms confirmation over every tool, and reporting
+    /// a clone as done while its confirmation is pending would be a lie.
+    private func cloneRepository(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: CloneRepositoryInput = decodePayload(request),
+              !input.repositoryUrl.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "cloneRepository requires a repository URL.")
+        }
+        let url = input.repositoryUrl.trimmingCharacters(in: .whitespaces)
+        let directory = input.directory?.trimmingCharacters(in: .whitespaces)
+
+        let outcome = await runtime.submit(
+            intent: .cloneRepository(url: url, directory: (directory?.isEmpty ?? true) ? nil : directory),
+            source: .dashboard,
+            summary: "Clone repository \(url)"
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(commandID, status, result):
+            _ = commandID
+            if let data = result?.output,
+               let output = try? CerebralHelmGitCloneOutput(data: data) {
+                return ok(request, payload: CloneRepositoryResult(
+                    clonedPath: output.clonedPath,
+                    repositoryName: output.clonedRepositoryName,
+                    awaitingConfirmation: false
+                ))
+            }
+            // No output means the tool was unavailable, denied, or failed — say so rather than
+            // returning a success shape with no clone behind it.
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "repository_not_cloned",
+                message: "The repository was not cloned (\(status.rawValue))."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            return ok(request, payload: CloneRepositoryResult(
+                clonedPath: commandID, repositoryName: "", awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "clone_rejected", message: reason
+            )
+        }
+    }
+
+    /// Opens the native folder picker for the `git-clone` form's location field.
+    ///
+    /// The operation takes **no input**: a caller-supplied starting directory would be the first
+    /// step toward a caller-chosen destination, which is exactly what the projects-root constraint
+    /// exists to prevent. The host decides where the panel opens and refuses anything outside it,
+    /// so what comes back is already inside the root or is honestly reported as refused.
+    private func chooseFolderOperation(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let chooseFolder else {
+            return ok(request, payload: FolderSelectionResult(
+                folderPath: nil, relativeFolder: nil, cancelled: true, outsideRoot: false, available: false
+            ))
+        }
+        let selection = await chooseFolder()
+        return ok(request, payload: FolderSelectionResult(
+            folderPath: selection.absolutePath,
+            relativeFolder: selection.relativePath,
+            cancelled: selection.cancelled,
+            outsideRoot: selection.outsideRoot,
+            available: true
+        ))
+    }
+
     /// Reports the Canvas ingest connection state (NIC-132): the loopback endpoint + pairing token to
     /// paste into the Chrome extension, and the last scrape's age/counts. A host without the Mac
     /// ingest store reports `available: false`, so the settings surface shows "requires the macOS
@@ -2499,6 +2615,30 @@ public final class BridgeSession: @unchecked Sendable {
     /// The `create-event` form's collected values. `calendarTitle` is carried alongside the id
     /// purely so a confirmation disclosure can name the calendar in words — the id alone would be
     /// unreadable in a prompt.
+    private struct FolderSelectionResult: Encodable {
+        let folderPath: String?
+        let relativeFolder: String?
+        let cancelled: Bool
+        let outsideRoot: Bool
+        /// False on a host with no picker at all, so the form can fall back to typing rather than
+        /// showing a button that silently does nothing.
+        let available: Bool
+    }
+
+    private struct CloneRepositoryInput: Decodable {
+        let repositoryUrl: String
+        let directory: String?
+    }
+
+    private struct CloneRepositoryResult: Encodable {
+        /// The path the repository was cloned to, or — when the action gated — the command id whose
+        /// confirmation is now pending. `awaitingConfirmation` says which, so a caller never
+        /// reports "cloned" for something still waiting on the user.
+        let clonedPath: String
+        let repositoryName: String
+        let awaitingConfirmation: Bool
+    }
+
     private struct CreateCalendarEventInput: Decodable {
         let title: String
         let startsAt: String

@@ -45,6 +45,8 @@ public struct DirectCommandParser: Sendable {
         "project <path>",
         "search <text>",
         "google <query>",
+        "youtube <query>",
+        "clone <url>",
         "spotify <action>",
         "web <url>",
         "hook <id>",
@@ -101,6 +103,16 @@ public struct DirectCommandParser: Sendable {
             // The remainder is the whole search query (queries contain spaces), taken verbatim
             // (NIC-134). The adapter builds the google.com search URL; only this query varies.
             return parseFreeText(verb: "google", remainder: remainder) { .googleSearch(query: $0) }
+        case "youtube":
+            // Same shape as `google`: the remainder is the whole query, taken verbatim. A separate
+            // verb rather than `google site:youtube.com` because the adapter — not the caller —
+            // owns the destination host, which is the property that makes the query pure data.
+            return parseFreeText(verb: "youtube", remainder: remainder) { .youtubeSearch(query: $0) }
+        case "clone":
+            // The remainder is the repository URL. The typed grammar carries no destination — the
+            // adapter derives the folder from the repository name and keeps it inside the projects
+            // root — so a clone typed into the palette can never choose where it lands.
+            return parseFreeText(verb: "clone", remainder: remainder) { .cloneRepository(url: $0, directory: nil) }
         case "spotify":
             // The remainder is the playback action (play/pause/next/previous), taken verbatim
             // (NIC-133). The tool descriptor validates it against the input enum; an unknown action

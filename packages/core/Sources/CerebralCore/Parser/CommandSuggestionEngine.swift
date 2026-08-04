@@ -117,7 +117,8 @@ public struct CommandSuggestionEngine: Sendable {
         // `createCalendarEvent` never comes from typed text at all — it is form-submitted, so
         // it can neither appear in the palette nor be re-run from history.
         case .captureNote, .searchNotes, .listNotes, .readNote,
-             .googleSearch, .spotifyControl, .webOpen, .openProject, .createCalendarEvent:
+             .googleSearch, .youtubeSearch, .spotifyControl, .webOpen, .openProject, .createCalendarEvent,
+             .cloneRepository:
             return false
         }
     }
@@ -255,8 +256,8 @@ public struct CommandSuggestionEngine: Sendable {
         case let .runHook(entry):
             return CommandSuggestion(command: command, label: entry.label, kind: .hook)
         case .captureNote, .searchNotes, .listNotes, .readNote,
-             .googleSearch, .spotifyControl, .webOpen, .openProject,
-             .listApps, .runSpeedTest, .quitAllApps, .createCalendarEvent:
+             .googleSearch, .youtubeSearch, .spotifyControl, .webOpen, .openProject,
+             .listApps, .runSpeedTest, .quitAllApps, .createCalendarEvent, .cloneRepository:
             let verb = splitFirstToken(command).first
             let label = Verb.all.first { $0.token == verb }?.description ?? command
             return CommandSuggestion(command: command, label: label, kind: .command)
@@ -323,6 +324,8 @@ public struct CommandSuggestionEngine: Sendable {
             Verb(token: "project", description: "Open a project in the editor", pattern: "project <path>", argument: .freeText),
             Verb(token: "search", description: "Search notes", pattern: "search <text>", argument: .freeText),
             Verb(token: "google", description: "Google search", pattern: "google <query>", argument: .freeText),
+            Verb(token: "youtube", description: "YouTube search", pattern: "youtube <query>", argument: .freeText),
+            Verb(token: "clone", description: "Clone a repository", pattern: "clone <url>", argument: .freeText),
             Verb(token: "spotify", description: "Control Spotify playback", pattern: "spotify <action>", argument: .freeText),
             Verb(token: "web", description: "Open a web address", pattern: "web <url>", argument: .freeText),
             Verb(token: "hook", description: "Run a hook", pattern: "hook <id>", argument: .references(.hooks)),

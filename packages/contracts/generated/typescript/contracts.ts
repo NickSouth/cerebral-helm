@@ -472,6 +472,8 @@ export enum Operation {
     ApplyMode = "applyMode",
     CaptureLayout = "captureLayout",
     CaptureNote = "captureNote",
+    ChooseFolder = "chooseFolder",
+    CloneRepository = "cloneRepository",
     CloseAllWindows = "closeAllWindows",
     CloseLayout = "closeLayout",
     CloseWindow = "closeWindow",
@@ -1413,6 +1415,33 @@ export interface Tool {
     version: string;
 }
 
+export interface CerebralHelmGitCloneInput {
+    /**
+     * Optional folder for the clone, relative to the projects root. Omit it and the folder is
+     * derived from the repository name. Whatever is supplied, the adapter re-checks that the
+     * resolved path stays inside the projects root, so no relative escape can place a clone
+     * elsewhere.
+     */
+    cloneDirectory?: string;
+    /**
+     * The https URL of the repository to clone. The adapter refuses any other scheme, and
+     * refuses a URL carrying embedded credentials (user:token@host) so a secret can never reach
+     * the command log.
+     */
+    repositoryURL: string;
+}
+
+export interface CerebralHelmGitCloneOutput {
+    /**
+     * The absolute path the repository was cloned to, always inside the projects root.
+     */
+    clonedPath: string;
+    /**
+     * The folder name the clone landed in.
+     */
+    clonedRepositoryName: string;
+}
+
 export interface CerebralHelmGoogleSearchInput {
     /**
      * The search text. The adapter builds a Google search URL host-side (the host is fixed to
@@ -1960,6 +1989,26 @@ export enum EntryStatus {
 export enum CerebralHelmWindowArrangeOutputStatus {
     Arranged = "arranged",
     Partial = "partial",
+}
+
+export interface CerebralHelmYouTubeSearchInput {
+    /**
+     * The search text. The adapter builds a YouTube results URL host-side (the host is fixed to
+     * youtube.com); only this query is variable, so untrusted data can never choose the
+     * destination. Named distinctly from google.search's `query` because the code generator
+     * derives type names from property names, and two structurally identical schemas would
+     * otherwise collapse into one shared type.
+     */
+    youtubeQuery: string;
+}
+
+export interface CerebralHelmYouTubeSearchOutput {
+    youtubeOpened: boolean;
+    youtubeQuery:  string;
+    /**
+     * The YouTube results URL that was opened.
+     */
+    youtubeResolvedURL: string;
 }
 
 /**

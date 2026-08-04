@@ -68,6 +68,8 @@ public enum PermissionCatalog {
             return PermissionGuidance(explanation: "Reading and writing your knowledge notes uses your own files; no additional macOS permission is required.")
         case "system_metrics_read":
             return PermissionGuidance(explanation: "Reading CPU, memory, network, and battery metrics requires no additional macOS permission.")
+        case "projects_root_write":
+            return PermissionGuidance(explanation: "Cloning into your projects folder uses your own files; no additional macOS permission is required.")
         case "mode_plan_execute":
             return PermissionGuidance(explanation: "Applying a mode executes only its planned, policy-gated actions; no additional macOS permission is required.")
         default:

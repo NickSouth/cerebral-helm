@@ -46,6 +46,7 @@ private func decode<T: Decodable>(_ response: CerebralHelmBridgeOperationRespons
 private struct Receipt: Decodable { let commandId: String; let accepted: Bool }
 private struct CreatedEvent: Decodable { let eventId: String; let awaitingConfirmation: Bool }
 private struct ApplyModeResult: Decodable { let modeId: String; let status: String }
+private struct ClonedRepository: Decodable { let clonedPath: String; let repositoryName: String; let awaitingConfirmation: Bool }
 
 // MARK: - submitCommand
 
@@ -2227,6 +2228,38 @@ func createCalendarEventValidatesInput() async throws {
         .createCalendarEvent,
         #"{"title":"   ","startsAt":"2026-08-03T16:00","endsAt":"2026-08-03T17:00"}"#
     ))
+    #expect(blank.status == .error)
+}
+
+// MARK: - Clone repository (quick actions phase 4)
+
+@Test("cloneRepository reaches git.clone without a confirmation, and refuses a blank URL")
+func cloneRepositoryRunsWithoutConfirmation() async throws {
+    // The whole point of a narrow typed tool instead of a hook wrapper: a hook is shell-class and
+    // confirms every run, while git.clone is local_write and runs one-click. The clone itself
+    // fails here — the temporary workspace has no honest adapter bound — which is exactly what
+    // proves it reached the executor rather than stopping at a confirmation.
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let response = await session.execute(operationRequest(
+        .cloneRepository,
+        #"{"repositoryUrl":"https://github.com/owner/repo.git","directory":"repo"}"#
+    ))
+    // Either it cloned or it honestly reported that it did not — never a pending confirmation.
+    if response.status == .ok {
+        let cloned = try decode(response, as: ClonedRepository.self)
+        #expect(cloned.awaitingConfirmation == false, "a local_write clone must not gate")
+        #expect(!cloned.repositoryName.isEmpty)
+    } else {
+        #expect(response.error?.code == "repository_not_cloned")
+    }
+
+    let blank = await session.execute(operationRequest(.cloneRepository, #"{"repositoryUrl":"   "}"#))
     #expect(blank.status == .error)
 }
 

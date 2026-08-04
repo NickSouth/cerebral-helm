@@ -30,10 +30,12 @@ public struct CapabilityMatrix: Sendable {
         public static let applicationLifecycle = "application.lifecycle"
         public static let calendarWrite = "calendar.write"
         public static let googleSearch = "google.search"
+        public static let youtubeSearch = "youtube.search"
+        public static let gitClone = "git.clone"
         public static let webOpen = "web.open"
         public static let spotifyControl = "spotify.control"
 
-        public static let all: Set<String> = [appOpen, projectOpen, urlOpen, hookRun, systemStatusRead, networkSpeedTest, secret, window, workspaceWindows, appsList, applicationLifecycle, calendarWrite, googleSearch, webOpen, spotifyControl]
+        public static let all: Set<String> = [appOpen, projectOpen, urlOpen, hookRun, systemStatusRead, networkSpeedTest, secret, window, workspaceWindows, appsList, applicationLifecycle, calendarWrite, googleSearch, youtubeSearch, gitClone, webOpen, spotifyControl]
     }
 
     /// Every mock capability available — the contract-suite default.
