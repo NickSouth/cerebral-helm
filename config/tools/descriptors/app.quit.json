@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "app.quit",
+  "version": "1.0.0",
+  "purpose": "Quit CerebralHelm itself, ending the session gracefully. Takes no target — it can only ever quit the host application.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/app-quit-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/app-quit-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "destructive",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_destructive",
+  "requiredPermissions": [],
+  "secretReferences": [],
+  "timeoutMs": 5000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["application.lifecycle"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

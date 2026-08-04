@@ -495,6 +495,19 @@
   border-color: var(--ch-accent-primary);
 }
 
+/* `shut-down` is the only differently-coloured slot. Outline, never filled: a solid red button
+   reads as "danger, do not touch", but this one is pressed on purpose — the weight belongs on
+   the confirmation, not the tile. */
+.quick-action--danger {
+  color: var(--ch-status-error);
+  border-color: var(--ch-status-error);
+}
+
+.quick-action--danger:hover {
+  border-color: var(--ch-status-error);
+  background: color-mix(in srgb, var(--ch-status-error) 12%, transparent);
+}
+
 /* R1 — mode switcher: four fixed controls, strong selected state. */
 .mode-switcher {
   display: grid;

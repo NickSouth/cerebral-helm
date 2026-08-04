@@ -346,6 +346,37 @@ public protocol ApplicationLifecycleCapability: Sendable {
     /// Requests a graceful quit of each application; returns the ids actually asked
     /// to terminate (an id no longer running is simply absent).
     func quitApplications(bundleIDs: [String]) async throws -> [String]
+
+    /// Requests a graceful quit of **the host application itself** — the complement of
+    /// ``quitApplications(bundleIDs:)``, which always excludes the host.
+    ///
+    /// It takes no target by design: quitting CerebralHelm and quitting someone else's app
+    /// are different capabilities, and keeping them apart means no caller can reach one
+    /// through the other. Returns once termination has been *requested*; the process is on
+    /// its way out, so there is no later status to observe.
+    func quitHostApplication() async throws
+}
+
+/// Writes an event into the user's calendar (`calendar.createevent`).
+///
+/// Deliberately a SEPARATE port from `CalendarProvider`, which reads. A reader should not have to
+/// implement writing to satisfy a protocol, and keeping the two apart means the widgets/publishers
+/// that only read the calendar cannot reach the write path at all.
+///
+/// `startsAt`/`endsAt` are local wall-clock ISO strings, matching the read side's convention
+/// (NIC-126): a time a user typed into a form means the time they meant, in their own zone.
+public protocol CalendarWritingCapability: Sendable {
+    /// Creates the event and returns its store identifier plus the calendar it landed in, so the
+    /// result can say WHERE it went rather than only that it worked. A `nil` `calendarID` writes
+    /// to the host's default calendar rather than guessing which one was meant.
+    func createEvent(
+        title: String,
+        startsAt: String,
+        endsAt: String,
+        calendarID: String?,
+        location: String?,
+        notes: String?
+    ) async throws -> (eventID: String, calendarTitle: String?)
 }
 
 // MARK: - application windows (window navigator)

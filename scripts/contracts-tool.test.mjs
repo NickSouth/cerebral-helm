@@ -24,6 +24,8 @@ const mvpToolIds = new Set([
   "apps.list",
   "network.speed.test",
   "apps.quitall",
+  "app.quit",
+  "calendar.createevent",
   "google.search",
   "web.open",
   "spotify.control"

@@ -114,8 +114,10 @@ public struct CommandSuggestionEngine: Sendable {
             return true
         // A note read returns data to its caller rather than doing something the
         // user would want repeated from the palette (NIC-162), like a search.
+        // `createCalendarEvent` never comes from typed text at all — it is form-submitted, so
+        // it can neither appear in the palette nor be re-run from history.
         case .captureNote, .searchNotes, .listNotes, .readNote,
-             .googleSearch, .spotifyControl, .webOpen, .openProject:
+             .googleSearch, .spotifyControl, .webOpen, .openProject, .createCalendarEvent:
             return false
         }
     }
@@ -254,7 +256,7 @@ public struct CommandSuggestionEngine: Sendable {
             return CommandSuggestion(command: command, label: entry.label, kind: .hook)
         case .captureNote, .searchNotes, .listNotes, .readNote,
              .googleSearch, .spotifyControl, .webOpen, .openProject,
-             .listApps, .runSpeedTest, .quitAllApps:
+             .listApps, .runSpeedTest, .quitAllApps, .createCalendarEvent:
             let verb = splitFirstToken(command).first
             let label = Verb.all.first { $0.token == verb }?.description ?? command
             return CommandSuggestion(command: command, label: label, kind: .command)

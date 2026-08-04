@@ -163,6 +163,7 @@ export function readLayoutBackedWorkflowIds(configRoot) {
 // build failure rather than a mystery button. An entry with no target is planned-not-built and
 // renders as a labelled, disabled slot.
 export const QUICK_ACTION_ARCHETYPES = new Set(["report", "input", "picker", "fire-and-forget"]);
+export const QUICK_ACTION_TONES = new Set(["danger"]);
 
 export function readQuickActionRegistry(repositoryRoot) {
   const registryPath = path.join(repositoryRoot, "apps", "dashboard", "src", "shell", "quickActions.registry.json");
@@ -209,6 +210,13 @@ export function validateQuickActionRegistry(registry, registeredWorkflowIds, reg
       `${registry.relativePath}: action "${actionId}" must declare an archetype (${[...QUICK_ACTION_ARCHETYPES].join(", ")}).`,
       errors
     );
+    // `tone` is optional and deliberately narrow: the design allows exactly one
+    // differently-coloured slot, so an unrecognised tone is a mistake, not an extension point.
+    assert(
+      entry.tone === undefined || QUICK_ACTION_TONES.has(entry.tone),
+      `${registry.relativePath}: action "${actionId}" declares unknown tone "${entry.tone}" (allowed: ${[...QUICK_ACTION_TONES].join(", ")}).`,
+      errors
+    );
 
     // Planned but not built: nothing to resolve. The slot renders labelled and disabled.
     if (entry.target === undefined) {
@@ -234,6 +242,24 @@ export function validateQuickActionRegistry(registry, registeredWorkflowIds, reg
         assert(
           registeredWorkflowIds.has(target.workflow),
           `${registry.relativePath}: action "${actionId}" targets unknown workflow "${target.workflow}" (config/workflows/*.json).`,
+          errors
+        );
+        break;
+      // A report or an input renders in the dashboard — from providers already in dashboard
+      // state, or from a form authored in code — so neither has anything in config to resolve.
+      // The archetype must agree, though: a target that renders a surface the slot never claimed
+      // would be a mislabelled action. A picker shares the Input region, so it takes `input` too.
+      case "report":
+        assert(
+          entry.archetype === "report",
+          `${registry.relativePath}: action "${actionId}" has a report target but declares archetype "${entry.archetype}".`,
+          errors
+        );
+        break;
+      case "input":
+        assert(
+          entry.archetype === "input" || entry.archetype === "picker",
+          `${registry.relativePath}: action "${actionId}" has an input target but declares archetype "${entry.archetype}".`,
           errors
         );
         break;

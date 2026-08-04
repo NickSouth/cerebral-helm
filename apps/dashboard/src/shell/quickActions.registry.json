@@ -1,51 +1,175 @@
 {
-  "handlers": ["captureNote"],
+  "handlers": [
+    "searchTheWeb"
+  ],
   "actions": {
-    "daily-brief": { "label": "Daily brief", "icon": "file-text", "archetype": "report" },
+    "daily-brief": {
+      "label": "Daily brief",
+      "icon": "file-text",
+      "archetype": "report",
+      "target": {
+        "kind": "report"
+      }
+    },
     "capture-note": {
       "label": "Capture note",
       "icon": "notes",
       "archetype": "input",
-      "target": { "kind": "handler", "handler": "captureNote" }
+      "target": {
+        "kind": "input"
+      }
     },
-    "create-event": { "label": "Create event", "icon": "calendar-plus", "archetype": "input" },
-    "create-project": { "label": "Create project", "icon": "folder-plus", "archetype": "input" },
-    "send-text": { "label": "Send text", "icon": "message", "archetype": "input" },
-    "email-report": { "label": "Email report", "icon": "mail", "archetype": "report" },
-    "system-status-checks": { "label": "System status", "icon": "activity", "archetype": "report" },
-    "shut-down": { "label": "Shut down", "icon": "power", "archetype": "fire-and-forget" },
-
+    "create-event": {
+      "label": "Create event",
+      "icon": "calendar-plus",
+      "archetype": "input",
+      "target": {
+        "kind": "input"
+      }
+    },
+    "create-project": {
+      "label": "Create project",
+      "icon": "folder-plus",
+      "archetype": "input"
+    },
+    "send-text": {
+      "label": "Send text",
+      "icon": "message",
+      "archetype": "input"
+    },
+    "email-report": {
+      "label": "Email report",
+      "icon": "mail",
+      "archetype": "report"
+    },
+    "system-status-checks": {
+      "label": "System status",
+      "icon": "activity",
+      "archetype": "report"
+    },
+    "shut-down": {
+      "label": "Shut down",
+      "icon": "power",
+      "archetype": "fire-and-forget",
+      "tone": "danger",
+      "target": {
+        "kind": "workflow",
+        "workflow": "shut-down"
+      }
+    },
     "open-developer-layout": {
       "label": "Open developer layout",
       "icon": "layout-grid",
       "archetype": "fire-and-forget",
-      "target": { "kind": "layout", "mode": "developer" }
+      "target": {
+        "kind": "layout",
+        "mode": "developer"
+      }
     },
-    "git-clone": { "label": "Clone repo", "icon": "git-branch", "archetype": "input" },
-    "create-ticket": { "label": "Create ticket", "icon": "ticket", "archetype": "input" },
-    "check-ondraft": { "label": "Check OnDraft", "icon": "external-link", "archetype": "fire-and-forget" },
-    "open-terminal": { "label": "Open terminal", "icon": "terminal-2", "archetype": "fire-and-forget" },
-
+    "git-clone": {
+      "label": "Clone repo",
+      "icon": "git-branch",
+      "archetype": "input"
+    },
+    "create-ticket": {
+      "label": "Create ticket",
+      "icon": "ticket",
+      "archetype": "input"
+    },
+    "check-ondraft": {
+      "label": "Check OnDraft",
+      "icon": "external-link",
+      "archetype": "fire-and-forget",
+      "target": {
+        "kind": "workflow",
+        "workflow": "check-ondraft"
+      }
+    },
+    "open-terminal": {
+      "label": "Open terminal",
+      "icon": "terminal-2",
+      "archetype": "fire-and-forget",
+      "target": {
+        "kind": "workflow",
+        "workflow": "open-terminal"
+      }
+    },
     "open-school-layout": {
       "label": "Open school layout",
       "icon": "layout-grid",
       "archetype": "fire-and-forget",
-      "target": { "kind": "layout", "mode": "school" }
+      "target": {
+        "kind": "layout",
+        "mode": "school"
+      }
     },
-    "open-schedule": { "label": "Open schedule", "icon": "calendar", "archetype": "report" },
-    "take-notes": { "label": "Take notes", "icon": "notes", "archetype": "picker" },
-    "search-notes": { "label": "Search notes", "icon": "search", "archetype": "picker" },
-
+    "open-schedule": {
+      "label": "Open schedule",
+      "icon": "calendar",
+      "archetype": "report",
+      "target": {
+        "kind": "report"
+      }
+    },
+    "take-notes": {
+      "label": "Take notes",
+      "icon": "notes",
+      "archetype": "picker"
+    },
+    "search-notes": {
+      "label": "Search notes",
+      "icon": "search",
+      "archetype": "picker"
+    },
     "open-entertainment-layout": {
       "label": "Open entertainment layout",
       "icon": "layout-grid",
       "archetype": "fire-and-forget",
-      "target": { "kind": "layout", "mode": "entertainment" }
+      "target": {
+        "kind": "layout",
+        "mode": "entertainment"
+      }
     },
-    "create-playlist": { "label": "Create playlist", "icon": "playlist", "archetype": "input" },
-    "search-youtube": { "label": "Search YouTube", "icon": "brand-youtube", "archetype": "input" },
-    "check-scoreboard": { "label": "Check scoreboard", "icon": "ball-football", "archetype": "report" },
-    "suggest-a-movie": { "label": "Suggest a movie", "icon": "movie", "archetype": "report" },
-    "start-party-mode": { "label": "Start party mode", "icon": "disco", "archetype": "fire-and-forget" }
+    "create-playlist": {
+      "label": "Create playlist",
+      "icon": "playlist",
+      "archetype": "input"
+    },
+    "search-youtube": {
+      "label": "Search YouTube",
+      "icon": "brand-youtube",
+      "archetype": "input"
+    },
+    "check-scoreboard": {
+      "label": "Check scoreboard",
+      "icon": "ball-football",
+      "archetype": "report"
+    },
+    "suggest-a-movie": {
+      "label": "Suggest a movie",
+      "icon": "movie",
+      "archetype": "report",
+      "target": {
+        "kind": "report"
+      }
+    },
+    "start-party-mode": {
+      "label": "Start party mode",
+      "icon": "disco",
+      "archetype": "fire-and-forget",
+      "target": {
+        "kind": "workflow",
+        "workflow": "start-party-mode"
+      }
+    },
+    "search-the-web": {
+      "label": "Search the web",
+      "icon": "search",
+      "archetype": "fire-and-forget",
+      "target": {
+        "kind": "handler",
+        "handler": "searchTheWeb"
+      }
+    }
   }
 }

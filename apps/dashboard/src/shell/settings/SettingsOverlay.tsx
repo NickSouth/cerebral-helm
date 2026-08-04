@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type AnimationEvent, type KeyboardEvent } from "react";
 import { useSettings } from "../../state/SettingsProvider";
+import { useBridge } from "../../state/BridgeProvider";
 import { SETTINGS_CATEGORIES } from "./categories";
 import { SETTINGS_PANELS } from "./SettingsPanels";
 import { SettingsSnapshotProvider } from "./SettingsSnapshotProvider";
+import { isShellControlAvailable } from "../shellControl";
 
 /** Power glyph for the shutdown control. */
 function PowerGlyph() {
@@ -22,6 +24,44 @@ function PowerGlyph() {
       <path d="M12 3v9" />
       <path d="M6.4 6.4a8 8 0 1 0 11.2 0" />
     </svg>
+  );
+}
+
+/**
+ * The pinned bottom-left shutdown control — the Settings counterpart to the Executive
+ * `shut-down` quick action.
+ *
+ * It submits the same `run shut-down` workflow the slot does rather than posting a native quit,
+ * so there is exactly one path to termination and `app.quit`'s `destructive` risk class gates
+ * this button identically. A settings control that quit directly would be an unconfirmed second
+ * door to the same action.
+ *
+ * `app.quit` is a macOS-only capability, so outside the native host this stays honest-disabled
+ * rather than dispatching a command whose failure has nowhere to surface (Settings has no status
+ * line — the quick-action slot does).
+ */
+function ShutDownControl() {
+  const bridge = useBridge();
+  const available = isShellControlAvailable();
+
+  return (
+    <button
+      type="button"
+      className="settings-shutdown"
+      disabled={!available}
+      aria-disabled={!available}
+      title={
+        available
+          ? "Quits CerebralHelm. You'll be asked to confirm first."
+          : "Shutting down CerebralHelm requires the macOS host"
+      }
+      onClick={() => {
+        void bridge.submitCommand({ rawInput: "run shut-down", source: "dashboard" });
+      }}
+    >
+      <PowerGlyph />
+      <span>Shut down CerebralHelm</span>
+    </button>
   );
 }
 
@@ -151,16 +191,7 @@ function SettingsSurfaceContent() {
             );
           })}
         </div>
-        <button
-          type="button"
-          className="settings-shutdown"
-          disabled
-          aria-disabled="true"
-          title="Shutting down CerebralHelm requires the macOS host"
-        >
-          <PowerGlyph />
-          <span>Shut down CerebralHelm</span>
-        </button>
+        <ShutDownControl />
       </nav>
 
       <div className="settings-content" role="tabpanel" aria-label={active.label}>

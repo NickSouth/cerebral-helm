@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/app-quit-input.schema.json",
+  "title": "CerebralHelm App Quit Input",
+  "description": "No input: this tool quits CerebralHelm itself. It deliberately takes no target, so it can never be pointed at another application (that is `apps.quitall`, which in turn excludes the host).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {}
+}

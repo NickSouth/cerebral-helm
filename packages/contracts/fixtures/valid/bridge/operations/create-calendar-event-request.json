@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_createCalendarEventRequest01",
+  "type": "bridge.operation.request",
+  "operation": "createCalendarEvent",
+  "payload": {
+    "title": "Board prep review",
+    "startsAt": "2026-08-03T16:00",
+    "endsAt": "2026-08-03T17:00",
+    "calendarId": "cal-work-123",
+    "calendarTitle": "Work",
+    "location": "Room 2"
+  }
+}

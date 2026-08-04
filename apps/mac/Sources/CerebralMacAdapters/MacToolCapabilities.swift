@@ -84,6 +84,7 @@ public enum MacToolCapabilities {
                 appWindows: MacAppWindowsCapability(),
                 googleSearch: NSWorkspaceGoogleSearchCapability(workspace: workspace),
                 webOpen: NSWorkspaceWebOpenCapability(workspace: workspace),
+                calendarWrite: EventKitCalendarWriter(),
                 // Playback control (NIC-133): resolves a valid token from the same Keychain-backed
                 // OAuth session the now-playing publisher uses, and sends play/pause/skip to the
                 // active device via the Web API.
@@ -104,6 +105,7 @@ public enum MacToolCapabilities {
                     CapabilityMatrix.Capability.appsList,
                     CapabilityMatrix.Capability.googleSearch,
                     CapabilityMatrix.Capability.webOpen,
+                    CapabilityMatrix.Capability.calendarWrite,
                     CapabilityMatrix.Capability.spotifyControl,
                 ]
             ),

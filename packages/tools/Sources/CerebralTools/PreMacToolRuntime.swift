@@ -38,6 +38,8 @@ public enum PreMacToolRuntime {
             "system.status.read": SystemStatusReadHandler(capability: capabilities.systemStatus),
             "network.speed.test": NetworkSpeedTestHandler(capability: capabilities.networkSpeedTest),
             "apps.list": AppsListHandler(capability: capabilities.appDiscovery),
+            "app.quit": AppQuitHandler(capability: capabilities.applicationLifecycle),
+            "calendar.createevent": CalendarCreateEventHandler(capability: capabilities.calendarWrite),
             "apps.quitall": AppsQuitAllHandler(capability: capabilities.applicationLifecycle),
             "google.search": GoogleSearchHandler(capability: capabilities.googleSearch),
             "spotify.control": SpotifyControlHandler(capability: capabilities.spotifyControl),
@@ -125,6 +127,8 @@ public enum PreMacToolRuntime {
         case "system.status.read": _ = try CerebralHelmSystemStatusReadInput(data: data)
         case "network.speed.test": _ = try CerebralHelmNetworkSpeedTestInput(data: data)
         case "apps.list": _ = try CerebralHelmAppsListInput(data: data)
+        case "app.quit": _ = try CerebralHelmAppQuitInput(data: data)
+        case "calendar.createevent": _ = try CerebralHelmCalendarCreateEventInput(data: data)
         case "apps.quitall": _ = try CerebralHelmAppsQuitAllInput(data: data)
         case "google.search": _ = try CerebralHelmGoogleSearchInput(data: data)
         case "spotify.control": _ = try CerebralHelmSpotifyControlInput(data: data)

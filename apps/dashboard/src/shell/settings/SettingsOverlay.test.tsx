@@ -5,6 +5,8 @@ import { DashboardStateProvider } from "../../state/DashboardStateProvider";
 import { BridgeProvider } from "../../state/BridgeProvider";
 import { ActionStatusProvider } from "../../state/ActionStatusProvider";
 import { SettingsProvider } from "../../state/SettingsProvider";
+import { ReportProvider } from "../../state/ReportProvider";
+import { InputProvider } from "../../state/InputProvider";
 import { AppearanceProvider } from "../../state/AppearanceProvider";
 import { ThemeProvider } from "../../app/ThemeProvider";
 import { createBridgeStore } from "../../state/bridgeStore";
@@ -23,7 +25,11 @@ function renderApp() {
             <ThemeProvider>
               <ActionStatusProvider>
                 <SettingsProvider>
-                  <DashboardShell />
+                  <ReportProvider>
+                    <InputProvider>
+                      <DashboardShell />
+                    </InputProvider>
+                  </ReportProvider>
                 </SettingsProvider>
               </ActionStatusProvider>
             </ThemeProvider>
@@ -447,9 +453,12 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     const workSelect = await within(dialog).findByLabelText("Mode for Work");
     fireEvent.change(workSelect, { target: { value: "developer" } });
 
-    // The change writes the whole calendar→mode map through the settings path.
+    // The change writes the WHOLE calendar→mode map through the settings path — the edited
+    // entry plus every mapping the user already had, so saving one row never drops the others.
     await waitFor(() => expect(patches).toHaveLength(1));
-    expect(patches[0]).toEqual({ calendarModeMap: { "cal-work": "developer" } });
+    expect(patches[0]).toEqual({
+      calendarModeMap: { "cal-work": "developer", "cal-school": "school" }
+    });
   });
 
   it("shows the Canvas pairing token + last-scrape status and disconnects (NIC-132)", async () => {
@@ -569,7 +578,11 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
             <ThemeProvider>
               <ActionStatusProvider>
                 <SettingsProvider>
-                  <DashboardShell />
+                  <ReportProvider>
+                    <InputProvider>
+                      <DashboardShell />
+                    </InputProvider>
+                  </ReportProvider>
                 </SettingsProvider>
               </ActionStatusProvider>
             </ThemeProvider>
@@ -602,7 +615,11 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
             <ThemeProvider>
               <ActionStatusProvider>
                 <SettingsProvider>
-                  <DashboardShell />
+                  <ReportProvider>
+                    <InputProvider>
+                      <DashboardShell />
+                    </InputProvider>
+                  </ReportProvider>
                 </SettingsProvider>
               </ActionStatusProvider>
             </ThemeProvider>
@@ -657,7 +674,11 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
             <ThemeProvider>
               <ActionStatusProvider>
                 <SettingsProvider>
-                  <DashboardShell />
+                  <ReportProvider>
+                    <InputProvider>
+                      <DashboardShell />
+                    </InputProvider>
+                  </ReportProvider>
                 </SettingsProvider>
               </ActionStatusProvider>
             </ThemeProvider>
@@ -702,7 +723,11 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
             <ThemeProvider>
               <ActionStatusProvider>
                 <SettingsProvider>
-                  <DashboardShell />
+                  <ReportProvider>
+                    <InputProvider>
+                      <DashboardShell />
+                    </InputProvider>
+                  </ReportProvider>
                 </SettingsProvider>
               </ActionStatusProvider>
             </ThemeProvider>
@@ -917,6 +942,48 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
     expect(within(surface).getByText(/Waiting for approval/)).toBeInTheDocument();
 
     delete (window as unknown as LoginWindow).__cerebralLoginItem;
+  });
+
+  it("the pinned shutdown control dispatches the same confirmation-gated shut-down workflow", () => {
+    // The control is macOS-only, so it only becomes live once a shell-control channel exists.
+    const postMessage = vi.fn();
+    (window as unknown as ShellControlWindow).webkit = {
+      messageHandlers: { shellControl: { postMessage } }
+    };
+
+    const bridge = createMockCerebralBridge();
+    const submissions: string[] = [];
+    const spyBridge = {
+      ...bridge,
+      submitCommand(input: { rawInput: string; source: string }) {
+        submissions.push(input.rawInput);
+        return bridge.submitCommand(input);
+      }
+    };
+    const store = createBridgeStore(spyBridge, loadBootstrapState());
+    render(
+      <BridgeProvider bridge={spyBridge}>
+        <DashboardStateProvider store={store}>
+          <AppearanceProvider>
+            <ThemeProvider>
+              <SettingsProvider surface="standalone">
+                <SettingsSurface />
+              </SettingsProvider>
+            </ThemeProvider>
+          </AppearanceProvider>
+        </DashboardStateProvider>
+      </BridgeProvider>
+    );
+
+    const quit = screen.getByRole("button", { name: /Shut down CerebralHelm/ });
+    expect(quit).toBeEnabled();
+    fireEvent.click(quit);
+
+    // Not a direct native quit: it dispatches the same workflow the Executive `shut-down` slot
+    // does, so app.quit's destructive risk class gates this control identically. A settings
+    // control that quit directly would be an unconfirmed second door to the same action.
+    expect(submissions).toEqual(["run shut-down"]);
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ action: "quit" }));
   });
 
   it("the standalone surface rebinds the palette shortcut and closes via the native channel", async () => {

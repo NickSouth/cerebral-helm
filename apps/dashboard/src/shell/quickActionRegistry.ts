@@ -21,7 +21,11 @@ export type QuickActionArchetype = "report" | "input" | "picker" | "fire-and-for
 export type QuickActionTarget =
   | { readonly kind: "handler"; readonly handler: string }
   | { readonly kind: "workflow"; readonly workflow: string }
-  | { readonly kind: "layout"; readonly mode: string };
+  | { readonly kind: "layout"; readonly mode: string }
+  /** Opens a composed `ReportDocument` in the centre panel's Report region. */
+  | { readonly kind: "report" }
+  /** Opens this action's form in the centre panel's Input region. */
+  | { readonly kind: "input" };
 
 export interface QuickActionEntry {
   readonly label: string;
@@ -31,6 +35,13 @@ export interface QuickActionEntry {
    */
   readonly icon: string;
   readonly archetype: QuickActionArchetype;
+  /**
+   * Optional visual weight. `danger` renders an outline-red slot — reserved for `shut-down`, the
+   * only differently-coloured action. Outline rather than filled: a solid red button reads as
+   * *danger, do not touch*, but this one is pressed on purpose, so the weight belongs on the
+   * confirmation rather than the tile (docs/quick-actions/PLAN.md).
+   */
+  readonly tone?: "danger";
   /** Absent while the action is planned but not built. */
   readonly target?: QuickActionTarget;
 }
@@ -54,4 +65,9 @@ export function quickActionLabel(id: string): string {
 /** Whether an action is built (has a dispatch target) rather than planned. */
 export function isQuickActionWired(id: string): boolean {
   return ACTIONS[id]?.target != null;
+}
+
+/** The slot's visual tone, or `null` for the default treatment. */
+export function quickActionTone(id: string): "danger" | null {
+  return ACTIONS[id]?.tone ?? null;
 }

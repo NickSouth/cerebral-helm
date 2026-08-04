@@ -31,5 +31,16 @@ public struct MacApplicationLifecycleCapability: ApplicationLifecycleCapability 
     public func quitApplications(bundleIDs: [String]) async throws -> [String] {
         bundleIDs.filter { $0 != source.ownBundleID && source.terminate(bundleID: $0) }
     }
+
+    /// Quits CerebralHelm through `NSApplication.terminate`, so AppKit runs the normal
+    /// shutdown path (delegate hooks, window close) rather than killing the process.
+    ///
+    /// Dispatched asynchronously onto the main queue rather than called inline: `terminate`
+    /// tears down the process, and this runs inside the tool handler's async execution, so
+    /// returning first lets the command's own lifecycle event be emitted and persisted
+    /// before the app goes away.
+    public func quitHostApplication() async throws {
+        DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
+    }
 }
 #endif

@@ -417,6 +417,8 @@ public final class BridgeSession: @unchecked Sendable {
             return await listWindows(request)
         case .listCalendars:
             return await listCalendars(request)
+        case .createCalendarEvent:
+            return await createCalendarEvent(request)
         case .getCanvasStatus:
             return await getCanvasStatus(request)
         case .resetCanvas:
@@ -1778,6 +1780,72 @@ public final class BridgeSession: @unchecked Sendable {
         }
     }
 
+    /// Creates a calendar event from the `create-event` Input form (quick-actions phase 3).
+    ///
+    /// Enters the command bus like every other action — the runtime evaluates policy, gates on
+    /// confirmation, executes and emits lifecycle events. What is different is only that the input
+    /// arrives already typed: there is no text grammar that could carry a title, two datetimes, a
+    /// calendar and notes without becoming lossy, so this uses the runtime's structured entry
+    /// point instead of a `rawInput` string.
+    ///
+    /// `calendar.createevent` is `external_write` but opts into the user-authored exemption, so a
+    /// form the user filled in and submitted runs one-click; the same call from an agent still
+    /// confirms with its values disclosed. When it does gate, the response carries the command id
+    /// and the confirmation surfaces through the event stream, exactly as `captureNote` does.
+    private func createCalendarEvent(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: CreateCalendarEventInput = decodePayload(request),
+              !input.title.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "createCalendarEvent requires a title.")
+        }
+        guard input.startsAt <= input.endsAt else {
+            return invalidInput(request, "createCalendarEvent requires endsAt to be at or after startsAt.")
+        }
+
+        let draft = CalendarEventDraft(
+            title: input.title.trimmingCharacters(in: .whitespaces),
+            startsAt: input.startsAt,
+            endsAt: input.endsAt,
+            calendarID: input.calendarId,
+            calendarTitle: input.calendarTitle,
+            location: input.location,
+            notes: input.notes
+        )
+        let outcome = await runtime.submit(
+            intent: .createCalendarEvent(draft),
+            source: .dashboard,
+            summary: "Create calendar event \"\(draft.title)\""
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(commandID, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmCalendarCreateEventOutput(data: data) {
+                return ok(request, payload: CreateCalendarEventResult(
+                    eventId: output.eventID, calendarTitle: output.calendarTitle, awaitingConfirmation: false
+                ))
+            }
+            // Reached the terminal without an event: the tool was unavailable, denied, or failed.
+            // Report that honestly rather than returning a success shape with a command id in it.
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "calendar_event_not_created",
+                message: "The event was not created (\(status.rawValue)). Calendar access is granted in System Settings."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            return ok(request, payload: CreateCalendarEventResult(
+                eventId: commandID, calendarTitle: nil, awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "calendar_event_rejected", message: reason
+            )
+        }
+    }
+
     /// Reports the Canvas ingest connection state (NIC-132): the loopback endpoint + pairing token to
     /// paste into the Chrome extension, and the last scrape's age/counts. A host without the Mac
     /// ingest store reports `available: false`, so the settings surface shows "requires the macOS
@@ -2428,6 +2496,28 @@ public final class BridgeSession: @unchecked Sendable {
         let title: String
         let colorHex: String?
     }
+    /// The `create-event` form's collected values. `calendarTitle` is carried alongside the id
+    /// purely so a confirmation disclosure can name the calendar in words — the id alone would be
+    /// unreadable in a prompt.
+    private struct CreateCalendarEventInput: Decodable {
+        let title: String
+        let startsAt: String
+        let endsAt: String
+        let calendarId: String?
+        let calendarTitle: String?
+        let location: String?
+        let notes: String?
+    }
+
+    private struct CreateCalendarEventResult: Encodable {
+        /// The created event's id, or — when the action gated — the command id whose confirmation
+        /// is now pending. `awaitingConfirmation` says which, so a caller never reports "created"
+        /// for something still waiting on the user.
+        let eventId: String
+        let calendarTitle: String?
+        let awaitingConfirmation: Bool
+    }
+
     private struct CalendarsResult: Encodable {
         /// Whether Calendar access is granted; false → the UI shows "grant Calendar access".
         let authorized: Bool

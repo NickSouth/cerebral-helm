@@ -44,6 +44,7 @@ private func decode<T: Decodable>(_ response: CerebralHelmBridgeOperationRespons
 }
 
 private struct Receipt: Decodable { let commandId: String; let accepted: Bool }
+private struct CreatedEvent: Decodable { let eventId: String; let awaitingConfirmation: Bool }
 private struct ApplyModeResult: Decodable { let modeId: String; let status: String }
 
 // MARK: - submitCommand
@@ -2177,6 +2178,86 @@ func closeAllWindowsGatesOnConfirmation() async throws {
     }.filter { ($0["type"] as? String) == "confirmation.changed" }
     let disclosure = (confirmations.last?["payload"] as? [String: Any])?["confirmation"] as? [String: Any]
     #expect((disclosure?["tool"] as? [String: Any])?["id"] as? String == "apps.quitall")
+    #expect(disclosure?["risk"] as? String == "destructive")
+}
+
+// MARK: - Create event (quick actions phase 3)
+
+@Test("a user-authored createCalendarEvent writes one-click; an agent-proposed one confirms")
+func createCalendarEventHonorsProvenance() async throws {
+    // The provenance tier's motivating case, end to end: a person who filled in the form and
+    // pressed Create has already authored exactly what will happen, so re-confirming would
+    // restate what they just typed. The same call from an agent still gates.
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let payload = #"""
+    {"title":"Board prep","startsAt":"2026-08-03T16:00","endsAt":"2026-08-03T17:00"}
+    """#
+    let response = await session.execute(operationRequest(.createCalendarEvent, payload))
+    #expect(response.status == .ok)
+
+    // It reached the executor instead of stopping at a confirmation: the descriptor's
+    // `allow_external_write_when_user_authored` key plus `.dashboard` provenance exempts it.
+    let created = try decode(response, as: CreatedEvent.self)
+    #expect(created.awaitingConfirmation == false, "a user-authored write must not gate")
+    #expect(!created.eventId.isEmpty)
+}
+
+@Test("createCalendarEvent refuses a backwards range and a blank title before reaching the bus")
+func createCalendarEventValidatesInput() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let backwards = await session.execute(operationRequest(
+        .createCalendarEvent,
+        #"{"title":"x","startsAt":"2026-08-03T17:00","endsAt":"2026-08-03T16:00"}"#
+    ))
+    #expect(backwards.status == .error)
+
+    let blank = await session.execute(operationRequest(
+        .createCalendarEvent,
+        #"{"title":"   ","startsAt":"2026-08-03T16:00","endsAt":"2026-08-03T17:00"}"#
+    ))
+    #expect(blank.status == .error)
+}
+
+// MARK: - Shut down (quick actions phase 1)
+
+@Test("the shut-down quick action gates on a destructive confirmation before quitting")
+func shutDownGatesOnConfirmation() async throws {
+    // Both the Executive `shut-down` slot and the Settings quit button submit `run shut-down`,
+    // so this covers the single path either one takes. app.quit is macOS-only, hence the
+    // macOS-phase composition.
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"run shut-down","source":"dashboard"}"#)
+    )
+    #expect(response.status == .ok)
+
+    // The app must never quit on the first press: the plan's aggregate risk is the
+    // strictest step (app.quit → destructive), which is never exemptible at any provenance,
+    // so a confirmation disclosure is raised instead.
+    let confirmations = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "confirmation.changed" }
+    let disclosure = (confirmations.last?["payload"] as? [String: Any])?["confirmation"] as? [String: Any]
     #expect(disclosure?["risk"] as? String == "destructive")
 }
 

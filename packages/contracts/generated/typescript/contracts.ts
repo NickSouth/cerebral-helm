@@ -476,6 +476,7 @@ export enum Operation {
     CloseLayout = "closeLayout",
     CloseWindow = "closeWindow",
     ConnectSpotify = "connectSpotify",
+    CreateCalendarEvent = "createCalendarEvent",
     DecideConfirmation = "decideConfirmation",
     DeleteSecret = "deleteSecret",
     GetBootstrapState = "getBootstrapState",
@@ -1060,6 +1061,179 @@ export interface Reference {
     target:   string;
 }
 
+/**
+ * The rendered form of every Report-archetype quick action (docs/quick-actions/PLAN.md). A
+ * report is NOT a template — it is a typed block document, because the deterministic
+ * composer that writes it today will be replaced by a model later. The pipeline is
+ * providers -> Assembler -> Snapshot -> Composer -> ReportDocument -> Renderer; only the
+ * Composer changes when the model lands, and the Renderer never does. A model streaming
+ * blocks into the renderer is visually identical to the deterministic reveal, which is why
+ * the future conversation surface is not a new surface.
+ *
+ * Blocks are intentionally a FLAT shape keyed by `kind` rather than a discriminated union:
+ * a union would make adding a block kind a breaking contract change, and the renderer
+ * already has to survive a malformed block once a model writes these. The renderer skips
+ * any block whose kind it does not know, or whose fields for that kind are absent — a
+ * report never crashes the dashboard.
+ *
+ * Codegen note: quicktype ignores `$defs` titles and names generated types from PROPERTY
+ * names, so a generic property name here mints (or steals) a generic type name across the
+ * whole shared contracts module. Hence the kind-prefixed field names on a block.
+ */
+export interface CerebralHelmReportDocument {
+    blocks: Block[];
+    /**
+     * The quick-action id this document was composed for, so the renderer can key its reveal
+     * and the region can title itself.
+     */
+    reportId:      string;
+    schemaVersion: string;
+}
+
+/**
+ * One block of a report. `blockKind` selects which of the optional fields carry meaning;
+ * the renderer reads only those and ignores the rest. Field names are deliberately
+ * kind-prefixed (`greetingSize`, `lineEmphasis`, `metricTone`, `listItems`,
+ * `reportAction`): they say which kind they belong to, which a flat block needs anyway, AND
+ * they keep codegen from minting single-word type names like `Kind` / `Tone` / `Size` in
+ * the shared namespace. That is not cosmetic — a bare `kind` here renamed the pre-existing
+ * layout `Kind` enum and broke LayoutWorkflowSynthesizer, and a bare `action` did the same
+ * to the mode-apply `Action` type.
+ */
+export interface Block {
+    blockKind:     BlockKind;
+    greetingSize?: GreetingSize;
+    label?:        string;
+    /**
+     * `strong` uses weight, never color — inside a report, color means actionable.
+     */
+    lineEmphasis?: LineEmphasis;
+    listItems?:    ListItem[];
+    metricTone?:   MetricTone;
+    /**
+     * A clickable destination inside a report. It is NEVER a URL — it names a registered quick
+     * action, resolved through the dispatch registry. Two reasons this is non-negotiable:
+     * opening a destination in a specific Chrome profile is a profile-scoped reference
+     * (NIC-151), not an href; and once a model composes the document, every clickable thing in
+     * it is a model-chosen destination, so a raw href would let the model — or content it
+     * summarized — point anywhere. Params are untrusted, so the target tool builds its
+     * destination host-side (the `google.search` pattern: the host is fixed, only the query
+     * varies).
+     */
+    reportAction?:  PurpleReportAction;
+    reportActions?: ReportActionElement[];
+    text?:          string;
+    value?:         string;
+}
+
+export enum BlockKind {
+    Checklist = "checklist",
+    Count = "count",
+    Empty = "empty",
+    Greeting = "greeting",
+    Line = "line",
+    List = "list",
+    Metric = "metric",
+    Proposal = "proposal",
+}
+
+export enum GreetingSize {
+    Hero = "hero",
+    Standard = "standard",
+}
+
+/**
+ * `strong` uses weight, never color — inside a report, color means actionable.
+ */
+export enum LineEmphasis {
+    Muted = "muted",
+    Normal = "normal",
+    Strong = "strong",
+}
+
+export interface ListItem {
+    color?: string;
+    meta?:  string;
+    /**
+     * A clickable destination inside a report. It is NEVER a URL — it names a registered quick
+     * action, resolved through the dispatch registry. Two reasons this is non-negotiable:
+     * opening a destination in a specific Chrome profile is a profile-scoped reference
+     * (NIC-151), not an href; and once a model composes the document, every clickable thing in
+     * it is a model-chosen destination, so a raw href would let the model — or content it
+     * summarized — point anywhere. Params are untrusted, so the target tool builds its
+     * destination host-side (the `google.search` pattern: the host is fixed, only the query
+     * varies).
+     */
+    reportAction?: ListItemReportAction;
+    /**
+     * Only meaningful on a `checklist` block — the streaming variant of a list.
+     */
+    status?: ListItemStatus;
+    text:    string;
+}
+
+/**
+ * A clickable destination inside a report. It is NEVER a URL — it names a registered quick
+ * action, resolved through the dispatch registry. Two reasons this is non-negotiable:
+ * opening a destination in a specific Chrome profile is a profile-scoped reference
+ * (NIC-151), not an href; and once a model composes the document, every clickable thing in
+ * it is a model-chosen destination, so a raw href would let the model — or content it
+ * summarized — point anywhere. Params are untrusted, so the target tool builds its
+ * destination host-side (the `google.search` pattern: the host is fixed, only the query
+ * varies).
+ */
+export interface ListItemReportAction {
+    action:  string;
+    params?: { [key: string]: any };
+}
+
+/**
+ * Only meaningful on a `checklist` block — the streaming variant of a list.
+ */
+export enum ListItemStatus {
+    Failed = "failed",
+    Passed = "passed",
+    Pending = "pending",
+    Running = "running",
+}
+
+export enum MetricTone {
+    Critical = "critical",
+    Neutral = "neutral",
+    Positive = "positive",
+    Warning = "warning",
+}
+
+/**
+ * A clickable destination inside a report. It is NEVER a URL — it names a registered quick
+ * action, resolved through the dispatch registry. Two reasons this is non-negotiable:
+ * opening a destination in a specific Chrome profile is a profile-scoped reference
+ * (NIC-151), not an href; and once a model composes the document, every clickable thing in
+ * it is a model-chosen destination, so a raw href would let the model — or content it
+ * summarized — point anywhere. Params are untrusted, so the target tool builds its
+ * destination host-side (the `google.search` pattern: the host is fixed, only the query
+ * varies).
+ */
+export interface PurpleReportAction {
+    action:  string;
+    params?: { [key: string]: any };
+}
+
+/**
+ * A clickable destination inside a report. It is NEVER a URL — it names a registered quick
+ * action, resolved through the dispatch registry. Two reasons this is non-negotiable:
+ * opening a destination in a specific Chrome profile is a profile-scoped reference
+ * (NIC-151), not an href; and once a model composes the document, every clickable thing in
+ * it is a model-chosen destination, so a raw href would let the model — or content it
+ * summarized — point anywhere. Params are untrusted, so the target tool builds its
+ * destination host-side (the `google.search` pattern: the host is fixed, only the query
+ * varies).
+ */
+export interface ReportActionElement {
+    action:  string;
+    params?: { [key: string]: any };
+}
+
 export interface CerebralHelmAppOpenInput {
     appId: string;
 }
@@ -1068,6 +1242,26 @@ export interface CerebralHelmAppOpenOutput {
     alreadyRunning: boolean;
     appId:          string;
     launched:       boolean;
+}
+
+/**
+ * No input: this tool quits CerebralHelm itself. It deliberately takes no target, so it can
+ * never be pointed at another application (that is `apps.quitall`, which in turn excludes
+ * the host).
+ */
+export interface CerebralHelmAppQuitInput {
+}
+
+/**
+ * Reports that termination was requested, not that it completed — the process is on its way
+ * out, so nothing downstream can observe a later status.
+ */
+export interface CerebralHelmAppQuitOutput {
+    status: CerebralHelmAppQuitOutputStatus;
+}
+
+export enum CerebralHelmAppQuitOutputStatus {
+    Quitting = "quitting",
 }
 
 export interface CerebralHelmAppsListInput {
@@ -1096,6 +1290,37 @@ export interface CerebralHelmAppsQuitAllOutput {
 export enum CerebralHelmAppsQuitAllOutputStatus {
     None = "none",
     Quit = "quit",
+}
+
+/**
+ * Creates one event in the user's calendar. `startsAt`/`endsAt` are LOCAL WALL-CLOCK ISO
+ * strings (`2026-08-03T14:00:00`), not UTC instants — the same convention the calendar read
+ * side uses (NIC-126), so a time the user typed into a form means the time they meant. The
+ * adapter resolves them in the host's time zone.
+ */
+export interface CerebralHelmCalendarCreateEventInput {
+    /**
+     * Which calendar to write to. Omitted uses the host's default calendar — never a guess at
+     * which one the user meant.
+     */
+    calendarId?: string;
+    endsAt:      string;
+    location?:   string;
+    notes?:      string;
+    startsAt:    string;
+    title:       string;
+}
+
+export interface CerebralHelmCalendarCreateEventOutput {
+    /**
+     * The calendar it landed in, so the result can say where it went rather than just that it
+     * worked. Omitted when the store does not report one.
+     */
+    calendarTitle?: string;
+    /**
+     * The created event's identifier in the host calendar store.
+     */
+    eventId: string;
 }
 
 export interface CerebralHelmConfirmationDisclosure {

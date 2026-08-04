@@ -1,6 +1,6 @@
 # Quick actions — surface architecture and build plan
 
-**Status:** In progress — phase 0 complete (dispatch registry, omit-and-recentre, provenance tier); phase 1 next
+**Status:** In progress — phases 0-3 complete; phase 4 (integration-gated actions) next
 **Owner:** Nick Southey
 **Source:** Planning session 2026-08-03; supersedes the NIC-139 workflow-builder approach
 **Scope:** All 32 quick-action slots across the four modes, the surfaces they render in, and the order to build them
@@ -120,7 +120,7 @@ This generalizes the one-off exemption NIC-133 introduced for the Spotify widget
 ## Visual rules
 
 - **Leading icons on every slot**, muted by default so the label leads. The icon takes the mode accent only while that slot's surface is open — a free, consistent open-state indicator across all 32 slots. The icon belongs in the dispatch registry beside `label` and `archetype`.
-- **`shut-down` is red, and is the only differently-coloured slot.** Outline red, not filled: a solid red button reads as *danger, do not touch*, but this one is pressed on purpose. The weight belongs on the confirmation.
+- **`shut-down` is red, and is the only differently-coloured slot.** Outline red, not filled: a solid red button reads as *danger, do not touch*, but this one is pressed on purpose. The weight belongs on the confirmation. *Built in phase 0/1 as a registry `tone` field, validated against a one-value enum so this stays the only coloured slot; a greyed placeholder never takes the tone.*
 - **Accent colour means actionable** inside a report. Emphasis without a target uses weight or a lighter neutral. One meaning per colour, and it scales to whatever a model writes later.
 - **Empty slots are omitted, not rendered as placeholders.** Remaining slots re-centre within their row, preserving the bar/box split. Nulls stay in config; only the renderer changes.
 - **Reports reveal top-down on a stagger**, block by block, as the background fades in and the stream eases aside. Block-level rather than character-level reads better at this density and maps directly onto streamed tokens.
@@ -205,7 +205,7 @@ Eight of twenty compose capabilities already shipped.
 
 `git.clone` — narrow and typed, constrained to the projects root. Deliberately **not** a shell-hook wrapper, which would land in the `shell` risk class and demand a confirmation on every clone.
 
-`project.scaffold` (folder plus template) · `youtube.search` (near-copy of `google.search`, host fixed server-side) · `app.quit` · a check registry plus streaming runner.
+`project.scaffold` (folder plus template) · `youtube.search` (near-copy of `google.search`, host fixed server-side) · `app.quit` (quits **CerebralHelm itself** — the complement of `apps.quitall`, which always excludes the host; it takes no target, so neither tool can be steered into the other's territory) · a check registry plus streaming runner.
 
 The existing hook tool returns `exitCode`, `stdout`, `stderr`, `timedOut`, and `durationMs` at completion with a 30s timeout — it cannot stream, so the live monitor needs its own capability.
 
@@ -225,17 +225,43 @@ Icons are carried in the registry but not yet rendered — the Tabler glyphs nee
 
 ### Phase 1 — free wins
 
-`check-ondraft` · `open-terminal` · `start-party-mode` · `shut-down` (needs `app.quit` plus the matching Settings button).
+~~`check-ondraft` · `open-terminal` · `start-party-mode` · `shut-down`.~~ **Built.** The first three are pure config — a URL/app reference plus a one- or two-step workflow each, dispatched through the registry's `workflow` target with no new code. `shut-down` added the `app.quit` tool (`destructive`, so it always confirms) and the `danger` slot tone.
+
+The "matching Settings button" already existed: the pinned bottom-left shutdown control in the settings sidebar, shipped permanently disabled because no quit capability existed. It is now wired to the **same** `run shut-down` workflow as the slot rather than to a native quit, so there is one confirmation-gated path to termination instead of two doors. It stays honest-disabled off the macOS host, where `app.quit` cannot run.
 
 ### Phase 2 — report spine
 
-Report region, `ReportDocument`, and the renderer, then `daily-brief` v1 — time, weather, calendar; the unread count arrives with Gmail. Follow with `open-schedule` and `suggest-a-movie` to prove the format generalizes across three very different reports.
+**Complete.** Spine, `daily-brief` v1, `open-schedule`, and `suggest-a-movie` are all built — and the format did generalize: a flat brief, a grouped two-provider schedule, and a five-line suggestion all render through the same unchanged renderer.
 
-Riskiest design decision, validated before anything depends on it.
+- **`ReportDocument` is a contract** (`packages/contracts/schemas/reports/report-document.schema.json`), because it is the port a model will later write to. Blocks are a flat shape keyed by `blockKind`, not a discriminated union: a union makes every new block kind a breaking change, and the renderer has to survive a malformed block anyway once a model composes these. `renderableBlocks` drops any block whose kind it doesn't know or whose fields are missing, so a half-formed report renders shorter rather than blank.
+- **Assemble and compose are separate functions.** `assemble` reads live providers into a typed snapshot; `compose` turns the snapshot into blocks. v2 replaces only `composeDailyBrief`.
+- **`daily-brief` v1 needed no new backend.** Weather and the calendar already stream into dashboard state, so the composer runs in the web layer and the action dispatches without touching the command bus.
+- **The region is the future conversation surface** — same geometry, same renderer, plus scrollback and a docked input later.
+
+- **Action-reference params are live.** `suggest-a-movie` links out through `{action: "search-the-web", params: {query}}`, resolved via the registry and handed to the `google.search` tool, which builds the destination host-side. A reference to an unregistered or unbuilt action renders as plain text, never a control, so a model cannot mint a destination by naming one.
+- **A report closes when the mode changes.** It is opened from a mode's slot and belongs to it; School's `open-schedule` left hanging in Entertainment degraded honestly but read as a bug.
+
+Two things worth keeping:
+
+**Codegen.** quicktype names generated types from **property** names and ignores `$defs` titles, so a generic property name mints or steals a generic type name across the whole shared module. A bare `kind` renamed the existing layout `Kind` enum and broke `LayoutWorkflowSynthesizer`; a bare `action` did the same to the mode-apply `Action`. Hence the kind-prefixed block fields (`blockKind`, `greetingSize`, `lineEmphasis`, `metricTone`, `listItems`, `reportAction`). Verify a new schema adds only additive lines to the generated files.
+
+**The `CourseScheduleResolver` lives in the dashboard, not the portable core** — a deliberate departure from *Resolved decisions* below. The data it joins (the Canvas courses feed and the calendar region) is already in dashboard state, so putting the join in Swift would mean inventing a bridge payload for something the dashboard already holds. It moves to the core if and when the composer does. The property that actually mattered is intact: it is pure and deterministic, and an unmatched event still renders.
 
 ### Phase 3 — input spine
 
-Input region, field schema, field kinds, provider-backed option sources. Then `capture-note` (a single textarea — the simplest possible instance), then `create-event` (multi-field, external write, provider-backed dropdown, four modes — the real stress test).
+**Complete.** Spine, `capture-note`, and `create-event` are all built.
+
+- **The field schema is TypeScript, not a contract** — the opposite call from `ReportDocument`, and for a reason: that one is a schema because something outside this codebase (a model) will produce one. A form is authored here, in code, per action. If a model ever proposes a pre-filled form, that is when this becomes a schema.
+- **Five of seven field kinds render** (`text`, `textarea`, `select`, `number`, `datetimeRange`), plus provider-backed option sources. `combobox` (typeahead over a long list) and `folderPicker` (the only kind needing a native open-panel round trip) wait for the actions that need them. Declared-but-unrendered kinds are skipped rather than drawn broken, and a required field the renderer cannot draw never blocks a submit — the user could not fill it in.
+- **`capture-note` replaced its old handler rather than sitting beside it.** The handler captured a note titled "Quick note" with an empty body because no content-entry affordance existed; two capture paths, one of which cannot carry content, is a worse surface than one.
+- **A failed submit keeps the form and the typing.** Losing what someone wrote because a write failed is the worst available response to a failure.
+- **Report and Input regions coexist** — different parts of the panel, and reading a brief while filling in an event is normal. A report link can open a form, so a `proposal` offering "create an event" reaches the Input region.
+
+**`create-event` needed a new way into the bus.** No text grammar can carry a title, two datetimes, a calendar and notes without becoming lossy about quoting, so `CommandRuntime.submit(intent:source:summary:)` skips **parsing only** — the same `resolve` table owns the disclosure, and the same policy, confirmation, executor and lifecycle still run. Every later Input (`create-ticket`, `send-text`, `git-clone`, `create-project`) uses this path.
+
+**It is also the provenance tier's first real payoff.** `calendar.createevent` is honestly `external_write`, but opts into the user-authored exemption: a person who filled in the form and pressed Create already authored exactly what happens, so re-confirming would restate what they just typed. The same call from an agent still gates, with its values disclosed. Writing is a **separate port** from reading (`CalendarWritingCapability` vs `CalendarProvider`), and the adapter asks for EventKit **write-only** access — creating an event does not require the ability to read the user's calendar.
+
+Two bugs worth remembering, both found in the browser and now regression-tested: a form whose defaults depend on a persisted read must not be **built** before that read resolves (the body seeds its values once, so a late default is silently lost), and a provider-backed `select` must render its value only once the matching option exists, or the preselection is dropped when the options land.
 
 ### Phase 4 — integration-gated
 
@@ -266,7 +292,9 @@ The join key is the **course code**, not the full name — Canvas titles like `S
 
 1. Extract a course code (`[A-Z]{2,4}\s?\d{3}`) from both sides and match on it, normalized.
 2. Fall back to token overlap against the course name.
-3. Fall back to the manual override in config, for entries nothing else catches.
+3. A manual override, for entries nothing else catches.
+
+*As built, the override is checked **first**, not last: an override that only applied to unmatched events could never correct a wrong match, which is most of what an override is for. The mechanism and its tests exist; populating it from config does not, so it is currently always empty. Name-token matching ignores generic words (`lecture`, `lab`, `fall`, `introduction`) so they can never drive a match.*
 
 Two rules that keep this honest. The resolver is **deterministic and testable** — no model, no fuzzy scoring that drifts between runs. And an **unmatched event still renders**, in an ungrouped section, rather than disappearing: a schedule that silently drops a class is worse than one that shows an unattributed entry.
 

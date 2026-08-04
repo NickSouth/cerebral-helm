@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "open-terminal",
+  "label": "Open Terminal",
+  "steps": [
+    { "id": "open-terminal", "label": "Open Terminal", "tool": "app.open", "input": { "appId": "terminal" } }
+  ]
+}

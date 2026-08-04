@@ -1,6 +1,7 @@
 import type { CerebralBridge } from "../bridge/cerebralBridge";
 import type { ActionStatusSeverity } from "../state/ActionStatusProvider";
 import { quickActionEntry } from "./quickActionRegistry";
+import { submitGoogleSearch } from "./googleSearch";
 
 /**
  * Quick-action dispatch. The 4 + 4 slots render the active mode's `quickActions` ids; each id
@@ -18,25 +19,48 @@ export interface QuickActionDeps {
   readonly bridge: CerebralBridge;
   /** Surface a transient, honest result in the top-left status line (NIC-124). */
   announce(text: string, severity?: ActionStatusSeverity): void;
+  /**
+   * Open a Report in the centre panel's Report region. Optional: a caller with no report surface
+   * (a test, a future headless dispatcher) leaves a `report` action unresolved rather than
+   * pretending it ran.
+   */
+  openReport?(reportId: string): void;
+  /** Open an Input's form in the centre panel's Input region. Optional for the same reason. */
+  openInput?(actionId: string): void;
 }
 
 type HandlerName = keyof typeof HANDLERS;
 
+/**
+ * Params supplied by an action reference inside a report. **Untrusted by construction**: once a
+ * model composes the document, these are model-chosen values. A handler must validate what it
+ * reads and pass it only as data — never as a destination. That is why `searchTheWeb` hands the
+ * query to the `google.search` tool, which builds the google.com URL host-side.
+ */
+export type QuickActionParams = Readonly<Record<string, unknown>>;
+
+function readString(params: QuickActionParams | undefined, key: string): string | null {
+  const value = params?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
 const HANDLERS = {
-  async captureNote({ bridge, announce }: QuickActionDeps): Promise<void> {
-    // No content-entry affordance exists pre-Mac, so this captures a labelled quick note and
-    // reports the real returned id. The status text is explicit that capture is a mock
-    // until the knowledge system lands — honest-unavailable, never fake-rich.
-    const result = await bridge.captureNote({
-      title: "Quick note",
-      body: "",
-      kind: "quick-capture"
-    });
-    announce(
-      `Captured a quick note (${result.noteId}). Quick capture is a mock pre-Mac — note content entry arrives with the knowledge system.`
-    );
+  /**
+   * Look something up on the web. Reachable only as an action reference from a report — it holds
+   * no quick-action slot — so its query always arrives as a param.
+   */
+  async searchTheWeb({ bridge, announce }: QuickActionDeps, params?: QuickActionParams): Promise<void> {
+    const query = readString(params, "query");
+    if (!query) {
+      announce("That link had nothing to search for.", "error");
+      return;
+    }
+    const receipt = await submitGoogleSearch(bridge, query);
+    if (!receipt.accepted) {
+      announce(`I couldn't search for “${query}” — the command wasn't accepted.`, "error");
+    }
   }
-} satisfies Record<string, (deps: QuickActionDeps) => Promise<void>>;
+} satisfies Record<string, (deps: QuickActionDeps, params?: QuickActionParams) => Promise<void>>;
 
 /**
  * Dispatch a workflow-backed quick action: `run <workflowId>` through the same command
@@ -82,7 +106,11 @@ function openLayout(modeId: string, { bridge, announce }: QuickActionDeps): void
  * handler target with no implementation here throws: the registry gate makes that unreachable
  * in a valid build, so the throw is a developer-error guard, not a runtime path.
  */
-export function resolveQuickAction(actionId: string, deps: QuickActionDeps): (() => void) | null {
+export function resolveQuickAction(
+  actionId: string,
+  deps: QuickActionDeps,
+  params?: QuickActionParams
+): (() => void) | null {
   const target = quickActionEntry(actionId)?.target;
   if (!target) {
     return null;
@@ -98,13 +126,24 @@ export function resolveQuickAction(actionId: string, deps: QuickActionDeps): (()
       return () => {
         runWorkflow(target.workflow, deps);
       };
+    // A Report renders in the dashboard, so it never touches the command bus — the document is
+    // composed from providers already streaming into dashboard state.
+    case "report": {
+      const openReport = deps.openReport;
+      return openReport ? () => openReport(actionId) : null;
+    }
+    // An Input renders its form in the dashboard; the form's own submit performs the action.
+    case "input": {
+      const openInput = deps.openInput;
+      return openInput ? () => openInput(actionId) : null;
+    }
     case "handler": {
       const handler = HANDLERS[target.handler as HandlerName];
       if (!handler) {
         throw new Error(`Quick action "${actionId}" targets unknown handler "${target.handler}".`);
       }
       return () => {
-        void handler(deps);
+        void handler(deps, params);
       };
     }
   }

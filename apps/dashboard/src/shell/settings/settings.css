@@ -1017,6 +1017,12 @@
   background: var(--ch-accent-primary);
 }
 
+/* Matches the `shut-down` quick action: outline red, never filled. */
+.settings-shutdown:hover:not(:disabled) {
+  border-color: var(--ch-status-error);
+  background: color-mix(in srgb, var(--ch-status-error) 12%, transparent);
+}
+
 .settings-select:focus-visible,
 .settings-input:focus-visible {
   outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);

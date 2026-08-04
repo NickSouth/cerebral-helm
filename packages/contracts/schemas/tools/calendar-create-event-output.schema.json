@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/calendar-create-event-output.schema.json",
+  "title": "CerebralHelm Calendar Create Event Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventId"],
+  "properties": {
+    "eventId": {
+      "description": "The created event's identifier in the host calendar store.",
+      "type": "string",
+      "minLength": 1
+    },
+    "calendarTitle": {
+      "description": "The calendar it landed in, so the result can say where it went rather than just that it worked. Omitted when the store does not report one.",
+      "type": "string"
+    }
+  }
+}

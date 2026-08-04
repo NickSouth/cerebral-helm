@@ -90,6 +90,28 @@ export interface CaptureNoteResult {
   readonly noteId: string;
 }
 
+/**
+ * The `create-event` form's collected values. Times are LOCAL WALL-CLOCK ISO strings
+ * (`2026-08-03T14:00`), matching the calendar read side — the time typed is the time meant.
+ * `calendarTitle` rides along so a confirmation prompt can name the calendar in words.
+ */
+export interface CreateCalendarEventInput {
+  readonly title: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly calendarId?: string;
+  readonly calendarTitle?: string;
+  readonly location?: string;
+  readonly notes?: string;
+}
+export interface CreateCalendarEventResult {
+  /** The event id, or the pending command id when the action gated on confirmation. */
+  readonly eventId: string;
+  readonly calendarTitle?: string;
+  /** True when a confirmation is now pending — never report "created" in that case. */
+  readonly awaitingConfirmation: boolean;
+}
+
 export interface SearchNotesInput {
   readonly text: string;
   readonly limit?: number;
@@ -595,6 +617,8 @@ export interface CerebralBridge {
   /** List the user's calendars for the Settings calendar→mode mapping (NIC-126). Requests
    *  Calendar access at point of use; a denied grant returns `authorized: false` + no calendars. */
   listCalendars(): Promise<ListCalendarsResult>;
+  /** Create one calendar event from the `create-event` form (quick actions phase 3). */
+  createCalendarEvent(input: CreateCalendarEventInput): Promise<CreateCalendarEventResult>;
   /** The Canvas ingest connection state for the Settings connect card (NIC-132) — the pairing
    *  endpoint/token (minted on demand) plus the last scrape's age/counts. */
   getCanvasStatus(): Promise<CanvasStatus>;

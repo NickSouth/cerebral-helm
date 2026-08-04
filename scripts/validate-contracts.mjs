@@ -122,6 +122,10 @@ function schemaForFixture(filePath) {
     return schemaId("tools", "tool-result");
   }
 
+  if (relativePath.startsWith("valid/reports/") || relativePath.startsWith("invalid/reports/")) {
+    return schemaId("reports", "report-document");
+  }
+
   if (relativePath.startsWith("valid/config/settings/") || relativePath.startsWith("invalid/config/settings/")) {
     return schemaId("config", "settings-patch");
   }

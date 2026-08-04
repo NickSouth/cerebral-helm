@@ -1,10 +1,12 @@
 import { useActiveMode } from "./useActiveMode";
-import { quickActionLabel } from "./quickActionRegistry";
+import { quickActionLabel, quickActionTone } from "./quickActionRegistry";
 import { resolveQuickAction } from "./quickActionHandlers";
 import { useBridge } from "../state/BridgeProvider";
 import { useActionStatus } from "../state/ActionStatusProvider";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useUiPosture } from "../state/useUiPosture";
+import { useReports } from "../state/ReportProvider";
+import { useInputs } from "../state/InputProvider";
 
 /**
  * The 4 + 4 quick-action geometry (§5.7): a row of bars over a row of boxes, rendered from the
@@ -27,10 +29,15 @@ function QuickActionSlot({
   onActivate: (() => void) | null;
 }) {
   const wired = onActivate !== null;
+  // Tone applies only to a live slot: a greyed placeholder painted red would read as a warning
+  // about something that cannot even be pressed.
+  const tone = wired ? quickActionTone(action) : null;
   return (
     <button
       type="button"
-      className={`quick-action quick-action--${variant}${wired ? " quick-action--wired" : ""}`}
+      className={`quick-action quick-action--${variant}${wired ? " quick-action--wired" : ""}${
+        tone ? ` quick-action--${tone}` : ""
+      }`}
       disabled={!wired}
       aria-disabled={!wired}
       title={wired ? undefined : "Coming soon"}
@@ -52,7 +59,9 @@ export function QuickActions() {
   const { announce } = useActionStatus();
   const { readOnly } = useUiPosture();
   const { activeWorkflowRun } = useDashboardState();
-  const deps = { bridge, announce };
+  const { openReport } = useReports();
+  const { openInput } = useInputs();
+  const deps = { bridge, announce, openReport, openInput };
 
   // Read-only recovery exposes no mutating controls: every action stays disabled (NIC-64 AC).
   // While a workflow is executing, its actions are also disabled — one run at a time.

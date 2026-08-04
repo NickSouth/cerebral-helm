@@ -54,6 +54,7 @@ const bridgeOperations = new Set([
   "closeAllWindows",
   "listWindows",
   "listCalendars",
+  "createCalendarEvent",
   "minimizeWindow",
   "surfaceWindow",
   "closeWindow",

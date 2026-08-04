@@ -4,6 +4,8 @@ import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
 import { ActionStatusProvider } from "../state/ActionStatusProvider";
 import { SettingsProvider } from "../state/SettingsProvider";
+import { ReportProvider } from "../state/ReportProvider";
+import { InputProvider } from "../state/InputProvider";
 import { AppearanceProvider } from "../state/AppearanceProvider";
 import { ThemeProvider } from "../app/ThemeProvider";
 import { createBridgeStore } from "../state/bridgeStore";
@@ -22,7 +24,11 @@ function renderProviders(
           <ThemeProvider>
             <ActionStatusProvider>
               <SettingsProvider>
-                <DashboardShell />
+                <ReportProvider>
+                  <InputProvider>
+                    <DashboardShell />
+                  </InputProvider>
+                </ReportProvider>
               </SettingsProvider>
             </ActionStatusProvider>
           </ThemeProvider>
@@ -175,13 +181,29 @@ describe("DashboardShell structure", () => {
       "button"
     );
     expect(slots).toHaveLength(8);
-    // capture-note is the one built action; the rest are registered but targetless.
-    expect(screen.getByRole("button", { name: "Capture note" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Daily brief" })).toBeDisabled();
+    // daily-brief, capture-note, create-event and shut-down are built; the rest are registered
+    // but targetless.
+    for (const name of ["Daily brief", "Capture note", "Create event", "Shut down"]) {
+      expect(screen.getByRole("button", { name })).toBeEnabled();
+    }
+    expect(screen.getByRole("button", { name: "Create project" })).toBeDisabled();
     // Labels come from the dispatch registry, not from humanizing the id.
     expect(screen.getByRole("button", { name: "System status" })).toBeInTheDocument();
     const disabled = slots.filter((slot) => slot.hasAttribute("disabled"));
-    expect(disabled).toHaveLength(7);
+    expect(disabled).toHaveLength(4);
+  });
+
+  it("paints only shut-down with the danger tone, and only while it is live", () => {
+    renderShell();
+    const group = screen.getByRole("group", { name: "Quick actions" });
+
+    const danger = within(group)
+      .getAllByRole("button")
+      .filter((slot) => slot.classList.contains("quick-action--danger"));
+    expect(danger).toHaveLength(1);
+    expect(danger[0]).toHaveAccessibleName("Shut down");
+    // Outline, not filled — the weight belongs on the confirmation, not the tile.
+    expect(danger[0]).toHaveClass("quick-action--wired");
   });
 
   it("omits unconfigured slots rather than rendering placeholder tiles, keeping the bar/box split", () => {
@@ -752,16 +774,44 @@ describe("DashboardShell degraded states (E4 / NIC-64)", () => {
 });
 
 describe("DashboardShell quick actions (D4 / NIC-117 b)", () => {
-  it("dispatches the wired capture-note action and surfaces the result in the status line", async () => {
+  it("opens capture-note's form and captures what was typed, reporting the real result", async () => {
     renderShell();
 
+    // The slot now opens a form rather than capturing a fixed placeholder note.
     fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
+    const form = screen.getByRole("region", { name: "Capture note form" });
+
+    fireEvent.change(within(form).getByLabelText(/Title/), {
+      target: { value: "Ask about the lease" }
+    });
+    fireEvent.change(within(form).getByLabelText("Note"), {
+      target: { value: "Renewal window closes in March." }
+    });
+    fireEvent.click(within(form).getByRole("button", { name: "Capture" }));
 
     // The real bridge op runs; the returned note id is reported in the top-left status surface
     // (never a fabricated outcome, and never a chat surface — NIC-124).
     const status = document.querySelector(".action-status") as HTMLElement;
-    await waitFor(() => expect(status).toHaveTextContent(/Captured a quick note \(note_/));
+    await waitFor(() => expect(status).toHaveTextContent(/Captured “Ask about the lease” \(note_/));
     expect(screen.queryByRole("dialog", { name: "Heimlich conversation" })).toBeNull();
+    // A successful capture closes the form.
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Capture note form" })).toBeNull()
+    );
+  });
+
+  it("blocks submission until every required field is filled", () => {
+    renderShell();
+    fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
+    const form = screen.getByRole("region", { name: "Capture note form" });
+
+    // Title is required and starts blank, so the submit says why rather than sitting inert.
+    const submit = within(form).getByRole("button", { name: "Capture" });
+    expect(submit).toBeDisabled();
+    expect(submit).toHaveAttribute("title", "Title required");
+
+    fireEvent.change(within(form).getByLabelText(/Title/), { target: { value: "Something" } });
+    expect(within(form).getByRole("button", { name: "Capture" })).toBeEnabled();
   });
 });
 

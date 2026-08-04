@@ -33,6 +33,9 @@ public struct ToolCapabilities: Sendable {
     /// preferring a running Chrome instance. `.none`-matrix mock by default (pre-Mac/tests); the
     /// macOS shell binds the honest adapter.
     public let webOpen: any WebOpenCapability
+    /// Writes an event into the user's calendar. `.none`-matrix mock by default (pre-Mac/tests);
+    /// the macOS shell binds the honest EventKit adapter.
+    public let calendarWrite: any CalendarWritingCapability
     /// Controls the user's Spotify playback (NIC-133): play/pause/next/previous. `.none`-matrix
     /// mock by default (pre-Mac/tests); the macOS shell binds the honest Web-API adapter.
     public let spotifyControl: any SpotifyControlCapability
@@ -54,6 +57,7 @@ public struct ToolCapabilities: Sendable {
         appWindows: any AppWindowsCapability = MockAppWindowsCapability(groups: []),
         googleSearch: any GoogleSearchCapability = MockGoogleSearchCapability(matrix: .none),
         webOpen: any WebOpenCapability = MockWebOpenCapability(matrix: .none),
+        calendarWrite: any CalendarWritingCapability = MockCalendarWritingCapability(matrix: .none),
         spotifyControl: any SpotifyControlCapability = MockSpotifyControlCapability(matrix: .none),
         nativeCapabilityIDs: Set<String> = []
     ) {
@@ -70,6 +74,7 @@ public struct ToolCapabilities: Sendable {
         self.appWindows = appWindows
         self.googleSearch = googleSearch
         self.webOpen = webOpen
+        self.calendarWrite = calendarWrite
         self.spotifyControl = spotifyControl
         self.nativeCapabilityIDs = nativeCapabilityIDs
     }
@@ -91,6 +96,7 @@ public struct ToolCapabilities: Sendable {
             appWindows: MockAppWindowsCapability(groups: []),
             googleSearch: MockGoogleSearchCapability(matrix: matrix),
             webOpen: MockWebOpenCapability(matrix: matrix),
+            calendarWrite: MockCalendarWritingCapability(matrix: matrix),
             spotifyControl: MockSpotifyControlCapability(matrix: matrix)
         )
     }

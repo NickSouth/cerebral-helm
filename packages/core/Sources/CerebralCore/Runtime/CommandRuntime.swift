@@ -207,6 +207,27 @@ public final class CommandRuntime: @unchecked Sendable {
         }
     }
 
+    /// Submits an intent the parser cannot express, for an action whose input is already typed —
+    /// the Input archetype's path into the bus (docs/quick-actions/PLAN.md phase 3).
+    ///
+    /// This skips **parsing only**. The intent still resolves through the same `resolve` table,
+    /// which owns its disclosure text, and still runs the same policy evaluation, confirmation
+    /// gate, executor and lifecycle events. Provenance is still derived from `source`, so an
+    /// agent submitting this path gets no more trust than one typing at the launcher.
+    ///
+    /// `summary` is the text recorded as the command's raw input. It is never re-parsed — it
+    /// exists so a command row reads meaningfully in history rather than as an opaque blob.
+    public func submit(
+        intent: CommandIntent, source: CommandSource, summary: String
+    ) async -> CommandRuntimeOutcome {
+        let envelope = factory.makeEnvelope(
+            source: source,
+            rawInput: summary,
+            privacy: CommandPrivacy(cloudPolicy: .deny, sensitivity: .sensitivityPrivate)
+        )
+        return await start(envelope: envelope, intent: intent)
+    }
+
     /// Resolves a confirmation. Approve runs the pending command; cancel ends it;
     /// review or any rejection (replay, expiry, plan change) does not execute.
     public func decide(token: ConfirmationToken, decision: ConfirmationDecision) async -> CommandRuntimeOutcome {
@@ -561,6 +582,43 @@ public final class CommandRuntime: @unchecked Sendable {
                 reversibility: .reversible,
                 arguments: [ConfirmationArgument(name: "query", value: query, sensitive: false)],
                 actionSummary: "Search Google for \(query)."
+            )
+        case let .createCalendarEvent(draft):
+            // Everything the user typed is disclosed, so a confirmation (an agent-proposed one,
+            // or any invocation while "ask before all actions" is on) shows the actual event
+            // rather than "create an event". Notes are marked sensitive — the descriptor also
+            // redacts `/notes`, so free-form text never reaches the disclosure in the clear.
+            var arguments = [
+                ConfirmationArgument(name: "title", value: draft.title, sensitive: false),
+                ConfirmationArgument(name: "starts", value: draft.startsAt, sensitive: false),
+                ConfirmationArgument(name: "ends", value: draft.endsAt, sensitive: false),
+            ]
+            if let calendarTitle = draft.calendarTitle {
+                arguments.append(ConfirmationArgument(name: "calendar", value: calendarTitle, sensitive: false))
+            }
+            if let location = draft.location, !location.isEmpty {
+                arguments.append(ConfirmationArgument(name: "location", value: location, sensitive: false))
+            }
+            if let notes = draft.notes, !notes.isEmpty {
+                arguments.append(ConfirmationArgument(name: "notes", value: notes, sensitive: true))
+            }
+            return make(
+                toolID: "calendar.createevent",
+                input: try? CerebralHelmCalendarCreateEventInput(
+                    calendarID: draft.calendarID,
+                    endsAt: draft.endsAt,
+                    location: draft.location,
+                    notes: draft.notes,
+                    startsAt: draft.startsAt,
+                    title: draft.title
+                ).jsonData(),
+                destination: draft.calendarTitle,
+                // The event syncs to whatever accounts back that calendar, so this is honest
+                // about leaving the device — it is not a local-only write.
+                dataLeavingDevice: .metadataOnly,
+                reversibility: .reversible,
+                arguments: arguments,
+                actionSummary: "Create \"\(draft.title)\" from \(draft.startsAt) to \(draft.endsAt)."
             )
         case let .spotifyControl(action):
             // Control Spotify playback (NIC-133). The descriptor's `external_write` risk is honest —

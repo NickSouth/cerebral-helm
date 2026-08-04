@@ -30,6 +30,15 @@ public enum CommandIntent: Equatable, Sendable {
     /// Open an https web address in the browser (NIC-127) — a single `web.open` tool call, used
     /// for news article links. The adapter validates the scheme/host; a non-https link is refused.
     case webOpen(url: String)
+    /// Create one calendar event — a single `calendar.createevent` tool call, from the
+    /// `create-event` Input form.
+    ///
+    /// The parser never produces this: there is no text grammar that could carry a title, two
+    /// datetimes, a calendar, a location and notes without becoming lossy and ambiguous about
+    /// quoting. It is reached through ``CommandRuntime/submit(intent:source:summary:)``, which
+    /// skips parsing and nothing else — the same policy, confirmation, disclosure and lifecycle
+    /// still apply.
+    case createCalendarEvent(CalendarEventDraft)
     case runHook(ReferenceEntry)
     /// Measure current internet download/upload capacity on request (NIC-135) —
     /// a single read-only `network.speed.test` tool call.
@@ -95,5 +104,39 @@ public struct AmbiguousReference: Equatable, Sendable {
         self.verb = verb
         self.token = token
         self.candidates = candidates
+    }
+}
+
+/// The typed values a `create-event` form collected (docs/quick-actions/PLAN.md phase 3).
+///
+/// Times are LOCAL WALL-CLOCK ISO strings (`2026-08-03T14:00:00`), matching the calendar read
+/// side (NIC-126): the time a user typed is the time they meant, and the platform adapter resolves
+/// it in the host's zone. Optional fields are omitted rather than defaulted, so nothing is
+/// invented on the user's behalf.
+public struct CalendarEventDraft: Equatable, Sendable {
+    public let title: String
+    public let startsAt: String
+    public let endsAt: String
+    public let calendarID: String?
+    public let calendarTitle: String?
+    public let location: String?
+    public let notes: String?
+
+    public init(
+        title: String,
+        startsAt: String,
+        endsAt: String,
+        calendarID: String? = nil,
+        calendarTitle: String? = nil,
+        location: String? = nil,
+        notes: String? = nil
+    ) {
+        self.title = title
+        self.startsAt = startsAt
+        self.endsAt = endsAt
+        self.calendarID = calendarID
+        self.calendarTitle = calendarTitle
+        self.location = location
+        self.notes = notes
     }
 }

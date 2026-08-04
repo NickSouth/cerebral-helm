@@ -143,6 +143,83 @@ func appsListUnavailableIsStructured() async throws {
     }
 }
 
+@Test("calendar.createevent writes exactly the event it was given and reports where it landed")
+func calendarCreateEventWrites() async throws {
+    let capability = MockCalendarWritingCapability(calendarTitle: "Work")
+    let handler = CalendarCreateEventHandler(capability: capability)
+
+    let input = #"""
+    {"title":"Board prep","startsAt":"2026-08-03T16:00","endsAt":"2026-08-03T17:00",
+     "calendarId":"cal-work","location":"Room 2","notes":"bring the deck"}
+    """#
+    let output = try await handler.execute(input: Data(input.utf8))
+
+    let decoded = try CerebralHelmCalendarCreateEventOutput(data: output)
+    #expect(decoded.eventID == "mock-event-1")
+    #expect(decoded.calendarTitle == "Work")
+    #expect(capability.written == [
+        .init(
+            title: "Board prep", startsAt: "2026-08-03T16:00", endsAt: "2026-08-03T17:00",
+            calendarID: "cal-work", location: "Room 2", notes: "bring the deck"
+        )
+    ])
+}
+
+@Test("calendar.createevent refuses a backwards range instead of silently swapping it")
+func calendarCreateEventRejectsBackwardsRange() async throws {
+    // Swapping the two would create an event the user never described. The schema cannot express
+    // this rule, so the handler owns it.
+    let capability = MockCalendarWritingCapability()
+    let handler = CalendarCreateEventHandler(capability: capability)
+
+    await #expect(throws: ToolHandlerError.self) {
+        _ = try await handler.execute(input: Data(
+            #"{"title":"Backwards","startsAt":"2026-08-03T17:00","endsAt":"2026-08-03T16:00"}"#.utf8
+        ))
+    }
+    #expect(capability.written.isEmpty, "nothing was written")
+}
+
+@Test("calendar.createevent with the capability unavailable is a structured unavailable")
+func calendarCreateEventUnavailableIsStructured() async throws {
+    let handler = CalendarCreateEventHandler(capability: MockCalendarWritingCapability(matrix: .none))
+    await #expect(throws: ToolHandlerError.self) {
+        _ = try await handler.execute(input: Data(
+            #"{"title":"x","startsAt":"2026-08-03T16:00","endsAt":"2026-08-03T17:00"}"#.utf8
+        ))
+    }
+}
+
+@Test("app.quit asks the host to quit and reports 'quitting', not a completed quit")
+func appQuitRequestsHostTermination() async throws {
+    let capability = MockApplicationLifecycleCapability()
+    let handler = AppQuitHandler(capability: capability)
+
+    let output = try await handler.execute(input: Data("{}".utf8))
+
+    #expect(try CerebralHelmAppQuitOutput(data: output).status == .quitting)
+    #expect(capability.hostQuitRequests == 1)
+}
+
+@Test("app.quit never touches other applications — it has no target to point at one")
+func appQuitCannotReachOtherApps() async throws {
+    // The complement of apps.quitall (which always excludes the host): quitting the host and
+    // quitting someone else's app are separate capability methods, so neither tool can be
+    // steered into the other's territory.
+    let capability = MockApplicationLifecycleCapability(runningBundleIDs: ["com.apple.Safari"])
+    _ = try await AppQuitHandler(capability: capability).execute(input: Data("{}".utf8))
+
+    #expect(capability.runningBundleIDs == ["com.apple.Safari"], "no other app was asked to quit")
+}
+
+@Test("app.quit with the capability unavailable is a structured unavailable, never a mock success")
+func appQuitUnavailableIsStructured() async throws {
+    let handler = AppQuitHandler(capability: MockApplicationLifecycleCapability(matrix: .none))
+    await #expect(throws: ToolHandlerError.self) {
+        _ = try await handler.execute(input: Data("{}".utf8))
+    }
+}
+
 @Test("apps.quitall quits the running apps and reports them (NIC-143)")
 func appsQuitAllQuitsRunning() async throws {
     let handler = AppsQuitAllHandler(capability: MockApplicationLifecycleCapability(

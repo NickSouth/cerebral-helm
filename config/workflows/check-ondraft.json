@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "check-ondraft",
+  "label": "Check OnDraft",
+  "steps": [
+    { "id": "open-ondraft", "label": "Open the OnDraft deployment", "tool": "url.open", "input": { "urlId": "ondraft" } }
+  ]
+}

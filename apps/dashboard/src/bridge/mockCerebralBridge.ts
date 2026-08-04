@@ -294,7 +294,10 @@ export function createMockCerebralBridge(
     workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
     modeColors: {},
     stocks: { tickers: ["SPY", "AAPL", "NVDA", "VTI"] },
-    calendarModeMap: {}
+    // A representative mapping over the same calendars `listCalendars` returns, so browser
+    // previews exercise the mode-aware default in `create-event` (Executive → Work) and the
+    // unmapped fallback (Entertainment → Default calendar) rather than only the empty case.
+    calendarModeMap: { "cal-work": "executive", "cal-school": "school" }
   };
   let settingsEventSeq = 0;
   // The bound secret references (NIC-134), held mutably so storeSecret visibly binds one and
@@ -590,6 +593,16 @@ export function createMockCerebralBridge(
           { bundleId: "com.anthropic.claudefordesktop", name: "Claude", referenceId: "claude-desktop" }
         ],
         truncated: false
+      });
+    },
+    createCalendarEvent(input: { title: string; calendarTitle?: string }) {
+      // The browser preview has no calendar store, so this reports a synthetic id — and reports
+      // it as CREATED rather than pending, because the mock never gates. The real gating happens
+      // in the Swift runtime, where the policy engine lives.
+      return Promise.resolve({
+        eventId: `evt_${input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
+        calendarTitle: input.calendarTitle,
+        awaitingConfirmation: false
       });
     },
     listCalendars() {

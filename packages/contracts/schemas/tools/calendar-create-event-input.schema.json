@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/calendar-create-event-input.schema.json",
+  "title": "CerebralHelm Calendar Create Event Input",
+  "description": "Creates one event in the user's calendar. `startsAt`/`endsAt` are LOCAL WALL-CLOCK ISO strings (`2026-08-03T14:00:00`), not UTC instants — the same convention the calendar read side uses (NIC-126), so a time the user typed into a form means the time they meant. The adapter resolves them in the host's time zone.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "startsAt", "endsAt"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "startsAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2})?$"
+    },
+    "endsAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2})?$"
+    },
+    "calendarId": {
+      "description": "Which calendar to write to. Omitted uses the host's default calendar — never a guess at which one the user meant.",
+      "type": "string",
+      "minLength": 1
+    },
+    "location": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

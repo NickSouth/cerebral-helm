@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/app-quit-output.schema.json",
+  "title": "CerebralHelm App Quit Output",
+  "description": "Reports that termination was requested, not that it completed — the process is on its way out, so nothing downstream can observe a later status.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["quitting"]
+    }
+  }
+}

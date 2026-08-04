@@ -1,0 +1,171 @@
+/* --- The Input region (docs/quick-actions/PLAN.md) ------------------------------------------
+
+   The centre panel's lower right: below the consciousness stream, above the quick-action grid.
+   Unlike the Report region this one is a BORDERED panel — it is interactive and needs a hit
+   target, where a report is something you read. It sits in the panel's foot column, so the
+   quick-action grid stays exactly where it was and the form grows upward into the empty middle. */
+
+.input-region {
+  align-self: flex-end;
+  width: 50%;
+  max-width: 28rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-4);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-lg);
+  background: var(--ch-surface-raised);
+}
+
+.input-region__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+}
+
+.input-region__title {
+  margin: 0;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  font-weight: var(--ch-font-weight-light);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ch-text-muted);
+}
+
+.input-region__close {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  line-height: 1;
+  padding: 0 var(--ch-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  cursor: pointer;
+}
+
+.input-region__close:hover {
+  color: var(--ch-text-primary);
+}
+
+.input-region__pending {
+  margin: 0;
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+}
+
+.input-region__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+}
+
+/* --- Fields --- */
+
+.input-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.input-field__label {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.input-field__required {
+  color: var(--ch-accent-primary);
+}
+
+.input-field__control {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  width: 100%;
+  padding: var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-panel);
+  color: var(--ch-text-primary);
+}
+
+.input-field__control--area {
+  resize: vertical;
+  min-height: 4rem;
+}
+
+.input-field__control:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: 1px;
+}
+
+.input-field__control:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.input-field__hint {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* --- Footer --- */
+
+.input-region__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+}
+
+.input-region__cancel,
+.input-region__submit {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-2) var(--ch-space-4);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.input-region__submit {
+  border-color: var(--ch-accent-primary);
+  background: color-mix(in srgb, var(--ch-accent-primary) 16%, transparent);
+}
+
+.input-region__submit:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ch-accent-primary) 26%, transparent);
+}
+
+.input-region__cancel:hover:not(:disabled) {
+  border-color: var(--ch-accent-primary);
+}
+
+.input-region__cancel:disabled,
+.input-region__submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input-region__cancel:focus-visible,
+.input-region__submit:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* A datetime range is one idea, so it reads as one row: start · "to" · end. */
+.input-field__range {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.input-field__range-to {
+  flex: 0 0 auto;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}

@@ -15,6 +15,7 @@ import type {
   CaptureLayoutResult,
   ListAppsResult,
   ListCalendarsResult,
+  CreateCalendarEventResult,
   CanvasStatus,
   KnowledgeRebuildResult,
   ListNotesResult,
@@ -313,6 +314,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     listCalendars() {
       return operation<ListCalendarsResult>("listCalendars", {});
+    },
+    createCalendarEvent(input) {
+      return operation<CreateCalendarEventResult>("createCalendarEvent", { ...input });
     },
     updateQuickApps(input) {
       return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });

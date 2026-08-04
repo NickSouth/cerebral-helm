@@ -277,6 +277,79 @@ public struct AppsListHandler: ToolHandler {
     }
 }
 
+// MARK: - calendar.createevent
+
+/// Creates one event in the user's calendar — the tool behind the `create-event` Input.
+///
+/// Its `external_write` risk is honest (the event syncs to whatever accounts back that calendar),
+/// but its descriptor opts into the user-authored exemption: a person who filled in the form and
+/// pressed Create has already authored and reviewed exactly what will happen, so a second
+/// confirmation would restate what they just typed. The same call proposed by an agent still
+/// confirms, with the values it chose disclosed.
+public struct CalendarCreateEventHandler: ToolHandler {
+    public let toolID = "calendar.createevent"
+    private let capability: any CalendarWritingCapability
+
+    public init(capability: any CalendarWritingCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        guard let decoded = try? CerebralHelmCalendarCreateEventInput(data: input) else {
+            throw ToolHandlerError.invalidInput("calendar.createevent input does not match its contract.")
+        }
+        // The schema already constrains the shape; this is the one rule it cannot express, and
+        // silently swapping the two would create an event the user did not describe.
+        guard decoded.startsAt <= decoded.endsAt else {
+            throw ToolHandlerError.invalidInput("calendar.createevent requires endsAt to be at or after startsAt.")
+        }
+        do {
+            let created = try await capability.createEvent(
+                title: decoded.title,
+                startsAt: decoded.startsAt,
+                endsAt: decoded.endsAt,
+                calendarID: decoded.calendarID,
+                location: decoded.location,
+                notes: decoded.notes
+            )
+            return try CerebralHelmCalendarCreateEventOutput(
+                calendarTitle: created.calendarTitle, eventID: created.eventID
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+// MARK: - app.quit
+
+/// Quits CerebralHelm itself — the action behind the Executive `shut-down` slot and the
+/// Settings quit button.
+///
+/// It takes no target, so it is structurally incapable of quitting anything else; quitting
+/// *other* apps is `apps.quitall`, which in turn always excludes the host. Keeping the two
+/// apart means neither can be reached through the other.
+///
+/// The output reports `quitting`, not `quit`: termination has been requested and the
+/// process is on its way out, so claiming a completed quit would be asserting something
+/// nothing can observe.
+public struct AppQuitHandler: ToolHandler {
+    public let toolID = "app.quit"
+    private let capability: any ApplicationLifecycleCapability
+
+    public init(capability: any ApplicationLifecycleCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        do { _ = try CerebralHelmAppQuitInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("app.quit input does not match its contract.")
+        }
+        do {
+            try await capability.quitHostApplication()
+            return try CerebralHelmAppQuitOutput(status: .quitting).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
 // MARK: - apps.quitall
 
 /// Quits every regular running application across all modes (NIC-143), excluding the

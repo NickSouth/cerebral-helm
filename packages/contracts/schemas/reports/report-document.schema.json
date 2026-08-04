@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/reports/report-document.schema.json",
+  "title": "CerebralHelm Report Document",
+  "description": "The rendered form of every Report-archetype quick action (docs/quick-actions/PLAN.md). A report is NOT a template — it is a typed block document, because the deterministic composer that writes it today will be replaced by a model later. The pipeline is providers -> Assembler -> Snapshot -> Composer -> ReportDocument -> Renderer; only the Composer changes when the model lands, and the Renderer never does. A model streaming blocks into the renderer is visually identical to the deterministic reveal, which is why the future conversation surface is not a new surface.\n\nBlocks are intentionally a FLAT shape keyed by `kind` rather than a discriminated union: a union would make adding a block kind a breaking contract change, and the renderer already has to survive a malformed block once a model writes these. The renderer skips any block whose kind it does not know, or whose fields for that kind are absent — a report never crashes the dashboard.\n\nCodegen note: quicktype ignores `$defs` titles and names generated types from PROPERTY names, so a generic property name here mints (or steals) a generic type name across the whole shared contracts module. Hence the kind-prefixed field names on a block.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "reportId",
+    "blocks"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "reportId": {
+      "description": "The quick-action id this document was composed for, so the renderer can key its reveal and the region can title itself.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reportBlock"
+      }
+    }
+  },
+  "$defs": {
+    "reportActionReference": {
+      "title": "CerebralHelmReportActionReference",
+      "description": "A clickable destination inside a report. It is NEVER a URL — it names a registered quick action, resolved through the dispatch registry. Two reasons this is non-negotiable: opening a destination in a specific Chrome profile is a profile-scoped reference (NIC-151), not an href; and once a model composes the document, every clickable thing in it is a model-chosen destination, so a raw href would let the model — or content it summarized — point anywhere. Params are untrusted, so the target tool builds its destination host-side (the `google.search` pattern: the host is fixed, only the query varies).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "reportBlockKind": {
+      "title": "CerebralHelmReportBlockKind",
+      "type": "string",
+      "enum": [
+        "greeting",
+        "line",
+        "metric",
+        "list",
+        "checklist",
+        "empty",
+        "count",
+        "proposal"
+      ]
+    },
+    "reportGreetingSize": {
+      "title": "CerebralHelmReportGreetingSize",
+      "type": "string",
+      "enum": [
+        "hero",
+        "standard"
+      ]
+    },
+    "reportLineEmphasis": {
+      "title": "CerebralHelmReportLineEmphasis",
+      "description": "`strong` uses weight, never color — inside a report, color means actionable.",
+      "type": "string",
+      "enum": [
+        "normal",
+        "strong",
+        "muted"
+      ]
+    },
+    "reportMetricTone": {
+      "title": "CerebralHelmReportMetricTone",
+      "type": "string",
+      "enum": [
+        "neutral",
+        "positive",
+        "warning",
+        "critical"
+      ]
+    },
+    "reportItemStatus": {
+      "title": "CerebralHelmReportItemStatus",
+      "description": "Only meaningful on a `checklist` block — the streaming variant of a list.",
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "passed",
+        "failed"
+      ]
+    },
+    "reportListItem": {
+      "title": "CerebralHelmReportListItem",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "meta": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/reportItemStatus"
+        },
+        "reportAction": {
+          "$ref": "#/$defs/reportActionReference"
+        }
+      }
+    },
+    "reportBlock": {
+      "title": "CerebralHelmReportBlock",
+      "description": "One block of a report. `blockKind` selects which of the optional fields carry meaning; the renderer reads only those and ignores the rest. Field names are deliberately kind-prefixed (`greetingSize`, `lineEmphasis`, `metricTone`, `listItems`, `reportAction`): they say which kind they belong to, which a flat block needs anyway, AND they keep codegen from minting single-word type names like `Kind` / `Tone` / `Size` in the shared namespace. That is not cosmetic — a bare `kind` here renamed the pre-existing layout `Kind` enum and broke LayoutWorkflowSynthesizer, and a bare `action` did the same to the mode-apply `Action` type.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "blockKind"
+      ],
+      "properties": {
+        "blockKind": {
+          "$ref": "#/$defs/reportBlockKind"
+        },
+        "text": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "greetingSize": {
+          "$ref": "#/$defs/reportGreetingSize"
+        },
+        "lineEmphasis": {
+          "$ref": "#/$defs/reportLineEmphasis"
+        },
+        "metricTone": {
+          "$ref": "#/$defs/reportMetricTone"
+        },
+        "listItems": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reportListItem"
+          }
+        },
+        "reportAction": {
+          "$ref": "#/$defs/reportActionReference"
+        },
+        "reportActions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reportActionReference"
+          }
+        }
+      }
+    }
+  }
+}
