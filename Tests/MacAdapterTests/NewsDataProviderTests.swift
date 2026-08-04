@@ -113,4 +113,34 @@ func newsDataErrorPayloadThrows() {
     }
 }
 
+
+@Test("an exhausted quota is classified as rate-limited, not as a generic breakage")
+func newsDataClassifiesRateLimit() {
+    // Collapsing every non-2xx into one message made "your key ran out of credits until tomorrow"
+    // indistinguishable from "the network is down" — the panel could only ever say the latter.
+    #expect(NewsDataProvider.error(for: 429) == .rateLimited)
+}
+
+@Test("a rejected key is classified as a credential problem the user can act on")
+func newsDataClassifiesRejectedKey() {
+    #expect(NewsDataProvider.error(for: 401) == .credentialsMissing)
+    #expect(NewsDataProvider.error(for: 403) == .credentialsMissing)
+}
+
+@Test("any other status stays generic, and never leaks the response body")
+func newsDataClassifiesOtherStatuses() {
+    #expect(NewsDataProvider.error(for: 500) == .providerFailed("The news service returned status 500."))
+    #expect(NewsDataProvider.error(for: 404) == .providerFailed("The news service returned status 404."))
+}
+
+@Test("a blank token fails before the request, so the fallback gets its turn without a wasted call")
+func newsDataRejectsBlankTokenWithoutRequest() async throws {
+    let catalog = NewsProfileCatalog(language: "en", defaultCategory: "top", profiles: ["broad": "top"])
+    // A session pointed at an unroutable host: reaching the network at all would surface as a
+    // different error than credentialsMissing.
+    await #expect(throws: NewsError.credentialsMissing) {
+        try await NewsDataProvider(catalog: catalog, host: "https://127.0.0.1:1")
+            .headlines(profile: "broad", apiToken: "   ")
+    }
+}
 #endif

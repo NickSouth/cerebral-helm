@@ -472,14 +472,19 @@ public enum BridgeEventFactory {
     ) -> DashboardNewsRegion {
         switch result {
         case let .failure(error):
-            let credentialsMissing = (error as? NewsError).map { $0 == .credentialsMissing } ?? false
-            return DashboardNewsRegion(
-                emptyMessage: credentialsMissing
-                    ? "Add your NewsData API key in Settings → Setup to see news."
-                    : "News isn't available right now.",
-                headlines: [],
-                state: .unavailable
-            )
+            // A rate limit is temporary and self-resolving, so it is not reported as a breakage;
+            // a missing/rejected key is the one case the user can act on. Everything else stays
+            // generic — the raw diagnostic is never surfaced.
+            let message: String
+            switch error as? NewsError {
+            case .credentialsMissing:
+                message = "Add your NewsData API key in Settings → Setup to see news."
+            case .rateLimited:
+                message = "News is rate limited right now. It'll come back on its own."
+            default:
+                message = "News isn't available right now."
+            }
+            return DashboardNewsRegion(emptyMessage: message, headlines: [], state: .unavailable)
         case let .success(headlines) where headlines.isEmpty:
             return DashboardNewsRegion(
                 emptyMessage: "No headlines right now.", headlines: [], state: .empty

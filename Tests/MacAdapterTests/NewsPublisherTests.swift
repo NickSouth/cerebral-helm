@@ -58,13 +58,15 @@ func newsPublisherEmitsReadyPerProfile() async throws {
     #expect(!firstTwo.contains("tok"))
 }
 
-@Test("with no stored key every profile emits an honest add-your-key unavailable state")
+@Test("with no stored key and nothing else able to serve, the add-your-key guidance is emitted")
 func newsPublisherEmitsCredentialsMissing() async throws {
     let collector = NewsEventCollector()
     let publisher = NewsPublisher(
         profiles: ["broad"],
         secretStore: MockSecretStore(), // empty — no key bound
-        provider: MockNewsProvider(headlines: sampleNews()),
+        // A provider that cannot serve without the key, and no fallback behind it: this is the
+        // only shape in which the key prompt is the honest thing to show.
+        provider: MockNewsProvider(error: .credentialsMissing),
         intervalMs: 50,
         emit: { collector.collect($0) }
     )
@@ -136,5 +138,369 @@ func newsPublisherPauseResume() async throws {
     await waitForNews(1000) { collector.count > paused }
     #expect(collector.count > paused)
     await publisher.stop()
+}
+
+// MARK: - Quota discipline: the minimum fetch interval + the persisted last-good cache
+//
+// The News producer spends one provider request per profile per tick against a ~200/day free
+// quota. The scheduled cadence is affordable; the out-of-cadence ticks were not — `start()` and
+// every dashboard visibility resume fetched immediately, and the dashboard is a backdrop window
+// whose occlusion flips whenever a full-screen app covers it. These tests pin the two rules that
+// fix it: no fetch within the floor of the last *attempt*, and a cache that survives relaunch.
+//
+// Ticks are driven through a false→true `setActive` transition rather than the sampling loop, so
+// each test triggers an exact number of non-forced ticks with no timing race.
+
+/// Counts provider calls so a test can assert requests were *not* spent, and can be flipped to
+/// failing mid-test to exercise the last-good path.
+private actor CountingNewsProvider: NewsProvider {
+    private var calls = 0
+    private var failing: Bool
+    private let items: [NewsHeadline]
+
+    init(items: [NewsHeadline], failing: Bool = false) {
+        self.items = items
+        self.failing = failing
+    }
+
+    var callCount: Int { calls }
+
+    func setFailing(_ value: Bool) { failing = value }
+
+    func headlines(profile: String, apiToken: String) async throws -> [NewsHeadline] {
+        calls += 1
+        // Stands in for a metered provider, so it needs the key exactly as NewsDataProvider does.
+        if apiToken.isEmpty { throw NewsError.credentialsMissing }
+        if failing { throw NewsError.providerFailed("rate limited") }
+        return items
+    }
+}
+
+/// A hand-advanced clock: the floor and the cache-age horizon are measured in wall-clock time, so
+/// the tests move time explicitly rather than sleeping. Unsynchronised on purpose — these tests
+/// drive one tick at a time and `await` each to completion, so there is never a concurrent access,
+/// and a lock would be unavailable from the async context the publisher reads it in.
+private final class TestClock: @unchecked Sendable {
+    private var current: Date
+
+    init(_ start: Date = Date(timeIntervalSince1970: 1_750_000_000)) { current = start }
+
+    func now() -> Date { current }
+
+    func advance(_ seconds: TimeInterval) { current = current.addingTimeInterval(seconds) }
+}
+
+/// One non-forced tick, driven through the visibility signal the shell uses.
+private func resume(_ publisher: NewsPublisher) async {
+    await publisher.setActive(false)
+    await publisher.setActive(true)
+}
+
+private func makeQuotaPublisher(
+    profiles: [String] = ["broad"],
+    provider: CountingNewsProvider,
+    cacheStore: any NewsCacheStore,
+    clock: TestClock,
+    secretStore: any SecretStoreManaging = MockSecretStore(values: ["newsdata_api_key": "tok"]),
+    minimumFetchIntervalMs: Int = 2_700_000,
+    maximumCacheAgeMs: Int = 43_200_000,
+    collector: NewsEventCollector
+) -> NewsPublisher {
+    NewsPublisher(
+        profiles: profiles,
+        secretStore: secretStore,
+        provider: provider,
+        intervalMs: 3_600_000,
+        minimumFetchIntervalMs: minimumFetchIntervalMs,
+        maximumCacheAgeMs: maximumCacheAgeMs,
+        cacheStore: cacheStore,
+        now: { clock.now() },
+        emit: { collector.collect($0) }
+    )
+}
+
+@Test("repeated resumes inside the floor emit from cache and spend no extra provider requests")
+func newsPublisherFloorBlocksOutOfCadenceFetches() async throws {
+    let collector = NewsEventCollector()
+    let provider = CountingNewsProvider(items: sampleNews())
+    let clock = TestClock()
+    let publisher = makeQuotaPublisher(
+        provider: provider, cacheStore: InMemoryNewsCacheStore(), clock: clock, collector: collector
+    )
+
+    await resume(publisher) // first tick: nothing cached, so it fetches
+    #expect(await provider.callCount == 1)
+
+    // Five occlusion flaps a few minutes apart — the shape that quietly drained the quota.
+    for _ in 0..<5 {
+        clock.advance(120)
+        await resume(publisher)
+    }
+
+    #expect(await provider.callCount == 1, "ticks inside the floor must not spend a request")
+    #expect(collector.count == 6, "every tick still emits — from cache when it does not fetch")
+    #expect(collector.all.allSatisfy { $0.contains("\"state\":\"ready\"") })
+    #expect(collector.all.last?.contains("Markets steady") == true)
+
+    // Past the floor, the next tick fetches again.
+    clock.advance(2_700)
+    await resume(publisher)
+    #expect(await provider.callCount == 2)
+}
+
+@Test("a persisted cache survives relaunch: a fresh publisher renders from disk without fetching")
+func newsPublisherCacheSurvivesRelaunch() async throws {
+    let store = InMemoryNewsCacheStore()
+    let clock = TestClock()
+    let provider = CountingNewsProvider(items: sampleNews())
+
+    let firstRun = NewsEventCollector()
+    await resume(makeQuotaPublisher(
+        provider: provider, cacheStore: store, clock: clock, collector: firstRun
+    ))
+    #expect(await provider.callCount == 1)
+
+    // A rebuild-and-relaunch a minute later: a brand-new publisher over the same store.
+    clock.advance(60)
+    let secondRun = NewsEventCollector()
+    await resume(makeQuotaPublisher(
+        provider: provider, cacheStore: store, clock: clock, collector: secondRun
+    ))
+
+    #expect(await provider.callCount == 1, "a relaunch inside the floor must not spend a request")
+    #expect(secondRun.count == 1)
+    #expect(secondRun.all[0].contains("\"state\":\"ready\""))
+    #expect(secondRun.all[0].contains("Markets steady"))
+}
+
+@Test("refresh() bypasses the floor — storing a key goes live at once")
+func newsPublisherRefreshBypassesFloor() async throws {
+    let collector = NewsEventCollector()
+    let provider = CountingNewsProvider(items: sampleNews())
+    let clock = TestClock()
+    let publisher = makeQuotaPublisher(
+        provider: provider, cacheStore: InMemoryNewsCacheStore(), clock: clock, collector: collector
+    )
+
+    await resume(publisher)
+    #expect(await provider.callCount == 1)
+
+    clock.advance(5)
+    await publisher.refresh()
+    #expect(await provider.callCount == 2, "an explicit user-initiated refresh is not floor-gated")
+}
+
+@Test("the floor is measured from the last attempt, so a failing provider is not retried each tick")
+func newsPublisherFloorMeasuredFromAttemptNotSuccess() async throws {
+    let collector = NewsEventCollector()
+    let provider = CountingNewsProvider(items: sampleNews(), failing: true)
+    let clock = TestClock()
+    let publisher = makeQuotaPublisher(
+        provider: provider, cacheStore: InMemoryNewsCacheStore(), clock: clock, collector: collector
+    )
+
+    for _ in 0..<4 {
+        clock.advance(120)
+        await resume(publisher)
+    }
+
+    #expect(await provider.callCount == 1, "a rate-limited provider must not be hammered on every resume")
+    #expect(collector.all.allSatisfy { $0.contains("\"state\":\"unavailable\"") })
+}
+
+@Test("a provider failure keeps serving the last good headlines rather than blanking the panel")
+func newsPublisherFailureServesLastGood() async throws {
+    let collector = NewsEventCollector()
+    let provider = CountingNewsProvider(items: sampleNews())
+    let clock = TestClock()
+    let publisher = makeQuotaPublisher(
+        provider: provider, cacheStore: InMemoryNewsCacheStore(), clock: clock, collector: collector
+    )
+
+    await resume(publisher)
+    await provider.setFailing(true)
+    clock.advance(2_700)
+    await resume(publisher)
+
+    #expect(await provider.callCount == 2)
+    #expect(collector.all.last?.contains("\"state\":\"ready\"") == true)
+    #expect(collector.all.last?.contains("Markets steady") == true)
+}
+
+@Test("cached headlines past the max age are retired rather than shown as if current")
+func newsPublisherRetiresStaleCache() async throws {
+    let collector = NewsEventCollector()
+    let provider = CountingNewsProvider(items: sampleNews())
+    let clock = TestClock()
+    let publisher = makeQuotaPublisher(
+        provider: provider, cacheStore: InMemoryNewsCacheStore(), clock: clock,
+        maximumCacheAgeMs: 3_600_000, collector: collector
+    )
+
+    await resume(publisher)
+    #expect(collector.all[0].contains("\"state\":\"ready\""))
+
+    // The provider stays down well past the horizon: the headlines are now too old to pass off
+    // as current, and the region carries no staleness marker, so the panel degrades honestly.
+    await provider.setFailing(true)
+    clock.advance(7_200)
+    await resume(publisher)
+
+    #expect(collector.all.last?.contains("\"state\":\"unavailable\"") == true)
+    #expect(collector.all.last?.contains("Markets steady") == false)
+    #expect(collector.all.last?.contains("NewsData API key") == false) // generic, not the key prompt
+}
+
+@Test("with no stored key a free fallback still serves the panel instead of the key prompt")
+func newsPublisherServesFallbackWithoutKey() async throws {
+    let collector = NewsEventCollector()
+    let clock = TestClock()
+    let publisher = NewsPublisher(
+        profiles: ["broad"],
+        secretStore: MockSecretStore(), // empty — no key bound
+        // The shipped shape: a metered provider that needs the key, a free one that does not.
+        provider: FallbackNewsProvider([
+            MockNewsProvider(error: .credentialsMissing),
+            MockNewsProvider(headlines: sampleNews()),
+        ]),
+        intervalMs: 3_600_000,
+        cacheStore: InMemoryNewsCacheStore(),
+        now: { clock.now() },
+        emit: { collector.collect($0) }
+    )
+
+    await resume(publisher)
+
+    #expect(collector.count == 1)
+    #expect(collector.all[0].contains("\"state\":\"ready\""))
+    #expect(collector.all[0].contains("Markets steady"))
+    #expect(
+        collector.all[0].contains("NewsData API key") == false,
+        "an unconfigured key must not blank a panel that a free source can serve"
+    )
+}
+
+@Test("the floor defaults to 90% of the cadence, so a longer cadence really does lower spend")
+func newsPublisherFloorTracksCadence() async throws {
+    let collector = NewsEventCollector()
+    let provider = CountingNewsProvider(items: sampleNews())
+    let clock = TestClock()
+    // No explicit floor: it must be derived from the interval, not left at some fixed constant
+    // that a 2 h cadence would sail past on every resume.
+    let publisher = NewsPublisher(
+        profiles: ["broad"],
+        secretStore: MockSecretStore(values: ["newsdata_api_key": "tok"]),
+        provider: provider,
+        intervalMs: 7_200_000, // 2 h
+        cacheStore: InMemoryNewsCacheStore(),
+        now: { clock.now() },
+        emit: { collector.collect($0) }
+    )
+
+    await resume(publisher)
+    #expect(await provider.callCount == 1)
+
+    // An hour later — well past any 45-minute constant, but inside 90% of a 2 h cadence.
+    clock.advance(3_600)
+    await resume(publisher)
+    #expect(await provider.callCount == 1, "a resume inside the cadence must not fetch")
+
+    clock.advance(3_000) // now past 90% of 2 h
+    await resume(publisher)
+    #expect(await provider.callCount == 2)
+}
+
+@Test("a rate limit reads as temporary, not broken, and never as a key problem")
+func newsPublisherRateLimitIsHonest() async throws {
+    let collector = NewsEventCollector()
+    let clock = TestClock()
+    let publisher = NewsPublisher(
+        profiles: ["broad"],
+        secretStore: MockSecretStore(values: ["newsdata_api_key": "tok"]),
+        // Both sources down: the metered one out of credits, the free one unreachable. The
+        // metered provider's diagnosis is the one that reaches the panel.
+        provider: FallbackNewsProvider([
+            MockNewsProvider(error: .rateLimited),
+            MockNewsProvider(error: .providerFailed("the feed is unreachable")),
+        ]),
+        cacheStore: InMemoryNewsCacheStore(),
+        now: { clock.now() },
+        emit: { collector.collect($0) }
+    )
+
+    await resume(publisher)
+
+    #expect(collector.all[0].contains("\"state\":\"unavailable\""))
+    #expect(collector.all[0].contains("rate limited"))
+    #expect(collector.all[0].contains("NewsData API key") == false, "not the user's fault to fix")
+}
+
+@Test("a rate limit falls through to the free source rather than reaching the panel at all")
+func newsPublisherRateLimitFallsThroughToFreeSource() async throws {
+    let collector = NewsEventCollector()
+    let clock = TestClock()
+    let publisher = NewsPublisher(
+        profiles: ["broad"],
+        secretStore: MockSecretStore(values: ["newsdata_api_key": "tok"]),
+        provider: FallbackNewsProvider([
+            MockNewsProvider(error: .rateLimited),
+            MockNewsProvider(headlines: sampleNews()),
+        ]),
+        cacheStore: InMemoryNewsCacheStore(),
+        now: { clock.now() },
+        emit: { collector.collect($0) }
+    )
+
+    await resume(publisher)
+
+    #expect(collector.all[0].contains("\"state\":\"ready\""))
+    #expect(collector.all[0].contains("Markets steady"))
+}
+
+@Test("a rate limit does not discard headlines that are still good")
+func newsPublisherRateLimitKeepsLastGood() async throws {
+    let collector = NewsEventCollector()
+    let clock = TestClock()
+    let store = InMemoryNewsCacheStore()
+    let secrets = MockSecretStore(values: ["newsdata_api_key": "tok"])
+
+    await resume(NewsPublisher(
+        profiles: ["broad"], secretStore: secrets,
+        provider: MockNewsProvider(headlines: sampleNews()),
+        cacheStore: store, now: { clock.now() }, emit: { collector.collect($0) }
+    ))
+
+    clock.advance(7_200)
+    await resume(NewsPublisher(
+        profiles: ["broad"], secretStore: secrets,
+        provider: MockNewsProvider(error: .rateLimited),
+        cacheStore: store, now: { clock.now() }, emit: { collector.collect($0) }
+    ))
+
+    #expect(collector.all.last?.contains("\"state\":\"ready\"") == true)
+    #expect(collector.all.last?.contains("Markets steady") == true)
+}
+
+@Test("a missing credential is never masked by cached headlines")
+func newsPublisherCredentialsMissingBeatsCache() async throws {
+    let store = InMemoryNewsCacheStore()
+    let clock = TestClock()
+    let provider = CountingNewsProvider(items: sampleNews())
+
+    let warm = NewsEventCollector()
+    await resume(makeQuotaPublisher(provider: provider, cacheStore: store, clock: clock, collector: warm))
+    #expect(warm.all[0].contains("\"state\":\"ready\""))
+
+    // The user removed the key: the guidance must win over the still-fresh cached headlines.
+    clock.advance(2_700)
+    let afterRemoval = NewsEventCollector()
+    await resume(makeQuotaPublisher(
+        provider: provider, cacheStore: store, clock: clock,
+        secretStore: MockSecretStore(), collector: afterRemoval
+    ))
+
+    #expect(afterRemoval.all[0].contains("\"state\":\"unavailable\""))
+    #expect(afterRemoval.all[0].contains("NewsData API key"))
+    #expect(afterRemoval.all[0].contains("Markets steady") == false)
 }
 #endif
