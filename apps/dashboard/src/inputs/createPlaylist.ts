@@ -5,9 +5,10 @@ import type { InputForm, InputValues } from "./inputForm";
  * `create-playlist` — an empty, named playlist in the connected Spotify account (quick actions
  * phase 4).
  *
- * **Empty on purpose.** Seeding it with tracks means searching Spotify's catalogue and choosing
- * from the results, which is a picker with its own surface, not a field on this form. Creating the
- * playlist is the part that needed the API; filling it is something Spotify itself is good at.
+ * **Empty on purpose, and then opened.** Seeding it with tracks means searching Spotify's
+ * catalogue and choosing from the results, which is a picker with its own surface, not a field on
+ * this form. Creating the playlist is the part that needed the API; filling it is what Spotify is
+ * good at — so the action hands straight over, opening the desktop app at the new playlist.
  *
  * **Private by default.** Spotify's API defaults `public` to `true`, so omitting the field would
  * publish to the user's profile because nobody said otherwise. The form asks, and the confirmation
@@ -73,7 +74,14 @@ export function createPlaylistForm(bridge: CerebralBridge): InputForm {
         if (result.awaitingConfirmation) {
           return { message: `“${name}” needs your confirmation before it's created.` };
         }
-        return { message: `Created the playlist “${result.name}”.` };
+        // Says what actually happened to both things: the playlist, and whether Spotify came
+        // forward. A failed open never turns into a failed create — the playlist is there either
+        // way, and claiming otherwise would send the user looking for something that exists.
+        return {
+          message: result.opened
+            ? `Created “${result.name}” — opening it in Spotify.`
+            : `Created “${result.name}”. Open Spotify to add to it.`
+        };
       } catch (error) {
         // The one failure with a one-step remedy gets to say what it is; everything else falls
         // through to the region's generic handling with the form and its typing intact.

@@ -170,11 +170,15 @@ public struct SpotifyPlaylistResult: Equatable, Sendable {
     /// The playlist's Spotify URL **as returned by the API** — never constructed here. Nil when
     /// Spotify omitted it.
     public let url: String?
+    /// Whether Spotify was opened at the new playlist. Best-effort: the playlist exists either
+    /// way, so a failed open is reported rather than turned into a failed create.
+    public let opened: Bool
 
-    public init(id: String, name: String, url: String?) {
+    public init(id: String, name: String, url: String?, opened: Bool = false) {
         self.id = id
         self.name = name
         self.url = url
+        self.opened = opened
     }
 }
 

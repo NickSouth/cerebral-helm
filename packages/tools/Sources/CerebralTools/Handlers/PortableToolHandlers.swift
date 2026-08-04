@@ -191,6 +191,7 @@ public struct SpotifyCreatePlaylistHandler: ToolHandler {
             return try CerebralHelmSpotifyCreatePlaylistOutput(
                 playlistID: result.id,
                 playlistName: result.name,
+                playlistOpened: result.opened,
                 playlistURL: result.url
             ).jsonData()
         } catch let error as NativeCapabilityError {

@@ -245,7 +245,10 @@ public struct MockSpotifyPlaylistCapability: SpotifyPlaylistCapability {
 
     public func createPlaylist(name: String, description: String?, isPublic: Bool) async throws -> SpotifyPlaylistResult {
         try CapabilityGate.check(CapabilityMatrix.Capability.spotifyPlaylist, matrix: matrix, fault: fault, subject: name)
-        return SpotifyPlaylistResult(id: "mock-playlist", name: name, url: "https://open.spotify.com/playlist/mock-playlist")
+        return SpotifyPlaylistResult(
+            id: "mock-playlist", name: name,
+            url: "https://open.spotify.com/playlist/mock-playlist", opened: true
+        )
     }
 }
 

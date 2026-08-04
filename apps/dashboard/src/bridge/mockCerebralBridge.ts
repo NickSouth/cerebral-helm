@@ -665,6 +665,7 @@ export function createMockCerebralBridge(
         playlistId: "mock-playlist",
         name: input.name,
         url: "https://open.spotify.com/playlist/mock-playlist",
+        opened: true,
         awaitingConfirmation: false,
         needsReconnect: false
       });
@@ -742,12 +743,13 @@ export function createMockCerebralBridge(
       });
     },
     sendMessage(input: { target: string; targetName?: string }) {
-      // The browser sends nothing. It reports the GATED shape, because that is the real one: the
-      // tool takes no user-authored exemption, so a send always waits on a confirmation.
+      // The browser sends nothing. It reports the SENT shape, which is the normal one: the tool
+      // takes the user-authored exemption, so a message the user typed and pressed Send on does
+      // not re-ask. The gated shape belongs to an agent-proposed send, which the mock never makes.
       return Promise.resolve({
         targetName: input.targetName ?? input.target,
-        sent: false,
-        awaitingConfirmation: true
+        sent: true,
+        awaitingConfirmation: false
       });
     },
     listCalendars() {

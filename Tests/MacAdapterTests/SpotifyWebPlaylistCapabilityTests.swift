@@ -78,6 +78,20 @@ func playlistDecodesResponse() throws {
     #expect(SpotifyWebPlaylistCapability.decode(Data(#"{"name":"x"}"#.utf8), fallbackName: "x") == nil)
 }
 
+@Test("the app URI opens the desktop app, and refuses an id that is not a plain identifier")
+func playlistAppURI() throws {
+    // Handing straight over to Spotify is the point: the playlist is empty, and filling it is what
+    // Spotify is good at. `spotify:` opens the app rather than a browser tab.
+    let uri = try #require(SpotifyWebPlaylistCapability.appURI(playlistID: "3cEYpjA9oz9GiPac4AsH4n"))
+    #expect(uri.absoluteString == "spotify:playlist:3cEYpjA9oz9GiPac4AsH4n")
+
+    // The id comes from Spotify's own answer, but the guard costs nothing and means nothing but a
+    // plain identifier can ever reach a URI.
+    #expect(SpotifyWebPlaylistCapability.appURI(playlistID: "") == nil)
+    #expect(SpotifyWebPlaylistCapability.appURI(playlistID: "abc/../x") == nil)
+    #expect(SpotifyWebPlaylistCapability.appURI(playlistID: "a b") == nil)
+}
+
 @Test("the playlist scopes are requested, so a fresh connect grants them")
 func playlistScopesAreRequested() {
     #expect(SpotifyTokenExchange.playbackScopes.contains("playlist-modify-private"))

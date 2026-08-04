@@ -196,6 +196,8 @@ export interface CreateSpotifyPlaylistResult {
   readonly playlistId: string;
   readonly name: string;
   readonly url: string | null;
+  /** Whether Spotify came forward at the new playlist — best-effort, never a failure. */
+  readonly opened: boolean;
   readonly awaitingConfirmation: boolean;
   readonly needsReconnect: boolean;
 }

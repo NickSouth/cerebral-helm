@@ -134,6 +134,23 @@ func overlayIsStricterOnly() throws {
     }
 }
 
+@Test("only the writes a person authors run one-click; the irreversible one still discloses")
+func userAuthoredExemptionIsDeliberate() throws {
+    // The provenance tier in one assertion. `messages.send` takes the exemption (owner decision,
+    // 2026-08-04): typing a message and pressing Send IS the human confirmation, and re-asking
+    // would restate what they just wrote. An AGENT proposing the same call still gates, and the
+    // "ask before all actions" overlay still re-arms it — neither is weakened by the key.
+    let descriptors = try loadValidDescriptors()
+    func policy(_ id: String) throws -> String {
+        try #require(descriptors.first { $0.id == id }).confirmationPolicyKey.rawValue
+    }
+    for exempt in ["messages.send", "calendar.createevent", "linear.createissue", "spotify.createplaylist"] {
+        #expect(try policy(exempt) == "allow_external_write_when_user_authored", "\(exempt)")
+    }
+    // Destructive is never exemptible, whoever authored it.
+    #expect(try policy("app.quit") == "confirm_destructive")
+}
+
 @Test("the shipped config overlays validate cleanly against their descriptors")
 func shippedOverlaysAreConsistent() throws {
     let descriptors = try loadValidDescriptors()

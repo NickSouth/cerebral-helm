@@ -23,15 +23,18 @@ public struct SpotifyWebPlaylistCapability: SpotifyPlaylistCapability {
     private let authSession: SpotifyAuthSession
     private let session: URLSession
     private let host: String
+    private let workspace: any WorkspaceOpening
 
     public init(
         authSession: SpotifyAuthSession,
         session: URLSession? = nil,
         host: String = "https://api.spotify.com",
+        workspace: any WorkspaceOpening = SystemWorkspace(),
         resourceTimeout: TimeInterval = 15
     ) {
         self.authSession = authSession
         self.host = host
+        self.workspace = workspace
         if let session {
             self.session = session
         } else {
@@ -77,10 +80,34 @@ public struct SpotifyWebPlaylistCapability: SpotifyPlaylistCapability {
         guard let http = response as? HTTPURLResponse else { throw NativeCapabilityError.unavailable }
         try Self.checkStatus(http.statusCode)
 
-        guard let result = Self.decode(data, fallbackName: trimmed) else {
+        guard let created = Self.decode(data, fallbackName: trimmed) else {
             throw NativeCapabilityError.adapterFailure("Spotify did not confirm the playlist was created.")
         }
-        return result
+
+        // Opening is BEST-EFFORT and deliberately cannot fail the create: the playlist exists the
+        // moment Spotify answered, and reporting a failure because a window did not come forward
+        // would be wrong about the thing that actually matters.
+        var opened = false
+        if let appURI = Self.appURI(playlistID: created.id) {
+            opened = (try? await workspace.openURL(appURI)) != nil
+        }
+        return SpotifyPlaylistResult(id: created.id, name: created.name, url: created.url, opened: opened)
+    }
+
+    /// The `spotify:` URI that opens the **desktop app** at the playlist, rather than a browser tab.
+    ///
+    /// Derived from the id rather than read from the response: Spotify's create documentation does
+    /// not list a `uri` field, and the scheme is a fixed constant. This is not a caller-chosen
+    /// destination — the id came from Spotify's own answer a line ago, and the only variable part
+    /// is percent-encoded into a single path component.
+    static func appURI(playlistID: String) -> URL? {
+        let allowed = CharacterSet.alphanumerics
+        guard
+            !playlistID.isEmpty,
+            let escaped = playlistID.addingPercentEncoding(withAllowedCharacters: allowed),
+            escaped == playlistID
+        else { return nil }
+        return URL(string: "spotify:playlist:\(playlistID)")
     }
 
     // MARK: - Pure helpers (unit-tested)

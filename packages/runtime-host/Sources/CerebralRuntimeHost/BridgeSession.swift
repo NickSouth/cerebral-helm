@@ -2267,6 +2267,7 @@ public final class BridgeSession: @unchecked Sendable {
                     playlistId: output.playlistID,
                     name: output.playlistName,
                     url: output.playlistURL,
+                    opened: output.playlistOpened ?? false,
                     awaitingConfirmation: false,
                     needsReconnect: false
                 ))
@@ -2283,7 +2284,7 @@ public final class BridgeSession: @unchecked Sendable {
             )
         case let .awaitingConfirmation(commandID, _, _):
             return ok(request, payload: CreateSpotifyPlaylistResult(
-                playlistId: commandID, name: name, url: nil,
+                playlistId: commandID, name: name, url: nil, opened: false,
                 awaitingConfirmation: true, needsReconnect: false
             ))
         case let .rejected(reason, _):
@@ -3157,6 +3158,8 @@ public final class BridgeSession: @unchecked Sendable {
         let playlistId: String
         let name: String
         let url: String?
+        /// Whether Spotify came forward at the new playlist — best-effort, never a failure.
+        let opened: Bool
         let awaitingConfirmation: Bool
         /// Reserved for the ok-path shape; the reconnect case is an error response.
         let needsReconnect: Bool

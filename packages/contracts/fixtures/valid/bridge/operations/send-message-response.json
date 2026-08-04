@@ -7,7 +7,7 @@
   "error": null,
   "payload": {
     "targetName": "Jamie Rivera",
-    "sent": false,
-    "awaitingConfirmation": true
+    "sent": true,
+    "awaitingConfirmation": false
   }
 }

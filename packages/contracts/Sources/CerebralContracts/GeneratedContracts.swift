@@ -8561,13 +8561,17 @@ public extension CerebralHelmSpotifyCreatePlaylistInput {
 // MARK: - CerebralHelmSpotifyCreatePlaylistOutput
 public struct CerebralHelmSpotifyCreatePlaylistOutput: Codable {
     public let playlistID, playlistName: String
+    /// Whether Spotify was opened at the new playlist. Best-effort: the playlist exists either
+    /// way, so a failed open is reported rather than treated as a failed create.
+    public let playlistOpened: Bool?
     /// The playlist's Spotify URL as returned by the API — never constructed here. Absent when
     /// Spotify omitted it.
     public let playlistURL: String?
 
-    public init(playlistID: String, playlistName: String, playlistURL: String?) {
+    public init(playlistID: String, playlistName: String, playlistOpened: Bool?, playlistURL: String?) {
         self.playlistID = playlistID
         self.playlistName = playlistName
+        self.playlistOpened = playlistOpened
         self.playlistURL = playlistURL
     }
 }
@@ -8593,11 +8597,13 @@ public extension CerebralHelmSpotifyCreatePlaylistOutput {
     func with(
         playlistID: String? = nil,
         playlistName: String? = nil,
+        playlistOpened: Bool?? = nil,
         playlistURL: String?? = nil
     ) -> CerebralHelmSpotifyCreatePlaylistOutput {
         return CerebralHelmSpotifyCreatePlaylistOutput(
             playlistID: playlistID ?? self.playlistID,
             playlistName: playlistName ?? self.playlistName,
+            playlistOpened: playlistOpened ?? self.playlistOpened,
             playlistURL: playlistURL ?? self.playlistURL
         )
     }

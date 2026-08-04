@@ -1939,6 +1939,11 @@ export interface CerebralHelmSpotifyCreatePlaylistOutput {
     playlistID:   string;
     playlistName: string;
     /**
+     * Whether Spotify was opened at the new playlist. Best-effort: the playlist exists either
+     * way, so a failed open is reported rather than treated as a failed create.
+     */
+    playlistOpened?: boolean;
+    /**
      * The playlist's Spotify URL as returned by the API — never constructed here. Absent when
      * Spotify omitted it.
      */

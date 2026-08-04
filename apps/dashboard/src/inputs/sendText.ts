@@ -5,13 +5,15 @@ import type { InputForm, InputValues } from "./inputForm";
 /**
  * `send-text` — the only action that speaks to another person, and the last of phase 4.
  *
- * **It never runs one-click.** Every other external write here takes the user-authored exemption,
- * because a calendar event can be edited, a ticket closed, a playlist deleted. A message lands on
- * someone else's device and cannot be unsent, so `messages.send` is `confirm_external_write`
- * outright: the form's success path is *"needs your confirmation"*, not *"sent"*.
+ * **It takes the user-authored exemption — and that is the whole point of the provenance tier**
+ * (owner decision, 2026-08-04). Filling in a recipient and a message and pressing Send *is* the
+ * confirmation: re-asking would restate what the user just typed, one dialog after another, for
+ * the action they perform most. The same call proposed by an **agent** still gates, with the
+ * recipient, the group size and the **full message body** disclosed — which is the case the
+ * confirmation was ever really for. "Ask before all actions" still re-arms it.
  *
- * The confirmation shows the recipient, the group size when there is one, and the **full message
- * body** — hiding it would blank the one thing worth re-reading before it leaves.
+ * The disclosure itself is unchanged and still honest: `reversibility: not_reversible`, because a
+ * sent message cannot be recalled. What changed is *who* is shown it.
  *
  * **A new group cannot be assembled.** Messages' scripting dictionary makes `chat` read-only, so
  * the picker offers contacts and *existing* threads. Offering to build a group would be a control
@@ -61,8 +63,9 @@ export function sendTextForm(bridge: CerebralBridge): InputForm {
         groupSize: groupMatch ? Number(groupMatch[1]) : undefined
       });
 
-      // The EXPECTED path. Reporting "sent" here would be the most consequential lie this surface
-      // could tell: nothing has left the machine until the confirmation is approved.
+      // Still handled, and still the truth when it happens: an agent-proposed send, or any send
+      // while "ask before all actions" is on, waits on a confirmation. Reporting "sent" for one of
+      // those would be the most consequential lie this surface could tell.
       if (result.awaitingConfirmation) {
         return { message: `Confirm to send to ${result.targetName}.` };
       }

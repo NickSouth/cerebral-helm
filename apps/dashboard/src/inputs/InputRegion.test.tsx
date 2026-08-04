@@ -572,6 +572,40 @@ describe("create-playlist in the region", () => {
     return screen.findByRole("region", { name: "Create playlist form" });
   }
 
+  it("hands over to Spotify once the playlist exists, and says whether it opened", async () => {
+    // The playlist is empty by design; filling it is what Spotify is good at, so the action opens
+    // the app at it. A failed open never becomes a failed create.
+    const region = await openCreatePlaylist({
+      createSpotifyPlaylist: (input) =>
+        Promise.resolve({
+          playlistId: "p1", name: input.name, url: null,
+          opened: true, awaitingConfirmation: false, needsReconnect: false
+        })
+    });
+    fireEvent.change(within(region).getByLabelText(/Name/), { target: { value: "Focus" } });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Create" }));
+    });
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent("opening it in Spotify"));
+  });
+
+  it("still confirms the playlist exists when Spotify would not come forward", async () => {
+    const region = await openCreatePlaylist({
+      createSpotifyPlaylist: (input) =>
+        Promise.resolve({
+          playlistId: "p1", name: input.name, url: null,
+          opened: false, awaitingConfirmation: false, needsReconnect: false
+        })
+    });
+    fireEvent.change(within(region).getByLabelText(/Name/), { target: { value: "Focus" } });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Create" }));
+    });
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent("Open Spotify to add to it."));
+  });
+
   it("defaults to private — Spotify's own default is public", async () => {
     const sent: { name: string; isPublic?: boolean }[] = [];
     const region = await openCreatePlaylist({
@@ -581,6 +615,7 @@ describe("create-playlist in the region", () => {
           playlistId: "p1",
           name: input.name,
           url: null,
+          opened: true,
           awaitingConfirmation: false,
           needsReconnect: false
         });
@@ -603,7 +638,8 @@ describe("create-playlist in the region", () => {
       createSpotifyPlaylist: (input) => {
         sent.push(input);
         return Promise.resolve({
-          playlistId: "p1", name: "x", url: null, awaitingConfirmation: false, needsReconnect: false
+          playlistId: "p1", name: "x", url: null, opened: true,
+          awaitingConfirmation: false, needsReconnect: false
         });
       }
     });
@@ -803,17 +839,17 @@ describe("send-text in the region", () => {
     expect(await within(region).findByRole("option", { name: /group of 6/ })).toBeInTheDocument();
   });
 
-  it("reports 'confirm to send', never 'sent' — this action always gates", async () => {
-    // The most consequential lie this surface could tell: nothing has left the machine until the
-    // confirmation is approved.
+  it("sends without re-asking, because pressing Send IS the confirmation", async () => {
+    // The provenance tier's clearest case (owner decision): re-asking would restate what the user
+    // just typed. An agent-proposed send still gates — covered by the case below.
     const sent: { target: string; targetKind: string; groupSize?: number }[] = [];
     const region = await openSendText({
       sendMessage: (input) => {
         sent.push(input);
         return Promise.resolve({
           targetName: "Ski trip",
-          sent: false,
-          awaitingConfirmation: true
+          sent: true,
+          awaitingConfirmation: false
         });
       }
     });
@@ -832,7 +868,26 @@ describe("send-text in the region", () => {
     expect(sent[0]).toMatchObject({ target: "chat123", targetKind: "chat", groupSize: 6 });
 
     const status = document.querySelector(".action-status") as HTMLElement;
-    await waitFor(() => expect(status).toHaveTextContent("Confirm to send to Ski trip."));
+    await waitFor(() => expect(status).toHaveTextContent("Sent to Ski trip."));
+  });
+
+  it("still says 'confirm' when the send actually gated", async () => {
+    // An agent-proposed send, or any send while "ask before all actions" is on. Reporting "sent"
+    // for one of those would be the most consequential lie this surface could tell — nothing has
+    // left the machine until the confirmation is approved.
+    const region = await openSendText({
+      sendMessage: () =>
+        Promise.resolve({ targetName: "Jamie Rivera", sent: false, awaitingConfirmation: true })
+    });
+    fireEvent.change(within(region).getByRole("combobox"), { target: { value: "jam" } });
+    fireEvent.click(await within(region).findByRole("option", { name: /Jamie Rivera/ }));
+    fireEvent.change(within(region).getByLabelText(/Message/), { target: { value: "Hi" } });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Send" }));
+    });
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent("Confirm to send to Jamie Rivera."));
     expect(status).not.toHaveTextContent(/^Sent/);
   });
 

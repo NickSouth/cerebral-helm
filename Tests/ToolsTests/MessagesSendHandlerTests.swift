@@ -7,6 +7,10 @@ import CerebralTools
 
 /// Quick actions phase 4: the portable `messages.send` handler. Injection safety, the AppleScript
 /// and the two permission grants are the adapter's job.
+///
+/// The descriptor takes `allow_external_write_when_user_authored` (owner decision, 2026-08-04):
+/// filling in a recipient and a message and pressing Send *is* the human's confirmation, while an
+/// agent proposing the same call still gates. `ToolRegistryTests` holds the descriptor to that.
 
 @Test("messages.send reports sent only when the adapter confirmed it")
 func messagesSendHappyPath() async throws {
