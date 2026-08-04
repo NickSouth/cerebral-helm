@@ -5,7 +5,9 @@ import Foundation
 /// producer (Increment 7). `url` is the headline's navigable destination (design spec §5.4) —
 /// optional because a source may occasionally lack a link, in which case it is omitted (never
 /// fabricated) and the panel renders the headline as non-interactive text.
-public struct NewsHeadline: Equatable, Sendable {
+/// `Codable` because the last good headlines are persisted in the news cache (``NewsCacheStore``)
+/// so a relaunch renders from disk instead of spending a provider request.
+public struct NewsHeadline: Codable, Equatable, Sendable {
     /// Stable per-item id, used as the dashboard row key.
     public let id: String
     /// The headline text.
@@ -30,8 +32,13 @@ public struct NewsHeadline: Equatable, Sendable {
 /// list. ``credentialsMissing`` is thrown by the publisher when the Keychain reference is
 /// unbound (Increment 7) — the provider itself only ever reports ``providerFailed``.
 public enum NewsError: Error, Equatable, Sendable {
-    /// No API credential is configured — the panel should guide the user to add one.
+    /// No API credential is configured, or the one configured was rejected — the panel should
+    /// guide the user to add or replace it.
     case credentialsMissing
+    /// The provider's quota or rate limit is exhausted. Distinct from ``providerFailed(_:)``
+    /// because it is neither the user's fault nor a fault at all: it is temporary and it resolves
+    /// on its own, so the panel says so rather than claiming something is broken.
+    case rateLimited
     /// The news provider or network failed, or returned an unparseable response.
     case providerFailed(String)
 }

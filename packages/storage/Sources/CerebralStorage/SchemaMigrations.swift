@@ -23,6 +23,7 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0012_calendar_mode_map", sql: calendarModeMapSQL),
         SchemaMigration(id: "0013_canvas_scrape", sql: canvasScrapeSQL),
         SchemaMigration(id: "0014_canvas_hidden", sql: canvasHiddenSQL),
+        SchemaMigration(id: "0015_news_cache", sql: newsCacheSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -275,6 +276,20 @@ public enum SchemaMigrations {
     CREATE TABLE canvas_hidden (
         id         INTEGER PRIMARY KEY CHECK (id = 1),
         ids_json   TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    """
+
+    /// Migration 0015: the news cache (the metered-provider quota fix). A single-row table holding
+    /// every relevance profile's last known headlines plus the last fetch-attempt time, as one
+    /// inspectable JSON blob. It exists so an app relaunch or a dashboard occlusion flap renders
+    /// from disk instead of spending a request against a small daily quota. Rebuildable derived
+    /// state, not user data: an absent or undecodable row means "no cache yet" and costs one extra
+    /// provider request.
+    public static let newsCacheSQL = """
+    CREATE TABLE news_cache (
+        id         INTEGER PRIMARY KEY CHECK (id = 1),
+        cache_json TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
     """

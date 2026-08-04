@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "description": "Per-mode news relevance profiles (NIC-127). Each mode config's `newsProfile` maps here to one or more NewsData.io categories (comma-separated), selecting the headlines the bottom-left News panel surfaces for that mode. Source configuration lives here, not hardcoded in the adapter (FR-CFG). An unmapped profile falls back to `defaultCategory`.",
+  "description": "Per-mode news relevance profiles (NIC-127). Each mode config's `newsProfile` maps here to one or more NewsData.io categories (comma-separated), selecting the headlines the bottom-left News panel surfaces for that mode. Source configuration lives here, not hardcoded in the adapter (FR-CFG). An unmapped profile falls back to `defaultCategory`. `feeds` lists the free RSS/Atom sources the panel falls back to when the metered provider is rate-limited, unreachable, or has no API key configured; an unmapped profile falls back to `defaultFeeds`, and no feeds at all simply means the fallback cannot serve that profile. Each feed's `source` is the publisher name shown on the headline row — set it, because feed titles are marketing copy ('www.espn.com - TOP'), not labels.",
   "language": "en",
   "defaultCategory": "top",
   "profiles": {
@@ -8,5 +8,34 @@
     "engineering": "technology",
     "academic": "education,science",
     "interest": "entertainment,sports"
+  },
+  "defaultFeeds": [
+    { "url": "https://feeds.bbci.co.uk/news/world/rss.xml", "source": "BBC News" },
+    { "url": "https://feeds.npr.org/1001/rss.xml", "source": "NPR" }
+  ],
+  "feeds": {
+    "broad": [
+      { "url": "https://feeds.bbci.co.uk/news/world/rss.xml", "source": "BBC News" },
+      { "url": "https://feeds.npr.org/1001/rss.xml", "source": "NPR" },
+      { "url": "https://feeds.bbci.co.uk/news/business/rss.xml", "source": "BBC Business" },
+      { "url": "https://www.aljazeera.com/xml/rss/all.xml", "source": "Al Jazeera" }
+    ],
+    "engineering": [
+      { "url": "https://feeds.arstechnica.com/arstechnica/index", "source": "Ars Technica" },
+      { "url": "https://www.theverge.com/rss/index.xml", "source": "The Verge" },
+      { "url": "https://feeds.bbci.co.uk/news/technology/rss.xml", "source": "BBC Tech" },
+      { "url": "https://hnrss.org/frontpage", "source": "Hacker News" }
+    ],
+    "academic": [
+      { "url": "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml", "source": "BBC Science" },
+      { "url": "https://feeds.npr.org/1007/rss.xml", "source": "NPR Science" },
+      { "url": "https://feeds.npr.org/1013/rss.xml", "source": "NPR Education" }
+    ],
+    "interest": [
+      { "url": "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", "source": "BBC Arts" },
+      { "url": "https://variety.com/feed/", "source": "Variety" },
+      { "url": "https://feeds.bbci.co.uk/sport/rss.xml", "source": "BBC Sport" },
+      { "url": "https://www.espn.com/espn/rss/news", "source": "ESPN" }
+    ]
   }
 }

@@ -171,6 +171,13 @@ public func makeCanvasHiddenStore(_ paths: WorkspacePaths) throws -> any CanvasH
     SQLiteCanvasHiddenStore(database: try operationalDatabase(paths))
 }
 
+/// The durable news cache over the operational database, for hosts that stream the News panel.
+/// It survives relaunch so a cold start renders the last headlines from disk rather than spending
+/// a request against the provider's small daily quota.
+public func makeNewsCacheStore(_ paths: WorkspacePaths) throws -> any NewsCacheStore {
+    SQLiteNewsCacheStore(database: try operationalDatabase(paths))
+}
+
 /// Writes the command row from its envelope before any event references it (FK
 /// ordering). The raw command text is deliberately not persisted — it can contain
 /// secrets (the NIC-34 leak class); only non-sensitive envelope metadata is stored.

@@ -43,6 +43,12 @@ public struct NewsDataProvider: NewsProvider {
     }
 
     public func headlines(profile: String, apiToken: String) async throws -> [NewsHeadline] {
+        // A blank token is rejected before the request, not after: an unauthenticated call would
+        // spend a round trip to be told what we already know, and in a fallback chain it must fail
+        // fast so the free provider behind it gets its turn.
+        guard !apiToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NewsError.credentialsMissing
+        }
         let category = catalog.category(for: profile)
         guard let request = Self.makeRequest(
             host: host, category: category, language: catalog.language, apiToken: apiToken
@@ -51,8 +57,11 @@ public struct NewsDataProvider: NewsProvider {
         }
         do {
             let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                throw NewsError.providerFailed("The news service returned an unsuccessful response.")
+            guard let http = response as? HTTPURLResponse else {
+                throw NewsError.providerFailed("The news service returned an unreadable response.")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                throw Self.error(for: http.statusCode)
             }
             return Array(try Self.parse(data).prefix(limit))
         } catch let error as NewsError {
@@ -63,6 +72,24 @@ public struct NewsDataProvider: NewsProvider {
     }
 
     // MARK: - Pure helpers (unit-tested)
+
+    /// Classifies a non-2xx response.
+    ///
+    /// Collapsing every status into one generic failure is what made an exhausted quota look
+    /// identical to a dead network — the panel said "News isn't available right now" in both cases,
+    /// which is unactionable when the real answer is "your key ran out of credits until tomorrow"
+    /// or "your key was rejected". 429 is the documented rate-limit status; 401/403 mean the key
+    /// itself was refused, which is the same *user action* as having no key at all.
+    static func error(for statusCode: Int) -> NewsError {
+        switch statusCode {
+        case 429:
+            return .rateLimited
+        case 401, 403:
+            return .credentialsMissing
+        default:
+            return .providerFailed("The news service returned status \(statusCode).")
+        }
+    }
 
     /// Builds the latest-headlines request. The key rides the `X-ACCESS-KEY` header, deliberately
     /// NOT the URL — so the secret never appears in a logged/cached request URL (FR-OBS-03). The

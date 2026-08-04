@@ -216,12 +216,22 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // headlines per relevance profile declared in config/news/profiles.json. The profile →
         // category mapping lives in that config (not hardcoded); when it can't be loaded there are
         // no profiles to stream and the panel stays at its honest bootstrap "unavailable" state.
+        // The cache store makes the last headlines survive relaunch, so a cold start renders from
+        // disk instead of spending one of the provider's ~200 daily requests; a store that can't be
+        // opened simply means the publisher caches in memory only (one extra request per launch).
         if let newsCatalog = NewsProfileCatalog.load(configDirectory: paths.configDirectory),
            !newsCatalog.profiles.isEmpty {
             let news = NewsPublisher(
                 profiles: newsCatalog.profiles.keys.sorted(),
                 secretStore: composition.secretStore,
-                provider: NewsDataProvider(catalog: newsCatalog),
+                // Metered first, free second: NewsData when its key and quota allow, otherwise the
+                // publishers' own RSS/Atom feeds — so a rate limit, an outage, or an unconfigured
+                // key degrades the panel's *source*, never the panel itself.
+                provider: FallbackNewsProvider([
+                    NewsDataProvider(catalog: newsCatalog),
+                    RSSNewsProvider(catalog: newsCatalog),
+                ]),
+                cacheStore: try? makeNewsCacheStore(paths),
                 emit: { relay.emit($0) }
             )
             newsPublisher = news
