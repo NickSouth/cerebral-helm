@@ -73,12 +73,13 @@ func spotifyRedirectURI() async {
 
 @Test("the loopback listener captures the callback query over a real socket and responds")
 func spotifyLoopbackListenerCaptures() async throws {
-    let port: UInt16 = 51893
-    let listener = try SpotifyLoopbackListener(port: port)
-    let query = try await listener.awaitCallback(timeout: 5) {
+    // Bind port 0 — the kernel hands back a free port, so this can never collide with an ephemeral
+    // port some other process on the machine happens to hold. The redirect uses the assigned port.
+    let listener = try SpotifyLoopbackListener(port: 0)
+    let query = try await listener.awaitCallback(timeout: 5) { boundPort in
         // Fire the redirect once the listener is accepting; the response is irrelevant to capture.
         Task {
-            guard let url = URL(string: "http://127.0.0.1:\(port)/callback?code=real-code&state=real-state") else { return }
+            guard let url = URL(string: "http://127.0.0.1:\(boundPort)/callback?code=real-code&state=real-state") else { return }
             _ = try? await URLSession.shared.data(from: url)
         }
     }

@@ -25,6 +25,9 @@ final class SpotifyLoopbackListener: @unchecked Sendable {
     private var buffer = Data()
     private var done = false
 
+    /// `port` 0 asks the kernel for a free ephemeral port — the bound port is then reported to
+    /// `awaitCallback`'s `onListening`. The OAuth flow passes its fixed registered port; tests bind 0
+    /// so they can never collide with whatever else on the machine holds a given ephemeral port.
     init(port: UInt16) throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw SpotifyPlaybackError.providerFailed("Invalid loopback port \(port).")
@@ -36,17 +39,18 @@ final class SpotifyLoopbackListener: @unchecked Sendable {
         self.listener = try NWListener(using: parameters)
     }
 
-    /// Starts listening, calls `onListening` once ready (open the browser there), and resolves with
-    /// the first callback's query params. Fails on listener error or after `timeout`.
+    /// Starts listening, calls `onListening` with the bound port once ready (open the browser there),
+    /// and resolves with the first callback's query params. Fails on listener error or after `timeout`.
     func awaitCallback(
-        timeout: TimeInterval, onListening: @escaping @Sendable () -> Void
+        timeout: TimeInterval, onListening: @escaping @Sendable (UInt16) -> Void
     ) async throws -> [String: String] {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: String], Error>) in
             queue.async { self.continuation = continuation }
             listener.stateUpdateHandler = { [weak self] state in
                 switch state {
                 case .ready:
-                    onListening()
+                    // Valid only from `.ready` onward; with a fixed port it is the requested one.
+                    onListening(self?.listener.port?.rawValue ?? 0)
                 case let .failed(error):
                     self?.finish(.failure(SpotifyPlaybackError.providerFailed(
                         "The loopback listener failed: \(error.localizedDescription)")))
@@ -163,7 +167,8 @@ public struct SpotifyAuthCoordinator: Sendable {
 
         let listener = try SpotifyLoopbackListener(port: port)
         let workspace = self.workspace
-        let query = try await listener.awaitCallback(timeout: timeout) {
+        let query = try await listener.awaitCallback(timeout: timeout) { _ in
+            // The bound port is the fixed registered one, so `authorizeURL`'s redirect already matches.
             // Open the browser only once the listener is accepting, so the redirect can't race the bind.
             Task { try? await workspace.openURL(authorizeURL) }
         }
