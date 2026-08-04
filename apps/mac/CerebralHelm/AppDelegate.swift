@@ -104,6 +104,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onDashboardVisibilityChange = { [weak bridgeRuntime] visible in
             bridgeRuntime?.setStatusPublishingActive(visible)
         }
+        // Assigned before the publishers start, so a handshake that lands early still replays.
+        coordinator.onDashboardBridgeReady = { [weak bridgeRuntime] in
+            bridgeRuntime?.resendLiveWidgetState()
+        }
         bridgeRuntime.startStatusPublishing()
 
         // Display detection (NIC-87/120b): the initial topology snapshot publishes

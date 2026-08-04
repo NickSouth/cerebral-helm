@@ -108,6 +108,9 @@ final class WindowCoordinator: @unchecked Sendable {
     /// Fired on the main queue whenever backdrop visibility changes — the shell
     /// pauses the status publisher only when every backdrop is hidden (NIC-81b).
     var onDashboardVisibilityChange: ((Bool) -> Void)?
+    /// Fired once the dashboard's bridge handshake proves the page can receive events, so the
+    /// runtime can replay live widget state emitted while it was still loading.
+    var onDashboardBridgeReady: (() -> Void)?
 
     /// Ready path: host the dashboard and pre-warm the single command palette against the
     /// shared session. Called once after a clean startup pre-flight.
@@ -125,6 +128,10 @@ final class WindowCoordinator: @unchecked Sendable {
         // handshake proves the page can receive it (the initial topology event
         // always beats the webview's dynamic surface import).
         dashboard.onBridgeReady = { [weak self, weak dashboard] in
+            // Live widget state whose first emit can also beat the page's import (news, served
+            // from a warm cache) is replayed through the runtime, which re-emits from cache
+            // rather than re-fetching — no provider quota is spent to repaint a panel.
+            self?.onDashboardBridgeReady?()
             guard let json = self?.lastTopologyJSON else { return }
             dashboard?.deliverBridgeEvent(json)
         }
