@@ -1,5 +1,9 @@
+import type { UnreadFacts } from "./unreadCount";
 import { composeDailyBrief, type DailyBriefSnapshot } from "./dailyBrief";
 import { isRenderable, renderableBlocks, type ReportBlock } from "./reportDocument";
+
+/** A measured whole-inbox count — an account that does not use Gmail's category tabs. */
+const inbox = (count: number): UnreadFacts => ({ count, capped: false, scope: "inbox" });
 
 /**
  * The v1 composer is the deterministic stand-in for a model, so what matters is that it is
@@ -57,16 +61,26 @@ describe("composeDailyBrief", () => {
     expect(kinds(composeDailyBrief(snapshot()).blocks)).not.toContain("count");
 
     // A real read of zero IS worth stating, and it links onward.
-    const withMail = composeDailyBrief(snapshot({ unreadCount: 0 }));
+    const withMail = composeDailyBrief(snapshot({ unreadCount: inbox(0) }));
     const count = withMail.blocks.find((block) => block.blockKind === "count");
     expect(count?.value).toBe("0");
     expect(count?.label).toBe("unread emails");
-    expect(count?.reportAction).toEqual({ action: "email-report" });
+    expect(count?.reportAction).toEqual({ action: "open-mail" });
     // Singular reads correctly too.
     expect(
-      composeDailyBrief(snapshot({ unreadCount: 1 })).blocks.find((b) => b.blockKind === "count")
+      composeDailyBrief(snapshot({ unreadCount: inbox(1) })).blocks.find((b) => b.blockKind === "count")
         ?.label
     ).toBe("unread email");
+  });
+
+  it("says which slice it counted when the account uses Gmail's category tabs", () => {
+    // The brief lists nothing, so the label is the only place this can be said — and it must be,
+    // because the number excludes promotions and would otherwise read as the whole inbox.
+    const count = composeDailyBrief(
+      snapshot({ unreadCount: { count: 12, capped: false, scope: "primary" } })
+    ).blocks.find((block) => block.blockKind === "count");
+    expect(count?.value).toBe("12");
+    expect(count?.label).toBe("unread in Primary");
   });
 
   it("says nothing about weather that was never configured, and 'Unavailable' when it failed", () => {

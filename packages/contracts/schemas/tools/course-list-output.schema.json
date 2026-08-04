@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/course-list-output.schema.json",
+  "title": "CerebralHelm Course List Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["courses", "courseRoot"],
+  "properties": {
+    "courses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["courseName", "courseFolder", "courseNoteCount"],
+        "properties": {
+          "courseName": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The course as displayed and addressed — the derived code (STAT 240) where the source carried one. Also the folder's last path component."
+          },
+          "courseFolder": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Root-relative, forward-slashed, so it can be compared directly to a note listing's folder.",
+            "examples": ["areas/school-umass/STAT 240"]
+          },
+          "courseNoteCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many notes the folder holds. Zero is a real answer: a course can exist and be empty."
+          },
+          "courseUpdated": {
+            "type": "string",
+            "minLength": 1,
+            "description": "ISO-8601 of the most recently changed note in the course, absent when it holds none."
+          }
+        }
+      }
+    },
+    "courseRoot": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The root-relative school folder the courses were read from, so a caller can say where they came from without knowing the convention.",
+      "examples": ["areas/school-umass"]
+    }
+  }
+}

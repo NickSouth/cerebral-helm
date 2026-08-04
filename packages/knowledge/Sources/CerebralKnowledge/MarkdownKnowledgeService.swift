@@ -148,14 +148,58 @@ public struct MarkdownKnowledgeService: KnowledgeService {
     /// a file the knowledge root does not contain. A refused path and a missing
     /// note are the same answer — this never reports what exists outside the root.
     public func read(_ request: NoteReadRequest) async throws -> NoteReadOutcome {
+        let (fileURL, resolved) = try contained(request.path)
+        guard let content = try? String(contentsOf: resolved, encoding: .utf8) else {
+            throw Self.noteNotFound(request.path)
+        }
+
+        let (frontmatter, body) = FrontmatterCodec.parse(content)
+        let relativePath = Self.relativePath(of: fileURL, under: rootURL)
+        return NoteReadOutcome(
+            root: rootURL.path,
+            path: relativePath,
+            // The name the caller asked for, not the resolved one: a symlinked note is
+            // titled by the note you opened, not by whatever it points at.
+            title: Self.title(frontmatter: frontmatter, filename: fileURL.lastPathComponent),
+            noteID: frontmatter["id"],
+            frontmatter: frontmatter,
+            body: body,
+            updated: Self.updated(frontmatter: frontmatter, url: resolved).iso
+        )
+    }
+
+    /// Where a note lives, without reading it (quick actions phase 5).
+    ///
+    /// Shares ``contained(_:)`` with ``read``, so the paths this admits and the paths
+    /// that read are the same set by construction. It does require the file to
+    /// **exist** — handing an editor a path to nothing is not opening a note — but
+    /// deliberately does not require it to decode as UTF-8 text: a note that opens is
+    /// not conditional on this process being able to parse it.
+    public func locate(_ request: NoteReadRequest) async throws -> NoteLocation {
+        let (fileURL, resolved) = try contained(request.path)
+        guard FileManager.default.fileExists(atPath: resolved.path) else {
+            throw Self.noteNotFound(request.path)
+        }
+        return NoteLocation(
+            root: rootURL.path,
+            path: Self.relativePath(of: fileURL, under: rootURL),
+            absolutePath: resolved.path
+        )
+    }
+
+    /// Resolves a root-relative note path and proves it lands inside the knowledge root.
+    ///
+    /// The one containment rule, used by every path-addressed operation. It returns
+    /// both the unresolved URL (which names the note the way the caller asked for it)
+    /// and the symlink-resolved one (which is the location that was range-checked).
+    ///
+    /// A refused path and a missing note are the **same** answer, so this never
+    /// reports what does or does not exist outside the root.
+    private func contained(_ path: String) throws -> (fileURL: URL, resolved: URL) {
         guard FileManager.default.fileExists(atPath: rootURL.path) else {
             throw KnowledgeServiceError.rootUnavailable
         }
-        let notFound = KnowledgeServiceError.noteNotFound(
-            "No note at \(request.path) in the knowledge root."
-        )
-
-        let components = request.path
+        let components = path
             .replacingOccurrences(of: "\\", with: "/")
             .split(separator: "/")
             .map(String.init)
@@ -164,7 +208,7 @@ public struct MarkdownKnowledgeService: KnowledgeService {
             let filename = components.last,
             filename.hasSuffix(".md"),
             !components.contains("..")
-        else { throw notFound }
+        else { throw Self.noteNotFound(path) }
 
         let fileURL = components.reduce(rootURL) { $0.appendingPathComponent($1) }
         // Resolve both sides: the root itself is often reached through a symlink
@@ -172,20 +216,12 @@ public struct MarkdownKnowledgeService: KnowledgeService {
         // reject legitimate reads while still admitting a symlinked escape.
         let resolved = fileURL.resolvingSymlinksInPath().standardizedFileURL
         let base = rootURL.resolvingSymlinksInPath().standardizedFileURL
-        guard resolved.path.hasPrefix(base.path + "/") else { throw notFound }
-        guard let content = try? String(contentsOf: resolved, encoding: .utf8) else { throw notFound }
+        guard resolved.path.hasPrefix(base.path + "/") else { throw Self.noteNotFound(path) }
+        return (fileURL, resolved)
+    }
 
-        let (frontmatter, body) = FrontmatterCodec.parse(content)
-        let relativePath = Self.relativePath(of: fileURL, under: rootURL)
-        return NoteReadOutcome(
-            root: rootURL.path,
-            path: relativePath,
-            title: Self.title(frontmatter: frontmatter, filename: filename),
-            noteID: frontmatter["id"],
-            frontmatter: frontmatter,
-            body: body,
-            updated: Self.updated(frontmatter: frontmatter, url: resolved).iso
-        )
+    private static func noteNotFound(_ path: String) -> KnowledgeServiceError {
+        .noteNotFound("No note at \(path) in the knowledge root.")
     }
 
     /// Every Markdown file under `root`, or none when the root is absent.

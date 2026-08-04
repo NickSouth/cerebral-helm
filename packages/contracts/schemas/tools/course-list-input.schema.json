@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/course-list-input.schema.json",
+  "title": "CerebralHelm Course List Input",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "courseLimit": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Caps the returned courses, most recently written first. Omit for all of them — a school year is a handful of folders, so the cap exists for symmetry with note.list rather than because the list is ever large."
+    }
+  }
+}

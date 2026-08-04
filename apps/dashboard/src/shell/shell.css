@@ -467,7 +467,10 @@
 }
 
 .quick-action--box {
-  min-height: 3.5rem;
+  /* Grown with the glyph (owner decision, 2026-08-04): a 22px icon in a 3.5rem box crowded the
+     label, so the control grew with its contents rather than the icon being shrunk back down. */
+  min-height: 4.15rem;
+  padding: var(--ch-space-3);
 }
 
 /* The glyph never shrinks — a squashed icon reads as a rendering fault. The label absorbs the
@@ -478,15 +481,17 @@
   transition: color var(--ch-motion-fast) var(--ch-ease-standard);
 }
 
-.quick-action__label {
-  min-width: 0;
+/* A live slot's glyph carries the active mode's accent and re-tints with the mode (owner decision,
+   2026-08-04). This is what the accent token already specifies — "primary = borders/buttons/most
+   icons" — so the previously muted glyph was the deviation. `--danger` still overrides below:
+   Shut down's red means DANGER, and it only keeps meaning that while everything around it is one
+   colour. */
+.quick-action--wired .quick-action__glyph {
+  color: var(--ch-accent-primary);
 }
 
-/* Muted by default so the label leads; the mode accent means "this slot's surface is open right
-   now" (docs/quick-actions/PLAN.md § Visual rules). Colour is the only change — the tile geometry
-   stays put so an opening surface never nudges the row. */
-.quick-action--open .quick-action__glyph {
-  color: var(--ch-accent-primary);
+.quick-action__label {
+  min-width: 0;
 }
 
 /* A disabled placeholder's glyph follows its label into the neutral tone rather than staying at
@@ -524,6 +529,29 @@
 
 .quick-action--wired:hover {
   border-color: var(--ch-accent-primary);
+}
+
+/* "This slot's surface is open right now" — the same soft directional gradient the selected mode
+   button uses (owner decision, 2026-08-04), because once every glyph is mode-accented the glyph's
+   colour can no longer carry this. Reusing the mode selector's treatment also means one visual
+   idea for "this is the active one" across the whole shell. Background and border only: the tile
+   geometry stays put, so an opening surface never nudges the row.
+
+   Compounded with `--wired` deliberately: that rule sets its own background and sits later in the
+   file, so a single-class selector here loses on source order — which it silently did the first
+   time. */
+.quick-action--wired.quick-action--open {
+  /* The `border` SHORTHAND, not the longhands: `.quick-action` sets the shorthand and
+     `.quick-action--wired` sets `border-color` on top of it, and mixing the two levels here left
+     the colour resolving to the panel border while everything else in this block applied. */
+  border: 1px solid var(--ch-accent-primary);
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--ch-accent-primary) 44%, transparent) 0%,
+    color-mix(in srgb, var(--ch-accent-primary) 18%, transparent) 52%,
+    color-mix(in srgb, var(--ch-accent-secondary) 14%, transparent) 100%
+  );
+  color: var(--ch-accent-primary);
 }
 
 /* `shut-down` is the only differently-coloured slot. Outline, never filled: a solid red button

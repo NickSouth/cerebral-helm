@@ -24,7 +24,9 @@ export type BridgeEventType =
   | "widget.data.changed"
   | "weather.changed"
   | "news.changed"
-  | "schedule.changed";
+  | "mail.changed"
+  | "schedule.changed"
+  | "system.checks.changed";
 
 export interface BridgeEvent {
   readonly eventId: string;
@@ -292,6 +294,12 @@ export interface NoteSearchHit {
   readonly noteId: string;
   readonly title: string;
   readonly excerpt: string;
+  /** The note's root-relative path (quick actions phase 5): the key the `search-notes` picker
+   *  merges the file listing and the index on, and the handle it opens by. `noteId` cannot do
+   *  that job — a note authored outside CerebralHelm has no frontmatter id. Optional because an
+   *  index written before this field existed has none, and a hit without one is skipped rather
+   *  than rendered as a row that would fail on click. */
+  readonly path?: string;
 }
 export interface SearchNotesResult {
   readonly results: readonly NoteSearchHit[];
@@ -436,6 +444,120 @@ export interface ListNotesResult {
   readonly root: string;
   readonly total: number;
   readonly notes: readonly NoteListItem[];
+}
+
+/** The unread-mail channel (Gmail integration), folded from `mail.changed`.
+ *
+ *  `unread` is **optional and absent unless it was actually measured** — the one thing that keeps
+ *  this honest. Zero unread and "not connected" are completely different facts, and a surface that
+ *  rendered both as 0 would tell you your inbox is clear when nobody has looked. */
+export interface MailChannel {
+  readonly state: "ready" | "not-connected" | "reconnect" | "unavailable";
+  readonly unread?: number | null;
+  /** True when counting stopped at a ceiling: there are **at least** `unread`. Rendered as "100+",
+   *  never as a precise number the host never measured. */
+  readonly unreadCapped?: boolean;
+  /** Which slice was counted: `primary` (personal mail, promotions and the other category tabs
+   *  excluded) or the whole `inbox` when the account does not categorize. The surface says which,
+   *  because the two numbers differ enormously and "12 unread" would be false for an inbox with
+   *  340 waiting. */
+  readonly unreadScope?: "primary" | "inbox" | null;
+  readonly reason?: string | null;
+}
+
+/** One unread message as the report renders it. `messageId` is the RFC 5322 Message-ID — the
+ *  handle `open-mail` takes. Absent when the sender omitted one, in which case the row is text
+ *  rather than a link. */
+export interface UnreadMailItem {
+  readonly id: string;
+  readonly byline: string;
+  readonly subject: string;
+  readonly receivedAt?: string | null;
+  readonly messageId?: string | null;
+}
+/** `state` is what separates "your inbox is clear" from "we could not look" — an empty array
+ *  alone cannot, and rendering both as an empty report would claim you are caught up. */
+export interface UnreadMailResult {
+  readonly state: "ready" | "not-connected" | "reconnect" | "unavailable";
+  readonly messages: readonly UnreadMailItem[];
+  readonly reason?: string | null;
+}
+
+export interface ConnectGmailInput {
+  readonly disconnect?: boolean;
+}
+/** The outcome of connecting Gmail. `canRefresh` false means the grant CANNOT renew itself — it
+ *  works for an hour and then stops — so the surface reports it as a problem rather than a
+ *  successful connection. */
+export interface ConnectGmailResult {
+  readonly connected: boolean;
+  readonly scope: string | null;
+  readonly canRefresh: boolean;
+}
+
+/** The receipt for starting a health run. It deliberately carries no results — a payload that
+ *  looked like results would invite a caller to read the first snapshot as the answer. `started`
+ *  is false on a host with no checks to run (the browser preview). */
+export interface RunSystemChecksResult {
+  readonly started: boolean;
+  readonly checkCount: number;
+}
+
+/** One health check's current state, streamed on `system.checks.changed`. `skipped` is NOT a
+ *  failure: a check the user never configured, or one held back because probing would spend a
+ *  small daily quota, is neither passing nor broken. */
+export interface SystemCheck {
+  readonly id: string;
+  readonly title: string;
+  readonly group: "permissions" | "integrations" | "storage";
+  readonly state: "pending" | "running" | "passed" | "failed" | "skipped";
+  readonly detail?: string | null;
+  /** The one step that would fix a failure, where there is one. */
+  readonly remediation?: string | null;
+  readonly durationMs?: number | null;
+}
+
+export interface SystemChecksPayload {
+  readonly checks: readonly SystemCheck[];
+  /** True once nothing is pending — the surface can stop saying "checking". */
+  readonly complete: boolean;
+  readonly failureCount: number;
+}
+
+/** One course notebook (quick actions phase 5). `folder` is root-relative, so it can be compared
+ *  directly to a note listing's `folder` — which is how the picker's second stage finds a course's
+ *  notes without a second read. */
+export interface CourseFolder {
+  readonly course: string;
+  readonly folder: string;
+  readonly noteCount: number;
+  readonly updated: string | null;
+}
+
+/** The courses on disk. `available` is false when the knowledge root could not be read at all —
+ *  "no courses yet" and "your vault is gone" must never look the same. */
+export interface ListCoursesResult {
+  readonly available: boolean;
+  /** The root-relative school folder the courses came from. */
+  readonly root: string;
+  readonly courses: readonly CourseFolder[];
+}
+
+export interface CreateCourseNoteInput {
+  readonly course: string;
+  readonly title: string;
+}
+
+/** The created note. `path` is the same handle `notes-open` takes, so the picker can open what it
+ *  just created — except while `awaitingConfirmation`, where nothing has been written yet. */
+export interface CreateCourseNoteResult {
+  readonly course: string;
+  readonly path: string;
+  readonly title: string;
+  /** False when a note of that title already existed for that day and was returned rather than
+   *  overwritten. Creating a note never clobbers one. */
+  readonly created: boolean;
+  readonly awaitingConfirmation: boolean;
 }
 
 /** The outcome of rebuilding the derived note search index (NIC-163). `rebuilt` is false only when
@@ -784,6 +906,12 @@ export interface CerebralBridge {
    *  the redirect, and persists tokens to the Keychain. Resolves with the granted scope, or rejects
    *  with an honest message (no Client ID, cancelled, rejected). */
   connectSpotify(): Promise<ConnectSpotifyResult>;
+  /** Run the Gmail OAuth connect on the macOS host, or clear the stored grant with
+   *  `{disconnect: true}`. Tokens are written to the Keychain and never returned. */
+  connectGmail(input?: ConnectGmailInput): Promise<ConnectGmailResult>;
+  /** The unread messages themselves, for the email report. On demand only — one request per
+   *  message, so this is never sampled on a cadence the way the count is. */
+  listUnreadMail(limit?: number): Promise<UnreadMailResult>;
   /** Read-only application discovery for the More Apps picker (NIC-119). */
   listApps(): Promise<ListAppsResult>;
   /** List the user's calendars for the Settings calendar→mode mapping (NIC-126). Requests
@@ -832,6 +960,19 @@ export interface CerebralBridge {
   /** The durable notes under the knowledge root (NIC-162), for the Setup → Library card. `limit`
    *  caps the returned notes (most recently changed first); the reported total is unaffected. */
   listNotes(limit?: number): Promise<ListNotesResult>;
+  /** The course notebooks on disk (quick actions phase 5), for `take-notes`' first stage. Reports
+   *  only what the vault contains — the live Canvas courses are already in dashboard state, and
+   *  the picker merges the two, which is what keeps a finished semester's notes reachable. */
+  listCourses(limit?: number): Promise<ListCoursesResult>;
+  /** Start a system-health run (quick actions phase 5). Returns as soon as the run STARTS — the
+   *  results arrive as `system.checks.changed` events, each carrying the whole set, because the
+   *  inventory reaches several third parties and a caller awaiting one response would show
+   *  nothing while the interesting part (which checks exist) is already known. */
+  runSystemChecks(): Promise<RunSystemChecksResult>;
+  /** Create one templated note in a course (quick actions phase 5), minting the course folder on
+   *  first use. The caller names a COURSE, never a folder: the host derives the folder inside the
+   *  school root, so a note can only ever land there. Never overwrites an existing note. */
+  createCourseNote(input: CreateCourseNoteInput): Promise<CreateCourseNoteResult>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */
   updateQuickApps(input: UpdateQuickAppsInput): Promise<UpdateQuickAppsResult>;
   /** Mint a user URL reference (NIC-146) so a typed URL can be pinned as a quick app,

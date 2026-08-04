@@ -10,6 +10,7 @@ import Foundation
 /// - `search <text>` — search notes
 /// - `notes-list [n]` — list the notes under the knowledge root (read-only)
 /// - `notes-read <path>` — read one note by its root-relative path (read-only)
+/// - `notes-open <path>` — open one note in the user's Markdown editor
 /// - `hook <id>`   — run a configured hook
 /// - `run <id>`    — run a configured workflow / quick action
 /// - `apps`        — list installed applications (read-only discovery)
@@ -25,6 +26,11 @@ import Foundation
 /// typing one into the palette would show the user nothing. Offering a command
 /// with no visible result is exactly the dishonesty the placeholder rules exist
 /// to prevent, so they stay unlisted until a surface renders them.
+///
+/// `notes-open` stays unlisted for the opposite reason: it is very visible, but it
+/// is addressed by an exact root-relative path nobody types from memory. Its
+/// surface is the `search-notes` picker, which supplies the path from a result the
+/// user actually chose.
 ///
 /// Unknown verbs and unresolved references return suggestions without
 /// executing; a token matching more than one catalog returns a reviewable
@@ -99,6 +105,19 @@ public struct DirectCommandParser: Sendable {
             // free-text handler takes it verbatim. One hyphenated verb rather than
             // `note read <path>`: `note <text>` is capture, and would swallow it.
             return parseFreeText(verb: "notes-read", remainder: remainder) { .readNote(path: $0) }
+        case "notes-open":
+            // Same grammar as `notes-read`, and the same reason: the remainder is a whole
+            // root-relative path, spaces included. Reading a note into the app and handing it to
+            // an editor are different acts, so they are different verbs rather than a flag.
+            return parseFreeText(verb: "notes-open", remainder: remainder) { .openNote(path: $0) }
+        case "mail":
+            // The remainder is a Message-ID, taken verbatim (they contain `@`, `.` and `+`).
+            // Bare `mail` opens the inbox, which is the common case and worth being typeable.
+            return .parsed(.openMail(messageID: remainder.isEmpty ? nil : remainder))
+        case "courses-list":
+            // Same shape as `notes-list`: an optional cap, and a token that is not one never
+            // executes rather than being silently ignored.
+            return parseCount(verb: "courses-list", remainder: remainder) { .listCourses(limit: $0) }
         case "google":
             // The remainder is the whole search query (queries contain spaces), taken verbatim
             // (NIC-134). The adapter builds the google.com search URL; only this query varies.
@@ -216,17 +235,27 @@ public struct DirectCommandParser: Sendable {
     /// notes. The cap is part of the grammar so every caller can ask for one: a
     /// tool input no command can set would be a contract nothing honors.
     private func parseNotesList(_ remainder: String) -> ParseResult {
+        parseCount(verb: "notes-list", remainder: remainder) { .listNotes(limit: $0) }
+    }
+
+    /// `<verb> [n]` — a listing with an optional cap.
+    ///
+    /// A token that is not a positive integer never executes: a listing that silently ignored its
+    /// argument would misreport what it returned.
+    private func parseCount(
+        verb: String,
+        remainder: String,
+        intent: (Int?) -> CommandIntent
+    ) -> ParseResult {
         let token = firstToken(remainder)
-        guard !token.isEmpty else { return .parsed(.listNotes(limit: nil)) }
+        guard !token.isEmpty else { return .parsed(intent(nil)) }
         guard let limit = Int(token), limit > 0 else {
-            // Not a cap, and not something to guess at — a listing that silently
-            // ignored its argument would misreport what it returned.
             return .unrecognized(UnrecognizedInput(
-                reason: .unresolvedReference(verb: "notes-list", token: token),
-                suggestions: ["notes-list", "notes-list 50"]
+                reason: .unresolvedReference(verb: verb, token: token),
+                suggestions: [verb, "\(verb) 50"]
             ))
         }
-        return .parsed(.listNotes(limit: limit))
+        return .parsed(intent(limit))
     }
 
     private func parseFreeText(

@@ -82,4 +82,21 @@ public struct MockKnowledgeService: KnowledgeService {
             updated: entry.updated
         )
     }
+
+    /// Locates a canned entry, refusing a path that is not one of them.
+    ///
+    /// It refuses for the same reason the real service does — an unknown path is not a note —
+    /// which keeps `note.open`'s "you cannot open what the root does not contain" property
+    /// exercisable without a filesystem.
+    public func locate(_ request: NoteReadRequest) async throws -> NoteLocation {
+        if rootState == .missing {
+            throw KnowledgeServiceError.rootUnavailable
+        }
+        guard let entry = entries.first(where: { $0.path == request.path }) else {
+            throw KnowledgeServiceError.noteNotFound("No note at \(request.path) in the knowledge root.")
+        }
+        return NoteLocation(
+            root: Self.root, path: entry.path, absolutePath: "\(Self.root)/\(entry.path)"
+        )
+    }
 }

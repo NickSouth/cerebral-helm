@@ -18,9 +18,10 @@
   flex: 1 1 auto;
   /* Without this a flex child refuses to shrink below its content and re-introduces overflow. */
   min-height: 0;
-  width: 33%;
-  /* The plan allows growing to 40% before this needs rethinking. */
-  max-width: 40%;
+  /* Widened from 33% (owner, 2026-08-04). Reports were sized for counts and short lines; they now
+     carry subjects, headlines and prose, and a third forced almost every row onto two lines. */
+  width: 40%;
+  max-width: 48%;
   display: flex;
   flex-direction: column;
   gap: var(--ch-space-3);
@@ -213,14 +214,37 @@
   background: var(--ch-status-neutral);
 }
 
+/* Skipped reads as "not applicable", never as a pass or a problem: hollow rather than filled, so
+   a glance down the list separates what was checked from what deliberately was not. */
+.report-list__dot[data-status="skipped"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ch-status-neutral);
+}
+
+/* Wraps to two lines, then truncates. Both halves matter: a subject is scanned rather than read,
+   so the first two lines carry the sense of it, while unbounded wrapping lets one shouty marketing
+   subject push every other row off the panel. `min-width: 0` is what actually permits the shrink —
+   without it a flex child refuses to go below its content width and pushes the time out of the
+   row instead. */
 .report-list__text {
   flex: 1 1 auto;
   color: var(--ch-text-primary);
   min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  /* A subject can be one unbroken token (a URL, a tracking code); without this it would overflow
+     the clamp rather than being broken. */
+  overflow-wrap: anywhere;
 }
 
+/* The time never shrinks and never wraps: it is four characters, it is always relevant, and it is
+   the first thing a squeezed row would otherwise drop. */
 .report-list__meta {
   flex: 0 0 auto;
+  white-space: nowrap;
   color: var(--ch-text-muted);
 }
 

@@ -53,7 +53,15 @@ function QuickActionSlot({
       title={wired ? undefined : "Coming soon"}
       onClick={onActivate ?? undefined}
     >
-      {icon ? <QuickActionGlyph name={icon} size={variant === "bar" ? 14 : 16} /> : null}
+      {/* The bottom row's boxes are the larger control, so they carry a larger, heavier glyph;
+          the thin top bars stay lighter so the two rows keep reading as two rows. */}
+      {icon ? (
+        <QuickActionGlyph
+          name={icon}
+          size={variant === "bar" ? 17 : 22}
+          strokeWidth={variant === "bar" ? 1.6 : 1.85}
+        />
+      ) : null}
       <span className="quick-action__label">{quickActionLabel(action)}</span>
     </button>
   );

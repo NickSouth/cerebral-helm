@@ -38,8 +38,10 @@ public struct CapabilityMatrix: Sendable {
         public static let spotifyControl = "spotify.control"
         public static let spotifyPlaylist = "spotify.playlist"
         public static let messagesSend = "messages.send"
+        public static let noteOpen = "note.open"
+        public static let mailOpen = "mail.open"
 
-        public static let all: Set<String> = [appOpen, projectOpen, projectScaffold, urlOpen, hookRun, systemStatusRead, networkSpeedTest, secret, window, workspaceWindows, appsList, applicationLifecycle, calendarWrite, googleSearch, youtubeSearch, gitClone, linearIssue, webOpen, spotifyControl, spotifyPlaylist, messagesSend]
+        public static let all: Set<String> = [appOpen, projectOpen, projectScaffold, urlOpen, hookRun, systemStatusRead, networkSpeedTest, secret, window, workspaceWindows, appsList, applicationLifecycle, calendarWrite, googleSearch, youtubeSearch, gitClone, linearIssue, webOpen, spotifyControl, spotifyPlaylist, messagesSend, noteOpen, mailOpen]
     }
 
     /// Every mock capability available — the contract-suite default.

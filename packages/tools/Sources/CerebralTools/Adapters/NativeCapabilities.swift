@@ -301,6 +301,63 @@ public struct YouTubeSearchResult: Equatable, Sendable {
     }
 }
 
+// MARK: - note.open
+
+/// Hands one note to the Mac's Markdown editor (quick actions phase 5).
+///
+/// It takes an **absolute** path, because that is what an editor needs — and takes it only from
+/// ``KnowledgeService/locate(_:)``, which has already proved the note sits inside the knowledge
+/// root. The containment rule lives there rather than here for the reason it always does: a second
+/// rule in the adapter could only disagree with the first.
+///
+/// The port is named for the job, not for Obsidian, so the editor stays an adapter decision. What
+/// the adapter must never do is *invent* a destination: it either opens the file it was given or
+/// reports that nothing took it.
+public protocol NoteOpenCapability: Sendable {
+    func open(absolutePath: String) async throws -> NoteOpenResult
+}
+
+public struct NoteOpenResult: Equatable, Sendable {
+    /// Which surface received the note. Kept as an enum rather than a bool because "revealed in
+    /// Finder because nothing handles `obsidian://`" is a materially different outcome from
+    /// "opened in your editor", and the picker says which one happened.
+    public enum Target: String, Equatable, Sendable {
+        case obsidian
+        case finder
+        case none
+    }
+
+    public let opened: Bool
+    public let target: Target
+
+    public init(opened: Bool, target: Target) {
+        self.opened = opened
+        self.target = target
+    }
+}
+
+// MARK: - mail.open
+
+/// Opens the user's mail in the browser (Gmail integration, 2026-08-04).
+///
+/// The **host is a literal constant in the adapter** and only the message id varies — the same
+/// construction `google.search` and `youtube.search` use, and for the same reason: it is what keeps
+/// an id that arrived in a report from ever choosing where the browser goes.
+public protocol MailOpenCapability: Sendable {
+    /// `messageID` is an RFC 5322 Message-ID without angle brackets; nil opens the inbox.
+    func open(messageID: String?) async throws -> MailOpenResult
+}
+
+public struct MailOpenResult: Equatable, Sendable {
+    public let opened: Bool
+    public let resolvedURL: String
+
+    public init(opened: Bool, resolvedURL: String) {
+        self.opened = opened
+        self.resolvedURL = resolvedURL
+    }
+}
+
 // MARK: - spotify.control
 
 /// Controls the user's Spotify playback (NIC-133): play/pause/next/previous, sent to the active

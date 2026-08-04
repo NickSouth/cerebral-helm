@@ -1,6 +1,7 @@
 {
   "handlers": [
-    "searchTheWeb"
+    "searchTheWeb",
+    "openMail"
   ],
   "actions": {
     "daily-brief": {
@@ -46,12 +47,27 @@
     "email-report": {
       "label": "Email report",
       "icon": "mail",
-      "archetype": "report"
+      "archetype": "report",
+      "target": {
+        "kind": "report"
+      }
+    },
+    "open-mail": {
+      "label": "Open inbox",
+      "icon": "mail",
+      "archetype": "fire-and-forget",
+      "target": {
+        "kind": "handler",
+        "handler": "openMail"
+      }
     },
     "system-status-checks": {
       "label": "System status",
       "icon": "activity",
-      "archetype": "report"
+      "archetype": "report",
+      "target": {
+        "kind": "report"
+      }
     },
     "shut-down": {
       "label": "Shut down",
@@ -126,12 +142,18 @@
     "take-notes": {
       "label": "Take notes",
       "icon": "notes",
-      "archetype": "picker"
+      "archetype": "picker",
+      "target": {
+        "kind": "input"
+      }
     },
     "search-notes": {
       "label": "Search notes",
       "icon": "search",
-      "archetype": "picker"
+      "archetype": "picker",
+      "target": {
+        "kind": "input"
+      }
     },
     "open-entertainment-layout": {
       "label": "Open entertainment layout",

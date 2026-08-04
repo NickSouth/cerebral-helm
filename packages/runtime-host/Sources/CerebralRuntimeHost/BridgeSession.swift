@@ -286,6 +286,22 @@ public final class BridgeSession: @unchecked Sendable {
     /// files are the source of truth. Optional: a host without a workspace reports
     /// the surface honestly unavailable rather than claiming a rebuild happened.
     private let knowledgeRebuild: (@Sendable () async throws -> KnowledgeRebuildInfo)?
+    /// The health checks this host can run (quick actions phase 5). Injected rather than built
+    /// here: the inventory is platform-specific (macOS permissions, installed apps) and this file
+    /// stays AppKit-free. A host with none simply has no checks to run and says so.
+    private let systemChecks: (@Sendable () -> [any HealthCheck])?
+    /// Runs the Gmail OAuth connect on the macOS host. Returns the granted scope and whether the
+    /// grant can renew itself; the tokens never cross back to the UI.
+    private let gmailConnect: (@Sendable () async throws -> GmailConnectionInfo)?
+    /// Removes the stored Gmail grant (local only — it does not revoke at Google).
+    private let gmailDisconnect: (@Sendable () async throws -> Void)?
+    /// Lists unread mail on demand for the email report. **Never sampled** — one request per
+    /// message, so it runs when the report opens and not on any cadence.
+    private let unreadMail: (@Sendable (Int) async throws -> [MailMessage])?
+    /// Guards the single-run slot. A plain lock rather than an actor because the whole critical
+    /// section is two field accesses, and the surrounding session is not isolated.
+    private let systemCheckLock = NSLock()
+    private var systemCheckRunning = false
 
     /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
     /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
@@ -354,6 +370,10 @@ public final class BridgeSession: @unchecked Sendable {
         canvasReset: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)? = nil,
         knowledgeRebuild: (@Sendable () async throws -> KnowledgeRebuildInfo)? = nil,
+        systemChecks: (@Sendable () -> [any HealthCheck])? = nil,
+        gmailConnect: (@Sendable () async throws -> GmailConnectionInfo)? = nil,
+        gmailDisconnect: (@Sendable () async throws -> Void)? = nil,
+        unreadMail: (@Sendable (Int) async throws -> [MailMessage])? = nil,
         workspaceWindows: (any WorkspaceWindowsCapability)? = nil,
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
@@ -383,6 +403,10 @@ public final class BridgeSession: @unchecked Sendable {
         self.canvasReset = canvasReset
         self.canvasSetHidden = canvasSetHidden
         self.knowledgeRebuild = knowledgeRebuild
+        self.systemChecks = systemChecks
+        self.gmailConnect = gmailConnect
+        self.gmailDisconnect = gmailDisconnect
+        self.unreadMail = unreadMail
         self.workspaceWindows = workspaceWindows
         self.app = app
         self.url = url
@@ -541,6 +565,16 @@ public final class BridgeSession: @unchecked Sendable {
             return await rebuildKnowledgeIndex(request)
         case .listNotes:
             return await listNotes(request)
+        case .listCourses:
+            return await listCourses(request)
+        case .createCourseNote:
+            return await createCourseNote(request)
+        case .runSystemChecks:
+            return await runSystemChecks(request)
+        case .connectGmail:
+            return await connectGmail(request)
+        case .listUnreadMail:
+            return await listUnreadMail(request)
         case .minimizeWindow:
             return await windowAction(request) { try await $0.minimize(windowID: $1) }
         case .surfaceWindow:
@@ -1569,7 +1603,7 @@ public final class BridgeSession: @unchecked Sendable {
             return ok(request, payload: SearchNotesResult(results: []))
         }
         let hits = output.results.map {
-            NoteHit(noteId: $0.noteID, title: $0.title, excerpt: $0.excerpt)
+            NoteHit(noteId: $0.noteID, title: $0.title, excerpt: $0.excerpt, path: $0.path)
         }
         return ok(request, payload: SearchNotesResult(results: hits))
     }
@@ -2423,6 +2457,223 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: ListNotesResult(output))
     }
 
+    /// Lists the course notebooks under the school folder (quick actions phase 5).
+    ///
+    /// The `take-notes` picker's first stage. It reports only what is **on disk** — the live
+    /// Canvas courses are already in dashboard state, and the surface merges the two. Keeping them
+    /// apart is what lets last semester's notes stay reachable after Canvas stops listing a course.
+    ///
+    /// An unreadable knowledge root is `available: false` rather than an empty list, for the same
+    /// reason `listNotes` distinguishes them: "no courses yet" and "your vault is gone" must never
+    /// look the same.
+    private func listCourses(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let input: ListCoursesInput? = decodePayload(request)
+        let outcome = await runtime.submit(
+            input?.limit.map { "courses-list \($0)" } ?? "courses-list", source: .dashboard
+        )
+        guard
+            case let .completed(_, _, result) = outcome,
+            result?.error == nil,
+            let data = result?.output,
+            let output = try? CerebralHelmCourseListOutput(data: data)
+        else {
+            return ok(request, payload: ListCoursesResult.unavailable)
+        }
+        return ok(request, payload: ListCoursesResult(output))
+    }
+
+    /// Creates one templated note in a course (quick actions phase 5), from the `take-notes` picker.
+    ///
+    /// Structured rather than a text submit because it carries two free-text fields, either of
+    /// which can contain spaces — the same reason `create-event` and `create-ticket` skip parsing.
+    ///
+    /// The caller names a **course**, never a folder: the notebook derives the folder inside the
+    /// school root and mints it on first use, so a note can only ever land there. `local_write`
+    /// runs one-click, but the gated path is still handled — "ask before all actions" re-arms
+    /// confirmation over every tool, and reporting a note as written while its confirmation is
+    /// pending would be a lie.
+    private func createCourseNote(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: CreateCourseNoteInput = decodePayload(request),
+              !input.course.trimmingCharacters(in: .whitespaces).isEmpty,
+              !input.title.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "createCourseNote requires a course and a title.")
+        }
+        let course = input.course.trimmingCharacters(in: .whitespaces)
+        let title = input.title.trimmingCharacters(in: .whitespaces)
+
+        let outcome = await runtime.submit(
+            intent: .createCourseNote(course: course, title: title),
+            source: .dashboard,
+            summary: "Create the note \"\(title)\" in \(course)"
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(_, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmCourseNoteCreateOutput(data: data) {
+                return ok(request, payload: CreateCourseNoteResult(
+                    course: output.noteCourse,
+                    path: output.notePath,
+                    title: output.noteTitle,
+                    created: output.noteCreated,
+                    awaitingConfirmation: false
+                ))
+            }
+            return errorResponse(
+                request, category: .unavailableCapability, code: "course_note_not_created",
+                message: "The note was not created (\(status.rawValue)). Your notes are unchanged."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            // No path yet — nothing has been written. The surface must not offer to open one.
+            return ok(request, payload: CreateCourseNoteResult(
+                course: course, path: commandID, title: title,
+                created: false, awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "course_note_rejected", message: reason
+            )
+        }
+    }
+
+    /// The unread messages themselves, for the email report (Gmail integration).
+    ///
+    /// On demand only. Each message costs a request, so this is deliberately not a channel the
+    /// dashboard samples — the count on the daily brief comes from a single label read instead.
+    ///
+    /// A failure is reported with its own reason rather than an empty list: "no unread mail" and
+    /// "we could not read your mail" are opposite facts, and rendering both as an empty report
+    /// would tell the user they were caught up when nobody looked.
+    private func listUnreadMail(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let unreadMail else {
+            return ok(request, payload: UnreadMailResult.unavailable(state: "not-connected", reason: nil))
+        }
+        let input: ListUnreadMailInput? = decodePayload(request)
+        do {
+            let messages = try await unreadMail(input?.limit ?? 5)
+            return ok(request, payload: UnreadMailResult(messages))
+        } catch let error as MailError {
+            switch error {
+            case .notConnected:
+                return ok(request, payload: UnreadMailResult.unavailable(state: "not-connected", reason: nil))
+            case .reconnectRequired:
+                return ok(request, payload: UnreadMailResult.unavailable(
+                    state: "reconnect", reason: "Gmail needs reconnecting — Settings → Setup."
+                ))
+            case let .providerFailed(detail):
+                return ok(request, payload: UnreadMailResult.unavailable(state: "unavailable", reason: detail))
+            }
+        } catch {
+            return ok(request, payload: UnreadMailResult.unavailable(
+                state: "unavailable", reason: error.localizedDescription
+            ))
+        }
+    }
+
+    /// Runs the Gmail OAuth connect, or disconnects (Gmail integration).
+    ///
+    /// One operation with a `disconnect` flag rather than two, because they are the two halves of
+    /// one control and the surface always renders exactly one of them.
+    ///
+    /// **A connect that returns no refresh token is reported as a problem, not a success.** Such a
+    /// grant works for an hour and then cannot renew itself — the failure `access_type=offline` and
+    /// `prompt=consent` exist to prevent — and telling the user it worked would leave them to
+    /// discover it an hour later with no idea why.
+    private func connectGmail(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let input: ConnectGmailInput? = decodePayload(request)
+        if input?.disconnect == true {
+            guard let gmailDisconnect else {
+                return ok(request, payload: ConnectGmailResult(connected: false, scope: nil, canRefresh: false))
+            }
+            try? await gmailDisconnect()
+            return ok(request, payload: ConnectGmailResult(connected: false, scope: nil, canRefresh: false))
+        }
+        guard let gmailConnect else {
+            return errorResponse(
+                request, category: .unavailableCapability, code: "gmail_connect_unavailable",
+                message: "Connecting Gmail requires the macOS host."
+            )
+        }
+        do {
+            let connection = try await gmailConnect()
+            return ok(request, payload: ConnectGmailResult(
+                connected: true, scope: connection.scope, canRefresh: connection.canRefresh
+            ))
+        } catch let error as GmailConnectError {
+            return errorResponse(
+                request, category: error.category, code: error.code, message: error.message
+            )
+        } catch {
+            return errorResponse(
+                request, category: .providerFailure, code: "gmail_connect_failed",
+                message: "Couldn\u{2019}t connect Gmail. Please try again."
+            )
+        }
+    }
+
+    /// Runs the system health checks, streaming each result as it lands (quick actions phase 5).
+    ///
+    /// **Streamed rather than awaited.** The inventory reaches several third parties, so a run
+    /// takes seconds — long enough that a surface waiting on one response would show nothing at
+    /// all while the interesting part (which checks exist) is already known. The operation returns
+    /// the first snapshot, every check `pending`, and each completion arrives as a
+    /// `system.checks.changed` event carrying the **whole** set.
+    ///
+    /// One run at a time: a second press while a run is in flight is answered with the run already
+    /// going rather than starting a competing one, because two runs would interleave their
+    /// emissions and the reader would watch rows flicker between two truths.
+    private func runSystemChecks(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let systemChecks else {
+            return ok(request, payload: SystemChecksResult.unavailable)
+        }
+        let checks = systemChecks()
+        guard !checks.isEmpty else {
+            return ok(request, payload: SystemChecksResult.unavailable)
+        }
+        guard claimSystemCheckRun() else {
+            return ok(request, payload: SystemChecksResult(started: true, checkCount: checks.count))
+        }
+
+        // Detached from the request: the response returns now and the emissions continue.
+        Task { [weak self] in
+            for await run in HealthCheckRunner().run(checks) {
+                guard let self else { return }
+                self.emit(BridgeEventFactory.systemChecksEvent(
+                    run: run, id: BridgeEventFactory.newEventID(), timestamp: Date()
+                ))
+                if run.complete { self.releaseSystemCheckRun() }
+            }
+        }
+        return ok(request, payload: SystemChecksResult(started: true, checkCount: checks.count))
+    }
+
+    /// Claims the single run slot, or reports that one is already going.
+    private func claimSystemCheckRun() -> Bool {
+        systemCheckLock.lock()
+        defer { systemCheckLock.unlock() }
+        if systemCheckRunning { return false }
+        systemCheckRunning = true
+        return true
+    }
+
+    private func releaseSystemCheckRun() {
+        systemCheckLock.lock()
+        systemCheckRunning = false
+        systemCheckLock.unlock()
+    }
+
     /// Rebuilds the derived note search index from the durable Markdown (NIC-163).
     ///
     /// The user reaches this from Setup → Library after editing notes outside
@@ -2816,10 +3067,132 @@ public final class BridgeSession: @unchecked Sendable {
 
         static let unavailable = ListNotesResult()
     }
+    /// `listCourses` input (quick actions phase 5): how many courses to return, most recently
+    /// written first.
+    /// The receipt for starting a run (quick actions phase 5). It deliberately carries no results:
+    /// they arrive as events, and a payload that looked like results would invite a caller to read
+    /// the first snapshot as the answer.
+    private struct ListUnreadMailInput: Decodable {
+        let limit: Int?
+    }
+    private struct UnreadMailItemDTO: Encodable {
+        let id: String
+        let byline: String
+        let subject: String
+        let receivedAt: String?
+        /// The RFC 5322 Message-ID — the handle `mail.open` takes. Absent when the sender omitted
+        /// one, in which case the row renders as text rather than a link.
+        let messageId: String?
+    }
+    /// The unread messages, or an honest reason there are none to show. `state` distinguishes
+    /// "your inbox is clear" from "we could not look", which an empty array alone cannot.
+    private struct UnreadMailResult: Encodable {
+        let state: String
+        let messages: [UnreadMailItemDTO]
+        let reason: String?
+
+        init(_ messages: [MailMessage]) {
+            state = "ready"
+            reason = nil
+            self.messages = messages.map {
+                UnreadMailItemDTO(
+                    id: $0.id, byline: $0.byline, subject: $0.subject,
+                    receivedAt: $0.receivedAt, messageId: $0.rfc822MessageID
+                )
+            }
+        }
+
+        private init(state: String, reason: String?) {
+            self.state = state
+            self.reason = reason
+            self.messages = []
+        }
+
+        static func unavailable(state: String, reason: String?) -> UnreadMailResult {
+            UnreadMailResult(state: state, reason: reason)
+        }
+    }
+    private struct ConnectGmailInput: Decodable {
+        let disconnect: Bool?
+    }
+    /// The outcome of connecting. `canRefresh` false means the grant cannot renew itself and the
+    /// surface must say so — it is not a successful connection.
+    private struct ConnectGmailResult: Encodable {
+        let connected: Bool
+        let scope: String?
+        let canRefresh: Bool
+    }
+    private struct SystemChecksResult: Encodable {
+        let started: Bool
+        let checkCount: Int
+
+        static let unavailable = SystemChecksResult(started: false, checkCount: 0)
+    }
+    private struct ListCoursesInput: Decodable {
+        let limit: Int?
+    }
+    private struct CourseFolderDTO: Encodable {
+        let course: String
+        /// Root-relative, so the picker can compare it directly to a note listing's folder and
+        /// filter that course's notes without a second read.
+        let folder: String
+        let noteCount: Int
+        let updated: String?
+    }
+    /// The course notebooks on disk (quick actions phase 5). `available` is false when the
+    /// knowledge root could not be read at all — "no courses yet" and "your vault is gone" must
+    /// never look the same, the same distinction ``ListNotesResult`` draws.
+    private struct ListCoursesResult: Encodable {
+        let available: Bool
+        /// The root-relative school folder the courses came from.
+        let root: String
+        let courses: [CourseFolderDTO]
+
+        init(_ output: CerebralHelmCourseListOutput) {
+            available = true
+            root = output.courseRoot
+            courses = output.courses.map {
+                CourseFolderDTO(
+                    course: $0.courseName, folder: $0.courseFolder,
+                    noteCount: $0.courseNoteCount, updated: $0.courseUpdated
+                )
+            }
+        }
+
+        private init() {
+            available = false
+            root = ""
+            courses = []
+        }
+
+        static let unavailable = ListCoursesResult()
+    }
+    private struct CreateCourseNoteInput: Decodable {
+        let course: String
+        let title: String
+    }
+    /// The created note (quick actions phase 5). `path` is the same handle `note.open` takes, so
+    /// the picker can open what it just created — except while `awaitingConfirmation`, where
+    /// nothing has been written yet and there is no path to offer.
+    private struct CreateCourseNoteResult: Encodable {
+        let course: String
+        let path: String
+        let title: String
+        /// False when a note of that title already existed for that day and was returned rather
+        /// than overwritten.
+        let created: Bool
+        let awaitingConfirmation: Bool
+    }
     private struct NoteHit: Encodable {
         let noteId: String
         let title: String
         let excerpt: String
+        /// The note's root-relative path (quick actions phase 5) — the identity the
+        /// `search-notes` picker merges on and the handle it opens by. It is the one
+        /// key both note sources agree on: a note authored outside CerebralHelm has
+        /// no frontmatter id, so `noteId` cannot address the whole library. Relative
+        /// by construction; an absolute path never crosses this boundary.
+        let path: String
     }
     private struct SearchNotesResult: Encodable {
         let results: [NoteHit]
@@ -3412,5 +3785,49 @@ public final class BridgeSession: @unchecked Sendable {
             code: "bridge_operation_unimplemented",
             message: "This bridge operation is not wired to the runtime yet."
         )
+    }
+}
+
+/// What the host reports back from a Gmail connect (Gmail integration).
+///
+/// Carried as a plain value rather than the adapter's own type so `BridgeSession` stays free of
+/// AppKit — the same seam every other host-injected closure uses.
+public struct GmailConnectionInfo: Sendable, Equatable {
+    public let scope: String?
+    /// False means the grant cannot renew itself. Reported, never smoothed over.
+    public let canRefresh: Bool
+
+    public init(scope: String?, canRefresh: Bool) {
+        self.scope = scope
+        self.canRefresh = canRefresh
+    }
+}
+
+/// A connect failure the surface can act on, mapped by the host from its adapter's error.
+///
+/// The three cases have three different remedies, and collapsing them into "connect failed" would
+/// send the user looking in the wrong place: enter a Client ID, press Connect again, or nothing at
+/// all because they simply closed the browser.
+public struct GmailConnectError: Error, Sendable {
+    public let category: CerebralContracts.Category
+    public let code: String
+    public let message: String
+
+    public init(category: CerebralContracts.Category, code: String, message: String) {
+        self.category = category
+        self.code = code
+        self.message = message
+    }
+
+    public static let clientIDMissing = GmailConnectError(
+        category: .invalidInput, code: "gmail_client_id_missing",
+        message: "Add your Google Client ID in Settings → Setup, then connect."
+    )
+    public static let cancelled = GmailConnectError(
+        category: .invalidInput, code: "gmail_connect_cancelled",
+        message: "Gmail wasn’t connected — the browser was closed or consent was declined."
+    )
+    public static func failed(_ detail: String) -> GmailConnectError {
+        GmailConnectError(category: .providerFailure, code: "gmail_connect_failed", message: detail)
     }
 }

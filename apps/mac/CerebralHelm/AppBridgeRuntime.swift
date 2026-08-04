@@ -72,6 +72,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// a fast cadence. Same visibility gate as the other streams; not-connected/nothing-playing
     /// degrade honestly. Refreshed immediately after a successful connect.
     private let spotifyPublisher: SpotifyPublisher
+    private let mailPublisher: MailPublisher
     /// Streams the School `courses`/`deadlines` widgets (NIC-132) from the local Canvas scrape store,
     /// and the loopback endpoint the Chrome extension POSTs scrapes to. Both are absent when the store
     /// can't open — the widgets then stay at their honest bootstrap/unavailable state.
@@ -357,6 +358,43 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 )
             }
         }
+        // The system-health inventory (quick actions phase 5). Built fresh on EVERY run, never
+        // captured once: the whole point of these checks is that the answers change while the app
+        // is running — a permission revoked in System Settings, a key added in Setup — and an
+        // inventory captured at launch would report the state at launch.
+        //
+        // Assembled here as an explicitly typed local rather than inline at the call site: the
+        // BridgeSession initializer is already enormous, and a nested closure inside it defeated
+        // the type checker outright.
+        let canvasHealth = canvasHealthSnapshot(from: canvasStatusClosure)
+        let healthSecrets = composition.secretStore
+        let healthKnowledgeRoot = (try? makeKnowledgeService(paths).rootPath) ?? paths.knowledgeRoot.path
+        let healthDatabasePath = paths.operationalDatabasePath.path
+        // Gmail (2026-08-04, owner override of the PRD's Workspace exclusion). The session and the
+        // coordinator share one secret store so a connect is immediately visible to the reader.
+        let gmailSecretStore = composition.secretStore
+        let gmailCoordinator = GoogleAuthCoordinator(secretStore: gmailSecretStore)
+        let gmailSession = GoogleAuthSession(
+            secretStore: gmailSecretStore, refresher: GoogleTokenExchange()
+        )
+
+        // The Gmail producer (2026-08-04): one `labels.get` every five minutes, which reads no
+        // message at all. Not connected → an honest "connect" state, never a reassuring zero.
+        let gmailProvider = GmailAPIProvider(session: gmailSession)
+        let mail = MailPublisher(provider: gmailProvider, emit: { relay.emit($0) })
+        mailPublisher = mail
+
+        let systemChecksClosure: @Sendable () -> [any HealthCheck] = {
+            SystemHealthChecks.all(
+                permissions: MacPermissionChecker(),
+                secrets: healthSecrets,
+                knowledgeRoot: healthKnowledgeRoot,
+                projectsRoot: WorkspacePaths.defaultProjectsRoot().path,
+                databasePath: healthDatabasePath,
+                canvasStatus: canvasHealth
+            )
+        }
+
         let canvasResetClosure: (@Sendable () async -> CanvasStatusInfo)? = canvasStore.map { store in
             { @Sendable [canvas = canvasPub] in
                 try? store.clear()
@@ -550,6 +588,40 @@ final class AppBridgeRuntime: @unchecked Sendable {
                     return KnowledgeRebuildInfo(root: knowledge.rootPath, noteCount: try knowledge.rebuild())
                 }.value
             },
+            // The system-health inventory (quick actions phase 5), built above.
+            systemChecks: systemChecksClosure,
+            // Runs the Gmail OAuth connect for the `connectGmail` op. The Client ID is read from the
+            // Keychain by the coordinator, not from `.env` — a built `.app` cannot read the
+            // developer's environment file (the lesson NIC-133 increment 6 paid for).
+            gmailConnect: {
+                do {
+                    let connection = try await gmailCoordinator.connect()
+                    // The session may hold a token from a previous grant; drop it so the next read
+                    // uses the one just stored rather than a stale or revoked predecessor.
+                    await gmailSession.invalidate()
+                    // Sample now, so the count appears the moment the browser hands back rather
+                    // than on the next five-minute tick.
+                    await mail.refresh()
+                    return GmailConnectionInfo(scope: connection.scope, canRefresh: connection.canRefresh)
+                } catch let error as GoogleAuthError {
+                    switch error {
+                    case .clientIDMissing: throw GmailConnectError.clientIDMissing
+                    case .cancelled: throw GmailConnectError.cancelled
+                    case .notConnected:
+                        throw GmailConnectError.failed("Google didn\u{2019}t accept the connection. Please try again.")
+                    // `providerFailed` carries Google's own `error`/`error_description`, which is
+                    // the only thing that tells one configuration mistake from another. Passed
+                    // through verbatim rather than replaced with a house message.
+                    case let .providerFailed(detail): throw GmailConnectError.failed(detail)
+                    }
+                }
+            },
+            gmailDisconnect: {
+                try await gmailCoordinator.disconnect()
+                await gmailSession.invalidate()
+            },
+            // The email report's on-demand read. Never sampled — one request per message.
+            unreadMail: { limit in try await gmailProvider.unread(limit: limit) },
             // Hides a layout's app windows on closeLayout (NIC-142) — the same
             // permission-free primitive "Windows Stored by Mode" uses.
             workspaceWindows: composition.capabilities.workspaceWindows,
@@ -671,6 +743,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let calendar = calendarPublisher
         let projectGitStatus = projectGitStatusPublisher
         let spotify = spotifyPublisher
+        let mail = mailPublisher
         Task { await metrics.start() }
         Task { await repos.start() }
         Task { await projects.start() }
@@ -681,6 +754,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         if let calendar { Task { await calendar.start() } }
         Task { await projectGitStatus.start() }
         Task { await spotify.start() }
+        Task { await mail.start() }
         if let canvas = canvasPublisher { Task { await canvas.start() } }
         // Bind the Canvas ingest endpoint (NIC-132) once the app is up. Failing to bind (e.g. the
         // port is taken) disables ingest without affecting the rest of the bridge.
@@ -701,6 +775,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let calendar = calendarPublisher
         let projectGitStatus = projectGitStatusPublisher
         let spotify = spotifyPublisher
+        let mail = mailPublisher
         Task { await metrics.setActive(active) }
         Task { await repos.setActive(active) }
         Task { await projects.setActive(active) }
@@ -711,6 +786,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         if let calendar { Task { await calendar.setActive(active) } }
         Task { await projectGitStatus.setActive(active) }
         Task { await spotify.setActive(active) }
+        Task { await mail.setActive(active) }
         if let canvas = canvasPublisher { Task { await canvas.setActive(active) } }
     }
 
@@ -809,5 +885,24 @@ private final class EventRelay: @unchecked Sendable {
     func emit(_ json: String) {
         lock.lock(); let sink = self.sink; lock.unlock()
         sink?(json)
+    }
+}
+
+/// Projects the Canvas status closure down to the two facts the health check asks for
+/// (quick actions phase 5): is the extension paired, and when did it last scrape.
+///
+/// A named function rather than a `.map` at the call site: an async closure returned from `map`
+/// inside the BridgeSession initializer defeated the type checker outright, and naming it gives
+/// the compiler the signature up front.
+private func canvasHealthSnapshot(
+    from status: (@Sendable () async -> CanvasStatusInfo)?
+) -> (@Sendable () async -> CanvasHealthSnapshot)? {
+    guard let status else { return nil }
+    return {
+        let info = await status()
+        return CanvasHealthSnapshot(
+            paired: info.token != nil,
+            lastScrapedAt: info.lastScrapedAt.flatMap { ISO8601DateFormatter().date(from: $0) }
+        )
     }
 }

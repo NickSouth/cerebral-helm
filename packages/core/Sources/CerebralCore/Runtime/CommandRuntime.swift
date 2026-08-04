@@ -838,6 +838,61 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [ConfirmationArgument(name: "note", value: path, sensitive: false)],
                 actionSummary: "Read the note \(path)."
             )
+        case let .openNote(path):
+            // Open one note in the user's editor (quick actions phase 5). `local_write` like every
+            // other open — it launches an application — and the knowledge service resolves the
+            // path against the root, so this can only ever open a note the root contains.
+            return make(
+                toolID: "note.open",
+                input: try? CerebralHelmNoteOpenInput(notePath: path).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "note", value: path, sensitive: false)],
+                actionSummary: "Open the note \(path)."
+            )
+        case let .openMail(messageID):
+            // Open mail (Gmail integration). `local_write` like every other open — it launches a
+            // browser — and the adapter owns the destination host.
+            return make(
+                toolID: "mail.open",
+                input: try? CerebralHelmMailOpenInput(mailMessageID: messageID).jsonData(),
+                destination: "mail.google.com",
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [],
+                actionSummary: messageID == nil ? "Open your inbox." : "Open an email."
+            )
+        case let .listCourses(limit):
+            // List the course notebooks (quick actions phase 5). Read-only: it reads the folders
+            // under the school root and reports what is there.
+            return make(
+                toolID: "course.list",
+                input: try? CerebralHelmCourseListInput(courseLimit: limit).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [],
+                actionSummary: "List the course notebooks."
+            )
+        case let .createCourseNote(course, title):
+            // Create one course note (quick actions phase 5). The course is data, not a
+            // destination: the adapter derives the folder inside the school root, so this can
+            // only ever write there.
+            return make(
+                toolID: "course.note.create",
+                input: try? CerebralHelmCourseNoteCreateInput(
+                    noteCourse: course, noteTitle: title
+                ).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [
+                    ConfirmationArgument(name: "course", value: course, sensitive: false),
+                    ConfirmationArgument(name: "title", value: title, sensitive: false)
+                ],
+                actionSummary: "Create the note “\(title)” in \(course)."
+            )
         case .listApps:
             return make(
                 toolID: "apps.list",

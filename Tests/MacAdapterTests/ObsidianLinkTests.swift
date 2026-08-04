@@ -51,3 +51,40 @@ func destinationFallsBackToFinder() {
     }
     #expect(url == ObsidianLink.openURL(forRoot: root))
 }
+
+// MARK: - One note (quick actions phase 5)
+
+@Test("a note becomes the same obsidian://open?path= link, escaped whole")
+func openURLEncodesANote() throws {
+    let path = "/Users/me/My Knowledge/inbox/Hull Plating & Ideas.md"
+    let url = try #require(ObsidianLink.openURL(forNote: path))
+
+    #expect(url.absoluteString.hasPrefix("obsidian://open?path="))
+    let encoded = String(url.absoluteString.dropFirst("obsidian://open?path=".count))
+    // A filename carrying spaces and an ampersand must not split the parameter.
+    #expect(!encoded.contains(" "))
+    #expect(!encoded.contains("&"))
+    #expect(encoded.removingPercentEncoding == path)
+}
+
+@Test("an empty note path produces no link rather than one pointing at the root")
+func openURLRefusesAnEmptyNotePath() {
+    // `URL(fileURLWithPath: "")` resolves to the working directory, so an empty path would
+    // otherwise become a link to somewhere real and entirely unrelated.
+    #expect(ObsidianLink.openURL(forNote: "") == nil)
+}
+
+@Test("without Obsidian installed, a note request reveals the file instead")
+func noteDestinationFallsBackToFinder() {
+    let path = "/Users/me/knowledge/inbox/idea.md"
+
+    #expect(
+        ObsidianLink.destination(forNote: path, obsidianInstalled: false)
+            == .revealInFinder(URL(fileURLWithPath: path))
+    )
+    guard case let .obsidian(url) = ObsidianLink.destination(forNote: path, obsidianInstalled: true) else {
+        Issue.record("an installed Obsidian must take the note request")
+        return
+    }
+    #expect(url == ObsidianLink.openURL(forNote: path))
+}

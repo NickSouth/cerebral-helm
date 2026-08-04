@@ -4,6 +4,7 @@ import {
   type ReportDocument
 } from "./reportDocument";
 import type { RegionState, ScheduleItem } from "../bridge/types";
+import { type UnreadFacts, unreadLabel, unreadValue } from "./unreadCount";
 import { formatEventTime } from "../shell/format";
 
 /**
@@ -32,11 +33,11 @@ export interface DailyBriefSnapshot {
     readonly items: readonly ScheduleItem[];
   };
   /**
-   * Unread mail. `null` means *no mail provider exists yet* — the count arrives with Gmail
-   * (PRD excludes Workspace from the MVP). A composer must render nothing rather than a zero,
-   * because "0 unread" is a claim we cannot make.
+   * Unread mail, as measured. `null` means *nothing measured it* — no account connected, or the
+   * channel could not read. A composer must render nothing rather than a zero, because "0 unread"
+   * is a claim we cannot make.
    */
-  readonly unreadCount: number | null;
+  readonly unreadCount: UnreadFacts | null;
 }
 
 /** Time-of-day greeting. Deliberately the only thing that reads the clock's hour. */
@@ -101,9 +102,13 @@ function unreadBlock(snapshot: DailyBriefSnapshot): ReportBlock | null {
   }
   return {
     blockKind: "count",
-    value: String(snapshot.unreadCount),
-    label: snapshot.unreadCount === 1 ? "unread email" : "unread emails",
-    reportAction: { action: "email-report" }
+    value: unreadValue(snapshot.unreadCount),
+    // No `listed` — the brief shows no rows, so it answers "how many" and nothing else.
+    label: unreadLabel(snapshot.unreadCount),
+    // Opens the inbox itself (owner decision, 2026-08-04) rather than the in-app report: the
+    // count raises the question "what is it?", and the answer lives in Gmail. `email-report` is
+    // one press away on its own slot for the in-app view.
+    reportAction: { action: "open-mail" }
   };
 }
 

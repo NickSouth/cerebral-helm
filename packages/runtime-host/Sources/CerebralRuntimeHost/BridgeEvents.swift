@@ -394,6 +394,86 @@ public enum BridgeEventFactory {
     /// wins over the per-mode bootstrap `weather` and survives mode switches by construction
     /// (it lives outside the mode snapshot). Weather is machine-global, so one live value is
     /// correct across every mode. Emitted by the ``WeatherPublisher`` (Increment 5).
+    /// One emission of a system-health run (quick actions phase 5).
+    ///
+    /// The **whole** set of checks every time, not a diff: the report is a document, and a
+    /// consumer that had to reconcile per-row updates could drift out of step with the run. It
+    /// costs a few hundred bytes per emission and removes a class of bug outright.
+    public static func systemChecksEvent(
+        run: HealthCheckRun, id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Row: Encodable {
+            let id: String
+            let title: String
+            let group: String
+            let state: String
+            let detail: String?
+            let remediation: String?
+            let durationMs: Int?
+        }
+        struct Payload: Encodable {
+            let checks: [Row]
+            let complete: Bool
+            let failureCount: Int
+        }
+        let rows = run.results.map {
+            Row(
+                id: $0.descriptor.id,
+                title: $0.descriptor.title,
+                group: $0.descriptor.group.rawValue,
+                state: $0.state.rawValue,
+                detail: $0.detail,
+                remediation: $0.remediation,
+                durationMs: $0.durationMs
+            )
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(
+                Payload(checks: rows, complete: run.complete, failureCount: run.failures.count)
+            ),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .systemChecksChanged
+        )
+    }
+
+    /// The unread-mail channel (Gmail integration, 2026-08-04).
+    ///
+    /// Machine-global rather than per-mode: how much mail is waiting is a fact about the account,
+    /// not about which dashboard you are looking at.
+    ///
+    /// `state` is what keeps this honest. **Zero unread and "not connected" must never render the
+    /// same**, so the count is optional and absent unless it was actually measured — a surface
+    /// cannot accidentally show a reassuring 0 for a mailbox nobody has read.
+    /// `unreadCapped` means the count stopped at a ceiling — there are at least that many — and
+    /// `unreadScope` says which slice was counted (`primary` or the whole `inbox`). Both exist so a
+    /// surface can render the number it was actually given rather than one it inferred.
+    public static func mailChangedEvent(
+        state: String, unread: Int?, unreadCapped: Bool, unreadScope: String?, reason: String?,
+        id: String, timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Payload: Encodable {
+            let state: String
+            let unread: Int?
+            let unreadCapped: Bool
+            let unreadScope: String?
+            let reason: String?
+        }
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(
+                Payload(
+                    state: state, unread: unread, unreadCapped: unreadCapped,
+                    unreadScope: unreadScope, reason: reason
+                )
+            ),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .mailChanged
+        )
+    }
+
     public static func weatherChangedEvent(
         channel: DashboardWeatherChannel, id: String, timestamp: Date
     ) -> CerebralHelmBridgeEvent {

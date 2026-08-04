@@ -75,7 +75,7 @@ func spotifyRedirectURI() async {
 func spotifyLoopbackListenerCaptures() async throws {
     // Bind port 0 — the kernel hands back a free port, so this can never collide with an ephemeral
     // port some other process on the machine happens to hold. The redirect uses the assigned port.
-    let listener = try SpotifyLoopbackListener(port: 0)
+    let listener = try LoopbackAuthListener(port: 0, responseHTML: SpotifyAuthCoordinator.successHTML)
     let query = try await listener.awaitCallback(timeout: 5) { boundPort in
         // Fire the redirect once the listener is accepting; the response is irrelevant to capture.
         Task {

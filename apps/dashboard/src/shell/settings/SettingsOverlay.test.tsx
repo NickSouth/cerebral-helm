@@ -559,7 +559,9 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     });
     const card = within(label.closest(".settings-field") as HTMLElement);
 
-    expect(await card.findByText("2 notes")).toBeInTheDocument();
+    // Five: the two general notes plus STAT 240's three (added with take-notes in phase 5 —
+    // a course note is an ordinary note, so it counts in the library like any other).
+    expect(await card.findByText("5 notes")).toBeInTheDocument();
     expect(card.getByText("/Users/you/CerebralHelm/knowledge")).toBeInTheDocument();
     // A note written outside CerebralHelm is listed like any other, titled by filename.
     expect(card.getByText("Hull Plating")).toBeInTheDocument();

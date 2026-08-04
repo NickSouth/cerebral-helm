@@ -47,4 +47,30 @@ public enum ObsidianLink {
         }
         return .obsidian(url)
     }
+
+    /// The `obsidian://open` URL for one **note** (quick actions phase 5).
+    ///
+    /// The same `path=` parameter as the root, and for the same documented reason:
+    /// `path` overrides `vault`/`file`, so Obsidian resolves whichever registered
+    /// vault contains the file without this having to know the vault's name.
+    ///
+    /// It takes an absolute path the knowledge service has already range-checked.
+    /// Nothing here re-derives one from a root and a relative path — that join is
+    /// precisely where a containment rule gets accidentally re-implemented, and a
+    /// second rule could only disagree with the first.
+    public static func openURL(forNote absolutePath: String) -> URL? {
+        guard !absolutePath.isEmpty else { return nil }
+        return openURL(forRoot: URL(fileURLWithPath: absolutePath))
+    }
+
+    /// Where a note-open request should go. Identical policy to a browse request:
+    /// with no `obsidian://` handler the file is revealed in Finder instead, so the
+    /// action still does something real and the caller is told which happened.
+    public static func destination(forNote absolutePath: String, obsidianInstalled: Bool) -> Destination {
+        let fileURL = URL(fileURLWithPath: absolutePath)
+        guard obsidianInstalled, let url = openURL(forNote: absolutePath) else {
+            return .revealInFinder(fileURL)
+        }
+        return .obsidian(url)
+    }
 }

@@ -4,6 +4,11 @@ import { composeDailyBrief, type DailyBriefSnapshot } from "./dailyBrief";
 import { composeOpenSchedule, type OpenScheduleSnapshot } from "./openSchedule";
 import { composeSuggestAMovie, type SuggestAMovieSnapshot } from "./suggestAMovie";
 import { composeCheckScoreboard } from "./checkScoreboard";
+import { composeSystemChecks } from "./systemChecks";
+import { composeEmailReport } from "./emailReport";
+import { unreadFacts } from "./unreadCount";
+import { useUnreadMail } from "./useUnreadMail";
+import { useSystemChecksRun } from "./useSystemChecksRun";
 import { useSportsEvents } from "../sports/sportsEvents";
 import type { DashboardState } from "../state/dashboardState";
 import type { ReportDocument } from "./reportDocument";
@@ -28,6 +33,13 @@ export function useReportDocument(
   // The read is a no-op unless this is the report that needs it, and it comes through the shared
   // cache, so opening the report normally reuses the fetch the picker just made.
   const sports = useSportsEvents(reportId === "check-scoreboard");
+  // Same shape, same reason: called unconditionally so hook order never depends on which report is
+  // open. It starts a run when this report opens and re-runs on demand; the RESULTS arrive as
+  // events and land in dashboard state, so the composer below reads them like any other feed.
+  const checks = useSystemChecksRun(reportId === "system-status-checks");
+  // Same discipline: called unconditionally so hook order never depends on which report is open,
+  // and it reads nothing unless this is the report that needs it.
+  const mail = useUnreadMail(reportId === "email-report");
 
   // The refresh is the sports read's, because that is the only report composed from a fetch. A
   // report built from ambient dashboard state has nothing to re-request, and says so by not
@@ -50,6 +62,25 @@ export function useReportDocument(
       return { refresh, document: composeDailyBrief(dailyBriefSnapshot(state, calendarProfile, at)) };
     case "open-schedule":
       return { refresh, document: composeOpenSchedule(openScheduleSnapshot(state, calendarProfile)) };
+    case "system-status-checks":
+      // The one report that re-runs rather than re-reads: `refresh` is the run itself.
+      return {
+        refresh: checks.rerun,
+        // The live metrics come from the same region the bottom bar reads, so the header is
+        // current by construction rather than by a second subscription.
+        document: composeSystemChecks(state.systemChecks, state.regions.systemHealth)
+      };
+    case "email-report":
+      return {
+        refresh: mail.refresh,
+        document: composeEmailReport({
+          mail: mail.result,
+          // The count comes from the live channel, not from the capped list: counting rows would
+          // report "5 unread" for an inbox holding fifty.
+          unread: unreadFacts(state.mail),
+          loading: mail.loading
+        })
+      };
     case "suggest-a-movie":
       return { refresh, document: composeSuggestAMovie(suggestAMovieSnapshot(state, at)) };
     default:
@@ -108,9 +139,9 @@ function dailyBriefSnapshot(
       ? { state: weather.state, temperatureF: weather.temperatureF, condition: weather.condition }
       : null,
     schedule: scheduleOf(state, calendarProfile),
-    // No mail provider exists yet (PRD excludes Workspace from the MVP), so the count is absent
-    // rather than zero — a fabricated "0 unread" would be a claim we cannot make.
-    unreadCount: null
+    // The live Gmail channel (2026-08-04). Absent unless it was actually measured: a count is
+    // only rendered when `state === "ready"`, so "not connected" can never become a reassuring 0.
+    unreadCount: unreadFacts(state.mail)
   };
 }
 

@@ -15,6 +15,13 @@ public protocol KnowledgeService: Sendable {
     /// Reads one note by its root-relative path (NIC-162). Read-only: nothing in
     /// this port writes, and the path never resolves outside the knowledge root.
     func read(_ request: NoteReadRequest) async throws -> NoteReadOutcome
+    /// Where one note actually lives on disk, for handing to an editor.
+    ///
+    /// A location question answered without reading the file: `note.open` needs an
+    /// absolute path and nothing else, and opening a note should not depend on it
+    /// being readable text. The containment rule is the **same** one ``read`` uses —
+    /// one resolver, so a path this admits and a path that reads can never diverge.
+    func locate(_ request: NoteReadRequest) async throws -> NoteLocation
 }
 
 public struct NoteCaptureRequest: Equatable, Sendable {
@@ -181,6 +188,27 @@ public struct NoteReadOutcome: Equatable, Sendable {
         self.frontmatter = frontmatter
         self.body = body
         self.updated = updated
+    }
+}
+
+/// Where a note lives, resolved against the knowledge root (quick actions phase 5).
+///
+/// `absolutePath` is the only place in the note pipeline an absolute filesystem path
+/// is produced, and it exists for exactly one consumer: the platform adapter that
+/// hands a file to an editor. It is deliberately **not** carried across the bridge —
+/// the web layer addresses notes by root-relative path, and a surface that never
+/// learns absolute paths cannot ask for one outside the root.
+public struct NoteLocation: Equatable, Sendable {
+    /// The absolute path of the knowledge root the note was resolved against.
+    public let root: String
+    /// The note's root-relative path, forward-slashed.
+    public let path: String
+    public let absolutePath: String
+
+    public init(root: String, path: String, absolutePath: String) {
+        self.root = root
+        self.path = path
+        self.absolutePath = absolutePath
     }
 }
 

@@ -28,6 +28,13 @@ import type {
   CanvasStatus,
   KnowledgeRebuildResult,
   ListNotesResult,
+  ListCoursesResult,
+  RunSystemChecksResult,
+  ConnectGmailInput,
+  ConnectGmailResult,
+  UnreadMailResult,
+  CreateCourseNoteInput,
+  CreateCourseNoteResult,
   ListUrlsResult,
   OpenLayoutResult,
   PinLayoutWindowResult,
@@ -93,6 +100,8 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "widget.data.changed",
   "weather.changed",
   "news.changed",
+  "mail.changed",
+  "system.checks.changed",
   "schedule.changed"
 ]);
 
@@ -303,6 +312,12 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     connectSpotify() {
       return operation<ConnectSpotifyResult>("connectSpotify", {});
     },
+    listUnreadMail(limit?: number) {
+      return operation<UnreadMailResult>("listUnreadMail", limit === undefined ? {} : { limit });
+    },
+    connectGmail(input?: ConnectGmailInput) {
+      return operation<ConnectGmailResult>("connectGmail", { ...(input ?? {}) });
+    },
     listApps() {
       return operation<ListAppsResult>("listApps", {});
     },
@@ -317,6 +332,15 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     rebuildKnowledgeIndex() {
       return operation<KnowledgeRebuildResult>("rebuildKnowledgeIndex", {});
+    },
+    runSystemChecks() {
+      return operation<RunSystemChecksResult>("runSystemChecks", {});
+    },
+    listCourses(limit?: number) {
+      return operation<ListCoursesResult>("listCourses", limit === undefined ? {} : { limit });
+    },
+    createCourseNote(input: CreateCourseNoteInput) {
+      return operation<CreateCourseNoteResult>("createCourseNote", { ...input });
     },
     listNotes(limit?: number) {
       return operation<ListNotesResult>("listNotes", limit === undefined ? {} : { limit });

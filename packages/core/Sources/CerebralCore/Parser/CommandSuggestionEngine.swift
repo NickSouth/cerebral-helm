@@ -114,9 +114,13 @@ public struct CommandSuggestionEngine: Sendable {
             return true
         // A note read returns data to its caller rather than doing something the
         // user would want repeated from the palette (NIC-162), like a search.
+        // `openNote` is excluded for a different reason (quick actions phase 5): it is
+        // addressed by an exact root-relative path, so a history entry would re-open a
+        // specific file rather than repeat an action the user recognizes.
         // `createCalendarEvent` never comes from typed text at all — it is form-submitted, so
         // it can neither appear in the palette nor be re-run from history.
-        case .captureNote, .searchNotes, .listNotes, .readNote,
+        case .captureNote, .searchNotes, .listNotes, .readNote, .openNote,
+             .listCourses, .createCourseNote, .openMail,
              .googleSearch, .youtubeSearch, .spotifyControl, .webOpen, .openProject, .createCalendarEvent,
              .cloneRepository, .createLinearIssue, .createSpotifyPlaylist, .scaffoldProject, .sendMessage:
             return false
@@ -255,7 +259,8 @@ public struct CommandSuggestionEngine: Sendable {
             return CommandSuggestion(command: command, label: workflowLabels[actionId] ?? actionId, kind: .workflow)
         case let .runHook(entry):
             return CommandSuggestion(command: command, label: entry.label, kind: .hook)
-        case .captureNote, .searchNotes, .listNotes, .readNote,
+        case .captureNote, .searchNotes, .listNotes, .readNote, .openNote,
+             .listCourses, .createCourseNote, .openMail,
              .googleSearch, .youtubeSearch, .spotifyControl, .webOpen, .openProject,
              .listApps, .runSpeedTest, .quitAllApps, .createCalendarEvent, .cloneRepository,
              .createLinearIssue, .createSpotifyPlaylist, .scaffoldProject, .sendMessage:
@@ -334,7 +339,8 @@ public struct CommandSuggestionEngine: Sendable {
             Verb(token: "apps", description: "List installed apps", pattern: "apps", argument: .none),
             Verb(token: "speedtest", description: "Test internet speed", pattern: "speedtest", argument: .none),
             Verb(token: "quit-all", description: "Quit all open apps", pattern: "quit-all", argument: .none),
-            // Deliberately absent: `notes-list` and `notes-read <path>` (NIC-162).
+            // Deliberately absent: `notes-list`, `notes-read <path>` (NIC-162),
+            // `notes-open <path>` and `courses-list` (quick actions phase 5).
             // The parser accepts them, but they return data to a caller rather
             // than doing anything the palette could show, so advertising them here
             // would offer the user a command with no visible result. Add rows when

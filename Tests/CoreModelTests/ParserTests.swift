@@ -41,6 +41,8 @@ func supportedGrammarResolves() {
     #expect(parser.parse("speedtest") == .parsed(.runSpeedTest))
     #expect(parser.parse("notes-list") == .parsed(.listNotes(limit: nil)))
     #expect(parser.parse("notes-read inbox/ch-idea-001.md") == .parsed(.readNote(path: "inbox/ch-idea-001.md")))
+    #expect(parser.parse("notes-open inbox/ch-idea-001.md") == .parsed(.openNote(path: "inbox/ch-idea-001.md")))
+    #expect(parser.parse("courses-list") == .parsed(.listCourses(limit: nil)))
 }
 
 @Test("the note read verbs are addressable but unadvertised until a surface renders them (NIC-162)")
@@ -83,9 +85,33 @@ func noteLibraryGrammar() {
                 suggestions: DirectCommandParser.supportedPatterns
             ))
     )
-    // Deliberately absent from the advertised grammar: both return data to a
-    // caller, and the palette has nothing to show for them yet.
+    // Deliberately absent from the advertised grammar: the reads return data to a
+    // caller, and the palette has nothing to show for them yet. `notes-open` is
+    // unlisted for the opposite reason — it is addressed by an exact root-relative
+    // path nobody types from memory, so its surface is the picker.
     #expect(!DirectCommandParser.supportedPatterns.contains { $0.hasPrefix("notes-") })
+}
+
+@Test("notes-open takes a whole root-relative path and never executes without one (phase 5)")
+func noteOpenGrammar() {
+    let parser = sampleParser()
+
+    // Same grammar as `notes-read`: paths carry spaces, so the whole remainder is the path.
+    #expect(
+        parser.parse("notes-open inbox/Hull Plating.md")
+            == .parsed(.openNote(path: "inbox/Hull Plating.md"))
+    )
+    // Reading a note into the app and handing it to an editor are different acts, so a
+    // `notes-read` can never be mistaken for an open.
+    #expect(parser.parse("notes-read inbox/a.md") != parser.parse("notes-open inbox/a.md"))
+    // An argument-less open never executes — there is no "default note".
+    #expect(
+        parser.parse("notes-open")
+            == .unrecognized(UnrecognizedInput(
+                reason: .missingArgument(verb: "notes-open"),
+                suggestions: DirectCommandParser.supportedPatterns
+            ))
+    )
 }
 
 @Test("project takes the whole remainder as the path and requires an argument (NIC-131)")

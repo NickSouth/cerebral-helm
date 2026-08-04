@@ -1,4 +1,9 @@
-import type { BridgeEvent, CerebralBridge } from "../bridge/cerebralBridge";
+import type {
+  BridgeEvent,
+  CerebralBridge,
+  MailChannel,
+  SystemChecksPayload
+} from "../bridge/cerebralBridge";
 import type {
   ConfirmationDisclosure,
   DashboardRegions,
@@ -251,6 +256,28 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
         return state;
       }
       return { ...state, liveNews: { ...state.liveNews, [payload.profile]: news } };
+    }
+    case "mail.changed": {
+      // The unread-mail producer spoke (Gmail integration). Machine-global, so a single value
+      // rather than a per-mode map. A payload without a well-formed `state` is ignored rather than
+      // clearing a count that is still good.
+      const payload = event.payload as { state?: unknown };
+      if (typeof payload.state !== "string") {
+        return state;
+      }
+      return { ...state, mail: event.payload as unknown as MailChannel };
+    }
+    case "system.checks.changed": {
+      // A health run streamed its current state (quick actions phase 5). Every emission carries
+      // the WHOLE set, so this replaces rather than merges — there is no per-row reconciliation
+      // to drift out of step with the run. Machine-global, not per-mode: whether Accessibility is
+      // granted is a fact about the Mac. A payload without a checks array is ignored rather than
+      // clearing a run that is still going.
+      const payload = event.payload as { checks?: unknown; complete?: unknown };
+      if (!Array.isArray(payload.checks)) {
+        return state;
+      }
+      return { ...state, systemChecks: event.payload as unknown as SystemChecksPayload };
     }
     case "schedule.changed": {
       // A calendar producer streamed a fresh schedule for one relevance profile (NIC-126). Calendar

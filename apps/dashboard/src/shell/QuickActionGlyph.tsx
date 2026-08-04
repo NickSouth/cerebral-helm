@@ -175,7 +175,17 @@ export function isQuickActionGlyphName(name: string): name is QuickActionGlyphNa
  * standing alone rather than drawing a broken box: the test above makes that unreachable in a valid
  * build, so this only covers a runtime-supplied id (a stale persisted config).
  */
-export function QuickActionGlyph({ name, size = 16 }: { name: string; size?: number }) {
+export function QuickActionGlyph({
+  name,
+  size = 16,
+  strokeWidth = 1.6
+}: {
+  name: string;
+  size?: number;
+  /** Heavier on the larger bottom row: a line that stays hairline as the glyph grows reads as
+   *  thin rather than as bigger, so weight scales with size. */
+  strokeWidth?: number;
+}) {
   if (!isQuickActionGlyphName(name)) {
     return null;
   }
@@ -187,7 +197,7 @@ export function QuickActionGlyph({ name, size = 16 }: { name: string; size?: num
       height={size}
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.6"
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"

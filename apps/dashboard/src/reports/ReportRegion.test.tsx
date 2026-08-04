@@ -183,12 +183,15 @@ describe("Report action references", () => {
     expect(screen.getByRole("button")).toHaveTextContent("3");
   });
 
-  it("renders a reference to an unbuilt or unregistered action as plain text, not a dead control", () => {
-    // `email-report` is registered but has no target yet; `not-a-real-action` is not registered
-    // at all. Neither may become a clickable control — a report stays readable, it just isn't
-    // clickable, and a model can never mint a destination by naming one.
+  it("renders a reference to an unregistered action as plain text, not a dead control", () => {
+    // An action nobody registered may never become a clickable control: a report stays readable,
+    // it just isn't clickable, and a model can never mint a destination by naming one.
+    //
+    // This used to also cover "registered but not built yet", with `email-report` as the example.
+    // Every registered action now has a dispatch target (Gmail integration, 2026-08-04), so there
+    // is no such action left to test with — the guard itself still stands in `quickActionTarget`.
     renderBlocks([
-      { blockKind: "count", value: "3", label: "unread", reportAction: { action: "email-report" } },
+      { blockKind: "count", value: "3", label: "unread", reportAction: { action: "not-registered" } },
       {
         blockKind: "line",
         text: "Somewhere else",

@@ -73,4 +73,59 @@ func missingLocalStateIsEmpty() throws {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     #expect(MacChromeProfileDiscoveryCapability.enumerate(chromeSupportDirectory: root).isEmpty)
 }
+
+// MARK: - Account → profile (Gmail links open in the profile signed into the account)
+
+/// Shaped like this Mac's real `Local State`: a personal account in `Default` and a school
+/// Workspace account in `Profile 1`.
+private let twoAccountLocalState = """
+{ "profile": { "info_cache": {
+    "Default":   { "name": "Nick", "user_name": "nick@gmail.com" },
+    "Profile 1": { "name": "Work", "user_name": "nsouthey@umass.edu" }
+} } }
+"""
+
+@Test("an account resolves to the Chrome profile signed into it")
+func resolvesProfileForAccount() throws {
+    let support = try makeChromeSupport(localState: twoAccountLocalState)
+    #expect(MacChromeProfileDiscoveryCapability.profileDirectory(
+        forAccount: "nsouthey@umass.edu", chromeSupportDirectory: support
+    ) == "Profile 1")
+    #expect(MacChromeProfileDiscoveryCapability.profileDirectory(
+        forAccount: "nick@gmail.com", chromeSupportDirectory: support
+    ) == "Default")
+}
+
+@Test("the address match is case- and whitespace-insensitive")
+func resolvesProfileIgnoringCaseAndSpace() throws {
+    let support = try makeChromeSupport(localState: twoAccountLocalState)
+    // Gmail reports the address in whatever case the account was created with; Chrome stores its
+    // own. Matching exactly would send mail to the wrong profile for no visible reason.
+    #expect(MacChromeProfileDiscoveryCapability.profileDirectory(
+        forAccount: "  NSouthey@UMass.edu ", chromeSupportDirectory: support
+    ) == "Profile 1")
+}
+
+@Test("an account no profile is signed into resolves to nil rather than a guess")
+func unknownAccountResolvesToNil() throws {
+    let support = try makeChromeSupport(localState: twoAccountLocalState)
+    // Falling back to "Default" here would open one mailbox's links in the other's session.
+    #expect(MacChromeProfileDiscoveryCapability.profileDirectory(
+        forAccount: "stranger@example.com", chromeSupportDirectory: support
+    ) == nil)
+    #expect(MacChromeProfileDiscoveryCapability.profileDirectory(
+        forAccount: "   ", chromeSupportDirectory: support
+    ) == nil)
+}
+
+@Test("a profile that is not signed in is never matched")
+func signedOutProfileIsNeverMatched() throws {
+    let localState = """
+    { "profile": { "info_cache": { "Profile 3": { "name": "Guest" } } } }
+    """
+    let support = try makeChromeSupport(localState: localState)
+    #expect(MacChromeProfileDiscoveryCapability.profileDirectory(
+        forAccount: "nick@gmail.com", chromeSupportDirectory: support
+    ) == nil)
+}
 #endif

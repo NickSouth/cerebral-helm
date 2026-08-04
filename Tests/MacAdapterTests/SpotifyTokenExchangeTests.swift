@@ -13,15 +13,15 @@ import CerebralCore
 func spotifyPKCEChallengeVector() {
     // RFC 7636 Appendix B: this exact verifier must produce this exact S256 challenge.
     let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
-    #expect(SpotifyPKCE.challenge(for: verifier) == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
+    #expect(OAuthPKCE.challenge(for: verifier) == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
 }
 
 @Test("a generated verifier is RFC-length and uses only unreserved characters")
 func spotifyPKCEVerifierShape() {
     let unreserved = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
     // Two draws differ (high entropy) and both satisfy the RFC constraints.
-    let a = SpotifyPKCE.makeVerifier()
-    let b = SpotifyPKCE.makeVerifier()
+    let a = OAuthPKCE.makeVerifier()
+    let b = OAuthPKCE.makeVerifier()
     #expect(a != b)
     for verifier in [a, b] {
         #expect((43...128).contains(verifier.count))

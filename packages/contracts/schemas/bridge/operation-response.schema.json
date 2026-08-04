@@ -79,7 +79,12 @@
         "setCanvasItemHidden",
         "suggestCommands",
         "rebuildKnowledgeIndex",
-        "listNotes"
+        "listNotes",
+        "listCourses",
+        "createCourseNote",
+        "runSystemChecks",
+        "connectGmail",
+        "listUnreadMail"
       ]
     },
     "status": {

@@ -952,3 +952,373 @@ describe("Input field schema", () => {
     expect(missingRequired(form, { ...filled, rEnd: "" }).map((field) => field.name)).toEqual(["r"]);
   });
 });
+
+describe("search-notes: the Picker archetype (phase 5)", () => {
+  async function openSearchNotes(overrides: Parameters<typeof renderShell>[0] = {}) {
+    const { bridge } = renderShell(overrides);
+    // The slot lives in School.
+    await act(async () => {
+      await bridge.applyMode({ modeId: "school" });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search notes" }));
+    return { bridge, region: await screen.findByRole("region", { name: "Search notes picker" }) };
+  }
+
+  it("opens with the most recent notes, before anything is typed", async () => {
+    const { region } = await openSearchNotes();
+    // The empty query is a "what have I been writing" view, not an empty list.
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /Atlas kickoff/ })).toBeInTheDocument()
+    );
+    expect(within(region).getByRole("button", { name: /Hull Plating/ })).toBeInTheDocument();
+  });
+
+  it("has no submit button — the row is the action", async () => {
+    const { region } = await openSearchNotes();
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /Atlas kickoff/ })).toBeInTheDocument()
+    );
+    // Cancel stays (the region's grammar), but there is nothing to "submit": choosing is the act.
+    expect(within(region).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(within(region).queryByRole("button", { name: /^(Search|Open|Go)$/ })).toBeNull();
+  });
+
+  it("finds a note by title from the file listing, even though the index never saw it", async () => {
+    // `Hull Plating` is in the mock listing but NOT in the mock index — the exact asymmetry of a
+    // vault authored in Obsidian. Title matching must still find it.
+    const { region } = await openSearchNotes();
+    fireEvent.change(within(region).getByLabelText("Search notes filter"), {
+      target: { value: "hull" }
+    });
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /Hull Plating/ })).toBeInTheDocument()
+    );
+  });
+
+  it("says full-text is limited to indexed notes, and offers the rebuild in place", async () => {
+    const { region } = await openSearchNotes();
+    fireEvent.change(within(region).getByLabelText("Search notes filter"), {
+      target: { value: "hull" }
+    });
+    // "No matches" and "this cannot see your notes yet" are different facts.
+    await waitFor(() =>
+      expect(within(region).getByText(/only covers notes CerebralHelm has indexed/i)).toBeInTheDocument()
+    );
+    expect(within(region).getByRole("button", { name: "Rebuild index" })).toBeInTheDocument();
+  });
+
+  it("does not offer a rebuild when full text demonstrably works", async () => {
+    const { region } = await openSearchNotes();
+    // `Atlas kickoff` IS indexed in the mock, so the index answered and there is nothing to fix.
+    fireEvent.change(within(region).getByLabelText("Search notes filter"), {
+      target: { value: "atlas" }
+    });
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /Atlas kickoff/ })).toBeInTheDocument()
+    );
+    expect(within(region).queryByRole("button", { name: "Rebuild index" })).toBeNull();
+  });
+
+  it("opens the chosen note through the bus, by its root-relative path", async () => {
+    const submitted: string[] = [];
+    const { region } = await openSearchNotes({
+      submitCommand: (input: { rawInput: string }) => {
+        submitted.push(input.rawInput);
+        return Promise.resolve({ commandId: "cmd_1", accepted: true });
+      }
+    } as never);
+
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /Atlas kickoff/ })).toBeInTheDocument()
+    );
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: /Atlas kickoff/ }));
+    });
+
+    // Through the command bus like every other action, and addressed by the RELATIVE path — the
+    // web layer never holds an absolute one, so it cannot ask for a file outside the root.
+    expect(submitted).toEqual(["notes-open projects/atlas/kickoff.md"]);
+    // A chosen row closes the picker, exactly as a successful submit closes a form.
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Search notes picker" })).toBeNull()
+    );
+  });
+
+  it("reports the open as dispatched, never as shown in Obsidian", async () => {
+    const { region } = await openSearchNotes();
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /Atlas kickoff/ })).toBeInTheDocument()
+    );
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: /Atlas kickoff/ }));
+    });
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    // Which surface finally took it is decided on the host, after this resolves.
+    await waitFor(() => expect(status).toHaveTextContent(/Opening “Atlas kickoff”/));
+  });
+
+  it("keeps the picker open and says so when the command is refused", async () => {
+    const { region } = await openSearchNotes({
+      submitCommand: () => Promise.resolve({ commandId: "", accepted: false })
+    } as never);
+
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /Atlas kickoff/ })).toBeInTheDocument()
+    );
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: /Atlas kickoff/ }));
+    });
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent(/couldn’t open/i));
+    expect(screen.getByRole("region", { name: "Search notes picker" })).toBeInTheDocument();
+  });
+
+  it("distinguishes an unreadable knowledge root from an empty one", async () => {
+    const { region } = await openSearchNotes({
+      listNotes: () =>
+        Promise.resolve({ available: false, root: "", total: 0, notes: [] })
+    } as never);
+
+    // "No notes yet" and "your knowledge root is gone" must never look the same.
+    await waitFor(() =>
+      expect(within(region).getByText(/knowledge root couldn’t be read/i)).toBeInTheDocument()
+    );
+  });
+});
+
+describe("take-notes: the two-stage Picker (phase 5)", () => {
+  async function openTakeNotes(overrides: Parameters<typeof renderShell>[0] = {}) {
+    const { bridge } = renderShell(overrides);
+    await act(async () => {
+      await bridge.applyMode({ modeId: "school" });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Take notes" }));
+    return { bridge, region: await screen.findByRole("region", { name: "Take notes picker" }) };
+  }
+
+  /** Walks into a course's notes — the second stage. */
+  async function openCourse(region: HTMLElement, name: string | RegExp) {
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name })).toBeInTheDocument()
+    );
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name }));
+    });
+  }
+
+  it("opens on the courses, showing what has notes and what does not", async () => {
+    const { region } = await openTakeNotes();
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /STAT 240/ })).toBeInTheDocument()
+    );
+    // "No notes yet" is a real state, not a blank line that reads like a failed load.
+    expect(within(region).getByRole("button", { name: /CS 260.*No notes yet/ })).toBeInTheDocument();
+    expect(within(region).getByRole("button", { name: /STAT 240.*3 notes/ })).toBeInTheDocument();
+  });
+
+  it("choosing a course moves to its notes, and Back returns to the courses", async () => {
+    const { region } = await openTakeNotes();
+    await openCourse(region, /STAT 240/);
+
+    // A stage is just another picker: the filter, the list and the footer are the same surface.
+    await waitFor(() =>
+      expect(within(region).getByLabelText("STAT 240 filter")).toBeInTheDocument()
+    );
+    await act(async () => {
+      fireEvent.click(within(region).getByRole("button", { name: "Back" }));
+    });
+    await waitFor(() =>
+      expect(within(region).getByLabelText("Take notes filter")).toBeInTheDocument()
+    );
+    // Back is not Cancel: the picker is still open.
+    expect(screen.getByRole("region", { name: "Take notes picker" })).toBeInTheDocument();
+  });
+
+  it("a course's notes are its own — the listing is filtered by folder", async () => {
+    const { region } = await openTakeNotes({
+      listNotes: () =>
+        Promise.resolve({
+          available: true,
+          root: "/Users/you/Knowledge",
+          total: 2,
+          notes: [
+            {
+              path: "areas/school-umass/STAT 240/2026-08-03 Lecture 3.md",
+              title: "Lecture 3",
+              folder: "areas/school-umass/STAT 240",
+              updated: "2026-08-03T15:20:00Z"
+            },
+            {
+              path: "inbox/Unrelated.md",
+              title: "Unrelated",
+              folder: "inbox",
+              updated: null
+            }
+          ]
+        })
+    } as never);
+
+    await openCourse(region, /STAT 240/);
+
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /Lecture 3/ })).toBeInTheDocument()
+    );
+    // A note from elsewhere in the vault is not this course's note.
+    expect(within(region).queryByRole("button", { name: /Unrelated/ })).toBeNull();
+  });
+
+  it("offers to create only what is typed, and never a course that already exists", async () => {
+    const { region } = await openTakeNotes();
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /STAT 240/ })).toBeInTheDocument()
+    );
+    // Nothing typed: nothing to create.
+    expect(within(region).queryByRole("button", { name: /\+ New course/ })).toBeNull();
+
+    fireEvent.change(within(region).getByLabelText("Take notes filter"), {
+      target: { value: "Reading group" }
+    });
+    await waitFor(() =>
+      expect(
+        within(region).getByRole("button", { name: /\+ New course “Reading group”/ })
+      ).toBeInTheDocument()
+    );
+
+    // An exact match on an existing course offers no duplicate.
+    fireEvent.change(within(region).getByLabelText("Take notes filter"), {
+      target: { value: "STAT 240" }
+    });
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /STAT 240/ })).toBeInTheDocument()
+    );
+    expect(within(region).queryByRole("button", { name: /\+ New course/ })).toBeNull();
+  });
+
+  it("a new course creates nothing until a note is written in it", async () => {
+    const created: unknown[] = [];
+    const { region } = await openTakeNotes({
+      createCourseNote: (input: unknown) => {
+        created.push(input);
+        return Promise.resolve({
+          course: "Reading group",
+          path: "areas/school-umass/Reading group/2026-08-04 Kickoff.md",
+          title: "Kickoff",
+          created: true,
+          awaitingConfirmation: false
+        });
+      }
+    } as never);
+
+    fireEvent.change(within(region).getByLabelText("Take notes filter"), {
+      target: { value: "Reading group" }
+    });
+    await openCourse(region, /\+ New course “Reading group”/);
+
+    // Arrived at the second stage, and nothing has been written.
+    await waitFor(() =>
+      expect(within(region).getByLabelText("Reading group filter")).toBeInTheDocument()
+    );
+    expect(created).toEqual([]);
+  });
+
+  it("creates a note with the typed title and opens it, reporting both", async () => {
+    const submitted: string[] = [];
+    const notes: unknown[] = [];
+    const { region } = await openTakeNotes({
+      submitCommand: (input: { rawInput: string }) => {
+        submitted.push(input.rawInput);
+        return Promise.resolve({ commandId: "cmd_1", accepted: true });
+      },
+      createCourseNote: (input: unknown) => {
+        notes.push(input);
+        return Promise.resolve({
+          course: "STAT 240",
+          path: "areas/school-umass/STAT 240/2026-08-04 Lecture 4.md",
+          title: "Lecture 4",
+          created: true,
+          awaitingConfirmation: false
+        });
+      }
+    } as never);
+
+    await openCourse(region, /STAT 240/);
+    fireEvent.change(within(region).getByLabelText("STAT 240 filter"), {
+      target: { value: "Lecture 4" }
+    });
+    await openCourse(region, /\+ New note “Lecture 4”/);
+
+    expect(notes).toEqual([{ course: "STAT 240", title: "Lecture 4" }]);
+    // Created, then opened — the point of the action is to start writing.
+    expect(submitted).toEqual(["notes-open areas/school-umass/STAT 240/2026-08-04 Lecture 4.md"]);
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent(/Created “Lecture 4” in STAT 240/));
+  });
+
+  it("says a note already existed rather than claiming to have made one", async () => {
+    const { region } = await openTakeNotes({
+      createCourseNote: () =>
+        Promise.resolve({
+          course: "STAT 240",
+          path: "areas/school-umass/STAT 240/2026-08-04 Lecture 4.md",
+          title: "Lecture 4",
+          created: false,
+          awaitingConfirmation: false
+        })
+    } as never);
+
+    await openCourse(region, /STAT 240/);
+    fireEvent.change(within(region).getByLabelText("STAT 240 filter"), {
+      target: { value: "Lecture 4" }
+    });
+    await openCourse(region, /\+ New note “Lecture 4”/);
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    // Returning to what you started is not a failure — it opens, and says which it was.
+    await waitFor(() => expect(status).toHaveTextContent(/already exists in STAT 240/));
+  });
+
+  it("never reports a note as written while its confirmation is pending", async () => {
+    const submitted: string[] = [];
+    const { region } = await openTakeNotes({
+      submitCommand: (input: { rawInput: string }) => {
+        submitted.push(input.rawInput);
+        return Promise.resolve({ commandId: "cmd_1", accepted: true });
+      },
+      createCourseNote: () =>
+        Promise.resolve({
+          course: "STAT 240",
+          path: "cmd_pending",
+          title: "Lecture 4",
+          created: false,
+          awaitingConfirmation: true
+        })
+    } as never);
+
+    await openCourse(region, /STAT 240/);
+    fireEvent.change(within(region).getByLabelText("STAT 240 filter"), {
+      target: { value: "Lecture 4" }
+    });
+    await openCourse(region, /\+ New note “Lecture 4”/);
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent(/needs your confirmation/));
+    // And nothing was opened: there is no path yet, because nothing was written.
+    expect(submitted).toEqual([]);
+  });
+
+  it("Enter chooses the first row, which is what typing a filter implies", async () => {
+    const { region } = await openTakeNotes();
+    await waitFor(() =>
+      expect(within(region).getByRole("button", { name: /STAT 240/ })).toBeInTheDocument()
+    );
+
+    await act(async () => {
+      fireEvent.keyDown(within(region).getByLabelText("Take notes filter"), { key: "Enter" });
+    });
+    await waitFor(() =>
+      expect(within(region).getByLabelText("STAT 240 filter")).toBeInTheDocument()
+    );
+  });
+});

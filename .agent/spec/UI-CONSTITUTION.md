@@ -160,7 +160,7 @@ Three-column desktop canvas + a persistent bottom bar on its own layout track:
 
 - **Left rail (dense):** Today/Tonight · System Health · Free Widget A · News (3 links).
 - **Center (calm, dominant):** Global Search · Quick Apps · Heimlich (ambient field +
-  conversation overlay + the **4 compact bars over 4 boxes** quick-action geometry).
+  Report region + Input region + the **4 compact bars over 4 boxes** quick-action geometry).
 - **Right rail (operational):** Mode Switcher (4 fixed) · Agents (4 fixed) · Free Widget B.
 - **Bottom bar (thin, persistent):** Heimlich state · weather · mode · Wi-Fi · battery ·
   date/time · settings. Takes mode accent **on home only**.
@@ -174,11 +174,20 @@ the platform directly.
 **Interaction invariants (owner course-correction — bound in the bootstrap contract):**
 
 - **Heimlich always owns the center.** Every mode boots with the ambient field centered;
-  nothing is "active" in the center by default. Chat is a translucent overlay over the
-  still-running field (it **never** replaces it), with its own input **docked at the bottom**
-  of the center. The top-center *Ask Heimlich* bar is a **separate persistent global
-  launcher** (always visible, even mid-conversation) — two distinct input loci, not one
-  search, and no floating command-palette modal. (`bootstrap.heimlich`.)
+  nothing is "active" in the center by default. Reports — and chat, when it lands — render in
+  the **Report region**: the center's left third, **opaque and borderless** with a soft
+  right-edge mask the field dissolves into. It **never** replaces the still-running field, and
+  chat's own input is **docked at the bottom** of the center. *(Revised 2026-08-04: this said
+  "translucent overlay". An opaque region meets the contrast requirement by construction at
+  every animation state, instead of tuning a scrim against unpredictable luminance — design
+  spec §5.7.)* The top-center *Ask Heimlich* bar is a **separate persistent global launcher**
+  (always visible, even mid-conversation) — two distinct input loci, not one search, and no
+  floating command-palette modal. (`bootstrap.heimlich`.)
+- **Forms and pickers render in the Input region** — the center's lower right, below the
+  stream and above the quick-action grid. **Bordered**, unlike the report: it is interactive
+  and needs a hit target. It is bounded and scrolls inside itself, so the tallest form can
+  never push the quick-action grid off the bottom; a failed submit keeps the form and the
+  typing; a mode switch discards it. The two center surfaces **coexist** (design spec §5.7).
 - **Agent workspaces cover the right column only.** Opening one of the four agents slides
   in a panel the **width of the right column** that covers the right column's contents and
   restores them on close. The center (Heimlich) and the **left column are unaffected** and
@@ -191,7 +200,9 @@ the platform directly.
   built yet is greyed, labeled, and disabled ("coming soon") — never hidden. An
   *unconfigured* (null) slot is omitted entirely; each slot keeps its quarter-row width so
   the remainder centers within its own row (`quickActions.registry.json` owns each action's
-  label, icon, archetype, and dispatch target).
+  label, icon, archetype, and dispatch target). Live slots carry a **mode-accent glyph**
+  (larger and heavier on the bottom row); a slot whose surface is **open** takes the mode
+  selector's gradient fill, so "this is the active one" is one idea across the shell.
 - **Agent status is runtime** (Idle / Waiting / Thinking / Ready, from events;
   `bootstrap.agents[].activity`), text + non-color cue; the config `status` stays the
   availability flag (`…availability`). Identity icons are fixed per agent id.

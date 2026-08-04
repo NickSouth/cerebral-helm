@@ -175,29 +175,29 @@ describe("DashboardShell structure", () => {
     }
   });
 
-  it("renders eight quick-action slots — built ones enabled, planned ones disabled", () => {
+  it("renders eight quick-action slots, all of them built", () => {
     renderShell();
     const slots = within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole(
       "button"
     );
     expect(slots).toHaveLength(8);
-    // Built: everything except `email-report` (deferred with Gmail) and `system-status-checks`
-    // (phase 5).
+    // Every slot is built (Gmail integration, 2026-08-04): `email-report` was the last one, and
+    // the owner overrode the PRD's Workspace exclusion to finish it.
     for (const name of [
       "Daily brief",
       "Capture note",
       "Create event",
       "Create project",
       "Send text",
+      "System status",
+      "Email report",
       "Shut down"
     ]) {
       expect(screen.getByRole("button", { name })).toBeEnabled();
     }
-    expect(screen.getByRole("button", { name: "Email report" })).toBeDisabled();
-    // Labels come from the dispatch registry, not from humanizing the id.
-    expect(screen.getByRole("button", { name: "System status" })).toBeInTheDocument();
-    const disabled = slots.filter((slot) => slot.hasAttribute("disabled"));
-    expect(disabled).toHaveLength(2);
+    // Nothing is greyed any more. A slot that is configured but unbuilt still renders labelled and
+    // disabled — that rule stands; there is simply no such slot left.
+    expect(slots.filter((slot) => slot.hasAttribute("disabled"))).toHaveLength(0);
   });
 
   it("paints only shut-down with the danger tone, and only while it is live", () => {

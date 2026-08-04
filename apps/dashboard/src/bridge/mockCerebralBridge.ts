@@ -225,6 +225,7 @@ export function createMockCerebralBridge(
 ): MockCerebralBridge {
   const bootstrapKey = options.bootstrapKey ?? DEFAULT_BOOTSTRAP_KEY;
   const listeners = new Set<BridgeEventListener>();
+  let mailSeeded = false;
   // The active layout session (NIC-142), held mutably so toggleLayout can swap the
   // dynamic slot and re-broadcast, mirroring the real bridge.
   let activeLayout: LayoutSession | null = null;
@@ -512,8 +513,29 @@ export function createMockCerebralBridge(
     captureNote() {
       return Promise.resolve({ noteId: "note_000000000000000000000001" });
     },
-    searchNotes() {
-      return Promise.resolve({ results: [] });
+    searchNotes(input) {
+      // Stands in for the derived index, which is deliberately NOT the same set as `listNotes`
+      // (quick actions phase 5): only the captured note is indexed, so a browser preview shows
+      // the real asymmetry — a full-text match on one note, and the stale-index notice for
+      // everything else — instead of implying search sees the whole vault.
+      const indexed = [
+        {
+          noteId: "ch-quick-capture-001",
+          title: "Atlas kickoff",
+          path: "projects/atlas/kickoff.md",
+          excerpt: "Scope, owners, and the first milestone for the Atlas rollout."
+        }
+      ];
+      const needle = input.text.trim().toLowerCase();
+      const results =
+        needle.length === 0
+          ? []
+          : indexed.filter(
+              (note) =>
+                note.title.toLowerCase().includes(needle) ||
+                note.excerpt.toLowerCase().includes(needle)
+            );
+      return Promise.resolve({ results });
     },
     decideConfirmation(input) {
       // The UI submits the decision; the bridge owns the resulting state change. Clearing the
@@ -569,6 +591,30 @@ export function createMockCerebralBridge(
     deleteSecret(input) {
       const deleted = boundSecrets.delete(input.reference);
       return Promise.resolve({ reference: input.reference, deleted });
+    },
+    listUnreadMail(limit?: number) {
+      // A representative inbox for browser previews: enough to exercise the cap and the "and N
+      // more" line, with one message deliberately lacking a Message-ID so the non-link row renders.
+      const messages = [
+        { id: "1", byline: "Linear", subject: "NIC-170 was assigned to you", receivedAt: "2026-08-04T16:40:00Z", messageId: "a1@linear.app" },
+        { id: "2", byline: "Mum", subject: "Sunday lunch?", receivedAt: "2026-08-04T15:02:00Z", messageId: "b2@mail.example" },
+        { id: "3", byline: "GitHub", subject: "[cerebral-helm] CI passed on prod", receivedAt: "2026-08-04T12:11:00Z", messageId: "c3@github.com" },
+        { id: "4", byline: "UMass Amherst", subject: "Fall registration opens Monday", receivedAt: "2026-08-03T21:30:00Z", messageId: null },
+        { id: "5", byline: "Spotify", subject: "Your Discover Weekly is ready", receivedAt: "2026-08-03T09:00:00Z", messageId: "e5@spotify.com" }
+      ];
+      return Promise.resolve({
+        state: "ready" as const,
+        messages: limit === undefined ? messages : messages.slice(0, limit),
+        reason: null
+      });
+    },
+    connectGmail(input?: { disconnect?: boolean }) {
+      // The browser preview has no host to run OAuth on, so a connect reports honestly rather than
+      // faking a grant; a disconnect is a no-op success, which is what it is with nothing stored.
+      if (input?.disconnect) {
+        return Promise.resolve({ connected: false, scope: null, canRefresh: false });
+      }
+      return Promise.reject(new Error("Connecting Gmail requires the macOS host."));
     },
     connectSpotify() {
       // The browser stand-in for the OAuth round trip (NIC-133): binds the token reference so the
@@ -806,6 +852,28 @@ export function createMockCerebralBridge(
           title: "Hull Plating",
           folder: "inbox",
           updated: "2026-06-22T09:15:00Z"
+        },
+        // The three notes `listCourses` reports for STAT 240 (quick actions phase 5). They live
+        // here rather than in a course-specific fixture because a course note IS an ordinary note —
+        // and because a preview whose course says "3 notes" and then shows none would teach the
+        // surface's own contract wrong.
+        {
+          path: "areas/school-umass/STAT 240/2026-08-03 Lecture 3 — Bayes.md",
+          title: "Lecture 3 — Bayes",
+          folder: "areas/school-umass/STAT 240",
+          updated: "2026-08-03T15:20:00Z"
+        },
+        {
+          path: "areas/school-umass/STAT 240/2026-07-29 Lecture 2.md",
+          title: "Lecture 2",
+          folder: "areas/school-umass/STAT 240",
+          updated: "2026-07-29T15:10:00Z"
+        },
+        {
+          path: "areas/school-umass/STAT 240/2026-07-22 Lecture 1.md",
+          title: "Lecture 1",
+          folder: "areas/school-umass/STAT 240",
+          updated: "2026-07-22T15:05:00Z"
         }
       ];
       return Promise.resolve({
@@ -813,6 +881,90 @@ export function createMockCerebralBridge(
         root: "/Users/you/CerebralHelm/knowledge",
         total: notes.length,
         notes: limit === undefined ? notes : notes.slice(0, limit)
+      });
+    },
+    runSystemChecks() {
+      // A representative run for browser previews (quick actions phase 5), streamed rather than
+      // returned — the same shape the host emits, so the preview exercises the real path including
+      // the pending-then-settled transition. The mix is deliberate: a pass, a real failure with a
+      // remediation, and two skips, because "not set up" and "broken" must look different.
+      const checks = [
+        { id: "permission.accessibility", title: "Accessibility", group: "permissions" as const, detail: "Granted." },
+        { id: "surface.obsidian", title: "Obsidian", group: "permissions" as const, detail: "Installed. Your knowledge folder must be added as a vault once — that can't be detected from here." },
+        { id: "integration.linear", title: "Linear", group: "integrations" as const, detail: "Answered." },
+        { id: "integration.newsdata", title: "NewsData", group: "integrations" as const, skipped: "Not set up." },
+        { id: "integration.espn", title: "ESPN scoreboard", group: "integrations" as const, failed: "An ESPN event no longer reports `status.type.state`.", remediation: "Nothing to fix locally: the mapper degrades rather than throwing." },
+        { id: "storage.knowledge", title: "Knowledge root", group: "storage" as const, detail: "/Users/you/Knowledge" }
+      ];
+      const row = (check: (typeof checks)[number], settled: boolean) => ({
+        id: check.id,
+        title: check.title,
+        group: check.group,
+        state: !settled
+          ? ("pending" as const)
+          : "failed" in check
+            ? ("failed" as const)
+            : "skipped" in check
+              ? ("skipped" as const)
+              : ("passed" as const),
+        detail: settled
+          ? ("failed" in check ? check.failed : "skipped" in check ? check.skipped : check.detail)
+          : null,
+        remediation: settled && "remediation" in check ? check.remediation : null,
+        durationMs: settled ? 42 : null
+      });
+      const emitRun = (settled: boolean) =>
+        emit({
+          eventId: `brevt_checks${settled ? "1" : "0"}`,
+          type: "system.checks.changed",
+          schemaVersion: "1.0.0",
+          timestamp: "2026-08-04T17:00:00.000Z",
+          payload: {
+            checks: checks.map((check) => row(check, settled)),
+            complete: settled,
+            failureCount: settled ? 1 : 0
+          }
+        });
+      emitRun(false);
+      // Settles on a turn of the event loop, so a consumer sees the pending state first.
+      setTimeout(() => emitRun(true), 40);
+      return Promise.resolve({ started: true, checkCount: checks.length });
+    },
+    listCourses(limit?: number) {
+      // A representative notebook for browser previews (quick actions phase 5): one course with
+      // notes and one that exists but is empty, because "a course you have not written in yet" is
+      // a real state the picker has to render honestly rather than hide.
+      const courses = [
+        {
+          course: "STAT 240",
+          folder: "areas/school-umass/STAT 240",
+          noteCount: 3,
+          updated: "2026-08-03T15:20:00Z"
+        },
+        {
+          course: "CS 260",
+          folder: "areas/school-umass/CS 260",
+          noteCount: 0,
+          updated: null
+        }
+      ];
+      return Promise.resolve({
+        available: true,
+        root: "areas/school-umass",
+        courses: limit === undefined ? courses : courses.slice(0, limit)
+      });
+    },
+    createCourseNote(input: { course: string; title: string }) {
+      // Mirrors the host's naming so a preview shows the real path shape — date-prefixed, inside
+      // the course folder — rather than a placeholder that hides what will land on disk.
+      const course = input.course.trim();
+      const title = input.title.trim();
+      return Promise.resolve({
+        course,
+        path: `areas/school-umass/${course}/2026-08-04 ${title}.md`,
+        title,
+        created: true,
+        awaitingConfirmation: false
       });
     },
     rebuildKnowledgeIndex() {
@@ -1107,6 +1259,27 @@ export function createMockCerebralBridge(
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);
+      // A live producer's first tick lands shortly after the dashboard subscribes, so the preview
+      // seeds the mail channel the same way rather than baking a count into the bootstrap fixture
+      // — `state.mail` is runtime-only by design, and a fixture would make it look otherwise.
+      if (!mailSeeded) {
+        mailSeeded = true;
+        setTimeout(() => {
+          emit({
+            eventId: "brevt_mail0001",
+            type: "mail.changed",
+            schemaVersion: "1.0.0",
+            timestamp: "2026-08-04T17:00:00.000Z",
+            payload: {
+              state: "ready",
+              unread: 12,
+              unreadCapped: false,
+              unreadScope: "primary",
+              reason: null
+            }
+          });
+        }, 0);
+      }
       return () => {
         listeners.delete(listener);
       };

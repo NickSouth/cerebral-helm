@@ -761,6 +761,9 @@ const GITHUB_SECRET_REFERENCE = "github_api_token";
 const LINEAR_SECRET_REFERENCE = "linear_api_token";
 const SPOTIFY_CLIENT_ID_REFERENCE = "spotify_client_id";
 const SPOTIFY_OAUTH_REFERENCE = "spotify_oauth";
+const GOOGLE_CLIENT_ID_REFERENCE = "google_client_id";
+const GOOGLE_OAUTH_REFERENCE = "google_oauth";
+const GOOGLE_CLIENT_SECRET_REFERENCE = "google_client_secret";
 
 /**
  * A masked API-key provisioning field for a provider (generalized from the TMDB field, NIC-134;
@@ -850,6 +853,113 @@ function ProviderKeyField({
         <p className="settings-note" role="alert">
           That key couldn't be saved. Check it and try again.
         </p>
+      ) : null}
+    </Field>
+  );
+}
+
+/**
+ * The Gmail connect control (2026-08-04). Same shape as {@link SpotifyConnectField}: a Connect that
+ * runs the OAuth flow on the macOS host (opens the browser, captures the loopback redirect, stores
+ * tokens in the Keychain) and a Disconnect that clears them. Connection state comes from
+ * `getSecretStatus("google_oauth")` — presence only; the tokens are never read back.
+ *
+ * **A connect that comes back unable to refresh is shown as a warning, not a success.** Such a
+ * grant works for about an hour and then stops, and saying "Connected" would leave the user to
+ * discover that later with nothing to connect it to.
+ */
+function GmailConnectField() {
+  const bridge = useBridge();
+  const [connected, setConnected] = useState<boolean | null>(null); // null while the status settles
+  const [phase, setPhase] = useState<"idle" | "connecting" | "error" | "warning">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      .getSecretStatus({ reference: GOOGLE_OAUTH_REFERENCE })
+      .then((result) => {
+        if (active) setConnected(result.bound);
+      })
+      .catch(() => {
+        if (active) setConnected(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
+  function connect() {
+    setPhase("connecting");
+    setMessage(null);
+    void bridge
+      .connectGmail()
+      .then((result) => {
+        if (!result.connected) {
+          setPhase("error");
+          setMessage("Couldn\u2019t connect Gmail. Please try again.");
+          return;
+        }
+        setConnected(true);
+        if (result.canRefresh) {
+          setPhase("idle");
+          return;
+        }
+        // Connected, but with nothing to renew the token — reported rather than smoothed over.
+        setPhase("warning");
+        setMessage(
+          "Connected, but Google didn\u2019t return a refresh token, so this will stop working in about an hour. Disconnect and connect again."
+        );
+      })
+      .catch((error: unknown) => {
+        setPhase("error");
+        setMessage(
+          error instanceof Error ? error.message : "Couldn\u2019t connect Gmail. Please try again."
+        );
+      });
+  }
+
+  function disconnect() {
+    void bridge
+      .connectGmail({ disconnect: true })
+      .then(() => {
+        setConnected(false);
+        setPhase("idle");
+        setMessage(null);
+      })
+      .catch(() => {
+        // Leave the state as-is; the next status read reconciles it.
+      });
+  }
+
+  const statusLabel = connected === null ? "Checking…" : connected ? "Connected" : "Not connected";
+
+  return (
+    <Field
+      label="Gmail account"
+      hint="Connects Gmail so the daily brief can report unread mail and the Email report action can list it. Read-only access; the app only reads your inbox label count and message senders and subjects. Opens your browser to sign in — you will see an “unverified app” warning, which is your own Google project. Tokens are stored in your macOS Keychain, never in config or logs. Disconnect removes them locally; revoke the grant itself at myaccount.google.com/permissions."
+    >
+      <div className="settings-secret">
+        <span className="settings-secret__status" data-bound={connected === true}>
+          {statusLabel}
+        </span>
+        {connected ? (
+          <button type="button" className="settings-button" onClick={disconnect}>
+            Disconnect
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="settings-button settings-button--primary"
+            disabled={phase === "connecting"}
+            onClick={connect}
+          >
+            {phase === "connecting" ? "Connecting…" : "Connect Gmail"}
+          </button>
+        )}
+      </div>
+      {(phase === "error" || phase === "warning") && message ? (
+        <p className="settings-field__error">{message}</p>
       ) : null}
     </Field>
   );
@@ -1595,6 +1705,19 @@ function SetupPanelBody() {
           placeholder="Paste your Spotify Client ID"
         />
         <SpotifyConnectField />
+        <ProviderKeyField
+          reference={GOOGLE_CLIENT_ID_REFERENCE}
+          label="Google Client ID"
+          hint="Powers the Gmail integration. Create a Desktop app OAuth client at console.cloud.google.com (Google Auth Platform → Clients), enable the Gmail API, and add the gmail.readonly scope — then paste the Client ID here. No client secret is needed. Public, but stored in your macOS Keychain."
+          placeholder="Paste your Google Client ID"
+        />
+        <ProviderKeyField
+          reference={GOOGLE_CLIENT_SECRET_REFERENCE}
+          label="Google Client Secret"
+          hint="Required for a Desktop OAuth client — Google issues one and its token endpoint expects it, despite the parameter being labelled optional (that exemption covers Android, iOS and Chrome clients only). Copy it from the same Clients page as the ID. Stored in your macOS Keychain."
+          placeholder="Paste your Google Client Secret"
+        />
+        <GmailConnectField />
         <StocksTickersField />
         <CalendarModeMapField />
         <CanvasConnectField />

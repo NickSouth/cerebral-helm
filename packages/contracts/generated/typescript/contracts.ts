@@ -371,11 +371,13 @@ export enum CerebralHelmBridgeEventType {
     ConfirmationChanged = "confirmation.changed",
     DisplayTopologyChanged = "display.topology.changed",
     LayoutSessionChanged = "layout.session.changed",
+    MailChanged = "mail.changed",
     ModeQuickappsChanged = "mode.quickapps.changed",
     ModeWindowcollapseChanged = "mode.windowcollapse.changed",
     NewsChanged = "news.changed",
     ScheduleChanged = "schedule.changed",
     SettingsChanged = "settings.changed",
+    SystemChecksChanged = "system.checks.changed",
     SystemStatusChanged = "system.status.changed",
     WeatherChanged = "weather.changed",
     WidgetDataChanged = "widget.data.changed",
@@ -477,8 +479,10 @@ export enum Operation {
     CloseAllWindows = "closeAllWindows",
     CloseLayout = "closeLayout",
     CloseWindow = "closeWindow",
+    ConnectGmail = "connectGmail",
     ConnectSpotify = "connectSpotify",
     CreateCalendarEvent = "createCalendarEvent",
+    CreateCourseNote = "createCourseNote",
     CreateLinearIssue = "createLinearIssue",
     CreateSpotifyPlaylist = "createSpotifyPlaylist",
     DecideConfirmation = "decideConfirmation",
@@ -491,10 +495,12 @@ export enum Operation {
     ListApps = "listApps",
     ListCalendars = "listCalendars",
     ListChromeProfiles = "listChromeProfiles",
+    ListCourses = "listCourses",
     ListLinearOptions = "listLinearOptions",
     ListMessageRecipients = "listMessageRecipients",
     ListNotes = "listNotes",
     ListSportsEvents = "listSportsEvents",
+    ListUnreadMail = "listUnreadMail",
     ListUrls = "listUrls",
     ListWindows = "listWindows",
     MinimizeWindow = "minimizeWindow",
@@ -503,6 +509,7 @@ export enum Operation {
     RebuildKnowledgeIndex = "rebuildKnowledgeIndex",
     ResetCanvas = "resetCanvas",
     RunSpeedTest = "runSpeedTest",
+    RunSystemChecks = "runSystemChecks",
     ScaffoldProject = "scaffoldProject",
     SearchNotes = "searchNotes",
     SendMessage = "sendMessage",
@@ -1209,7 +1216,10 @@ export interface ListItem {
      */
     reportAction?: ListItemReportAction;
     /**
-     * Only meaningful on a `checklist` block — the streaming variant of a list.
+     * Only meaningful on a `checklist` block — the streaming variant of a list. `skipped` is
+     * deliberately NOT a failure: a check the user never configured, or one held back because
+     * probing it would spend a small daily quota, is neither passing nor broken, and rendering
+     * it as either would make the checklist lie in one direction or the other.
      */
     status?: ListItemStatus;
     text:    string;
@@ -1231,13 +1241,17 @@ export interface ListItemReportAction {
 }
 
 /**
- * Only meaningful on a `checklist` block — the streaming variant of a list.
+ * Only meaningful on a `checklist` block — the streaming variant of a list. `skipped` is
+ * deliberately NOT a failure: a check the user never configured, or one held back because
+ * probing it would spend a small daily quota, is neither passing nor broken, and rendering
+ * it as either would make the checklist lie in one direction or the other.
  */
 export enum ListItemStatus {
     Failed = "failed",
     Passed = "passed",
     Pending = "pending",
     Running = "running",
+    Skipped = "skipped",
 }
 
 export enum MetricTone {
@@ -1472,6 +1486,78 @@ export interface Tool {
     version: string;
 }
 
+export interface CerebralHelmCourseListInput {
+    /**
+     * Caps the returned courses, most recently written first. Omit for all of them — a school
+     * year is a handful of folders, so the cap exists for symmetry with note.list rather than
+     * because the list is ever large.
+     */
+    courseLimit?: number;
+}
+
+export interface CerebralHelmCourseListOutput {
+    /**
+     * The root-relative school folder the courses were read from, so a caller can say where
+     * they came from without knowing the convention.
+     */
+    courseRoot: string;
+    courses:    Course[];
+}
+
+export interface Course {
+    /**
+     * Root-relative, forward-slashed, so it can be compared directly to a note listing's folder.
+     */
+    courseFolder: string;
+    /**
+     * The course as displayed and addressed — the derived code (STAT 240) where the source
+     * carried one. Also the folder's last path component.
+     */
+    courseName: string;
+    /**
+     * How many notes the folder holds. Zero is a real answer: a course can exist and be empty.
+     */
+    courseNoteCount: number;
+    /**
+     * ISO-8601 of the most recently changed note in the course, absent when it holds none.
+     */
+    courseUpdated?: string;
+}
+
+export interface CerebralHelmCourseNoteCreateInput {
+    /**
+     * The course to file the note under, as a human course name or code. The adapter DERIVES
+     * the folder from it inside the school root and creates it if this is the course's first
+     * note — the caller never names a folder, so a note can only ever land under the school
+     * root.
+     */
+    noteCourse: string;
+    /**
+     * The note's title. It becomes the H1 and the filename's readable part; the filename is
+     * date-prefixed by the adapter so a course folder sorts chronologically on its own.
+     */
+    noteTitle: string;
+}
+
+export interface CerebralHelmCourseNoteCreateOutput {
+    /**
+     * The course as it was resolved — the derived code, which may differ from what was asked
+     * for.
+     */
+    noteCourse: string;
+    /**
+     * False when a note of that title already existed for that day and was returned instead of
+     * being overwritten. Creating a note never clobbers one.
+     */
+    noteCreated: boolean;
+    /**
+     * The note's root-relative path: the same handle note.open takes, so the caller can open
+     * what it just created without deriving a path of its own.
+     */
+    notePath:  string;
+    noteTitle: string;
+}
+
 export interface CerebralHelmGitCloneInput {
     /**
      * Optional folder for the clone, relative to the projects root. Omit it and the folder is
@@ -1572,6 +1658,24 @@ export interface CerebralHelmLinearCreateIssueOutput {
      * The issue's web URL, as returned by Linear — never constructed here.
      */
     issueURL: string;
+}
+
+export interface CerebralHelmMailOpenInput {
+    /**
+     * The RFC 5322 Message-ID of the email to open, without the angle brackets. Omit to open
+     * the inbox itself. The adapter builds the mail.google.com URL host-side with the host as a
+     * literal constant — only this id varies — so untrusted data can never choose the
+     * destination.
+     */
+    mailMessageId?: string;
+}
+
+export interface CerebralHelmMailOpenOutput {
+    mailOpened: boolean;
+    /**
+     * The Gmail URL that was opened.
+     */
+    mailResolvedURL: string;
 }
 
 export interface CerebralHelmMessagesSendInput {
@@ -1766,6 +1870,48 @@ export interface NoteListItem {
      * neither is readable.
      */
     updated?: string;
+}
+
+export interface CerebralHelmNoteOpenInput {
+    /**
+     * The note's path relative to the knowledge root, as reported by note.list and note.search.
+     * Root-relative and Markdown only; the knowledge service additionally resolves the path and
+     * refuses anything landing outside the root, so this pattern is a first gate, not the
+     * boundary. Named `notePath` rather than `path` because the code generator derives type
+     * names from property names, and a schema structurally identical to note-read-input would
+     * otherwise collapse into one shared type.
+     */
+    notePath: string;
+}
+
+export interface CerebralHelmNoteOpenOutput {
+    /**
+     * Which surface received the note. `finder` is the honest fallback when nothing handles
+     * obsidian:// — the note is still revealed, so the action does something real rather than
+     * silently doing nothing. `none` accompanies noteOpened=false.
+     */
+    noteOpenTarget: NoteOpenTarget;
+    /**
+     * Whether the note was actually handed to an application. False is a real answer, not a
+     * failure: it says the note exists and nothing on this machine took it.
+     */
+    noteOpened: boolean;
+    /**
+     * The root-relative path that was opened, echoed so a caller can report what happened
+     * without re-deriving it.
+     */
+    notePath: string;
+}
+
+/**
+ * Which surface received the note. `finder` is the honest fallback when nothing handles
+ * obsidian:// — the note is still revealed, so the action does something real rather than
+ * silently doing nothing. `none` accompanies noteOpened=false.
+ */
+export enum NoteOpenTarget {
+    Finder = "finder",
+    None = "none",
+    Obsidian = "obsidian",
 }
 
 export interface CerebralHelmNoteReadInput {

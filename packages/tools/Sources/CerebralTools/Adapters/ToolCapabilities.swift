@@ -62,6 +62,12 @@ public struct ToolCapabilities: Sendable {
     /// and the only external write that never takes the user-authored exemption.
     /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
     public let messaging: any MessagingCapability
+    /// Hands one note to the Mac's Markdown editor (quick actions phase 5). Takes only an absolute
+    /// path the knowledge service has already proved is inside the knowledge root.
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let noteOpen: any NoteOpenCapability
+    /// Opens the user's mail in the browser (Gmail integration). Host fixed in the adapter.
+    public let mailOpen: any MailOpenCapability
     /// Stable capability IDs (``CapabilityMatrix/Capability/appOpen`` etc.) bound
     /// to honest native implementations in this bundle. Empty for the mock bundle.
     public let nativeCapabilityIDs: Set<String>
@@ -88,6 +94,8 @@ public struct ToolCapabilities: Sendable {
         spotifyControl: any SpotifyControlCapability = MockSpotifyControlCapability(matrix: .none),
         spotifyPlaylist: any SpotifyPlaylistCapability = MockSpotifyPlaylistCapability(matrix: .none),
         messaging: any MessagingCapability = MockMessagingCapability(matrix: .none),
+        noteOpen: any NoteOpenCapability = MockNoteOpenCapability(matrix: .none),
+        mailOpen: any MailOpenCapability = MockMailOpenCapability(matrix: .none),
         nativeCapabilityIDs: Set<String> = []
     ) {
         self.app = app
@@ -111,6 +119,8 @@ public struct ToolCapabilities: Sendable {
         self.spotifyControl = spotifyControl
         self.spotifyPlaylist = spotifyPlaylist
         self.messaging = messaging
+        self.noteOpen = noteOpen
+        self.mailOpen = mailOpen
         self.nativeCapabilityIDs = nativeCapabilityIDs
     }
 
@@ -138,7 +148,9 @@ public struct ToolCapabilities: Sendable {
             calendarWrite: MockCalendarWritingCapability(matrix: matrix),
             spotifyControl: MockSpotifyControlCapability(matrix: matrix),
             spotifyPlaylist: MockSpotifyPlaylistCapability(matrix: matrix),
-            messaging: MockMessagingCapability(matrix: matrix)
+            messaging: MockMessagingCapability(matrix: matrix),
+            noteOpen: MockNoteOpenCapability(matrix: matrix),
+            mailOpen: MockMailOpenCapability(matrix: matrix)
         )
     }
 }

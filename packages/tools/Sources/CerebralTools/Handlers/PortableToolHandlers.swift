@@ -707,3 +707,156 @@ public struct NoteReadHandler: ToolHandler {
         }
     }
 }
+
+// MARK: - course.list
+
+/// Lists the course notebooks under the school folder (quick actions phase 5).
+///
+/// Read-only, and reads the **folders** rather than any stored mapping: a course exists because
+/// its folder does, so one added by hand in Obsidian is listed with no rebuild and no import step.
+/// The `/courses` redaction keeps what someone is studying out of the operational log, matching
+/// `note.list`'s treatment of note titles.
+public struct CourseListHandler: ToolHandler {
+    public let toolID = "course.list"
+    private let notebook: any CourseNotebook
+
+    public init(notebook: any CourseNotebook) { self.notebook = notebook }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmCourseListInput
+        do { decoded = try CerebralHelmCourseListInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("course.list input does not match its contract.")
+        }
+        do {
+            let found = try await notebook.courses()
+            let limited = decoded.courseLimit.map { Array(found.prefix($0)) } ?? found
+            return try CerebralHelmCourseListOutput(
+                courseRoot: notebook.schoolFolder,
+                courses: limited.map {
+                    Course(
+                        courseFolder: $0.folder,
+                        courseName: $0.course,
+                        courseNoteCount: $0.noteCount,
+                        courseUpdated: $0.updated
+                    )
+                }
+            ).jsonData()
+        } catch let error as KnowledgeServiceError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+// MARK: - course.note.create
+
+/// Creates one templated note in a course notebook (quick actions phase 5).
+///
+/// **The caller names a course, never a folder.** The notebook derives the folder inside the
+/// school root and mints it if this is the course's first note, so a note can only ever land under
+/// that root — the same property that makes `note.open`'s path safe, applied to a write.
+///
+/// `local_write`, which the policy engine allows unconfirmed: writing a file you asked for, into
+/// your own vault, that overwrites nothing. The never-overwrite rule is the adapter's, not the
+/// policy's — an existing note of that title on that day is returned rather than replaced.
+public struct CourseNoteCreateHandler: ToolHandler {
+    public let toolID = "course.note.create"
+    private let notebook: any CourseNotebook
+
+    public init(notebook: any CourseNotebook) { self.notebook = notebook }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmCourseNoteCreateInput
+        do { decoded = try CerebralHelmCourseNoteCreateInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("course.note.create input does not match its contract.")
+        }
+        do {
+            let outcome = try await notebook.createNote(
+                course: decoded.noteCourse, title: decoded.noteTitle
+            )
+            return try CerebralHelmCourseNoteCreateOutput(
+                noteCourse: outcome.course,
+                noteCreated: outcome.created,
+                notePath: outcome.path,
+                noteTitle: outcome.title
+            ).jsonData()
+        } catch let error as KnowledgeServiceError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+// MARK: - mail.open
+
+/// Opens the user's mail in the browser (Gmail integration, 2026-08-04).
+///
+/// Takes a **message id, never a URL** — the adapter builds the destination with the host as a
+/// literal constant. That is what lets a report link to an email safely: once a model composes the
+/// document, every clickable thing in it is a model-chosen destination, and an id can only ever
+/// select which message rather than which site.
+public struct MailOpenHandler: ToolHandler {
+    public let toolID = "mail.open"
+    private let capability: any MailOpenCapability
+
+    public init(capability: any MailOpenCapability) { self.capability = capability }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmMailOpenInput
+        do { decoded = try CerebralHelmMailOpenInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("mail.open input does not match its contract.")
+        }
+        do {
+            let result = try await capability.open(messageID: decoded.mailMessageID)
+            return try CerebralHelmMailOpenOutput(
+                mailOpened: result.opened, mailResolvedURL: result.resolvedURL
+            ).jsonData()
+        } catch let error as NativeCapabilityError {
+            throw toolHandlerError(from: error)
+        }
+    }
+}
+
+// MARK: - note.open
+
+/// Opens one note in the user's Markdown editor (quick actions phase 5).
+///
+/// Two collaborators, split along the line that matters: the **knowledge service** decides where
+/// the note is and whether the path is allowed to resolve there, and the **capability** hands the
+/// resulting file to an application. The handler never joins a root to a path itself — that
+/// arithmetic is exactly where a containment rule gets accidentally re-implemented.
+///
+/// A path outside the root is refused as `noteNotFound`, indistinguishable from a note that simply
+/// is not there, so this never reports what exists elsewhere on the disk.
+public struct NoteOpenHandler: ToolHandler {
+    public let toolID = "note.open"
+    private let knowledge: any KnowledgeService
+    private let capability: any NoteOpenCapability
+
+    public init(knowledge: any KnowledgeService, capability: any NoteOpenCapability) {
+        self.knowledge = knowledge
+        self.capability = capability
+    }
+
+    public func execute(input: Data) async throws -> Data {
+        let decoded: CerebralHelmNoteOpenInput
+        do { decoded = try CerebralHelmNoteOpenInput(data: input) } catch {
+            throw ToolHandlerError.invalidInput("note.open input does not match its contract.")
+        }
+        do {
+            let location = try await knowledge.locate(NoteReadRequest(path: decoded.notePath))
+            let result = try await capability.open(absolutePath: location.absolutePath)
+            return try CerebralHelmNoteOpenOutput(
+                noteOpenTarget: NoteOpenTarget(rawValue: result.target.rawValue) ?? .none,
+                noteOpened: result.opened,
+                // The path the service resolved, not the one that was asked for: they differ
+                // in separators and redundant components, and the receipt should name the note.
+                notePath: location.path
+            ).jsonData()
+        } catch let error as KnowledgeServiceError {
+            // The note could not be located: missing, or refused for landing outside the root.
+            throw toolHandlerError(from: error)
+        } catch let error as NativeCapabilityError {
+            // The note was located, but the platform would not take it.
+            throw toolHandlerError(from: error)
+        }
+    }
+}

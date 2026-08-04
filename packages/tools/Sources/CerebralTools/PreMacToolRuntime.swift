@@ -19,6 +19,7 @@ public enum PreMacToolRuntime {
         descriptorsDirectory: URL,
         capabilities: ToolCapabilities = .mocks(),
         knowledge: any KnowledgeService = MockKnowledgeService(),
+        courseNotebook: any CourseNotebook = MockCourseNotebook(),
         hookCatalog: HookCatalog = HookCatalog(),
         modePlanner: any ActionPlanner = StubModePlanner(),
         modeIDs: Set<String> = [],
@@ -54,6 +55,10 @@ public enum PreMacToolRuntime {
             "note.search": NoteSearchHandler(knowledge: knowledge),
             "note.list": NoteListHandler(knowledge: knowledge),
             "note.read": NoteReadHandler(knowledge: knowledge),
+            "note.open": NoteOpenHandler(knowledge: knowledge, capability: capabilities.noteOpen),
+            "mail.open": MailOpenHandler(capability: capabilities.mailOpen),
+            "course.list": CourseListHandler(notebook: courseNotebook),
+            "course.note.create": CourseNoteCreateHandler(notebook: courseNotebook),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
             "window.arrange": WindowArrangeHandler(capability: capabilities.window, appTargets: appTargets),
             "mode.apply": ModeApplyHandler(
@@ -128,6 +133,10 @@ public enum PreMacToolRuntime {
         case "note.search": _ = try CerebralHelmNoteSearchInput(data: data)
         case "note.list": _ = try CerebralHelmNoteListInput(data: data)
         case "note.read": _ = try CerebralHelmNoteReadInput(data: data)
+        case "note.open": _ = try CerebralHelmNoteOpenInput(data: data)
+        case "mail.open": _ = try CerebralHelmMailOpenInput(data: data)
+        case "course.list": _ = try CerebralHelmCourseListInput(data: data)
+        case "course.note.create": _ = try CerebralHelmCourseNoteCreateInput(data: data)
         case "mode.apply": _ = try CerebralHelmModeApplyInput(data: data)
         case "window.arrange": _ = try CerebralHelmWindowArrangeInput(data: data)
         case "system.status.read": _ = try CerebralHelmSystemStatusReadInput(data: data)
@@ -153,6 +162,7 @@ public enum PreMacToolRuntime {
         descriptorsDirectory: URL,
         capabilities: ToolCapabilities = .mocks(),
         knowledge: any KnowledgeService = MockKnowledgeService(),
+        courseNotebook: any CourseNotebook = MockCourseNotebook(),
         hookCatalog: HookCatalog = HookCatalog(),
         modePlanner: any ActionPlanner = StubModePlanner(),
         policy: PolicyEngine = PolicyEngine(),
@@ -163,6 +173,7 @@ public enum PreMacToolRuntime {
             descriptorsDirectory: descriptorsDirectory,
             capabilities: capabilities,
             knowledge: knowledge,
+            courseNotebook: courseNotebook,
             hookCatalog: hookCatalog,
             modePlanner: modePlanner
         )

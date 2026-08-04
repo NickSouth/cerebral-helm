@@ -1,6 +1,6 @@
 # Quick actions — surface architecture and build plan
 
-**Status:** In progress — phases 0-4 complete; phase 5 (pickers + streaming status) next
+**Status:** Complete — all 26 configured slots live except `email-report`, which is deferred with Gmail (the PRD excludes Workspace from the MVP)
 **Owner:** Nick Southey
 **Source:** Planning session 2026-08-03; supersedes the NIC-139 workflow-builder approach
 **Scope:** All 32 quick-action slots across the four modes, the surfaces they render in, and the order to build them
@@ -33,7 +33,7 @@ Every action is exactly one of four:
 | **Report** | Assemble from providers, render a document, offer follow-up actions | 6 |
 | **Picker** | Filterable list, options from a provider, one action on selection | 2 |
 
-**Live Monitor is not an archetype.** A streaming status list is a Report whose document is re-emitted as state changes — same renderer, plus a `checklist` block. Only its host differs (an external window rather than the centre panel).
+**Live Monitor is not an archetype.** A streaming status list is a Report whose document is re-emitted as state changes — same renderer, plus a `checklist` block. It was going to differ in its host; it turned out not to need to (see *Surfaces*), so it differs in nothing at all.
 
 **Picker is not a distinct surface.** A picker's result almost always opens an external app, so nothing needs to persist. It renders in the Input region with a filter field, a result list, and the same footer.
 
@@ -43,7 +43,9 @@ Every action is exactly one of four:
 |---|---|---|
 | **Report region** | Centre panel, left third — below the Heimlich label, down to above the greeting. Opaque, borderless, right-edge mask so the consciousness stream dissolves into it. | Reports, and later the Heimlich conversation |
 | **Input region** | Centre panel, lower right — below the stream, above the quick-action grid. Bordered panel (it is interactive and needs a hit target). | Inputs and Pickers |
-| **External window** | Own native window | `system-status-checks` only |
+~~**External window** — own native window, for `system-status-checks`.~~ **Cut, 2026-08-04 (owner).** The Report region already renders the full checklist with room to spare, and `Refresh` re-runs the checks — which is the `check-scoreboard` pattern, arrived at through the same archetype rather than built specially. The window was specified when this was imagined as a monitor you leave running; it is not one. The checks settle in seconds and then stop changing, and a genuinely live version would mean polling third parties continuously, which contradicts the rule that keeps them safe to run. That leaves a whole window lifecycle — positioning, multi-display, focus — as cost for one action, competing with a dashboard that is already an always-present backdrop.
+
+**There are now two in-dashboard surfaces and no third.**
 
 The Report region **is** the future chat surface: same geometry, same renderer, plus scrollback and a docked input. Design spec §5.7 already describes that conversation overlay; see *Design spec edits owed* below.
 
@@ -357,7 +359,89 @@ Reading recipients is a **separate port** from sending, the fourth instance of t
 
 ### Phase 5 — lowest reuse, last
 
-Picker (two instances) for `take-notes` and `search-notes`. Streaming report plus external window for `system-status-checks`.
+**Complete.** Picker (two instances) for `search-notes` and `take-notes`, and a streaming report for `system-status-checks` — in the centre panel, not an external window, which was cut here (see *Surfaces*).
+
+Scoped 2026-08-04, after reading the plan against what phases 0–4 actually left on disk. Two of the three are cheaper than this document assumed, and the third is only expensive if the checks are chosen badly.
+
+**`take-notes` is a two-stage picker, not a one-stage one** (owner decision). Pick a course, then pick one of that course's existing notes by title — or a `+ New note` row that takes a title. Either way the result opens in Obsidian. This is the shape that sets the archetype, so `search-notes` is built first to establish the surface and `take-notes` extends it with a second stage.
+
+| Decision | Resolution |
+|---|---|
+| Where course notes live | `areas/school-umass/<COURSE>/` — the existing `areas/school-umass.md` becomes the folder's index note, the standard Obsidian folder-note pattern, and PARA stays intact |
+| How a course comes to exist | Canvas is the list (it already feeds `open-schedule`); **the folder is minted on first use**, so creation is implicit rather than a chore and an untouched course never litters the vault. A `+ New course` row covers anything Canvas does not have |
+| Template | Light structure: frontmatter (title, date, course, tags), an H1, a date/course line, then empty `Notes` / `Questions` / `Action items` headings. Enough to start typing, generic across a lecture, a reading, or a study session |
+| Filenames | Date-prefixed — `2026-08-04-lecture-3-bayes.md` — so a folder sorts chronologically by itself after a semester. The typed title is the H1 and the picker label |
+| Stale search index | Merge: titles and folders from `listNotes` (which walks the real files) plus full text from the index, with an inline rebuild offer when results look thin |
+| What `system-status-checks` checks | Both — a live metrics header over a pass/fail health checklist |
+
+**`take-notes` needs its own write path; it must not go through `capture`.** `NoteNaming.captureID` appends a timestamp token, producing `lecture-3-bayes-20260628t143022123z.md`. That is correct for the CLI, which captures with a content-free title and would otherwise collide on every note — and exactly wrong for a notebook read in Obsidian every day. `folderComponents` is likewise `projects/<project>` or `inbox`, which cannot express a course folder. So a small course-note path sits beside capture rather than bending it.
+
+**`search-notes`' real gap is opening one note.** `note.search`, its descriptor, the handler and the `searchNotes` bridge op all exist from NIC-162/163. But `NoteSearchHit` carries `noteId`, `title`, `excerpt` and **no path**, and `ObsidianLink` only builds a URL for the *root* — the browse-the-root route is the only one wired. The index holds a path per entry host-side, so this wants an `openNote(noteId)` op that resolves the path **on the host**. An absolute filesystem path should not cross into the webview merely so the webview can hand it straight back.
+
+**The stale-index trap, stated once.** `list` walks the Markdown files; `search` reads the derived index, which only knows what CerebralHelm captured. A vault authored in Obsidian is therefore invisible to search until a rebuild, and "no matches" and "nothing indexed yet" must never look the same.
+
+**The streaming runner is not needed.** This document budgeted one because the hook tool returns only at completion — true, but that only binds if the checks are shell commands. Permissions granted, secrets bound, integrations reachable, disk headroom are all answerable **in-process**, so the runner is an `AsyncStream` of check results and no new process capability is required. The external window is already a solved pattern: `openWindowNavigator` hosts an auxiliary native window over a webview route.
+
+Increment order:
+
+| # | Increment | Adds |
+|---|---|---|
+| 1 | ~~Picker archetype + `search-notes`~~ **Built** | The picker surface in the Input region; `note.open` resolving host-side; merged file/index read with an inline rebuild offer |
+| 2 | ~~Course notes port~~ **Built** | `CourseNotebook` + `course.list` / `course.note.create` + their bridge ops, folder minted on first use, the template |
+| 3 | ~~`take-notes`~~ **Built** | The two-stage picker UI: courses, then that course's notes, plus the `+ New course` / `+ New note` rows |
+| 4 | ~~Check registry + runner~~ **Built** | The checks as an `AsyncStream`, the `checklist` block kind, report re-emission |
+| 5 | ~~External window~~ **Metrics header** | The live CPU/memory/network/battery header folded into the existing report; the window is cut |
+| 6 | ~~Design spec edits~~ **Built** | The two owed below — §5.7 and the missing Input region section — plus the slot treatment and the stale overlay language |
+
+**Increment 1 is built.** Four things worth keeping from it.
+
+**A picker is a `target: {kind: "input"}` with `archetype: "picker"`** — no new dispatch kind. The config gate already anticipated exactly this (`case "input"` accepts both archetypes), and `usePicker` branches on the **registry's** archetype rather than keeping a second list of which ids are pickers, which could disagree with it. A picker is therefore not a `combobox` field on a one-field form: a combobox chooses a value for a submit that happens later, and **a picker's row is the submit**. Modelling one as the other would put a Go button under a list whose rows already do the thing.
+
+**`note.open` is a bus tool, not a bridge operation.** The alternative — a private `openNote` channel from the webview to the host — was rejected: opens are already a tool family (`app.open`, `url.open`, `web.open`, `project.open`), and routing through the bus gets policy, disclosure and the audit log for free (ADR-002). `local_write` is honestly its class, and the engine allows that class unconfirmed, so it opens in one click exactly like `web.open`. It cost **no bridge schema change at all** — the picker submits `notes-open <path>` through `submitCommand`, the same path `search-youtube` uses.
+
+**Path is the note's identity, not `noteId`.** A note authored in Obsidian has no frontmatter id, so `noteId` cannot address the library — and both sources already agree on the root-relative path. That made the merge trivial and correct, and it is why the search hit now carries `path` across the bridge (the tool output always had it; the bridge DTO was dropping it). The web layer never learns an **absolute** path, so it cannot ask for a file outside the knowledge root.
+
+**One containment rule, shared.** `KnowledgeService.locate(_:)` was added beside `read`, and both go through the same private resolver — a test asserts they admit exactly the same set of paths, because a note that is openable but not readable would be a hole. The handler never joins a root to a relative path itself; that arithmetic is where a containment rule gets accidentally re-implemented.
+
+**Increment 2 is built** — the course notebook, everything under the UI. It **revises the decision recorded above**: there is no stored course → folder mapping, because there does not need to be one.
+
+**The folders on disk are the mapping.** A course exists exactly when its folder does. That follows the repository's durable-state rule (the Markdown is the source of truth, everything else is rebuildable), it means a vault copied to another machine brings its courses with it, and it means a course folder made by hand in Obsidian is a course with no import step. The rename case that motivated a stored table is handled better by *what* the folder is named: the derived **course code**, which is the part that survives Canvas retitling a course every semester. The residual case is stated rather than engineered away — if a course's *code* changes, the next note lands in a new folder and the old one keeps its notes, still listed as a course, so nothing is orphaned.
+
+**A course is a folder and a course note is an ordinary note**, so `note.list`, `note.search`, `note.read` and `note.open` all work on them without knowing what a course is. A test pins that end to end: create through `course.note.create`, then find it through `listNotes` and locate it through the note port.
+
+**The caller names a course, never a folder.** `CourseNaming` derives the folder inside the school root, so a note can only ever land there — the same property that makes `note.open`'s path safe, applied to a write. Two things the tests caught:
+
+- A **four-digit year was matching as a three-digit course code**: `Fall 2026 STAT 240` resolved to `FALL 202`. A whole semester would have filed under a folder named after the term. The rule now requires *exactly* three digits.
+- **`capture` creates the knowledge root implicitly and `ensure` did not**, so a first course note failed on a fresh install while a first captured note succeeded. Minting now builds the whole chain. Reading stays asymmetric on purpose: `courses()` reports a missing root as unavailable, never as "no courses", the same distinction `note.list` draws.
+
+Also decided here: `createCourseNote` is **submit-only** (no text grammar), for the reason `create-event` and `create-ticket` already established — two free-text fields, either of which can contain spaces, cannot survive a separator. `courses-list` does get a verb, and `parseNotesList` generalized into a shared `parseCount` rather than being copied.
+
+**Increment 3 is built** — `take-notes`, and with it the last of the 26 slots except `email-report`.
+
+**A stage is just a picker.** The course stage's `choose` returns the *next picker* rather than setting a mode flag, and the region keeps a stack — so Back, Escape-goes-back, and the stage label are generic, and no picker implements navigation. Two stages cost one type (`PickerChoice`) and no new surface. That also settled `+ New course`: it does not create anything, it simply becomes the second stage, which is what "a course exists once you write in it" means.
+
+**The create row is the typed query, not a separate mode.** `+ New note “Lecture 3”` appears once something is typed, uses the filter box that is already focused, and is suppressed when the query exactly matches an existing row — so `+ New course “STAT 240”` never sits above the STAT 240 that exists. Enter chooses the first row, which is the Spotlight/Obsidian gesture the two-stage flow implies.
+
+**Two course sources, merged presentationally only.** Canvas knows what you are enrolled in; the vault knows what you have written in. Neither is the list alone — a finished semester is gone from Canvas and still has its notes, and a reading group was never in Canvas. The match is deliberately loose: the folder is derived **on the host**, so a missed match shows two rows that both land in the same folder, while duplicating the host's naming rule in TypeScript would create a second rule that can *disagree*. One narrow exception proved necessary in the browser on the first render — Canvas writes `CS260` where the vault has `CS 260`, so whole-value comparison ignores spacing. Only whole-value: compacted, `STAT 2400` starts with `STAT240`, and a false match would **hide** a course, which is worse than showing one twice.
+
+Nothing is created by browsing, and the create-then-open path reports both halves honestly: a pending confirmation never says "created" and never offers to open a path that does not exist, and `created: false` (a note of that title already exists today) opens it and says so rather than claiming a new note.
+
+**Increment 4 is built** — and its *selection rule* is the increment's real content (owner decision, 2026-08-04): **check everything that can change without a code change, and nothing that cannot.**
+
+The test suite already proves this codebase is self-consistent, and it has to pass for a build to exist at all — so porting any of it here would report a guarantee rather than a finding. What no test can tell you is whether the world still matches: a permission revoked in System Settings, a token that expired overnight, an undocumented endpoint whose fields moved, a folder renamed in Finder. Every one of the 17 checks is one of those, in three groups because each group is fixed in a different place — System Settings, Setup, or waiting out a provider.
+
+Two invariants make the surface trustworthy, and both are tested:
+
+- **Not configured is not failing.** An integration the user never set up is `skipped`, which meant adding that value to `reportItemStatus` — the existing four could only have said "pending" or "failed", and both would have been lies. A checklist that reddens over things nobody asked for stops being read.
+- **A check never spends anything.** No writes, no quota. NewsData (200/day, already exhausted once) is verified only as far as is free — the key is bound — and the row *says* "Not contacted", rather than implying a probe it deliberately did not make. A test asserts an unbound credential never even reaches its probe.
+
+**The probes verify contracts, not reachability.** Linear answers `200` with an `errors` array, so the status code is not the signal; GitHub's `/rate_limit` is the one endpoint that does not count against the limit, so it verifies the token *and* reports the budget without spending it; ESPN's validator asserts each field `ESPNScoreboardProvider` maps and names the one that moved, while treating an out-of-season empty field as fine — a check that reddened every Tuesday in July would be trained out of the reader within a week.
+
+**Six parameterized types cover all 17 checks**, so extending the inventory is a line of composition. That is load-bearing rather than tidy: a list that is expensive to extend stops being extended, and this one is supposed to track a moving world.
+
+The runner streams. Rows keep **registry order, never completion order** (a list that reorders as fast checks overtake slow ones loses the row you were watching), every check is **bounded** (a provider that accepts a connection and never answers cannot hold the report open), and each emission carries the **whole** set so a consumer renders a document rather than reconciling a diff.
+
+Three gate notes. The JSON Schema `pattern` on a tool input is **not** enforced by the generated decoder, which checks types only — so `inbox/notes.txt` reaches the knowledge service, which refuses it. The pattern is a first gate and documentation; the service is the boundary. And `command-surface.test.mjs`'s tool count had drifted **six behind** the repository (last updated before the phase-4 overlays landed); it was corrected here rather than left red. Third: **`tsc --noEmit` does not catch what `pnpm build` catches** — a bridge input typed as an interface rather than spread into a `Record` passed the typecheck and failed the production build, so the build is the gate, not the typecheck.
 
 ## Deferred by design
 
@@ -432,11 +516,18 @@ The **leaderboard block carries the complete field with a `leaderboardPreview` c
 
 ## Design spec edits owed
 
-Three places where [the design spec](../../.agent/spec/CEREBRALHELM_DESIGN_SPEC.md) contradicts this plan. Each is corrected in the increment that makes it false, not up front:
+**All cleared, 2026-08-04 (phase 5 increment 6).** Three places where [the design spec](../../.agent/spec/CEREBRALHELM_DESIGN_SPEC.md) contradicted this plan. Each was corrected in the increment that made it false — or, for the two that slipped, in the increment that finally caught up:
 
-1. **§5.7** describes the conversation surface as a translucent overlay with semi-transparent bubbles over a scrim. This plan uses an opaque, borderless region with a right-edge fade — which also satisfies the contrast requirement outright rather than fighting for it. *Owed in phase 2, with the Report region.*
+1. ~~**§5.7** describes the conversation surface as a translucent overlay with semi-transparent bubbles over a scrim.~~ **Done.** §5.7's *Conversation overlay* is now *Report region (and the conversation surface it becomes)*: opaque, borderless, right-edge mask. The reasoning is recorded there — an opaque region satisfies NFR-08 / FR-UI-09 **by construction at every animation state**, where a scrim is a countermeasure that has to be tuned against unpredictable luminance and can still fail on a bright frame. *Owed since phase 2.*
 2. ~~**Acceptance item 5** requires "exactly eight actions in the required four-plus-four geometry".~~ **Done in phase 0:** the quick-action geometry section, acceptance item 5, and the UI Constitution's always-8 rule now describe omit-and-recentre.
-3. **The Input region is not described at all.** It needs a section alongside the ambient and conversation views. *Owed in phase 3, with the Input region.*
+3. ~~**The Input region is not described at all.**~~ **Done.** §5.7 gained an *Input region* subsection covering both archetypes it hosts, why it is bordered where the report is not, and its four binding behaviours (bounded and self-scrolling, a failed submit keeps the typing, a mode switch discards it, never report success for a pending confirmation). *Owed since phase 3.*
+
+Two further corrections were made in the same pass, because leaving the authority silent about a rule changed the same day is the drift this section exists to prevent:
+
+- **Slot treatment** — §5.7's quick-action geometry now records the mode-accent glyph, the heavier bottom row, and the mode-selector gradient on an open slot, including why per-action colour was rejected.
+- **The stale overlay language elsewhere** — §5.8's `success` motion signature and the PLATE 05 note both referred to a conversation overlay lifting; both now name the Report region, and the plate note says outright that the plate shows it translucent while it is built opaque.
+
+The **UI Constitution** was corrected to match on all of it: the centre column now lists the Report and Input regions, the "chat is a translucent overlay" invariant is rewritten, and the quick-action rule carries the glyph and open-state treatment.
 
 ## Related
 

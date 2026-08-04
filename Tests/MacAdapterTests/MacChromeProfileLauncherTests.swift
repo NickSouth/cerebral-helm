@@ -72,10 +72,17 @@ final class LauncherWorkspace: WorkspaceOpening, @unchecked Sendable {
     let chromeURL = URL(fileURLWithPath: "/Applications/Google Chrome.app")
     let hasChrome: Bool
     private var launches: [[String]] = []
+    private var documents: [URL] = []
+    private var urls: [URL] = []
 
     init(hasChrome: Bool = true) { self.hasChrome = hasChrome }
 
     var recordedLaunches: [[String]] { lock.lock(); defer { lock.unlock() }; return launches }
+    /// URLs handed to a named app as documents — the plain "open in Chrome" path, used when no
+    /// profile could be resolved.
+    var documentOpens: [URL] { lock.lock(); defer { lock.unlock() }; return documents }
+    /// URLs handed to the default handler — the no-Chrome fallback.
+    var urlOpens: [URL] { lock.lock(); defer { lock.unlock() }; return urls }
 
     func installedApplicationURL(forBundleIdentifier bundleID: String) -> URL? {
         hasChrome && bundleID == "com.google.Chrome" ? chromeURL : nil
@@ -85,7 +92,21 @@ final class LauncherWorkspace: WorkspaceOpening, @unchecked Sendable {
     func openApplication(at url: URL, arguments: [String]) async throws {
         record(arguments)
     }
-    func openURL(_ url: URL) async throws {}
+    func openURL(_ url: URL) async throws {
+        recordURL(url)
+    }
+    func open(paths: [URL], withApplicationAt applicationURL: URL) async throws {
+        recordDocuments(paths)
+    }
+
+    // Non-async so the lock is taken outside an async context, matching `record` below.
+    private func recordURL(_ url: URL) {
+        lock.lock(); urls.append(url); lock.unlock()
+    }
+
+    private func recordDocuments(_ paths: [URL]) {
+        lock.lock(); documents.append(contentsOf: paths); lock.unlock()
+    }
 
     private func record(_ arguments: [String]) {
         lock.lock(); launches.append(arguments); lock.unlock()

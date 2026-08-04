@@ -1,0 +1,6 @@
+{
+  "id": "course.note.create",
+  "risk": "local_write",
+  "timeoutMs": 5000,
+  "availableInPreMac": true
+}

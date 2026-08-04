@@ -110,6 +110,24 @@ public enum MacToolCapabilities {
                 ),
                 // The one tool that speaks to another person; every send confirms first.
                 messaging: MessagesCapability(),
+                // Hands a located note to Obsidian; the knowledge service decided which note.
+                noteOpen: ObsidianNoteOpenCapability(workspace: workspace),
+                // Opens Gmail in the Chrome profile signed into the connected account. Both lookups
+                // are closures read at open time, not values captured here: at launch there may be
+                // no account connected yet, and the user can re-sign-in a Chrome profile at any
+                // point without the app being told.
+                mailOpen: NSWorkspaceMailOpenCapability(
+                    workspace: workspace,
+                    accountAddress: { (try? await GoogleTokenBlob.load(from: secretStore))?.address },
+                    profileForAccount: { address in
+                        MacChromeProfileDiscoveryCapability.profileDirectory(
+                            forAccount: address,
+                            chromeSupportDirectory: MacChromeProfileDiscoveryCapability.defaultSupportDirectory
+                        )
+                    },
+                    chromeLauncher: chromeLauncher,
+                    currentModeProvider: currentModeProvider
+                ),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,
                     CapabilityMatrix.Capability.projectOpen,
@@ -130,6 +148,8 @@ public enum MacToolCapabilities {
                     CapabilityMatrix.Capability.calendarWrite,
                     CapabilityMatrix.Capability.spotifyControl,
                     CapabilityMatrix.Capability.spotifyPlaylist,
+                    CapabilityMatrix.Capability.noteOpen,
+                    CapabilityMatrix.Capability.mailOpen,
                     CapabilityMatrix.Capability.messagesSend,
                 ]
             ),

@@ -1,5 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useInputForm } from "./useInputForm";
+import { usePicker } from "./usePicker";
+import {
+  PICKER_DEBOUNCE_MS,
+  isPickerStage,
+  type Picker,
+  type PickerNotice,
+  type PickerOutcome,
+  type PickerResult
+} from "./picker";
 import {
   initialValues,
   missingRequired,
@@ -32,26 +41,35 @@ import { useInputs } from "../state/InputProvider";
 export function InputRegion() {
   const { openInputId, closeInput } = useInputs();
   const { form, loading } = useInputForm(openInputId ?? "");
+  const picker = usePicker(openInputId ?? "");
 
   if (!openInputId) {
     return null;
   }
 
+  // A Picker and an Input share this region, so the label says which one it is — "search form"
+  // for a list you pick from would misdescribe it to anyone who cannot see it.
+  const surface = picker ? "picker" : "form";
+
   return (
-    <section className="input-region" aria-label={`${quickActionLabel(openInputId)} form`}>
+    <section className="input-region" aria-label={`${quickActionLabel(openInputId)} ${surface}`}>
       <header className="input-region__head">
-        <h2 className="input-region__title">{form?.title ?? quickActionLabel(openInputId)}</h2>
+        <h2 className="input-region__title">
+          {picker?.title ?? form?.title ?? quickActionLabel(openInputId)}
+        </h2>
         <button
           type="button"
           className="input-region__close"
-          aria-label={`Close the ${quickActionLabel(openInputId)} form`}
+          aria-label={`Close the ${quickActionLabel(openInputId)} ${surface}`}
           onClick={closeInput}
         >
           ×
         </button>
       </header>
 
-      {loading ? (
+      {picker ? (
+        <PickerBody key={picker.actionId} picker={picker} onDone={closeInput} />
+      ) : loading ? (
         <p className="input-region__pending">Loading…</p>
       ) : form ? (
         // Keyed so switching between two Inputs starts from a clean set of values rather than
@@ -61,6 +79,225 @@ export function InputRegion() {
         <p className="input-region__pending">This action isn’t built yet.</p>
       )}
     </section>
+  );
+}
+
+/**
+ * A Picker: a filter field, the results, and one action per row (docs/quick-actions/PLAN.md).
+ *
+ * **A row is the submit.** There is no Go button, because there is nothing to collect — choosing
+ * is the whole interaction. The footer keeps only Cancel, so the region's grammar stays the one
+ * the forms established.
+ *
+ * Searches are **debounced and last-write-wins**: a slower earlier query must never overwrite the
+ * results of a later one, or the list would settle on answers to a question the user has already
+ * moved past.
+ */
+function PickerBody({ picker, onDone }: { picker: Picker; onDone: () => void }) {
+  const { announce } = useActionStatus();
+  const { readOnly } = useUiPosture();
+  // The stage stack. `take-notes` is two pickers (course, then note) and this is the whole
+  // mechanism for that: a stage IS a picker, so Back is generic and no picker implements it.
+  const [stages, setStages] = useState<readonly Picker[]>([picker]);
+  const active = stages[stages.length - 1];
+  const [query, setQuery] = useState("");
+  const [outcome, setOutcome] = useState<PickerOutcome | null>(null);
+  const [searching, setSearching] = useState(true);
+  const [choosing, setChoosing] = useState<string | null>(null);
+  // Monotonic, so a stale response can be recognized and dropped rather than rendered.
+  const latest = useRef(0);
+  const filter = useRef<HTMLInputElement | null>(null);
+
+  // Focus moves into the filter when the picker opens, and again on every stage change — arriving
+  // at a list of notes with the cursor somewhere else would make the second stage feel like a
+  // different surface. Done here rather than with `autoFocus` because that prop is the page-load
+  // kind this codebase lints against; this is the other kind, following a press the user made.
+  useEffect(() => {
+    filter.current?.focus();
+  }, [active]);
+
+  useEffect(() => {
+    const token = ++latest.current;
+    setSearching(true);
+    const timer = window.setTimeout(() => {
+      void active
+        .search(query)
+        .then((next) => {
+          if (latest.current === token) {
+            setOutcome(next);
+          }
+        })
+        .catch(() => {
+          if (latest.current === token) {
+            // An empty list with no explanation would read as "you have no notes", which is a
+            // claim this does not get to make when the read itself failed.
+            setOutcome({ results: [], notice: { message: "That search couldn’t be run." } });
+          }
+        })
+        .finally(() => {
+          if (latest.current === token) {
+            setSearching(false);
+          }
+        });
+    }, PICKER_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [active, query]);
+
+  function choose(result: PickerResult) {
+    setChoosing(result.id);
+    void active
+      // The query rides along because some rows are about what was TYPED rather than about a
+      // result — `+ New note “Lecture 3”` names the note it is about to create.
+      .choose(result, query)
+      .then((choice) => {
+        if (isPickerStage(choice)) {
+          // A new stage starts from an empty filter: carrying "stat" into a list of that course's
+          // notes would silently hide most of them.
+          setStages((current) => [...current, choice.next]);
+          setQuery("");
+          setOutcome(null);
+          return;
+        }
+        announce(choice.message, choice.failed ? "error" : undefined);
+        if (!choice.failed) {
+          onDone();
+        }
+      })
+      .catch(() => {
+        announce(`${active.title} failed — the bridge did not accept it.`, "error");
+      })
+      .finally(() => setChoosing(null));
+  }
+
+  function back() {
+    setStages((current) => (current.length > 1 ? current.slice(0, -1) : current));
+    setQuery("");
+    setOutcome(null);
+  }
+
+  const results = outcome?.results ?? [];
+
+  /**
+   * Enter chooses the first row — the Spotlight/Obsidian gesture, and the one people expect after
+   * typing a filter. It is deliberately the *first row* rather than a separate "best match": the
+   * list is already ordered, so what Enter does is exactly what the eye is on.
+   */
+  function onFilterKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape" && stages.length > 1) {
+      // Escape steps back a stage before it closes the whole picker.
+      event.preventDefault();
+      back();
+      return;
+    }
+    if (event.key !== "Enter" || results.length === 0 || choosing !== null || readOnly) {
+      return;
+    }
+    event.preventDefault();
+    choose(results[0]);
+  }
+
+  return (
+    <div className="input-region__picker">
+      {/* Which stage you are in. Only past the first: the region header already names the action,
+          and repeating "Take notes" above "Take notes" says nothing. */}
+      {stages.length > 1 ? <p className="picker__stage">{active.title}</p> : null}
+
+      <input
+        ref={filter}
+        className="input-field__control"
+        type="search"
+        autoComplete="off"
+        value={query}
+        disabled={readOnly}
+        placeholder={active.placeholder}
+        aria-label={`${active.title} filter`}
+        aria-controls="picker-results"
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={onFilterKeyDown}
+      />
+
+      <ul className="picker__results" id="picker-results">
+        {results.map((result) => (
+          <li key={result.id}>
+            <button
+              type="button"
+              className="picker__result"
+              disabled={readOnly || choosing !== null}
+              onClick={() => choose(result)}
+            >
+              <span className="picker__result-label">{result.label}</span>
+              {result.detail ? (
+                <span className="picker__result-detail">{result.detail}</span>
+              ) : null}
+              {result.meta ? <span className="picker__result-meta">{result.meta}</span> : null}
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {/* Searching and empty are different states and never share a message: one is "wait", the
+          other is "there is nothing", and rendering the second while the first is true is a lie
+          that resolves itself half a second later. */}
+      {results.length === 0 ? (
+        <p className="input-region__pending">{searching ? "Searching…" : active.emptyLabel}</p>
+      ) : null}
+
+      {outcome?.notice ? (
+        <PickerNoticeView notice={outcome.notice} onAnnounce={announce} disabled={readOnly} />
+      ) : null}
+
+      <footer className="input-region__footer">
+        {stages.length > 1 ? (
+          <button type="button" className="input-region__cancel" onClick={back}>
+            Back
+          </button>
+        ) : null}
+        <button type="button" className="input-region__cancel" onClick={onDone}>
+          Cancel
+        </button>
+      </footer>
+    </div>
+  );
+}
+
+/** A picker's statement about what it cannot see, with the one step that would fix it. */
+function PickerNoticeView({
+  notice,
+  onAnnounce,
+  disabled
+}: {
+  notice: PickerNotice;
+  onAnnounce: (message: string, severity?: "error") => void;
+  disabled: boolean;
+}) {
+  const [running, setRunning] = useState(false);
+
+  function run() {
+    if (!notice.action) {
+      return;
+    }
+    setRunning(true);
+    void notice.action
+      .run()
+      .then((outcome) => onAnnounce(outcome.message, outcome.failed ? "error" : undefined))
+      .catch(() => onAnnounce("That didn’t work.", "error"))
+      .finally(() => setRunning(false));
+  }
+
+  return (
+    <p className="picker__notice">
+      {notice.message}
+      {notice.action ? (
+        <button
+          type="button"
+          className="input-field__picker-button"
+          disabled={disabled || running}
+          onClick={run}
+        >
+          {running ? "Working…" : notice.action.label}
+        </button>
+      ) : null}
+    </p>
   );
 }
 

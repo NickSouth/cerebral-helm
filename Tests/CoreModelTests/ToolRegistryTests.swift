@@ -27,7 +27,7 @@ private func invalidDescriptorsDirectory() -> URL {
 
 private let mvpToolIDs: Set<String> = [
     "app.open", "project.open", "project.scaffold", "url.open", "hook.run", "note.capture",
-    "note.search", "note.list", "note.read", "mode.apply", "system.status.read", "window.arrange",
+    "note.search", "note.list", "note.read", "note.open", "mail.open", "course.list", "course.note.create", "mode.apply", "system.status.read", "window.arrange",
     "apps.list", "network.speed.test", "apps.quitall", "app.quit", "calendar.createevent", "google.search", "youtube.search", "git.clone", "linear.createissue",
     "web.open", "spotify.control", "spotify.createplaylist", "messages.send",
 ]
@@ -177,5 +177,5 @@ func shippedOverlaysAreConsistent() throws {
     #expect(registry.tool("network.speed.test")?.availableOnMacOS == true)
     #expect(registry.tool("project.open")?.availableInPreMac == false)
     #expect(registry.tool("project.open")?.availableOnMacOS == true)
-    #expect(registry.toolIDs.count == 25)
+    #expect(registry.toolIDs.count == 29)
 }

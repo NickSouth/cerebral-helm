@@ -40,8 +40,11 @@ export interface ReportListItem {
   readonly meta?: string;
   /** Leading-dot colour when the item belongs to a coloured grouping (a calendar, a course). */
   readonly color?: string;
-  /** Only meaningful on a `checklist` — the streaming variant of a list. */
-  readonly status?: "pending" | "running" | "passed" | "failed";
+  /** Only meaningful on a `checklist` — the streaming variant of a list. `skipped` is deliberately
+   *  NOT a failure: a check the user never configured, or one held back because probing it would
+   *  spend a small daily quota, is neither passing nor broken, and rendering it as either would
+   *  make the checklist lie in one direction or the other. */
+  readonly status?: "pending" | "running" | "passed" | "failed" | "skipped";
   readonly reportAction?: ReportActionReference;
 }
 

@@ -21,6 +21,24 @@ public enum CommandIntent: Equatable, Sendable {
     /// `note.read` tool call. The adapter refuses any path resolving outside the
     /// knowledge root.
     case readNote(path: String)
+    /// Open one note in the user's Markdown editor (quick actions phase 5) — a single
+    /// `note.open` tool call, addressed by the same root-relative path ``readNote`` takes.
+    /// The knowledge service resolves it and refuses anything outside the knowledge root, so
+    /// the path is data and never a destination.
+    case openNote(path: String)
+    /// Open the user's mail — the inbox, or one message by its RFC 5322 Message-ID (Gmail
+    /// integration) — a single `mail.open` call. The host is fixed in the adapter; only the id
+    /// varies, so a link inside a report can select a message but never a destination.
+    case openMail(messageID: String?)
+    /// List the course notebooks under the school folder (quick actions phase 5) — a single
+    /// read-only `course.list` tool call. The folders on disk are the course list, so a course
+    /// added by hand in Obsidian is reported without any import step.
+    case listCourses(limit: Int?)
+    /// Create one templated note in a course (quick actions phase 5) — a single
+    /// `course.note.create` tool call, minting the course folder on first use. The caller names a
+    /// **course**, never a folder: the adapter derives the folder inside the school root, so a
+    /// note can only ever land there.
+    case createCourseNote(course: String, title: String)
     /// Open a Google search for the query in the browser (NIC-134) — a single `google.search`
     /// tool call. The host is fixed to google.com by the adapter; only the query varies.
     case googleSearch(query: String)

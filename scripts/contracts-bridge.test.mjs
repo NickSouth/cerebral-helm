@@ -72,7 +72,12 @@ const bridgeOperations = new Set([
   "setCanvasItemHidden",
   "suggestCommands",
   "rebuildKnowledgeIndex",
-  "listNotes"
+  "listNotes",
+  "listCourses",
+  "createCourseNote",
+  "runSystemChecks",
+  "connectGmail",
+  "listUnreadMail"
 ]);
 
 function readJson(filePath) {

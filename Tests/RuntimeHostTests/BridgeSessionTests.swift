@@ -2589,3 +2589,127 @@ func listNotesUnavailableRootIsNotEmpty() async throws {
     #expect(library.available == false)
     #expect(library.total == 0)
 }
+
+// MARK: - course notebooks (quick actions phase 5)
+
+private struct CourseDecode: Decodable {
+    struct Item: Decodable {
+        let course: String
+        let folder: String
+        let noteCount: Int
+        let updated: String?
+    }
+    let available: Bool
+    let root: String
+    let courses: [Item]
+}
+private struct CreatedCourseNote: Decodable {
+    let course: String
+    let path: String
+    let title: String
+    let created: Bool
+    let awaitingConfirmation: Bool
+}
+
+@Test("an existing vault with no courses lists none; a missing root is unavailable, not empty")
+func listCoursesDistinguishesEmptyFromMissing() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+
+    // A knowledge root that has never been created is NOT an empty library — the same distinction
+    // `listNotes` draws, so "no courses yet" and "your vault is gone" never look the same.
+    let missing = try decode(
+        await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self
+    )
+    #expect(!missing.available)
+
+    // A real vault with nothing school-related in it: available, and empty.
+    try FileManager.default.createDirectory(at: paths.knowledgeRoot, withIntermediateDirectories: true)
+    let empty = try decode(
+        await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self
+    )
+    #expect(empty.available)
+    #expect(empty.courses.isEmpty)
+    #expect(empty.root == "areas/school-umass")
+}
+
+@Test("taking a note mints its course, and the note lists as an ordinary note (phase 5)")
+func createCourseNoteMintsAndIsAnOrdinaryNote() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+
+    let response = await session.execute(operationRequest(
+        .createCourseNote, #"{"course":"STAT 240 - Probability (Fall 2026)","title":"Lecture 3"}"#
+    ))
+    let created = try decode(response, as: CreatedCourseNote.self)
+    #expect(created.created)
+    #expect(!created.awaitingConfirmation)
+    // The course as RESOLVED — the derived code, not the long Canvas title that was submitted.
+    #expect(created.course == "STAT 240")
+    #expect(created.path.hasPrefix("areas/school-umass/STAT 240/"))
+
+    // The course exists because its FOLDER does; nothing wrote a stored mapping.
+    let courses = try decode(await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self)
+    #expect(courses.courses.count == 1)
+    #expect(courses.courses.first?.course == "STAT 240")
+    #expect(courses.courses.first?.noteCount == 1)
+    #expect(courses.courses.first?.folder == "areas/school-umass/STAT 240")
+
+    // And it is an ordinary note: `listNotes`, which knows nothing about courses, lists it — which
+    // is the whole reason a course is just a folder.
+    let library = try decode(await session.execute(operationRequest(.listNotes, "{}")), as: ListNotesDecode.self)
+    let entry = try #require(library.notes.first { $0.path == created.path })
+    #expect(entry.title == "Lecture 3")
+    #expect(entry.folder == "areas/school-umass/STAT 240")
+
+    // Really on disk under the workspace's knowledge root, not merely reported.
+    let fileURL = paths.knowledgeRoot.appendingPathComponent(created.path)
+    let content = try String(contentsOf: fileURL, encoding: .utf8)
+    #expect(content.contains("# Lecture 3"))
+    #expect(content.contains("## Notes"))
+    #expect(content.contains("course: STAT 240"))
+}
+
+@Test("a repeat create returns the existing note rather than overwriting what was typed into it")
+func createCourseNoteNeverOverwritesThroughTheBus() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+    let payload = #"{"course":"STAT 240","title":"Lecture 3"}"#
+
+    let first = try decode(
+        await session.execute(operationRequest(.createCourseNote, payload)), as: CreatedCourseNote.self
+    )
+    let fileURL = paths.knowledgeRoot.appendingPathComponent(first.path)
+    try Data("# Lecture 3\n\nwhat I actually wrote\n".utf8).write(to: fileURL)
+
+    let second = try decode(
+        await session.execute(operationRequest(.createCourseNote, payload)), as: CreatedCourseNote.self
+    )
+
+    // Reported as NOT created, so the surface never claims a new note it did not make.
+    #expect(!second.created)
+    #expect(second.path == first.path)
+    #expect(try String(contentsOf: fileURL, encoding: .utf8).contains("what I actually wrote"))
+}
+
+@Test("a create with nothing to write is rejected, and mints nothing on the way")
+func createCourseNoteRejectsEmptyInput() async throws {
+    let session = try makeSession()
+
+    for payload in [
+        #"{"course":"STAT 240","title":"   "}"#,
+        #"{"course":"  ","title":"Lecture"}"#,
+        #"{"title":"Lecture"}"#
+    ] {
+        let response = await session.execute(operationRequest(.createCourseNote, payload))
+        #expect(response.status == .error, "\(payload) must be rejected")
+    }
+    let courses = try decode(await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self)
+    #expect(courses.courses.isEmpty)
+}

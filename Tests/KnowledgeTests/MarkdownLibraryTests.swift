@@ -282,3 +282,72 @@ func notFoundMapsToRecoveryGuidance() {
     #expect(diagnostic.code == "knowledge_note_missing")
     #expect(!diagnostic.guidance.isEmpty)
 }
+
+// MARK: - locate (quick actions phase 5)
+
+@Test("locate gives the absolute path of a note without reading it")
+func locateReturnsTheAbsolutePath() async throws {
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try write("# Sleep\n\neight hours\n", to: "areas/health/Sleep Log.md", under: root)
+
+    let found = try await service(root).locate(NoteReadRequest(path: "areas/health/Sleep Log.md"))
+
+    #expect(found.root == root.path)
+    #expect(found.path == "areas/health/Sleep Log.md")
+    #expect(found.absolutePath.hasSuffix("areas/health/Sleep Log.md"))
+    // Absolute and real: this is what gets handed to an editor.
+    #expect(FileManager.default.fileExists(atPath: found.absolutePath))
+}
+
+@Test("locate admits exactly what read admits — one containment rule, not two")
+func locateSharesReadsContainmentRule() async throws {
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: root.appendingPathComponent("inbox"), withIntermediateDirectories: true
+    )
+    try write("# Real\n", to: "inbox/real.md", under: root)
+
+    let outside = root.deletingLastPathComponent()
+        .appendingPathComponent("cerebral-outside-\(UUID().uuidString).md")
+    try Data("secrets\n".utf8).write(to: outside)
+    defer { try? FileManager.default.removeItem(at: outside) }
+    let link = root.appendingPathComponent("inbox").appendingPathComponent("escape.md")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+
+    // Every path read refuses, locate refuses too — traversal, an absolute path, a symlink
+    // pointing out of the root, a non-Markdown file, and one that simply is not there. If these
+    // two ever diverged, a note could be openable that is not readable.
+    for attempt in [
+        "../\(outside.lastPathComponent)",
+        "inbox/../../\(outside.lastPathComponent)",
+        outside.path,
+        "inbox/escape.md",
+        "inbox/config.yaml",
+        "inbox/nothing.md",
+        "",
+        "inbox"
+    ] {
+        await #expect(throws: KnowledgeServiceError.self) {
+            _ = try await service(root).locate(NoteReadRequest(path: attempt))
+        }
+        await #expect(throws: KnowledgeServiceError.self) {
+            _ = try await service(root).read(NoteReadRequest(path: attempt))
+        }
+    }
+
+    // And the note that is genuinely inside the root resolves through both.
+    _ = try await service(root).locate(NoteReadRequest(path: "inbox/real.md"))
+    _ = try await service(root).read(NoteReadRequest(path: "inbox/real.md"))
+}
+
+@Test("locating against a missing root is unavailable, not not-found (FR-KNW-07)")
+func locateReportsMissingRoot() async throws {
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    await #expect(throws: KnowledgeServiceError.rootUnavailable) {
+        _ = try await service(root).locate(NoteReadRequest(path: "inbox/anything.md"))
+    }
+}

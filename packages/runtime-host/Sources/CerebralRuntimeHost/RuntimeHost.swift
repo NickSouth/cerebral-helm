@@ -66,10 +66,14 @@ public func makeCommandRuntime(
         metadataStore: SQLiteNoteMetadataStore(database: database),
         searchIndex: SQLiteNoteSearchIndex(database: database)
     )
+    // Course notebooks are folders under the SAME root (quick actions phase 5): a course note is
+    // an ordinary note, so it lists, searches, reads and opens through the note port unchanged.
+    let courseNotebook = MarkdownCourseNotebook(rootURL: knowledgeRoot)
     let registry = try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: paths.toolDescriptorsDirectory,
         capabilities: capabilities,
         knowledge: knowledge,
+        courseNotebook: courseNotebook,
         hookCatalog: hookCatalog,
         modePlanner: modePlanner,
         modeIDs: references.modeIds,

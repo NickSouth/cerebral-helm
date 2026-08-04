@@ -33,6 +33,10 @@
 //   let cerebralHelmCalendarCreateEventInput = try CerebralHelmCalendarCreateEventInput(json)
 //   let cerebralHelmCalendarCreateEventOutput = try CerebralHelmCalendarCreateEventOutput(json)
 //   let cerebralHelmConfirmationDisclosure = try CerebralHelmConfirmationDisclosure(json)
+//   let cerebralHelmCourseListInput = try CerebralHelmCourseListInput(json)
+//   let cerebralHelmCourseListOutput = try CerebralHelmCourseListOutput(json)
+//   let cerebralHelmCourseNoteCreateInput = try CerebralHelmCourseNoteCreateInput(json)
+//   let cerebralHelmCourseNoteCreateOutput = try CerebralHelmCourseNoteCreateOutput(json)
 //   let cerebralHelmGitCloneInput = try CerebralHelmGitCloneInput(json)
 //   let cerebralHelmGitCloneOutput = try CerebralHelmGitCloneOutput(json)
 //   let cerebralHelmGoogleSearchInput = try CerebralHelmGoogleSearchInput(json)
@@ -41,6 +45,8 @@
 //   let cerebralHelmHookRunOutput = try CerebralHelmHookRunOutput(json)
 //   let cerebralHelmLinearCreateIssueInput = try CerebralHelmLinearCreateIssueInput(json)
 //   let cerebralHelmLinearCreateIssueOutput = try CerebralHelmLinearCreateIssueOutput(json)
+//   let cerebralHelmMailOpenInput = try CerebralHelmMailOpenInput(json)
+//   let cerebralHelmMailOpenOutput = try CerebralHelmMailOpenOutput(json)
 //   let cerebralHelmMessagesSendInput = try CerebralHelmMessagesSendInput(json)
 //   let cerebralHelmMessagesSendOutput = try CerebralHelmMessagesSendOutput(json)
 //   let cerebralHelmModeApplyInput = try CerebralHelmModeApplyInput(json)
@@ -51,6 +57,8 @@
 //   let cerebralHelmNoteCaptureOutput = try CerebralHelmNoteCaptureOutput(json)
 //   let cerebralHelmNoteListInput = try CerebralHelmNoteListInput(json)
 //   let cerebralHelmNoteListOutput = try CerebralHelmNoteListOutput(json)
+//   let cerebralHelmNoteOpenInput = try CerebralHelmNoteOpenInput(json)
+//   let cerebralHelmNoteOpenOutput = try CerebralHelmNoteOpenOutput(json)
 //   let cerebralHelmNoteReadInput = try CerebralHelmNoteReadInput(json)
 //   let cerebralHelmNoteReadOutput = try CerebralHelmNoteReadOutput(json)
 //   let cerebralHelmNoteSearchInput = try CerebralHelmNoteSearchInput(json)
@@ -1746,11 +1754,13 @@ public enum CerebralHelmBridgeEventType: String, Codable {
     case confirmationChanged = "confirmation.changed"
     case displayTopologyChanged = "display.topology.changed"
     case layoutSessionChanged = "layout.session.changed"
+    case mailChanged = "mail.changed"
     case modeQuickappsChanged = "mode.quickapps.changed"
     case modeWindowcollapseChanged = "mode.windowcollapse.changed"
     case newsChanged = "news.changed"
     case scheduleChanged = "schedule.changed"
     case settingsChanged = "settings.changed"
+    case systemChecksChanged = "system.checks.changed"
     case systemStatusChanged = "system.status.changed"
     case weatherChanged = "weather.changed"
     case widgetDataChanged = "widget.data.changed"
@@ -2220,8 +2230,10 @@ public enum Operation: String, Codable {
     case closeAllWindows = "closeAllWindows"
     case closeLayout = "closeLayout"
     case closeWindow = "closeWindow"
+    case connectGmail = "connectGmail"
     case connectSpotify = "connectSpotify"
     case createCalendarEvent = "createCalendarEvent"
+    case createCourseNote = "createCourseNote"
     case createLinearIssue = "createLinearIssue"
     case createSpotifyPlaylist = "createSpotifyPlaylist"
     case decideConfirmation = "decideConfirmation"
@@ -2234,10 +2246,12 @@ public enum Operation: String, Codable {
     case listApps = "listApps"
     case listCalendars = "listCalendars"
     case listChromeProfiles = "listChromeProfiles"
+    case listCourses = "listCourses"
     case listLinearOptions = "listLinearOptions"
     case listMessageRecipients = "listMessageRecipients"
     case listNotes = "listNotes"
     case listSportsEvents = "listSportsEvents"
+    case listUnreadMail = "listUnreadMail"
     case listUrls = "listUrls"
     case listWindows = "listWindows"
     case minimizeWindow = "minimizeWindow"
@@ -2246,6 +2260,7 @@ public enum Operation: String, Codable {
     case rebuildKnowledgeIndex = "rebuildKnowledgeIndex"
     case resetCanvas = "resetCanvas"
     case runSpeedTest = "runSpeedTest"
+    case runSystemChecks = "runSystemChecks"
     case scaffoldProject = "scaffoldProject"
     case searchNotes = "searchNotes"
     case sendMessage = "sendMessage"
@@ -5087,7 +5102,10 @@ public struct ListItem: Codable {
     /// destination host-side (the `google.search` pattern: the host is fixed, only the query
     /// varies).
     public let reportAction: ListItemReportAction?
-    /// Only meaningful on a `checklist` block — the streaming variant of a list.
+    /// Only meaningful on a `checklist` block — the streaming variant of a list. `skipped` is
+    /// deliberately NOT a failure: a check the user never configured, or one held back because
+    /// probing it would spend a small daily quota, is neither passing nor broken, and rendering
+    /// it as either would make the checklist lie in one direction or the other.
     public let status: ListItemStatus?
     public let text: String
 
@@ -5203,12 +5221,16 @@ public extension ListItemReportAction {
     }
 }
 
-/// Only meaningful on a `checklist` block — the streaming variant of a list.
+/// Only meaningful on a `checklist` block — the streaming variant of a list. `skipped` is
+/// deliberately NOT a failure: a check the user never configured, or one held back because
+/// probing it would spend a small daily quota, is neither passing nor broken, and rendering
+/// it as either would make the checklist lie in one direction or the other.
 public enum ListItemStatus: String, Codable {
     case failed = "failed"
     case passed = "passed"
     case pending = "pending"
     case running = "running"
+    case skipped = "skipped"
 }
 
 public enum MetricTone: String, Codable {
@@ -6554,6 +6576,300 @@ public extension Tool {
 
 // Do not edit by hand; edit packages/contracts/schemas instead.
 
+// MARK: - CerebralHelmCourseListInput
+public struct CerebralHelmCourseListInput: Codable {
+    /// Caps the returned courses, most recently written first. Omit for all of them — a school
+    /// year is a handful of folders, so the cap exists for symmetry with note.list rather than
+    /// because the list is ever large.
+    public let courseLimit: Int?
+
+    public init(courseLimit: Int?) {
+        self.courseLimit = courseLimit
+    }
+}
+
+// MARK: CerebralHelmCourseListInput convenience initializers and mutators
+
+public extension CerebralHelmCourseListInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmCourseListInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        courseLimit: Int?? = nil
+    ) -> CerebralHelmCourseListInput {
+        return CerebralHelmCourseListInput(
+            courseLimit: courseLimit ?? self.courseLimit
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmCourseListOutput
+public struct CerebralHelmCourseListOutput: Codable {
+    /// The root-relative school folder the courses were read from, so a caller can say where
+    /// they came from without knowing the convention.
+    public let courseRoot: String
+    public let courses: [Course]
+
+    public init(courseRoot: String, courses: [Course]) {
+        self.courseRoot = courseRoot
+        self.courses = courses
+    }
+}
+
+// MARK: CerebralHelmCourseListOutput convenience initializers and mutators
+
+public extension CerebralHelmCourseListOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmCourseListOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        courseRoot: String? = nil,
+        courses: [Course]? = nil
+    ) -> CerebralHelmCourseListOutput {
+        return CerebralHelmCourseListOutput(
+            courseRoot: courseRoot ?? self.courseRoot,
+            courses: courses ?? self.courses
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - Course
+public struct Course: Codable {
+    /// Root-relative, forward-slashed, so it can be compared directly to a note listing's folder.
+    public let courseFolder: String
+    /// The course as displayed and addressed — the derived code (STAT 240) where the source
+    /// carried one. Also the folder's last path component.
+    public let courseName: String
+    /// How many notes the folder holds. Zero is a real answer: a course can exist and be empty.
+    public let courseNoteCount: Int
+    /// ISO-8601 of the most recently changed note in the course, absent when it holds none.
+    public let courseUpdated: String?
+
+    public init(courseFolder: String, courseName: String, courseNoteCount: Int, courseUpdated: String?) {
+        self.courseFolder = courseFolder
+        self.courseName = courseName
+        self.courseNoteCount = courseNoteCount
+        self.courseUpdated = courseUpdated
+    }
+}
+
+// MARK: Course convenience initializers and mutators
+
+public extension Course {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(Course.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        courseFolder: String? = nil,
+        courseName: String? = nil,
+        courseNoteCount: Int? = nil,
+        courseUpdated: String?? = nil
+    ) -> Course {
+        return Course(
+            courseFolder: courseFolder ?? self.courseFolder,
+            courseName: courseName ?? self.courseName,
+            courseNoteCount: courseNoteCount ?? self.courseNoteCount,
+            courseUpdated: courseUpdated ?? self.courseUpdated
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmCourseNoteCreateInput
+public struct CerebralHelmCourseNoteCreateInput: Codable {
+    /// The course to file the note under, as a human course name or code. The adapter DERIVES
+    /// the folder from it inside the school root and creates it if this is the course's first
+    /// note — the caller never names a folder, so a note can only ever land under the school
+    /// root.
+    public let noteCourse: String
+    /// The note's title. It becomes the H1 and the filename's readable part; the filename is
+    /// date-prefixed by the adapter so a course folder sorts chronologically on its own.
+    public let noteTitle: String
+
+    public init(noteCourse: String, noteTitle: String) {
+        self.noteCourse = noteCourse
+        self.noteTitle = noteTitle
+    }
+}
+
+// MARK: CerebralHelmCourseNoteCreateInput convenience initializers and mutators
+
+public extension CerebralHelmCourseNoteCreateInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmCourseNoteCreateInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        noteCourse: String? = nil,
+        noteTitle: String? = nil
+    ) -> CerebralHelmCourseNoteCreateInput {
+        return CerebralHelmCourseNoteCreateInput(
+            noteCourse: noteCourse ?? self.noteCourse,
+            noteTitle: noteTitle ?? self.noteTitle
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmCourseNoteCreateOutput
+public struct CerebralHelmCourseNoteCreateOutput: Codable {
+    /// The course as it was resolved — the derived code, which may differ from what was asked
+    /// for.
+    public let noteCourse: String
+    /// False when a note of that title already existed for that day and was returned instead of
+    /// being overwritten. Creating a note never clobbers one.
+    public let noteCreated: Bool
+    /// The note's root-relative path: the same handle note.open takes, so the caller can open
+    /// what it just created without deriving a path of its own.
+    public let notePath: String
+    public let noteTitle: String
+
+    public init(noteCourse: String, noteCreated: Bool, notePath: String, noteTitle: String) {
+        self.noteCourse = noteCourse
+        self.noteCreated = noteCreated
+        self.notePath = notePath
+        self.noteTitle = noteTitle
+    }
+}
+
+// MARK: CerebralHelmCourseNoteCreateOutput convenience initializers and mutators
+
+public extension CerebralHelmCourseNoteCreateOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmCourseNoteCreateOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        noteCourse: String? = nil,
+        noteCreated: Bool? = nil,
+        notePath: String? = nil,
+        noteTitle: String? = nil
+    ) -> CerebralHelmCourseNoteCreateOutput {
+        return CerebralHelmCourseNoteCreateOutput(
+            noteCourse: noteCourse ?? self.noteCourse,
+            noteCreated: noteCreated ?? self.noteCreated,
+            notePath: notePath ?? self.notePath,
+            noteTitle: noteTitle ?? self.noteTitle
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
 // MARK: - CerebralHelmGitCloneInput
 public struct CerebralHelmGitCloneInput: Codable {
     /// Optional folder for the clone, relative to the projects root. Omit it and the folder is
@@ -7022,6 +7338,115 @@ public extension CerebralHelmLinearCreateIssueOutput {
         return CerebralHelmLinearCreateIssueOutput(
             issueIdentifier: issueIdentifier ?? self.issueIdentifier,
             issueURL: issueURL ?? self.issueURL
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmMailOpenInput
+public struct CerebralHelmMailOpenInput: Codable {
+    /// The RFC 5322 Message-ID of the email to open, without the angle brackets. Omit to open
+    /// the inbox itself. The adapter builds the mail.google.com URL host-side with the host as a
+    /// literal constant — only this id varies — so untrusted data can never choose the
+    /// destination.
+    public let mailMessageID: String?
+
+    public enum CodingKeys: String, CodingKey {
+        case mailMessageID = "mailMessageId"
+    }
+
+    public init(mailMessageID: String?) {
+        self.mailMessageID = mailMessageID
+    }
+}
+
+// MARK: CerebralHelmMailOpenInput convenience initializers and mutators
+
+public extension CerebralHelmMailOpenInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmMailOpenInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        mailMessageID: String?? = nil
+    ) -> CerebralHelmMailOpenInput {
+        return CerebralHelmMailOpenInput(
+            mailMessageID: mailMessageID ?? self.mailMessageID
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmMailOpenOutput
+public struct CerebralHelmMailOpenOutput: Codable {
+    public let mailOpened: Bool
+    /// The Gmail URL that was opened.
+    public let mailResolvedURL: String
+
+    public init(mailOpened: Bool, mailResolvedURL: String) {
+        self.mailOpened = mailOpened
+        self.mailResolvedURL = mailResolvedURL
+    }
+}
+
+// MARK: CerebralHelmMailOpenOutput convenience initializers and mutators
+
+public extension CerebralHelmMailOpenOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmMailOpenOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        mailOpened: Bool? = nil,
+        mailResolvedURL: String? = nil
+    ) -> CerebralHelmMailOpenOutput {
+        return CerebralHelmMailOpenOutput(
+            mailOpened: mailOpened ?? self.mailOpened,
+            mailResolvedURL: mailResolvedURL ?? self.mailResolvedURL
         )
     }
 
@@ -7821,6 +8246,132 @@ public extension NoteListItem {
     func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
         return String(data: try self.jsonData(), encoding: encoding)
     }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmNoteOpenInput
+public struct CerebralHelmNoteOpenInput: Codable {
+    /// The note's path relative to the knowledge root, as reported by note.list and note.search.
+    /// Root-relative and Markdown only; the knowledge service additionally resolves the path and
+    /// refuses anything landing outside the root, so this pattern is a first gate, not the
+    /// boundary. Named `notePath` rather than `path` because the code generator derives type
+    /// names from property names, and a schema structurally identical to note-read-input would
+    /// otherwise collapse into one shared type.
+    public let notePath: String
+
+    public init(notePath: String) {
+        self.notePath = notePath
+    }
+}
+
+// MARK: CerebralHelmNoteOpenInput convenience initializers and mutators
+
+public extension CerebralHelmNoteOpenInput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmNoteOpenInput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        notePath: String? = nil
+    ) -> CerebralHelmNoteOpenInput {
+        return CerebralHelmNoteOpenInput(
+            notePath: notePath ?? self.notePath
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmNoteOpenOutput
+public struct CerebralHelmNoteOpenOutput: Codable {
+    /// Which surface received the note. `finder` is the honest fallback when nothing handles
+    /// obsidian:// — the note is still revealed, so the action does something real rather than
+    /// silently doing nothing. `none` accompanies noteOpened=false.
+    public let noteOpenTarget: NoteOpenTarget
+    /// Whether the note was actually handed to an application. False is a real answer, not a
+    /// failure: it says the note exists and nothing on this machine took it.
+    public let noteOpened: Bool
+    /// The root-relative path that was opened, echoed so a caller can report what happened
+    /// without re-deriving it.
+    public let notePath: String
+
+    public init(noteOpenTarget: NoteOpenTarget, noteOpened: Bool, notePath: String) {
+        self.noteOpenTarget = noteOpenTarget
+        self.noteOpened = noteOpened
+        self.notePath = notePath
+    }
+}
+
+// MARK: CerebralHelmNoteOpenOutput convenience initializers and mutators
+
+public extension CerebralHelmNoteOpenOutput {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmNoteOpenOutput.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        noteOpenTarget: NoteOpenTarget? = nil,
+        noteOpened: Bool? = nil,
+        notePath: String? = nil
+    ) -> CerebralHelmNoteOpenOutput {
+        return CerebralHelmNoteOpenOutput(
+            noteOpenTarget: noteOpenTarget ?? self.noteOpenTarget,
+            noteOpened: noteOpened ?? self.noteOpened,
+            notePath: notePath ?? self.notePath
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+/// Which surface received the note. `finder` is the honest fallback when nothing handles
+/// obsidian:// — the note is still revealed, so the action does something real rather than
+/// silently doing nothing. `none` accompanies noteOpened=false.
+public enum NoteOpenTarget: String, Codable {
+    case finder = "finder"
+    case none = "none"
+    case obsidian = "obsidian"
 }
 
 // Generated by scripts/generate-contracts.mjs.

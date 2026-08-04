@@ -330,6 +330,44 @@ public struct MockYouTubeSearchCapability: YouTubeSearchCapability {
     }
 }
 
+/// Reports a successful Obsidian hand-off without one, so the pre-Mac runtime and the contract
+/// suite can exercise `note.open` end to end. It never touches the filesystem: containment was
+/// already decided by the knowledge service, and a mock that re-decided it would be testing itself.
+public struct MockNoteOpenCapability: NoteOpenCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(absolutePath: String) async throws -> NoteOpenResult {
+        try CapabilityGate.check(
+            CapabilityMatrix.Capability.noteOpen, matrix: matrix, fault: fault, subject: absolutePath
+        )
+        return NoteOpenResult(opened: true, target: .obsidian)
+    }
+}
+
+public struct MockMailOpenCapability: MailOpenCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(messageID: String?) async throws -> MailOpenResult {
+        try CapabilityGate.check(
+            CapabilityMatrix.Capability.mailOpen, matrix: matrix, fault: fault,
+            subject: messageID ?? "inbox"
+        )
+        return MailOpenResult(opened: true, resolvedURL: "https://mail.google.com/mail/u/0/")
+    }
+}
+
 public struct MockSpotifyControlCapability: SpotifyControlCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault

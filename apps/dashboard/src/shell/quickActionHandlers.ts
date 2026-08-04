@@ -59,6 +59,25 @@ const HANDLERS = {
     if (!receipt.accepted) {
       announce(`I couldn't search for “${query}” — the command wasn't accepted.`, "error");
     }
+  },
+  /**
+   * Open the user's mail — the inbox, or one message. Reachable as an action reference from the
+   * daily brief's unread count and from every row of the email report.
+   *
+   * It hands a **message id** to the `mail.open` tool, which builds the mail.google.com URL
+   * host-side. Same construction as `searchTheWeb`: the params are data, never a destination, which
+   * is what makes a link inside a composed document safe.
+   */
+  async openMail({ bridge, announce }: QuickActionDeps, params?: QuickActionParams): Promise<void> {
+    const messageId = readString(params, "messageId");
+    const receipt = await bridge.submitCommand({
+      // Bare `mail` opens the inbox — the daily brief's count passes no id.
+      rawInput: messageId ? `mail ${messageId}` : "mail",
+      source: "dashboard"
+    });
+    if (!receipt.accepted) {
+      announce("I couldn\u2019t open your mail — the command wasn\u2019t accepted.", "error");
+    }
   }
 } satisfies Record<string, (deps: QuickActionDeps, params?: QuickActionParams) => Promise<void>>;
 
