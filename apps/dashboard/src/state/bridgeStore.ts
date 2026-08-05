@@ -8,7 +8,6 @@ import type {
   ConfirmationDisclosure,
   DashboardRegions,
   DashboardStateSnapshot,
-  HeimlichState,
   NewsRegion,
   RegionState,
   ScheduleRegion,
@@ -138,17 +137,6 @@ function preserveRuntimeRegions(
   }
   return merged;
 }
-
-/** How a command-lifecycle status maps onto Heimlich's consciousness state (design spec §5.8). */
-const LIFECYCLE_TO_HEIMLICH: Readonly<Record<string, HeimlichState>> = {
-  received: "thinking",
-  planned: "thinking",
-  requires_confirmation: "awaiting_confirmation",
-  running: "acting",
-  succeeded: "success",
-  failed: "error",
-  cancelled: "idle"
-};
 
 /**
  * Pure reducer: fold one bridge event into dashboard state. Returns the SAME reference when
@@ -302,19 +290,23 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
       };
     }
     case "command.lifecycle.transition": {
+      // The command lifecycle deliberately does NOT drive Heimlich's state (NIC-171). It used to
+      // map onto Working/Done/Error, which was wrong twice over: `succeeded` and `failed` were
+      // terminal with nothing to return them to rest, so the indicator sat on "Done" until the
+      // next mode switch happened to swap the bootstrap `heimlich` — and, more fundamentally,
+      // animating an assistant lifecycle implies an assistant runtime that does not exist yet.
+      // Heimlich holds the bootstrap resting state ("Not implemented", NIC-124) until there is a
+      // real assistant to report on. `DashboardHeimlichState` keeps every case for that day.
+      //
+      // The workflow-run clearing below is separate and stays: it is quick-action progress
+      // (NIC-85), not assistant state.
       const status = String((event.payload as { currentStatus?: unknown }).currentStatus ?? "");
       // A terminal command ends any live workflow-run progress (NIC-85).
       const terminal = status === "succeeded" || status === "failed" || status === "cancelled";
-      const clearedRun = terminal && state.activeWorkflowRun ? null : state.activeWorkflowRun;
-      const next = LIFECYCLE_TO_HEIMLICH[status];
-      if ((!next || next === state.heimlich.state) && clearedRun === state.activeWorkflowRun) {
+      if (!terminal || !state.activeWorkflowRun) {
         return state;
       }
-      return {
-        ...state,
-        heimlich: next ? { ...state.heimlich, state: next } : state.heimlich,
-        activeWorkflowRun: clearedRun
-      };
+      return { ...state, activeWorkflowRun: null };
     }
     case "workflow.action.progress": {
       // One step of an executing quick action started or finished (NIC-85).

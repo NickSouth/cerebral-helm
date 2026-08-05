@@ -23,13 +23,38 @@ function lifecycleEvent(currentStatus: string): BridgeEvent {
 }
 
 describe("reduceDashboardState", () => {
-  it("maps command-lifecycle status onto Heimlich state", () => {
+  // Reverses an earlier assertion on purpose (NIC-171). This test used to prove that the command
+  // lifecycle mapped onto Heimlich's state — running → "acting", succeeded → "success" ("Done"),
+  // failed → "error". That was wrong twice: the terminal states had nothing to return them to
+  // rest, so the indicator stuck on "Done" until a mode switch happened to swap the bootstrap
+  // `heimlich`; and animating a lifecycle implies an assistant runtime that does not exist yet.
+  // The indicator is now locked to its bootstrap resting state, so the lifecycle must NOT move it.
+  it("never drives Heimlich state from the command lifecycle (NIC-171)", () => {
     const base = loadBootstrapState();
-    expect(reduceDashboardState(base, lifecycleEvent("running")).heimlich.state).toBe("acting");
-    expect(reduceDashboardState(base, lifecycleEvent("requires_confirmation")).heimlich.state).toBe(
-      "awaiting_confirmation"
+    expect(base.heimlich.state).toBe("idle");
+    for (const status of [
+      "received",
+      "planned",
+      "requires_confirmation",
+      "running",
+      "succeeded",
+      "failed",
+      "cancelled"
+    ]) {
+      expect(reduceDashboardState(base, lifecycleEvent(status)).heimlich.state).toBe("idle");
+    }
+  });
+
+  it("cannot be left stuck on a terminal state by a completed command (NIC-171)", () => {
+    // The reported bug: run one command, and the indicator reads "Done" forever.
+    const base = loadBootstrapState();
+    const afterRun = ["received", "running", "succeeded"].reduce(
+      (state, status) => reduceDashboardState(state, lifecycleEvent(status)),
+      base
     );
-    expect(reduceDashboardState(base, lifecycleEvent("failed")).heimlich.state).toBe("error");
+    expect(afterRun.heimlich.state).toBe("idle");
+    // No command touched anything else either — the whole reduction is a no-op by reference.
+    expect(afterRun).toBe(base);
   });
 
   it("returns the same reference when nothing changes (no needless re-render)", () => {
@@ -37,6 +62,9 @@ describe("reduceDashboardState", () => {
     expect(reduceDashboardState(base, IRRELEVANT_EVENT)).toBe(base);
     // An unknown lifecycle status also leaves state untouched.
     expect(reduceDashboardState(base, lifecycleEvent("idle"))).toBe(base);
+    // ...as does a lifecycle status with no workflow run to clear.
+    expect(reduceDashboardState(base, lifecycleEvent("running"))).toBe(base);
+    expect(reduceDashboardState(base, lifecycleEvent("succeeded"))).toBe(base);
   });
 
   it("folds live weather into liveWeather that survives a mode switch (NIC-169)", () => {
@@ -428,6 +456,12 @@ describe("reduceDashboardState", () => {
     // The command's terminal lifecycle status ends the live run.
     const done = reduceDashboardState(running, lifecycleEvent("succeeded"));
     expect(done.activeWorkflowRun ?? null).toBeNull();
+    // ...and does so WITHOUT touching Heimlich. Quick-action progress and assistant state ride the
+    // same event; locking the indicator (NIC-171) must not take the run clearing down with it.
+    expect(done.heimlich.state).toBe("idle");
+
+    // A non-terminal status leaves the run alone.
+    expect(reduceDashboardState(running, lifecycleEvent("running"))).toBe(running);
 
     // A malformed payload never fabricates a run.
     const malformed = reduceDashboardState(base, { ...progress, payload: { status: "running" } });
@@ -757,16 +791,30 @@ describe("createBridgeStore", () => {
       notifications += 1;
     });
 
+    // Weather, not the command lifecycle: since NIC-171 a lifecycle event moves no state on its
+    // own, so it can no longer serve as this test's proof that the stream folds and notifies.
+    const weatherEvent: BridgeEvent = {
+      eventId: "brevt_storeweather01",
+      type: "weather.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-08-05T16:00:00.000Z",
+      payload: { weather: { state: "ready", label: "71°F · Clear", temperatureF: 71, condition: "Clear" } }
+    };
+    bridge.emit(weatherEvent);
+
+    expect(store.getState().liveWeather?.label).toBe("71°F · Clear");
+    expect(notifications).toBe(1);
+
+    // A lifecycle event reaches the store but changes nothing, so subscribers stay quiet.
     const runningEvent = lifecycleBridgeEvents.find(
       (event) => (event.payload as { currentStatus: string }).currentStatus === "running"
     )!;
     bridge.emit(runningEvent);
-
-    expect(store.getState().heimlich.state).toBe("acting");
+    expect(store.getState().heimlich.state).toBe("idle");
     expect(notifications).toBe(1);
 
     unsubscribe();
-    bridge.emit(runningEvent);
+    bridge.emit({ ...weatherEvent, eventId: "brevt_storeweather02" });
     expect(notifications).toBe(1);
   });
 

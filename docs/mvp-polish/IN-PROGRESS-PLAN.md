@@ -34,7 +34,7 @@ not as gospel.
 | # | Ticket | Increment | Done |
 |---|---|---|---|
 | 1 | NIC-176 | Settings snapshot follows `settings.changed` | ☑ |
-| 2 | NIC-171 | Lock the Heimlich indicator | ☐ |
+| 2 | NIC-171 | Lock the Heimlich indicator | ☑ |
 | 3 | NIC-158 | Sample memory pressure + contract field | ☐ |
 | 4 | NIC-158 | Smoothed load in the publisher | ☐ |
 | 5 | NIC-158 | Three-tier tones + gliding bars | ☐ |
@@ -199,6 +199,30 @@ is equally sticky. The only reset is a `config.changed` mode switch, which swaps
 - **Tests:** a succeeded lifecycle leaves `heimlich.state === "idle"`; a terminal transition still
   clears `activeWorkflowRun`.
 - **Done when:** running quick actions repeatedly never leaves the indicator on "Done".
+
+**BUILT 2026-08-05.** Gates: dashboard 560 tests green, `tsc --noEmit` clean, eslint clean on all
+of `src/`. No Swift touched — the native `BootstrapComposer` already only ever composes
+`idleHeimlich()`, so the lifecycle mapping in the web reducer was the sole writer of a non-idle
+state. The `command.lifecycle.transition` case now clears `activeWorkflowRun` and nothing else.
+
+Three stale comments were corrected alongside it — they each asserted the old behaviour:
+`labels.ts:5`, `PersistentBottomBar.tsx:242` (the status-dot map claimed it "only lights up while
+a command runs"), and the reducer case itself.
+
+Two existing tests asserted the removed behaviour and were **reversed with the reasoning recorded
+in the test body**, per repo precedent:
+- `bridgeStore.test.ts` "maps command-lifecycle status onto Heimlich state" → now
+  "never drives Heimlich state from the command lifecycle", looping every status.
+- `createBridgeStore` "seeds from initial state and folds the bridge event stream" used a lifecycle
+  event as its proof that the stream folds and notifies. Since a lifecycle event now moves no state,
+  it can no longer serve that purpose — switched to `weather.changed`, and it additionally asserts a
+  lifecycle event notifies **no** subscriber.
+
+**Left deliberately in place:** the unreachable non-idle entries in `HEIMLICH_STATE_LABELS` and
+`HEIMLICH_STATE_DOT`, and every case of the `DashboardHeimlichState` contract enum — they are the
+reference renderings for when a real assistant lands. `fixtures/catalog/canonical-states.json` still
+carries `error` / `offline` / `thinking` heimlich states for the same reason; those are
+design-preview fixtures and are never produced by the runtime.
 
 ---
 
