@@ -97,6 +97,33 @@ Discovered the hard way, in this repo, previously. Check these before writing co
 
 ---
 
+## CI flakiness — favicon warming (fixed 2026-08-05)
+
+`core-swift-linux` went red on PR #15 with two favicon tests in `BridgeSessionTests`
+(`listUrlsWarmsFaviconsAndEmits`, `addUrlReference…warms…`) — while macOS CI and local runs were
+green. **Not a defect: rerunning the identical commit passed.**
+
+Cause: those tests wait on fire-and-forget `Task {}` work (`BridgeSession.warmFavicons`), which has
+no completion handle to await, so the test polls. The poll deadline was **3s**, which is not a safe
+budget for the cooperative pool to schedule background work on a 2-core GitHub runner with the suite
+running in parallel. Nothing about the change under test was slow — the favicon mock returns
+instantly and the cache is plain file I/O. Adding tests to the suite raised contention enough to tip
+an already-thin budget.
+
+Fixed by raising the shared `waitUntil` default to **30s**, with the reasoning recorded at the
+helper. This weakens no assertion — the caller still fails if the condition never holds — and costs
+nothing on a green run, since it returns the moment the condition is true; the deadline only elapses
+when the test was going to fail anyway.
+
+**Ruled out** (checked, not assumed): Yams builds cleanly on Linux — it vendors libyaml, so unlike
+GRDB it needs no system package and no CI provisioning. The previously recorded
+`ProcessHookCapability` cooperative-pool starvation does not apply here either: that adapter is
+`#if canImport(AppKit)`-gated, so it compiles to nothing on Linux.
+
+**Known remaining pattern:** the `MacAdapterTests` publishers each have their own `waitUntil` with
+2–3s deadlines. They run only on the macOS job, which is less contended and has stayed green, so
+they were left alone — but they are the same shape and the same fix applies if they ever flake.
+
 ## Verification on this Mac
 
 ```bash
