@@ -1785,6 +1785,7 @@ public extension CerebralHelmBridgeEvent {
 }
 
 public enum CerebralHelmBridgeEventType: String, Codable {
+    case appsChanged = "apps.changed"
     case bridgeCapabilityChanged = "bridge.capability.changed"
     case commandLifecycleTransition = "command.lifecycle.transition"
     case configChanged = "config.changed"

@@ -682,6 +682,21 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 configDirectory: paths.configDirectory, stateRoot: paths.stateRoot
             ) else { return }
             runtime.updateReferences(fresh)
+            // Tell the surfaces (NIC-175). Re-minting made the app openable by id, but every
+            // already-open app list — More Apps, the pin popover, the layout pickers, the quick-app
+            // tiles — had read its inventory once and had no reason to read it again, so a fresh
+            // install stayed invisible until the surface was reopened. The debounce upstream means
+            // this fires once the folder settles, which is also when a large app's copy has
+            // finished and its bundle finally loads.
+            guard
+                let payload = try? BridgeMessageCoding.encoder().encode(
+                    BridgeEventFactory.appsChangedEvent(
+                        id: BridgeEventFactory.newEventID(), timestamp: Date()
+                    )
+                ),
+                let json = String(data: payload, encoding: .utf8)
+            else { return }
+            relay.emit(json)
         }
         appsFolderObserver = ApplicationsFolderObserver(reload: referencesReload)
         appsFolderObserver.start()

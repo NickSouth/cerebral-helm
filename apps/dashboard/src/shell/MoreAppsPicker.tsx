@@ -2,13 +2,9 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useBridge } from "../state/BridgeProvider";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useUiPosture } from "../state/useUiPosture";
+import { useDiscoveredApps } from "./useDiscoveredApps";
 import type { DiscoveredApp } from "../bridge/cerebralBridge";
 import { AppGlyph } from "./AppGlyph";
-
-type PickerState =
-  | { readonly status: "loading" }
-  | { readonly status: "error"; readonly message: string }
-  | { readonly status: "ready"; readonly apps: readonly DiscoveredApp[]; readonly truncated: boolean };
 
 /**
  * The More Apps window (NIC-148): a pure launcher over the read-only `apps.list`
@@ -39,7 +35,8 @@ export function MoreAppsPicker({
   const state = useDashboardState();
   const { readOnly } = useUiPosture();
   const dialogRef = useRef<HTMLDivElement>(null);
-  const [picker, setPicker] = useState<PickerState>({ status: "loading" });
+  // Re-reads on `apps.changed`, so an app installed while this window is open appears (NIC-175).
+  const picker = useDiscoveredApps();
   const [launchError, setLaunchError] = useState<string | null>(null);
 
   const appOpen = state.capabilities?.["native.app.open"];
@@ -51,25 +48,6 @@ export function MoreAppsPicker({
   useEffect(() => {
     dialogRef.current?.focus();
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    bridge
-      .listApps()
-      .then((result) => {
-        if (!cancelled) {
-          setPicker({ status: "ready", apps: result.apps, truncated: result.truncated });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPicker({ status: "error", message: "App discovery is unavailable right now." });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [bridge]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {

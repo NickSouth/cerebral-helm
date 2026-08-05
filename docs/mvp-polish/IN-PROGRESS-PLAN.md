@@ -40,7 +40,7 @@ not as gospel.
 | 5 | NIC-158 | Three-tier tones + gliding bars | ☑ |
 | 6 | NIC-172 | Weather replay on new surfaces | ☑ |
 | 7 | NIC-175 | Nested-folder app discovery | ☑ |
-| 8 | NIC-175 | `apps.changed` event + surface refresh | ☐ |
+| 8 | NIC-175 | `apps.changed` event + surface refresh | ☑ |
 | 9 | NIC-167 | Shared search field + `ReferencePicker` | ☐ |
 | 10 | NIC-167 | More Apps + pin popover | ☐ |
 | 11 | NIC-115 | GRDB dependency + Linux CI provisioning | ☐ |
@@ -580,6 +580,30 @@ turns the Steam experience from "wait, close, reopen" into "it appears" once the
 - **Done when:** with More Apps open, dragging an app into `/Applications` makes it appear within
   ~1.5s of the copy finishing.
 - **Depends on:** Increment 1.
+
+**BUILT 2026-08-05 — NIC-175 feature-complete.** Gates: `swift test` **1398** green · dashboard
+**572** green (49 files) · `tsc`/eslint clean · contract validators clean · **xcodebuild BUILD
+SUCCEEDED**.
+
+**The `EVENT_TYPES` trap is now structurally closed.** The regression test at
+`wkWebViewCerebralBridge.test.ts` used to enumerate four event types by hand — so adding a fifth to
+the schema and forgetting the allowlist still went green, which is exactly the failure it existed to
+prevent. It now derives from the generated `CerebralHelmBridgeEventType` enum and replays **every**
+contract event through the gate. Verified it bites: removing `apps.changed` from the allowlist fails
+with a clear diff. **Future increments adding an event no longer need to remember this step** —
+though the other five edits in the checklist still apply.
+
+- **`apps.changed` carries no payload, by design.** Every consumer already has `listApps`, which
+  re-scans and re-mints per call, and the discovery result is large (names + base64 icons for every
+  app). Shipping that to every surface on every install — including surfaces with no app list open —
+  would be pure waste. It is a signal, not a snapshot.
+- **One shared `useDiscoveredApps` hook** replaced four near-identical mount-time fetches
+  (`MoreAppsPicker`, `PinPopover`, `ReferencePicker`, `QuickApps`). Less total change than four
+  duplicated subscriptions, and a future app-list surface gets the refresh by construction. Its
+  `enabled` parameter serves the quick-app tiles, which gate on the discovery capability.
+- The hook ignores unrelated events — discovery is a filesystem scan on every call, so re-reading on
+  general bridge traffic would be a real cost. Covered by a test.
+- A failed read reports honestly and **recovers on the next event** rather than latching.
 
 ---
 

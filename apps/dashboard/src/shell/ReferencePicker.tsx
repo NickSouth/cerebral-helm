@@ -7,16 +7,12 @@ import {
 } from "react";
 import { useBridge } from "../state/BridgeProvider";
 import { useUiPosture } from "../state/useUiPosture";
-import type { ChromeProfile, DiscoveredApp } from "../bridge/cerebralBridge";
+import type { ChromeProfile } from "../bridge/cerebralBridge";
+import { useDiscoveredApps } from "./useDiscoveredApps";
 import { AppGlyph } from "./AppGlyph";
 
 /** The kind of reference an "Add" resolves to (mirrors the layout schema). */
 export type ReferenceKind = "app" | "url";
-
-type PickerState =
-  | { readonly status: "loading" }
-  | { readonly status: "error"; readonly message: string }
-  | { readonly status: "ready"; readonly apps: readonly DiscoveredApp[]; readonly truncated: boolean };
 
 /**
  * The shared reference picker (NIC-142): the Quick Apps-style surface for choosing a
@@ -45,7 +41,8 @@ export function ReferencePicker({
   const bridge = useBridge();
   const { readOnly } = useUiPosture();
   const cardRef = useRef<HTMLDivElement>(null);
-  const [picker, setPicker] = useState<PickerState>({ status: "loading" });
+  // Re-reads on `apps.changed`, so an app installed while this surface is open appears (NIC-175).
+  const picker = useDiscoveredApps();
   const [busy, setBusy] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState("");
@@ -57,25 +54,6 @@ export function ReferencePicker({
   useEffect(() => {
     cardRef.current?.focus();
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    bridge
-      .listApps()
-      .then((result) => {
-        if (!cancelled) {
-          setPicker({ status: "ready", apps: result.apps, truncated: result.truncated });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPicker({ status: "error", message: "App discovery is unavailable right now." });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [bridge]);
 
   useEffect(() => {
     let cancelled = false;

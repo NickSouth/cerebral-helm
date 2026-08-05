@@ -13,14 +13,10 @@ import { useActiveMode } from "./useActiveMode";
 import { useUiPosture } from "../state/useUiPosture";
 import { toModeId } from "../tokens/tokens";
 import type { AppReference, ChromeProfile, DiscoveredApp } from "../bridge/cerebralBridge";
+import { useDiscoveredApps } from "./useDiscoveredApps";
 import { AppGlyph } from "./AppGlyph";
 
 const MAX_QUICK_APPS = 5;
-
-type PickerState =
-  | { readonly status: "loading" }
-  | { readonly status: "error"; readonly message: string }
-  | { readonly status: "ready"; readonly apps: readonly DiscoveredApp[]; readonly truncated: boolean };
 
 interface PopoverPosition {
   readonly left: number;
@@ -50,7 +46,8 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
   const modeId = toModeId(state.mode);
   const cardRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<PopoverPosition | null>(null);
-  const [picker, setPicker] = useState<PickerState>({ status: "loading" });
+  // Re-reads on `apps.changed`, so an app installed while this surface is open appears (NIC-175).
+  const picker = useDiscoveredApps();
   const [busy, setBusy] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState("");
@@ -94,25 +91,6 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
   useEffect(() => {
     cardRef.current?.focus();
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    bridge
-      .listApps()
-      .then((result) => {
-        if (!cancelled) {
-          setPicker({ status: "ready", apps: result.apps, truncated: result.truncated });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPicker({ status: "error", message: "App discovery is unavailable right now." });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [bridge]);
 
   useEffect(() => {
     let cancelled = false;

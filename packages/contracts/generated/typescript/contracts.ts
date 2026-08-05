@@ -406,6 +406,7 @@ export interface CerebralHelmBridgeEvent {
 }
 
 export enum CerebralHelmBridgeEventType {
+    AppsChanged = "apps.changed",
     BridgeCapabilityChanged = "bridge.capability.changed",
     CommandLifecycleTransition = "command.lifecycle.transition",
     ConfigChanged = "config.changed",
