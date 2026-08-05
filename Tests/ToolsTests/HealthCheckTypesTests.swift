@@ -147,6 +147,46 @@ private final class ProbeFlag: @unchecked Sendable {
 
 // MARK: - Endpoints and paths
 
+private let endpointURL = URL(string: "https://site.api.espn.com/scoreboard")!
+
+@Test("an endpoint that answers in the shape we read passes")
+func endpointCheckPassesOnAGoodShape() async {
+    let outcome = await EndpointHealthCheck(
+        id: "e1", title: "ESPN", url: endpointURL,
+        fetch: { _ in (Data(#"{"events":[]}"#.utf8), 200) },
+        validate: { _ in nil }
+    ).run()
+
+    #expect(outcome == .passed(detail: "Answered, and still the shape we read."))
+}
+
+@Test("a reachable endpoint whose fields moved fails on the shape, not the status")
+func endpointCheckFailsOnADriftedShape() async {
+    // The interesting failure for an undocumented API: 200, and no longer what the mapper reads.
+    let outcome = await EndpointHealthCheck(
+        id: "e1", title: "ESPN", url: endpointURL,
+        fetch: { _ in (Data("{}".utf8), 200) },
+        remediation: "Nothing to fix locally.",
+        validate: { _ in "No `events` array." }
+    ).run()
+
+    #expect(outcome == .failed(reason: "No `events` array.", remediation: "Nothing to fix locally."))
+}
+
+@Test("a non-2xx status fails with the code, and the validator never runs")
+func endpointCheckFailsOnStatus() async {
+    let validated = ProbeFlag()
+    let outcome = await EndpointHealthCheck(
+        id: "e1", title: "ESPN", url: endpointURL,
+        fetch: { _ in (Data(), 503) },
+        validate: { _ in validated.fire(); return nil }
+    ).run()
+
+    #expect(outcome == .failed(reason: "Returned HTTP 503.", remediation: nil))
+    // Validating a body the server never meant as an answer would report shape drift for an outage.
+    #expect(!validated.fired)
+}
+
 @Test("a folder that moved fails with where it was looked for")
 func pathCheckReportsAMissingFolder() async {
     let missing = FileManager.default.temporaryDirectory

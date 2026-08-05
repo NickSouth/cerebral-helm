@@ -56,6 +56,15 @@ public enum SystemHealthChecks {
         return URLSession(configuration: config)
     }
 
+    /// Adapts a `URLSession` to the portable transport `EndpointHealthCheck` reads through.
+    /// `URLSession` is a Darwin concern; the check itself stays platform-free.
+    static func endpointFetch(_ session: URLSession) -> EndpointHealthCheck.Fetch {
+        { url in
+            let (data, response) = try await session.data(from: url)
+            return (data, (response as? HTTPURLResponse)?.statusCode)
+        }
+    }
+
     // MARK: - Permissions
 
     /// The macOS grants. Every one of these can flip in System Settings while the app is running,
@@ -222,7 +231,7 @@ public enum SystemHealthChecks {
                 id: "integration.espn",
                 title: "ESPN scoreboard",
                 url: URL(string: "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard")!,
-                session: session,
+                fetch: endpointFetch(session),
                 detail: "`check-scoreboard`. Undocumented — this is the one that can move.",
                 remediation: "Nothing to fix locally: the mapper degrades rather than throwing, so scores go missing rather than the action breaking.",
                 validate: ESPNProbe.validate
@@ -231,7 +240,7 @@ public enum SystemHealthChecks {
                 id: "integration.openmeteo",
                 title: "Open-Meteo",
                 url: URL(string: "https://api.open-meteo.com/v1/forecast?latitude=42.39&longitude=-72.52&current=temperature_2m")!,
-                session: session,
+                fetch: endpointFetch(session),
                 detail: "The weather reading. No key, no quota.",
                 validate: OpenMeteoProbe.validate
             )

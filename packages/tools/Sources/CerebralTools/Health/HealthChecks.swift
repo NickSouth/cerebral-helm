@@ -124,9 +124,14 @@ public struct EndpointHealthCheck: HealthCheck {
     /// Validates the response body. Returns nil when the shape is still good, else the reason.
     public typealias Validate = @Sendable (Data) -> String?
 
+    /// Performs the read. A closure rather than a `URLSession` because this package is portable —
+    /// `URLSession` lives in a different module off Darwin — and because a check whose transport is
+    /// injected can be tested without a network. `statusCode` is nil where the transport has none.
+    public typealias Fetch = @Sendable (URL) async throws -> (data: Data, statusCode: Int?)
+
     public let descriptor: HealthCheckDescriptor
     private let url: URL
-    private let session: URLSession
+    private let fetch: Fetch
     private let validate: Validate?
     private let remediation: String?
 
@@ -134,7 +139,7 @@ public struct EndpointHealthCheck: HealthCheck {
         id: String,
         title: String,
         url: URL,
-        session: URLSession,
+        fetch: @escaping Fetch,
         detail: String? = nil,
         remediation: String? = nil,
         validate: Validate? = nil
@@ -143,16 +148,16 @@ public struct EndpointHealthCheck: HealthCheck {
             id: id, title: title, group: .integrations, detail: detail
         )
         self.url = url
-        self.session = session
+        self.fetch = fetch
         self.validate = validate
         self.remediation = remediation
     }
 
     public func run() async -> HealthCheckOutcome {
         do {
-            let (data, response) = try await session.data(from: url)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                return .failed(reason: "Returned HTTP \(http.statusCode).", remediation: remediation)
+            let (data, statusCode) = try await fetch(url)
+            if let statusCode, !(200..<300).contains(statusCode) {
+                return .failed(reason: "Returned HTTP \(statusCode).", remediation: remediation)
             }
             if let validate, let reason = validate(data) {
                 // The interesting failure: reachable, and no longer the shape we read.

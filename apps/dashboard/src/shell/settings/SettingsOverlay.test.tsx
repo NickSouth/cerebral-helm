@@ -63,6 +63,24 @@ function resetNotesBrowserWindow() {
 }
 
 /**
+ * Waits for one of the native shell's `__cerebral*Update` callbacks to be registered.
+ *
+ * Each is installed by an effect, which can land after the control it belongs to is already on
+ * screen — so calling it the instant a control appears is a race. Optional-chaining it (`fn?.()`)
+ * turns that race into a silent no-op that surfaces much later as a stale value rather than a
+ * missing wire, which is how this flaked in CI on a slower machine.
+ */
+async function nativeShellCallback(name: string): Promise<(argument: string) => void> {
+  return waitFor(() => {
+    const callback = (window as unknown as Record<string, unknown>)[name];
+    if (typeof callback !== "function") {
+      throw new Error(`the native shell callback ${name} is not registered yet`);
+    }
+    return callback as (argument: string) => void;
+  });
+}
+
+/**
  * Render the standalone settings surface and return the "Browse notes" field (NIC-162).
  *
  * Not via the dashboard gear: once a shell-control channel exists, the gear delegates to the
@@ -519,11 +537,12 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
 
       // Obsidian silently ignores a folder it has not registered as a vault, so the
       // outcome carries that hint rather than implying the notes are now on screen.
-      act(() => target.__cerebralNotesBrowserUpdate?.("obsidian"));
+      const reportOutcome = await nativeShellCallback("__cerebralNotesBrowserUpdate");
+      act(() => reportOutcome("obsidian"));
       expect(await card.findByText(/Add the folder as a vault in Obsidian first/)).toBeInTheDocument();
 
       // A Finder fallback says why it happened.
-      act(() => target.__cerebralNotesBrowserUpdate?.("finder"));
+      act(() => reportOutcome("finder"));
       expect(await card.findByText(/Obsidian isn't installed/)).toBeInTheDocument();
     } finally {
       resetNotesBrowserWindow();
@@ -918,7 +937,6 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
     };
     interface LoginWindow {
       __cerebralLoginItem?: { status?: string };
-      __cerebralLoginItemUpdate?: (status: string) => void;
     }
     (window as unknown as LoginWindow).__cerebralLoginItem = { status: "not-registered" };
 
@@ -937,9 +955,8 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
 
     // The native shell pushes the OS's resulting status back — including the
     // requires-approval state, which the panel explains.
-    act(() => {
-      (window as unknown as LoginWindow).__cerebralLoginItemUpdate?.("requires-approval");
-    });
+    const reportLoginStatus = await nativeShellCallback("__cerebralLoginItemUpdate");
+    act(() => reportLoginStatus("requires-approval"));
     expect(within(surface).getByLabelText("Launch at login")).toBeChecked();
     expect(within(surface).getByText(/Waiting for approval/)).toBeInTheDocument();
 
@@ -1052,11 +1069,8 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
     expect(postMessage).toHaveBeenCalledWith({ action: "pickKnowledgeRoot" });
 
     // The native shell posts the chosen folder back; the panel reflects it in the field.
-    act(() => {
-      (
-        window as unknown as { __cerebralKnowledgeRootUpdate?: (path: string) => void }
-      ).__cerebralKnowledgeRootUpdate?.("/Users/me/CerebralHelm/knowledge");
-    });
+    const applyPickedRoot = await nativeShellCallback("__cerebralKnowledgeRootUpdate");
+    act(() => applyPickedRoot("/Users/me/CerebralHelm/knowledge"));
     expect(within(surface).getByLabelText("Knowledge root reference")).toHaveValue(
       "/Users/me/CerebralHelm/knowledge"
     );

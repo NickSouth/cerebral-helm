@@ -3,7 +3,6 @@ import Testing
 
 import CerebralCore
 import CerebralShared
-import CerebralTools
 
 /// Quick actions phase 5: the health-check runner.
 ///
@@ -27,6 +26,15 @@ private struct SlowCheck: HealthCheck {
     }
 }
 
+/// A fixed outcome. Declared here rather than reaching for `CerebralTools`'s equivalent: the runner
+/// is core, and its tests must not pull the tools package in behind it.
+private struct FixedCheck: HealthCheck {
+    let descriptor: HealthCheckDescriptor
+    let outcome: HealthCheckOutcome
+
+    func run() async -> HealthCheckOutcome { outcome }
+}
+
 /// A check that never returns — the provider that accepts a connection and says nothing.
 private struct HangingCheck: HealthCheck {
     let descriptor: HealthCheckDescriptor
@@ -40,8 +48,8 @@ private struct HangingCheck: HealthCheck {
 @Test("the first emission lists every check as pending, before any of them has an answer")
 func runnerAnnouncesTheWorkFirst() async throws {
     let checks: [any HealthCheck] = [
-        StaticHealthCheck(descriptor: descriptor("a"), outcome: .passed(detail: "ok")),
-        StaticHealthCheck(descriptor: descriptor("b"), outcome: .skipped(reason: "not set up"))
+        FixedCheck(descriptor: descriptor("a"), outcome: .passed(detail: "ok")),
+        FixedCheck(descriptor: descriptor("b"), outcome: .skipped(reason: "not set up"))
     ]
 
     var emissions: [HealthCheckRun] = []
@@ -109,7 +117,7 @@ func runnerReportsCompletionHonestly() async throws {
 func runnerBoundsEveryCheck() async throws {
     let checks: [any HealthCheck] = [
         HangingCheck(descriptor: descriptor("hangs")),
-        StaticHealthCheck(descriptor: descriptor("fine"), outcome: .passed(detail: "ok"))
+        FixedCheck(descriptor: descriptor("fine"), outcome: .passed(detail: "ok"))
     ]
 
     var final: HealthCheckRun?
