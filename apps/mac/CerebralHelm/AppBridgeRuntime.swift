@@ -750,10 +750,21 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// Event delivery is fire-and-forget — an event emitted before the page registers its receiver
     /// is dropped — so any producer whose first tick can beat the webview's load needs a replay.
     /// The topology snapshot already has one (`WindowCoordinator.lastTopologyJSON`). News needs it
-    /// too now that its first tick is served from a warm cache instead of a network round trip.
-    /// The other producers all still open with a network fetch, so the page wins their race.
+    /// because its first tick is served from a warm cache instead of a network round trip.
+    ///
+    /// Weather needs it for a different reason (NIC-172): the race it loses is not against the first
+    /// page load but against **every later surface**. A companion backdrop built when a display is
+    /// hot-plugged starts from a bootstrap that carries no weather at all, and the next scheduled
+    /// tick can be 15 minutes away — so without this it shows "unavailable" beside a laptop that is
+    /// showing the weather fine. That makes this the replay hook for any surface appearing
+    /// mid-session, not just for the dashboard's first handshake.
+    ///
+    /// The remaining producers open with a network fetch on a surface-independent cadence, so the
+    /// page wins their race; add them here if that ever stops being true.
     func resendLiveWidgetState() {
         if let news = newsPublisher { Task { await news.resend() } }
+        let weather = weatherPublisher
+        Task { await weather.resend() }
     }
 
     func startStatusPublishing() {

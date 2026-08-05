@@ -38,7 +38,7 @@ not as gospel.
 | 3 | NIC-158 | Sample memory pressure + contract field | ☑ |
 | 4 | NIC-158 | Smoothed load in the publisher | ☑ |
 | 5 | NIC-158 | Three-tier tones + gliding bars | ☑ |
-| 6 | NIC-172 | Weather replay on new surfaces | ☐ |
+| 6 | NIC-172 | Weather replay on new surfaces | ☑ |
 | 7 | NIC-175 | Nested-folder app discovery | ☐ |
 | 8 | NIC-175 | `apps.changed` event + surface refresh | ☐ |
 | 9 | NIC-167 | Shared search field + `ReferencePicker` | ☐ |
@@ -473,6 +473,32 @@ empty bootstrap weather until the next tick, while the laptop keeps the value it
   through `resendLiveWidgetState()` fixes that too.
 - **Deferred → next logical increment:** a general per-surface replay registry covering *every*
   event-only widget. Right long-term shape, bigger refactor.
+
+**BUILT 2026-08-05 — NIC-172 complete pending Nick's hot-plug verification.** Gates: `swift test`
+**1392** green · **xcodebuild BUILD SUCCEEDED**. Dashboard untouched (pure native change).
+
+- `WeatherPublisher` caches the last emitted event **JSON verbatim** and `resend()` replays it, so a
+  companion sees byte-identical state to every other surface. Mirrors `NewsPublisher.resend()`.
+- **`onDashboardBridgeReady` now fires for companions too**, not just the main dashboard. That is the
+  actual fix: the hook already existed but was wired only to the first surface, and a companion is
+  built fresh on hot-plug long after the events were sent. Its doc comment was reworded — the old
+  one described a main-dashboard-only contract that is no longer true.
+- Replays are served from producer caches, so firing the hook per surface **costs no fetch** — proven
+  by a counting provider in the tests, not assumed.
+- `resend()` before the first tick emits **nothing**. Synthesizing an "unavailable" would flash a
+  wrong state ahead of the real reading (FR-SAF-07).
+- The honest `unavailable` states replay too, not just good readings — a companion must learn that
+  Location is denied as reliably as it learns the temperature, or it looks like a load that hung.
+- **Side effect, intended:** news gets the same fix on companions, since both now route through
+  `resendLiveWidgetState()`.
+
+**No automated coverage of the coordinator wiring** — `WindowCoordinator` lives in the Xcode-only app
+target, not in any SwiftPM test target, so the `onBridgeReady` → `onDashboardBridgeReady` hop is
+verified by the manual hot-plug check only. The publisher half is fully unit-tested.
+
+Test-authoring gotcha for later increments: `NSLock.lock()` **cannot be called inside an async
+function** (`unavailable from asynchronous contexts`). Wrap the mutation in a synchronous private
+helper, the shape `BridgeSession.stampAppDiscovery` already uses.
 
 ---
 

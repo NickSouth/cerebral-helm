@@ -24,6 +24,9 @@ public actor WeatherPublisher {
 
     private var loop: Task<Void, Never>?
     private var active = true
+    /// The last event emitted, kept verbatim so ``resend()`` can replay it to a surface that came
+    /// up after it was sent. Nil until the first tick completes.
+    private var lastEventJSON: String?
 
     public init(
         location: any LocationProvider,
@@ -65,6 +68,23 @@ public actor WeatherPublisher {
         }
     }
 
+    /// Re-emit the last sample without fetching, for a surface that has just become able to receive
+    /// events (NIC-172).
+    ///
+    /// Weather is **not carried in the bootstrap** — `BootstrapComposer` composes `weather: nil`, so
+    /// the bar has nothing to show until a `weather.changed` arrives. Event delivery is
+    /// fire-and-forget, and at a 15-minute cadence a surface that comes up between ticks would sit
+    /// on the empty bootstrap value for up to a quarter of an hour. That is exactly what happened on
+    /// a hot-plugged second display: the companion was built fresh, missed the already-sent event,
+    /// and read "unavailable" while the laptop beside it showed the weather.
+    ///
+    /// Emits nothing before the first tick: there is no sample to replay, and synthesizing an
+    /// "unavailable" would flash a wrong state ahead of the real reading.
+    public func resend() async {
+        guard let json = lastEventJSON else { return }
+        emit(json)
+    }
+
     private func tickIfActive() async {
         guard active else { return }
         await tick()
@@ -94,6 +114,7 @@ public actor WeatherPublisher {
             let data = try? BridgeMessageCoding.encoder().encode(event),
             let json = String(data: data, encoding: .utf8)
         else { return }
+        lastEventJSON = json
         emit(json)
     }
 }
