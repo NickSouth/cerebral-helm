@@ -1231,6 +1231,25 @@ public enum BridgeEventFactory {
         }
     }
 
+    /// Memory carries the kernel's pressure level alongside the usage percentage (NIC-158).
+    /// `pressure` is `normal` / `warn` / `critical`, or nil when the level could not be sampled —
+    /// independent of `availability`, which describes the percentage only.
+    public struct SystemMetricsMemoryChannel: Encodable, Sendable {
+        public let availability: String
+        public let value: Double?
+        public let pressure: String?
+        public let unit: String?
+        public let sampledAt: Date?
+
+        public init(availability: String, value: Double?, pressure: String?, unit: String?, sampledAt: Date?) {
+            self.availability = availability
+            self.value = value
+            self.pressure = pressure
+            self.unit = unit
+            self.sampledAt = sampledAt
+        }
+    }
+
     /// Battery keeps its charging flag for the dashboard's bolt indicator.
     public struct SystemMetricsBatteryChannel: Encodable, Sendable {
         public let availability: String
@@ -1287,14 +1306,14 @@ public enum BridgeEventFactory {
     public struct SystemMetricsPayload: Encodable, Sendable {
         public let category = "system_metrics"
         public let cpu: SystemMetricsChannel
-        public let memory: SystemMetricsChannel
+        public let memory: SystemMetricsMemoryChannel
         public let network: SystemMetricsNetworkChannel
         public let battery: SystemMetricsBatteryChannel
         public let display: SystemMetricsChannel
 
         public init(
             cpu: SystemMetricsChannel,
-            memory: SystemMetricsChannel,
+            memory: SystemMetricsMemoryChannel,
             network: SystemMetricsNetworkChannel,
             battery: SystemMetricsBatteryChannel,
             display: SystemMetricsChannel

@@ -1591,12 +1591,18 @@
   overflow: hidden;
 }
 
+/* The fill glides across the whole sampling interval so consecutive 2s samples chain into
+   continuous motion rather than stepping (NIC-158); the tone crossfades on the shorter base
+   duration so a threshold crossing reads as a change of state, not a change of value. Both are
+   neutralized by the reduced-motion safety nets in app.css and tokens.css. */
 .metric-bar__fill {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: var(--ch-accent-primary);
-  transition: width var(--ch-motion-base) var(--ch-ease-standard);
+  transition:
+    width var(--ch-motion-sampled) var(--ch-ease-linear),
+    background-color var(--ch-motion-base) var(--ch-ease-standard);
 }
 
 .metric-bar__fill[data-tone="good"] {

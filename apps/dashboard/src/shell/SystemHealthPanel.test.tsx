@@ -41,6 +41,85 @@ describe("SystemHealthPanel", () => {
     expect(screen.queryByText(/Loading system metrics/)).toBeNull();
   });
 
+  /** A metric row's bar fill, found by the row's visible label — never by tone, since several
+   *  rows can share one (CPU and Memory are both `good` on a healthy machine). */
+  function fillOf(container: HTMLElement, label: string): HTMLElement | null {
+    const row = [...container.querySelectorAll(".metric")].find(
+      (element) => element.querySelector(".metric__label")?.textContent === label
+    );
+    return (row?.querySelector(".metric-bar__fill") as HTMLElement | undefined) ?? null;
+  }
+
+  function toneOf(container: HTMLElement, label: string): string | null {
+    return fillOf(container, label)?.getAttribute("data-tone") ?? null;
+  }
+
+  function withHealth(overrides: Record<string, unknown>) {
+    return (base: DashboardState): DashboardState => ({
+      ...base,
+      regions: {
+        ...base.regions,
+        systemHealth: { ...base.regions.systemHealth, state: "ready", ...overrides }
+      }
+    });
+  }
+
+  describe("metric tones (NIC-158)", () => {
+    it("colours CPU green / yellow / red by time-averaged load", () => {
+      for (const [percent, tone] of [
+        [12, "good"],
+        [59.9, "good"],
+        [60, "warning"],
+        [85, "warning"],
+        [85.1, "danger"],
+        [99, "danger"]
+      ] as const) {
+        const { container, unmount } = renderPanel(withHealth({ cpuPercent: percent }));
+        expect(toneOf(container, "CPU")).toBe(tone);
+        unmount();
+      }
+    });
+
+    it("colours memory from the kernel's pressure level, not the usage percentage", () => {
+      // The reported bug: a Mac sitting at 96% used is healthy — macOS fills RAM with cache — so
+      // a percentage-thresholded bar was red all the time. Pressure is what actually decides.
+      for (const [pressure, tone] of [
+        ["normal", "good"],
+        ["warn", "warning"],
+        ["critical", "danger"]
+      ] as const) {
+        const { container, unmount } = renderPanel(
+          withHealth({ memoryPercent: 96, memoryPressure: pressure })
+        );
+        expect(toneOf(container, "Memory")).toBe(tone);
+        unmount();
+      }
+    });
+
+    it("makes no strain claim when the pressure level is unavailable", () => {
+      // Off the macOS host we genuinely do not know, so the bar keeps the mode accent and falls
+      // back to the pre-existing 90% rule rather than inventing a verdict.
+      const healthy = renderPanel(withHealth({ memoryPercent: 72, memoryPressure: undefined }));
+      expect(toneOf(healthy.container, "Memory")).toBe("accent");
+      healthy.unmount();
+
+      const extreme = renderPanel(withHealth({ memoryPercent: 96, memoryPressure: undefined }));
+      expect(toneOf(extreme.container, "Memory")).toBe("danger");
+      extreme.unmount();
+    });
+
+    it("keeps the memory figure independent of its colour", () => {
+      // Owner decision: fill width and the percentage stay usage-based so one bar carries both
+      // facts — how full RAM is, and whether that is costing anything.
+      const { container } = renderPanel(
+        withHealth({ memoryPercent: 96, memoryPressure: "normal" })
+      );
+      expect(screen.getByText("96%")).toBeInTheDocument();
+      expect(toneOf(container, "Memory")).toBe("good");
+      expect(fillOf(container, "Memory")?.style.width).toBe("96%");
+    });
+  });
+
   it("renders the Wi-Fi link speed as a single Mbps figure, not an up/down split (NIC-135)", () => {
     renderPanel((base) => ({
       ...base,

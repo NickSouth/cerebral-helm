@@ -35,9 +35,9 @@ not as gospel.
 |---|---|---|---|
 | 1 | NIC-176 | Settings snapshot follows `settings.changed` | ☑ |
 | 2 | NIC-171 | Lock the Heimlich indicator | ☑ |
-| 3 | NIC-158 | Sample memory pressure + contract field | ☐ |
-| 4 | NIC-158 | Smoothed load in the publisher | ☐ |
-| 5 | NIC-158 | Three-tier tones + gliding bars | ☐ |
+| 3 | NIC-158 | Sample memory pressure + contract field | ☑ |
+| 4 | NIC-158 | Smoothed load in the publisher | ☑ |
+| 5 | NIC-158 | Three-tier tones + gliding bars | ☑ |
 | 6 | NIC-172 | Weather replay on new surfaces | ☐ |
 | 7 | NIC-175 | Nested-folder app discovery | ☐ |
 | 8 | NIC-175 | `apps.changed` event + surface refresh | ☐ |
@@ -312,6 +312,33 @@ through that replay, so it doesn't start from a cold average.
 - **Tests:** scripted samples per level; unsamplable → `nil`; contract drift check.
 - **Done when:** `system.status.changed` carries `memoryPressure` on the Mac host. Nothing renders it yet.
 
+**BUILT 2026-08-05.** Gates: `swift test` **1378** green · dashboard **561** green · `tsc`/eslint
+clean · validate-contracts, check-contract-drift, validate-config clean · **xcodebuild BUILD
+SUCCEEDED** (the app target was worth building — this increment edits `BootstrapComposer`).
+
+Shape decisions made while building, for increments 2–3 to build on:
+
+- **`SystemStatusMemoryChannel` is a new dedicated channel type**, not a field bolted onto the
+  shared `SystemStatusChannel` (which cpu/display still use). Memory now mirrors how network and
+  battery already have their own channel types. Same on the wire:
+  `BridgeEventFactory.SystemMetricsMemoryChannel`.
+- **Pressure is independent of `availability`.** `availability`/`value` describe the *percentage*
+  only; a host can report a level with no percentage or vice versa. Deliberately mirrors NIC-156's
+  `wifiPower`-vs-link-rate split, and the reducer does not gate `memoryPressure` on `memoryLive`.
+- **`MemoryPressureLevel` is a local raw-value enum in the adapter**, mapped to the contract string
+  at the publisher (`.rawValue`) — the `WiFiPower` pattern, not a dependency on generated contracts.
+- **The portable tool contract is unchanged.** `readMetrics(.memory)` still returns the percentage
+  only; pressure rides the streaming snapshot alone. There is a test asserting this.
+- **Unrecognized sysctl values map to `nil`, not to the nearest level.** A future OS adding a state
+  must degrade to "we don't know" so the bar falls back to the percentage, never to a confident
+  `normal` that claims the machine is fine on no evidence. Asserted at the adapter, the publisher
+  (level omitted from the JSON), and the reducer (unknown string → `undefined`).
+
+`SystemMetricSampling` gained a requirement with **no default implementation** — three test doubles
+(`FakeMetricSource`, `SteadySource`, `SuiteMetricSource`) implement it explicitly, plus a new
+`PressurelessSource` for the degradation path. A protocol-extension default returning `nil` was
+rejected: it would let a real source silently never implement the seam.
+
 ### Increment 2 — Smoothed load in the publisher
 
 - **Goal:** streamed CPU and memory values move gradually and encode sustained load.
@@ -327,6 +354,37 @@ through that replay, so it doesn't start from a cold average.
   rather than coasting; the first sample is not averaged against zero.
 - **Done when:** the streamed value climbs and falls smoothly and cannot be pushed red by a transient.
 - **Depends on:** Increment 1.
+
+**BUILT 2026-08-05.** Gates: `swift test` **1389** green · dashboard **561** green · `tsc`/eslint
+clean · drift + config validators clean · **xcodebuild BUILD SUCCEEDED**.
+
+What increment 3 (the web side) needs to know:
+
+- **The math lives in `ExponentialMovingAverage`** (new file in `CerebralMacAdapters`), a pure value
+  type with its own 7 tests at the real 30 s constant. The publisher owns two instances and applies
+  them in `smoothed(_:)`; `payload(_:)` stays a pure unsmoothed mapping, so the existing payload
+  test was unaffected.
+- **Weighting is by elapsed time, not sample count** — using each channel's own `sampledAt`, so no
+  new clock seam was needed and the tests are fully deterministic. A late tick or a long gap
+  weights correctly instead of counting as one uniform step.
+- **The plan's three honesty rules are each pinned by a test:** seeds from the first real sample
+  (no ramp from zero); resets rather than coasts when a channel is unavailable/loading; and
+  `setActive(false)` also resets, because nothing is sampled while the dashboard is hidden so
+  there is no history to continue.
+- **Smoothing replaces the value and nothing else** — availability, `sampledAt`, and memory's
+  pressure level pass through untouched, and network/battery/display are not averaged at all
+  (point-in-time facts). Asserted.
+- **Schema descriptions updated** for `cpuPercent` (states it is ~30 s time-averaged, and that the
+  value is normalized across all logical cores) and `memoryPercent` (~10 s, and that it is *not* a
+  strain signal — read `memoryPressure` for that). Doc-only; no shape change.
+
+`SystemStatusPublisherTests` now uses `@testable import CerebralMacAdapters` so the internal
+`smoothed(_:)` and the channels' internal memberwise inits can be driven at exact timestamps.
+Widening either to `public` purely for tests was rejected — nothing ships against that seam.
+
+**Measured behaviour** (2 s cadence, 10% idle baseline, τ = 30 s): one 2 s spike to 100% moves the
+bar to ~15.8 and decays back; sustained 100% crosses yellow (60) between 20–30 s and red (85)
+between 50–60 s; a 50% duty cycle converges within 12 points of a steady 50%.
 
 ### Increment 3 — Three-tier tones and gliding bars
 
@@ -348,6 +406,35 @@ through that replay, so it doesn't start from a cold average.
 - **Tests:** per tone tier for both metrics; the no-pressure fallback path; no transition applied on
   the initial ready transition.
 - **Depends on:** Increments 1 and 2.
+
+**BUILT 2026-08-05 — NIC-158 is now feature-complete.** Gates: dashboard **565** green ·
+`tsc`/eslint clean · browser-verified live (see below). No Swift touched.
+
+- **The planned first-paint suppression was NOT needed and was deliberately not written.** Measured
+  in the browser: on mount the bar paints at its real value with **zero** running animations. CSS
+  transitions do not fire on initial render, and the skeleton→ready swap replaces the element
+  entirely (a new node, so again no transition). Speculative suppression code would have been dead.
+- **Memory's no-pressure fallback is `accent`, not a green/yellow/red guess.** Off the macOS host we
+  do not know whether memory is under strain, so the bar makes no claim: it keeps the mode accent and
+  retains the pre-existing 90% danger rule. Thresholding the percentage into tiers there would
+  reproduce the exact bug this ticket fixes, since a healthy Mac sits near 100%.
+- **Two new motion tokens**, not hardcoded durations: `--ch-motion-sampled: 1800ms` (roughly the
+  sampling interval, so each transition hands off to the next) and `--ch-ease-linear`. Both are
+  collapsed in the `prefers-reduced-motion` block in `tokens.css` alongside the existing durations.
+- **Linear easing is load-bearing.** At 1.8s an easing curve decelerates into every sample and reads
+  as pulse-stop-pulse. Verified linear in the browser: from 83.8px toward 27.9px, at 500 ms it read
+  68.4px where linear predicts 68.3px.
+- Reduced motion verified live: `transition-duration` collapses `1.8s, 0.2s` → `1e-05s` under
+  `[data-reduced-motion="true"]`, via the existing global safety net. No bespoke guard added.
+
+**Deliberately deferred — worth a follow-up:** `fixtures/catalog/canonical-states.json` has 8
+`memoryPercent` entries and no `memoryPressure`, so the browser preview and the design reference
+always render memory on the accent fallback rather than the green/yellow/red the real Mac shows.
+Adding it would change the Playwright visual baselines, which are `-win32` and cannot be regenerated
+on this Mac — landing that here would leave CI red for someone else. Separate, deliberate change.
+
+**Also noticed, unrelated and untouched:** the browser console logs a React "unique key prop"
+warning from `ProjectsBody` on every render. Pre-existing, not caused by this work.
 
 **If it feels wrong in use:** the time constant is a single number. Lower τ = more responsive,
 more flicker. Higher τ = calmer, laggier.

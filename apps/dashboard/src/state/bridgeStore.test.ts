@@ -538,7 +538,13 @@ describe("reduceDashboardState", () => {
       payload: {
         category: "system_metrics",
         cpu: { availability: "available", value: 23.5, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
-        memory: { availability: "available", value: 61.2, unit: "percent", sampledAt: "2026-06-23T16:00:00.000Z" },
+        memory: {
+          availability: "available",
+          value: 61.2,
+          pressure: "warn",
+          unit: "percent",
+          sampledAt: "2026-06-23T16:00:00.000Z"
+        },
         network: {
           availability: "available",
           linkMbps: 866,
@@ -566,6 +572,45 @@ describe("reduceDashboardState", () => {
     expect(health.battery.state).toBe("ready");
     expect(health.battery.charging).toBe(true);
     expect(health.battery.pluggedIn).toBe(true);
+    expect(health.memoryPressure).toBe("warn");
+  });
+
+  it("carries memory pressure independently of the usage percentage (NIC-158)", () => {
+    const base = loadBootstrapState();
+    function metricsEvent(memory: Record<string, unknown>): BridgeEvent {
+      return {
+        eventId: "brevt_pressure01",
+        type: "system.status.changed",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-08-05T16:00:00.000Z",
+        payload: { category: "system_metrics", memory }
+      };
+    }
+
+    // Pressure survives an unavailable percentage: it is a fact about the machine, not about
+    // whether vm statistics could be read (same reasoning as the Wi-Fi radio's power).
+    const noPercent = reduceDashboardState(
+      base,
+      metricsEvent({ availability: "unavailable", value: null, pressure: "critical" })
+    ).regions.systemHealth;
+    expect(noPercent.memoryPercent).toBeUndefined();
+    expect(noPercent.memoryPressure).toBe("critical");
+
+    // An absent level is undefined, never coerced to "normal" — the bar falls back to the
+    // percentage rather than claiming the machine is fine on no evidence.
+    const noPressure = reduceDashboardState(
+      base,
+      metricsEvent({ availability: "available", value: 61.2, unit: "percent" })
+    ).regions.systemHealth;
+    expect(noPressure.memoryPercent).toBe(61.2);
+    expect(noPressure.memoryPressure).toBeUndefined();
+
+    // A level a future OS invents is dropped rather than passed through as an unknown string.
+    const unknown = reduceDashboardState(
+      base,
+      metricsEvent({ availability: "available", value: 61.2, pressure: "catastrophic" })
+    ).regions.systemHealth;
+    expect(unknown.memoryPressure).toBeUndefined();
   });
 
   it("maps per-channel degradation honestly: no battery is unavailable, warming rates are empty", () => {

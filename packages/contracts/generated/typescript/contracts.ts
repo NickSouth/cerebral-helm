@@ -196,11 +196,37 @@ export enum DashboardScheduleKind {
 }
 
 export interface DashboardSystemHealthRegion {
-    battery:        DashboardBatteryChannel;
-    cpuPercent?:    number;
+    battery: DashboardBatteryChannel;
+    /**
+     * CPU load 0–100 as a fraction of total machine capacity, TIME-AVERAGED over roughly the
+     * last 30 seconds — not an instantaneous reading (NIC-158). What matters for heat, fan,
+     * battery, and responsiveness is sustained load, so the streamed value is smoothed: a brief
+     * spike barely moves it, while genuinely sustained load climbs into it. Consumers should
+     * treat a high value as 'this has been going on for a while'. The one-shot
+     * `system.status.read` tool reports the instantaneous figure instead. Note the value is
+     * normalized across all logical cores, so one saturated core reads far lower on a many-core
+     * machine than on a small one.
+     */
+    cpuPercent?: number;
+    /**
+     * Memory used as a percentage of physical RAM (Activity Monitor's 'Memory Used'), lightly
+     * time-averaged (~10s) so the bar glides rather than jumps. This is NOT a strain signal:
+     * macOS deliberately keeps RAM full of cache, so a healthy machine sits near 100% — read
+     * `memoryPressure` for whether memory is actually under pressure.
+     */
     memoryPercent?: number;
-    network?:       DashboardNetworkChannel;
-    state:          DashboardRegionState;
+    /**
+     * macOS's own memory-pressure level, read from `kern.memorystatus_vm_pressure_level` — the
+     * same signal the public dispatch memory-pressure source reports. Distinct from
+     * `memoryPercent`, and the honest basis for the memory bar's colour: on a modern Mac the
+     * used/total ratio sits near 100% permanently (the OS deliberately fills RAM with cache),
+     * so it says nothing about whether memory is actually under strain. Absent when the level
+     * cannot be sampled (non-macOS host, or an unrecognized value from a future OS), in which
+     * case consumers fall back to thresholding `memoryPercent` rather than guessing a level.
+     */
+    memoryPressure?: DashboardMemoryPressure;
+    network?:        DashboardNetworkChannel;
+    state:           DashboardRegionState;
 }
 
 export interface DashboardBatteryChannel {
@@ -219,6 +245,21 @@ export interface DashboardBatteryChannel {
      */
     pluggedIn?: boolean;
     state:      DashboardRegionState;
+}
+
+/**
+ * macOS's own memory-pressure level, read from `kern.memorystatus_vm_pressure_level` — the
+ * same signal the public dispatch memory-pressure source reports. Distinct from
+ * `memoryPercent`, and the honest basis for the memory bar's colour: on a modern Mac the
+ * used/total ratio sits near 100% permanently (the OS deliberately fills RAM with cache),
+ * so it says nothing about whether memory is actually under strain. Absent when the level
+ * cannot be sampled (non-macOS host, or an unrecognized value from a future OS), in which
+ * case consumers fall back to thresholding `memoryPercent` rather than guessing a level.
+ */
+export enum DashboardMemoryPressure {
+    Critical = "critical",
+    Normal = "normal",
+    Warn = "warn",
 }
 
 export interface DashboardNetworkChannel {

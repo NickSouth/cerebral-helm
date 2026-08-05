@@ -8,6 +8,7 @@ import type {
   ConfirmationDisclosure,
   DashboardRegions,
   DashboardStateSnapshot,
+  MemoryPressure,
   NewsRegion,
   RegionState,
   ScheduleRegion,
@@ -44,9 +45,13 @@ interface MetricsBatteryPayload extends MetricsChannelPayload {
   readonly pluggedIn?: boolean | null;
 }
 
+interface MetricsMemoryPayload extends MetricsChannelPayload {
+  readonly pressure?: string | null;
+}
+
 interface SystemMetricsPayload {
   readonly cpu?: MetricsChannelPayload;
-  readonly memory?: MetricsChannelPayload;
+  readonly memory?: MetricsMemoryPayload;
   readonly network?: MetricsNetworkPayload;
   readonly battery?: MetricsBatteryPayload;
   readonly display?: MetricsChannelPayload;
@@ -80,6 +85,15 @@ function wifiPowerFrom(value: string | null | undefined): WiFiPower | undefined 
   return value === "on" || value === "off" || value === "absent" ? value : undefined;
 }
 
+/**
+ * Narrow the payload's memory-pressure level to the contract's union (NIC-158). Anything else —
+ * absent, or a level a future OS invents — becomes undefined, so the bar falls back to
+ * thresholding the usage percentage instead of being coloured by a value nothing understands.
+ */
+function memoryPressureFrom(value: string | null | undefined): MemoryPressure | undefined {
+  return value === "normal" || value === "warn" || value === "critical" ? value : undefined;
+}
+
 /** Fold one live metrics snapshot into the system-health region shape. */
 function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthRegion {
   const cpuLive = payload.cpu?.availability === "available";
@@ -90,6 +104,9 @@ function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthReg
     state: "ready",
     cpuPercent: cpuLive ? (payload.cpu?.value ?? undefined) : undefined,
     memoryPercent: memoryLive ? (payload.memory?.value ?? undefined) : undefined,
+    // Not gated on `memoryLive`: pressure is an independent fact about the machine, useful
+    // exactly when the usage percentage is missing (the same reasoning as `wifiPower` below).
+    memoryPressure: memoryPressureFrom(payload.memory?.pressure),
     network: {
       state: networkState,
       label: "Network",

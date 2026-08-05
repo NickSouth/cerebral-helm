@@ -115,6 +115,12 @@
   --ch-motion-base: 200ms;
   --ch-motion-slow: 320ms;
   --ch-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  /* Sampled-metric glide (NIC-158): a bar fed by a 2s sampling stream animates for roughly the
+     whole interval, so each transition hands off to the next and the bar reads as continuous
+     motion. Paired with --ch-ease-linear: an easing curve would decelerate into every sample and
+     produce a visible pulse-stop-pulse rhythm at this duration. */
+  --ch-motion-sampled: 1800ms;
+  --ch-ease-linear: linear;
 
   /* --- Focus (visible ring + offset; never color alone) --- */
   --ch-focus-ring-color: #7fb7ff;
@@ -186,5 +192,6 @@
     --ch-motion-fast: 0ms;
     --ch-motion-base: 0ms;
     --ch-motion-slow: 0ms;
+    --ch-motion-sampled: 0ms;
   }
 }

@@ -30,6 +30,18 @@ public struct MemorySample: Equatable, Sendable {
     }
 }
 
+/// macOS's own memory-pressure level (NIC-158) — the kernel's verdict on whether memory is
+/// actually under strain, which the used/total ratio cannot tell you: the OS deliberately keeps
+/// RAM full of cache, so `memoryPercent` sits near 100% on a healthy machine.
+///
+/// These are the three levels the public `DispatchSource` memory-pressure API reports, read here
+/// through the sysctl that backs it so the poll-shaped ``SystemMetricSampling`` seam can carry it.
+public enum MemoryPressureLevel: String, Equatable, Sendable {
+    case normal
+    case warn
+    case critical
+}
+
 /// The battery's charge level and power state (IOKit power sources).
 /// `isCharging` means actively taking charge; `isPluggedIn` means on external
 /// power (a full battery on AC is plugged in but not charging).
@@ -75,6 +87,11 @@ public struct WiFiStateSample: Equatable, Sendable {
 public protocol SystemMetricSampling: Sendable {
     func cpuTicks() -> CPUTicksSample?
     func memory() -> MemorySample?
+    /// The kernel's current memory-pressure level (NIC-158). `nil` when it cannot be sampled or
+    /// the kernel reports a value this OS version does not define — an honest absence the
+    /// dashboard falls back from, never a guessed `normal` (which would claim the machine is fine
+    /// on no evidence).
+    func memoryPressure() -> MemoryPressureLevel?
     /// The Wi-Fi interface's current transmit (link) rate in Mbps — the negotiated
     /// PHY rate to the access point, not measured throughput (NIC-135). `nil` when
     /// there is no associated Wi-Fi interface (Ethernet, Wi-Fi off, sampling failed),
@@ -116,6 +133,20 @@ public struct SystemStatusNetworkChannel: Equatable, Sendable {
     public let sampledAt: Date?
 }
 
+/// Memory carries both the used/total percentage and the kernel's pressure level (NIC-158).
+///
+/// They are deliberately independent facts, the same way the Wi-Fi radio's `power` is independent
+/// of the link-rate `availability`. `availability`/`value` describe the *usage percentage* only;
+/// `pressure` can be present when the percentage is unavailable, or absent when it is available
+/// (a non-macOS host, or a level this OS version does not define). The dashboard renders the
+/// percentage as the bar and takes the bar's colour from the pressure.
+public struct SystemStatusMemoryChannel: Equatable, Sendable {
+    public let availability: MetricAvailability
+    public let value: Double?
+    public let pressure: MemoryPressureLevel?
+    public let sampledAt: Date?
+}
+
 /// Battery keeps its charging flag for the dashboard's bolt indicator; the
 /// portable tool reading remains the charge percent.
 public struct SystemStatusBatteryChannel: Equatable, Sendable {
@@ -131,7 +162,7 @@ public struct SystemStatusBatteryChannel: Equatable, Sendable {
 /// onto the portable `SystemMetricReading` contract.
 public struct SystemStatusSnapshot: Equatable, Sendable {
     public let cpu: SystemStatusChannel
-    public let memory: SystemStatusChannel
+    public let memory: SystemStatusMemoryChannel
     public let network: SystemStatusNetworkChannel
     public let battery: SystemStatusBatteryChannel
     public let display: SystemStatusChannel
@@ -171,7 +202,10 @@ public actor MacSystemStatusCapability: SystemStatusCapability {
             case .cpu:
                 return reading(.cpu, cpuChannel(), unit: "percent")
             case .memory:
-                return reading(.memory, memoryChannel(), unit: "percent")
+                // The portable tool reading stays the usage percentage — pressure is a richer
+                // channel the streaming snapshot carries, not part of the portable contract.
+                let channel = memoryChannel()
+                return SystemMetricReading(id: .memory, availability: channel.availability, value: channel.value, unit: "percent")
             case .network:
                 let channel = networkChannel()
                 return SystemMetricReading(id: .network, availability: channel.availability, value: channel.linkMbps, unit: "mbps")
@@ -226,12 +260,20 @@ public actor MacSystemStatusCapability: SystemStatusCapability {
         return SystemStatusChannel(availability: .available, value: percent, sampledAt: sampledAt)
     }
 
-    private func memoryChannel() -> SystemStatusChannel {
+    private func memoryChannel() -> SystemStatusMemoryChannel {
+        // Sampled independently of the usage percentage (NIC-158): a machine whose vm statistics
+        // cannot be read may still report a pressure level, and vice versa. Neither absence is
+        // allowed to suppress the other.
+        let pressure = source.memoryPressure()
         guard let sample = source.memory(), sample.totalBytes > 0 else {
-            return SystemStatusChannel(availability: .unavailable, value: nil, sampledAt: nil)
+            return SystemStatusMemoryChannel(
+                availability: .unavailable, value: nil, pressure: pressure, sampledAt: nil
+            )
         }
         let percent = max(0, min(1, sample.usedBytes / sample.totalBytes)) * 100
-        return SystemStatusChannel(availability: .available, value: percent, sampledAt: wallClock())
+        return SystemStatusMemoryChannel(
+            availability: .available, value: percent, pressure: pressure, sampledAt: wallClock()
+        )
     }
 
     private func networkChannel() -> SystemStatusNetworkChannel {
@@ -329,6 +371,28 @@ public struct LiveSystemMetricSource: SystemMetricSampling {
         let used = (Double(stats.internal_page_count) - Double(stats.purgeable_count)
             + Double(stats.wire_count) + Double(stats.compressor_page_count)) * pageSize
         return MemorySample(usedBytes: max(0, used), totalBytes: Double(totalBytes))
+    }
+
+    public func memoryPressure() -> MemoryPressureLevel? {
+        // `kern.memorystatus_vm_pressure_level` is the sysctl behind the public
+        // DISPATCH_SOURCE_TYPE_MEMORYPRESSURE levels, and the only poll-shaped way to read them —
+        // the dispatch source is edge-triggered, which does not fit this sampling seam.
+        //
+        // It is not a documented API surface, so an unrecognized value is reported as `nil` rather
+        // than coerced to the nearest level: a future OS adding a state must degrade to "we don't
+        // know" (the dashboard then falls back to the usage percentage), never to a confident
+        // "normal" that would claim the machine is fine on no evidence.
+        var level: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0) == 0 else {
+            return nil
+        }
+        switch level {
+        case 1: return .normal
+        case 2: return .warn
+        case 4: return .critical
+        default: return nil
+        }
     }
 
     public func wifiLinkMbps() -> Double? {
