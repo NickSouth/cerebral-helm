@@ -361,9 +361,18 @@ private final class StatefulAppWindows: AppWindowsCapability, @unchecked Sendabl
 }
 
 /// Poll until a condition holds (the deferred surface runs on a detached task).
+/// Poll until `condition` holds or the deadline passes.
+///
+/// Wall-clock rather than a fixed iteration count: counting iterations makes the real budget depend
+/// on how long each sleep actually takes, which is unpredictable exactly when the machine is loaded.
+/// The deadline is generous on purpose — it is patience for the scheduler, not a specification, and
+/// a condition that never holds still fails the caller's assertion. See `TestWaiting.swift` in
+/// MacAdapterTests for the CI incident that prompted this shape.
 private func waitUntil(_ condition: @Sendable () -> Bool) async {
-    for _ in 0..<400 where !condition() {
-        try? await Task.sleep(for: .milliseconds(5))
+    let deadline = Date().addingTimeInterval(30)
+    while Date() < deadline {
+        if condition() { return }
+        try? await Task.sleep(for: .milliseconds(20))
     }
 }
 

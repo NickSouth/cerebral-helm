@@ -76,7 +76,11 @@ func spotifyLoopbackListenerCaptures() async throws {
     // Bind port 0 — the kernel hands back a free port, so this can never collide with an ephemeral
     // port some other process on the machine happens to hold. The redirect uses the assigned port.
     let listener = try LoopbackAuthListener(port: 0, responseHTML: SpotifyAuthCoordinator.successHTML)
-    let query = try await listener.awaitCallback(timeout: 5) { boundPort in
+    // Same patience as `testWaitDeadline`, for the same reason: the redirect below is fired from a
+    // fire-and-forget `Task` and goes through `URLSession`, whose first use pays for networking
+    // setup. Five seconds was enough locally and not on a loaded CI runner — this test timed out
+    // there and passed on a rerun of the identical commit.
+    let query = try await listener.awaitCallback(timeout: testWaitDeadline) { boundPort in
         // Fire the redirect once the listener is accepting; the response is irrelevant to capture.
         Task {
             guard let url = URL(string: "http://127.0.0.1:\(boundPort)/callback?code=real-code&state=real-state") else { return }

@@ -65,12 +65,6 @@ private final class EventCollector: @unchecked Sendable {
     }
 }
 
-private func waitUntil(_ deadlineMs: Int, _ condition: () -> Bool) async {
-    for _ in 0..<max(1, deadlineMs / 20) {
-        if condition() { return }
-        try? await Task.sleep(nanoseconds: 20_000_000)
-    }
-}
 
 @Test("the publisher emits schema-valid system.status.changed events on its cadence")
 func publisherEmitsOnCadence() async throws {
@@ -81,7 +75,7 @@ func publisherEmitsOnCadence() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitUntil(3000) { collector.count >= 3 }
+    await waitUntil { collector.count >= 3 }
     await publisher.stop()
 
     #expect(collector.count >= 3)
@@ -105,7 +99,7 @@ func publisherEmitsMemoryPressure() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitUntil(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     // The level rides the memory channel as the contract's string, next to the percentage.
@@ -122,7 +116,7 @@ func publisherOmitsUnsamplablePressure() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitUntil(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     // Absent, not "normal": the dashboard must fall back to the percentage, not be told the
@@ -242,7 +236,7 @@ func pauseStopsEmissionAndResumeIsImmediate() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitUntil(3000) { collector.count >= 2 }
+    await waitUntil { collector.count >= 2 }
 
     await publisher.setActive(false)
     // Allow any in-flight tick to land, then verify silence over several intervals.
@@ -253,7 +247,7 @@ func pauseStopsEmissionAndResumeIsImmediate() async throws {
 
     // Resume emits a fresh snapshot immediately, not after the next interval.
     await publisher.setActive(true)
-    await waitUntil(1000) { collector.count > paused }
+    await waitUntil { collector.count > paused }
     #expect(collector.count > paused)
     await publisher.stop()
 }

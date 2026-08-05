@@ -120,9 +120,29 @@ GRDB it needs no system package and no CI provisioning. The previously recorded
 `ProcessHookCapability` cooperative-pool starvation does not apply here either: that adapter is
 `#if canImport(AppKit)`-gated, so it compiles to nothing on Linux.
 
-**Known remaining pattern:** the `MacAdapterTests` publishers each have their own `waitUntil` with
-2–3s deadlines. They run only on the macOS job, which is less contended and has stayed green, so
-they were left alone — but they are the same shape and the same fix applies if they ever flake.
+**Second failure, macOS this time — and the lesson.** Leaving the `MacAdapterTests` deadlines alone
+was wrong. The next push went green on Linux and red on macOS, on a completely different test
+(`SpotifyAuthCoordinatorTests` real-socket loopback, `timeout: 5`), which also passed on a rerun.
+Patching the one test that failed each time is whack-a-mole: an audit found **62 timing-gated waits
+across 11 duplicated `waitUntil`/`waitFor*` helpers**, every one a coin flip on a loaded runner.
+
+Fixed as a class, not a symptom:
+
+- **One shared waiter** — `Tests/MacAdapterTests/TestWaiting.swift` — replacing all 11 duplicates.
+- **The deadline argument is gone from all 62 call sites.** It was never a specification (no test
+  meant "fail if this takes 3.1 seconds"); it was a safety margin, and a safety margin belongs in
+  one place, set generously. 30 s.
+- **Wall-clock, not iteration counting.** `ModeApplyTests` counted 400 × 5 ms sleeps, so its real
+  budget depended on how long each sleep actually took — unpredictable exactly when the machine is
+  loaded. Now deadline-based like the rest.
+- The Spotify socket test takes the same `testWaitDeadline`.
+
+**Costs nothing when green:** every waiter returns the moment its condition holds, so the suite still
+runs in ~3.3 s locally (verified across three consecutive runs). The deadline is only reached by a
+test that was going to fail anyway.
+
+**Ruled out:** no waiter is followed by an "expect nothing happened" assertion, so none of the 62
+call sites changed meaning — the pause/resume tests use a direct `Task.sleep`, which is untouched.
 
 ## Verification on this Mac
 

@@ -15,12 +15,6 @@ private final class EventCollector: @unchecked Sendable {
     var all: [String] { lock.lock(); defer { lock.unlock() }; return events }
 }
 
-private func waitUntil(_ deadlineMs: Int, _ condition: () -> Bool) async {
-    for _ in 0..<max(1, deadlineMs / 20) {
-        if condition() { return }
-        try? await Task.sleep(nanoseconds: 20_000_000)
-    }
-}
 
 @Test("the publisher emits ready weather.changed events on cadence from location + provider")
 func weatherPublisherEmitsOnCadence() async throws {
@@ -32,7 +26,7 @@ func weatherPublisherEmitsOnCadence() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitUntil(3000) { collector.count >= 2 }
+    await waitUntil { collector.count >= 2 }
     await publisher.stop()
 
     #expect(collector.count >= 2)
@@ -54,7 +48,7 @@ func weatherPublisherLocationDenied() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitUntil(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -72,7 +66,7 @@ func weatherPublisherProviderFailure() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitUntil(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -118,7 +112,7 @@ func weatherPublisherResendReplaysWithoutFetching() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitUntil(2000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     let afterFirstTick = collector.count
     let fetchesAfterFirstTick = provider.fetchCount
 
@@ -159,7 +153,7 @@ func weatherPublisherResendReplaysUnavailable() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitUntil(2000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
 
     await publisher.resend()
     await publisher.stop()
@@ -186,7 +180,7 @@ func weatherPublisherPauseResume() async throws {
 
     // Resuming emits a fresh sample right away.
     await publisher.setActive(true)
-    await waitUntil(2000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
     #expect(collector.count >= 1)
 }

@@ -17,12 +17,6 @@ private final class StockEventCollector: @unchecked Sendable {
     var all: [String] { lock.lock(); defer { lock.unlock() }; return events }
 }
 
-private func waitForStocks(_ deadlineMs: Int, _ condition: () -> Bool) async {
-    for _ in 0..<max(1, deadlineMs / 20) {
-        if condition() { return }
-        try? await Task.sleep(nanoseconds: 20_000_000)
-    }
-}
 
 @Test("with tickers and a stored key the publisher emits a ready stocks widget on cadence")
 func stocksPublisherEmitsReady() async throws {
@@ -35,7 +29,7 @@ func stocksPublisherEmitsReady() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForStocks(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -60,7 +54,7 @@ func stocksPublisherEmitsEmptyForNoTickers() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForStocks(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -79,7 +73,7 @@ func stocksPublisherEmitsCredentialsMissing() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForStocks(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -98,7 +92,7 @@ func stocksPublisherEmitsGenericFailure() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForStocks(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -119,7 +113,7 @@ func stocksPublisherIncludesHistory() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForStocks(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -139,7 +133,7 @@ func stocksPublisherHistoryFailureDegrades() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForStocks(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -158,7 +152,7 @@ func stocksPublisherPauseResume() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForStocks(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
 
     await publisher.setActive(false)
     try? await Task.sleep(nanoseconds: 60_000_000)
@@ -167,7 +161,7 @@ func stocksPublisherPauseResume() async throws {
     #expect(collector.count == paused, "a paused publisher must not emit")
 
     await publisher.setActive(true)
-    await waitForStocks(1000) { collector.count > paused }
+    await waitUntil { collector.count > paused }
     #expect(collector.count > paused)
     await publisher.stop()
 }

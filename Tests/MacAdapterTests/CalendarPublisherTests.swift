@@ -60,12 +60,6 @@ private final class ScheduleEventCollector: @unchecked Sendable {
     }
 }
 
-private func waitForSchedule(_ deadlineMs: Int, _ condition: () -> Bool) async {
-    for _ in 0..<max(1, deadlineMs / 20) {
-        if condition() { return }
-        try? await Task.sleep(nanoseconds: 20_000_000)
-    }
-}
 
 @Test("emits one schedule.changed per profile; the catch-all shows all events, filtered profiles their slice")
 func calendarPublisherEmitsPerProfile() async throws {
@@ -81,7 +75,7 @@ func calendarPublisherEmitsPerProfile() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForSchedule(3000) { collector.byProfile().count >= 4 }
+    await waitUntil { collector.byProfile().count >= 4 }
     await publisher.stop()
 
     let first = try #require(try? CerebralHelmBridgeEvent(data: Data(collector.all[0].utf8)))
@@ -112,7 +106,7 @@ func calendarPublisherAppliesMapping() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForSchedule(3000) { collector.byProfile().count >= 4 }
+    await waitUntil { collector.byProfile().count >= 4 }
     await publisher.stop()
 
     let byProfile = collector.byProfile()
@@ -135,7 +129,7 @@ func calendarPublisherPermissionDenied() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForSchedule(3000) { collector.byProfile().count >= 4 }
+    await waitUntil { collector.byProfile().count >= 4 }
     await publisher.stop()
 
     for (_, schedule) in collector.byProfile() {
@@ -155,7 +149,7 @@ func calendarPublisherProviderFailure() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForSchedule(3000) { collector.byProfile().count >= 4 }
+    await waitUntil { collector.byProfile().count >= 4 }
     await publisher.stop()
 
     let all = collector.all.joined(separator: "\n")
@@ -177,7 +171,7 @@ func calendarPublisherPauseResume() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForSchedule(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
 
     await publisher.setActive(false)
     try? await Task.sleep(nanoseconds: 60_000_000)
@@ -186,7 +180,7 @@ func calendarPublisherPauseResume() async throws {
     #expect(collector.count == paused, "a paused publisher must not emit")
 
     await publisher.setActive(true)
-    await waitForSchedule(1000) { collector.count > paused }
+    await waitUntil { collector.count > paused }
     #expect(collector.count > paused)
     await publisher.stop()
 }
