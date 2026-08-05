@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/spotify-create-playlist-output.schema.json",
+  "title": "CerebralHelm Spotify Create Playlist Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "playlistID",
+    "playlistName"
+  ],
+  "properties": {
+    "playlistID": {
+      "type": "string",
+      "minLength": 1
+    },
+    "playlistName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "playlistURL": {
+      "type": "string",
+      "description": "The playlist's Spotify URL as returned by the API — never constructed here. Absent when Spotify omitted it."
+    },
+    "playlistOpened": {
+      "type": "boolean",
+      "description": "Whether Spotify was opened at the new playlist. Best-effort: the playlist exists either way, so a failed open is reported rather than treated as a failed create."
+    }
+  }
+}

@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
  * metric row (CPU, memory, network, battery). Same construction as {@link AppGlyph}; inherits
  * color from the row via `currentColor`.
  */
-export type HealthGlyphName = "cpu" | "memory" | "network" | "battery";
+export type HealthGlyphName = "cpu" | "memory" | "network" | "network-off" | "battery";
 
 const GLYPHS: Readonly<Record<HealthGlyphName, ReactNode>> = {
   // Processor die with pins.
@@ -23,13 +23,25 @@ const GLYPHS: Readonly<Record<HealthGlyphName, ReactNode>> = {
       <path d="M7 10v3M12 10v3M17 10v3M6 16v2M10 16v2M14 16v2M18 16v2" />
     </>
   ),
-  // Wi-Fi arcs.
+  // Wi-Fi arcs, outermost first. The arcs carry strength classes so a weak signal
+  // dims the outer ones (see `signalLevelFromRssi`); with no reading they all render
+  // at full strength rather than implying a measurement that was never taken.
   network: (
+    <>
+      <path className="health-glyph__arc health-glyph__arc--3" d="M2.5 8.5a14 14 0 0 1 19 0" />
+      <path className="health-glyph__arc health-glyph__arc--2" d="M5.5 12a9.5 9.5 0 0 1 13 0" />
+      <path className="health-glyph__arc health-glyph__arc--1" d="M8.5 15.4a5 5 0 0 1 7 0" />
+      <path d="M12 18.8h.01" />
+    </>
+  ),
+  // Wi-Fi arcs struck through: the radio is off, or the machine has none.
+  "network-off": (
     <>
       <path d="M2.5 8.5a14 14 0 0 1 19 0" />
       <path d="M5.5 12a9.5 9.5 0 0 1 13 0" />
       <path d="M8.5 15.4a5 5 0 0 1 7 0" />
       <path d="M12 18.8h.01" />
+      <path d="M3.5 3.5l17 17" />
     </>
   ),
   // Battery body + terminal.
@@ -41,10 +53,37 @@ const GLYPHS: Readonly<Record<HealthGlyphName, ReactNode>> = {
   )
 };
 
-export function HealthGlyph({ name }: { name: HealthGlyphName }) {
+/** How many of the Wi-Fi glyph's three arcs render at full strength. */
+export type SignalLevel = 1 | 2 | 3;
+
+/**
+ * Wi-Fi signal strength in dBm → arc count (NIC-156). RSSI is negative and closer to
+ * zero is stronger; the boundaries are the conventional strong/usable/weak split.
+ * `undefined` in means `undefined` out — an absent reading dims nothing, because
+ * "we did not measure this" is not the same as "the signal is weak".
+ */
+export function signalLevelFromRssi(rssi: number | undefined): SignalLevel | undefined {
+  if (rssi === undefined || !Number.isFinite(rssi)) {
+    return undefined;
+  }
+  if (rssi >= -60) {
+    return 3;
+  }
+  return rssi >= -75 ? 2 : 1;
+}
+
+export function HealthGlyph({
+  name,
+  signalLevel
+}: {
+  name: HealthGlyphName;
+  /** Wi-Fi arcs only: dims the arcs above this level. Omit to render all at full strength. */
+  signalLevel?: SignalLevel;
+}) {
   return (
     <svg
       className="health-glyph"
+      data-signal={name === "network" ? signalLevel : undefined}
       viewBox="0 0 24 24"
       width="16"
       height="16"

@@ -24,20 +24,45 @@ public struct MacChromeProfileDiscoveryCapability: ChromeProfileDiscoveryCapabil
     /// overridable for tests.
     private let chromeSupportDirectory: URL
 
+    /// Chrome's standard support directory on this Mac.
+    public static var defaultSupportDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Google/Chrome", isDirectory: true)
+    }
+
     public init(chromeSupportDirectory: URL? = nil) {
-        self.chromeSupportDirectory = chromeSupportDirectory
-            ?? FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Application Support/Google/Chrome", isDirectory: true)
+        self.chromeSupportDirectory = chromeSupportDirectory ?? Self.defaultSupportDirectory
     }
 
     public func listProfiles() async throws -> [ChromeProfile] {
         Self.enumerate(chromeSupportDirectory: chromeSupportDirectory)
     }
 
-    /// The synchronous enumeration core. A missing or unreadable `Local State`
-    /// degrades to an empty list (Chrome not installed / never launched) rather
-    /// than failing — the dropdown just shows no profiles.
-    public static func enumerate(chromeSupportDirectory: URL) -> [ChromeProfile] {
+    /// The profile directory signed into `account`, or nil when no profile is.
+    ///
+    /// Chrome's `info_cache` records each profile's signed-in address under `user_name`, so the
+    /// mapping from a Google account to the Chrome profile that holds it is **already on disk** —
+    /// which is why opening mail in the right profile needs no setting and nothing for the user to
+    /// keep in sync. Sign into a new account in a new profile and the link follows it.
+    ///
+    /// Deliberately **not** exposed through ``ChromeProfileDiscoveryCapability``: that capability
+    /// feeds the dashboard's profile picker over the bridge, and the addresses have no business
+    /// crossing into the web layer to populate a dropdown that shows display names.
+    public static func profileDirectory(
+        forAccount account: String, chromeSupportDirectory: URL
+    ) -> String? {
+        let wanted = account.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !wanted.isEmpty else { return nil }
+        let matches = infoCache(chromeSupportDirectory: chromeSupportDirectory)
+            .filter { (($0.value as? [String: Any])?["user_name"] as? String)?.lowercased() == wanted }
+            .keys
+        // Sorted so two profiles signed into the same account resolve to the same one every time
+        // rather than whichever the dictionary happened to yield.
+        return matches.sorted().first
+    }
+
+    /// Chrome's profile directory → info map, or empty when `Local State` is missing/unreadable.
+    private static func infoCache(chromeSupportDirectory: URL) -> [String: Any] {
         let localState = chromeSupportDirectory.appendingPathComponent("Local State", isDirectory: false)
         guard
             let data = try? Data(contentsOf: localState),
@@ -45,8 +70,16 @@ public struct MacChromeProfileDiscoveryCapability: ChromeProfileDiscoveryCapabil
             let profile = root["profile"] as? [String: Any],
             let infoCache = profile["info_cache"] as? [String: Any]
         else {
-            return []
+            return [:]
         }
+        return infoCache
+    }
+
+    /// The synchronous enumeration core. A missing or unreadable `Local State`
+    /// degrades to an empty list (Chrome not installed / never launched) rather
+    /// than failing — the dropdown just shows no profiles.
+    public static func enumerate(chromeSupportDirectory: URL) -> [ChromeProfile] {
+        let infoCache = Self.infoCache(chromeSupportDirectory: chromeSupportDirectory)
 
         var profiles: [ChromeProfile] = []
         for (directory, value) in infoCache {

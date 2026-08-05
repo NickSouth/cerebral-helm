@@ -51,37 +51,114 @@ func confirmEveryActionOverlay() {
     #expect(localWrite.reasonCode == "override.stricter_user_policy")
 }
 
-@Test("a descriptor-waived external write runs one-click, but only external_write (NIC-133)")
-func externalWriteConfirmationWaiver() {
+/// The provenance tier (docs/quick-actions/PLAN.md): risk describes what an action does,
+/// provenance describes who determined its arguments. The exemption needs BOTH the
+/// descriptor opt-in and a user-authored invocation, applies only to `external_write`, and
+/// stays under the stricter-only overlay. This supersedes the NIC-133 one-off waiver, which
+/// exempted the tool regardless of who invoked it.
+
+@Test("the user-authored exemption needs BOTH the descriptor opt-in and user provenance")
+func userAuthoredExemptionRequiresBothHalves() {
     let engine = PolicyEngine()
 
-    // The waiver downgrades external_write to allow (Spotify play/pause/skip — owner-chosen).
-    let waived = engine.evaluate(PolicyRequest(
-        toolID: "spotify.control", declaredRisk: .externalWrite, waivesExternalWriteConfirmation: true
+    // Both halves: the user authored the arguments for a descriptor-exempted low-stakes tool.
+    let exempt = engine.evaluate(PolicyRequest(
+        toolID: "spotify.control", declaredRisk: .externalWrite,
+        honorsUserAuthoredExemption: true, provenance: .userAuthored
     ))
-    #expect(waived.decision == .allow)
-    #expect(waived.reasonCode == "allow.external_write_exempt")
+    #expect(exempt.decision == .allow)
+    #expect(exempt.reasonCode == "allow.external_write_user_authored")
 
-    // Without the waiver, external_write still confirms.
-    #expect(engine.evaluate(PolicyRequest(toolID: "x", declaredRisk: .externalWrite)).decision == .requireConfirmation)
+    // Descriptor opt-in WITHOUT user provenance: the same tool, the same call, proposed by a
+    // model — it confirms, and says why. This is the case the tier exists for.
+    let proposed = engine.evaluate(PolicyRequest(
+        toolID: "spotify.control", declaredRisk: .externalWrite,
+        honorsUserAuthoredExemption: true, provenance: .modelProposed
+    ))
+    #expect(proposed.decision == .requireConfirmation)
+    #expect(proposed.reasonCode == "confirm.external_write_model_proposed")
 
-    // The waiver can NEVER downgrade a stricter class — a destructive tool still confirms even if the
-    // flag is (wrongly) set, so the exemption can't be abused to one-click something dangerous.
+    // User provenance WITHOUT the descriptor opt-in grants nothing: an ordinary external write
+    // the descriptor never exempted still confirms, however it was reached.
     #expect(engine.evaluate(PolicyRequest(
-        toolID: "y", declaredRisk: .destructive, waivesExternalWriteConfirmation: true
+        toolID: "x", declaredRisk: .externalWrite, provenance: .userAuthored
+    )).decision == .requireConfirmation)
+
+    // Neither half.
+    #expect(engine.evaluate(PolicyRequest(toolID: "x", declaredRisk: .externalWrite)).decision == .requireConfirmation)
+}
+
+@Test("provenance defaults to model_proposed, so an omitted provenance never exempts")
+func provenanceFailsClosed() {
+    // A construction site that forgets provenance must get confirmation, not a silent
+    // exemption — the default is the strict case by design.
+    let engine = PolicyEngine()
+    let evaluation = engine.evaluate(PolicyRequest(
+        toolID: "spotify.control", declaredRisk: .externalWrite, honorsUserAuthoredExemption: true
+    ))
+    #expect(evaluation.decision == .requireConfirmation)
+}
+
+@Test("destructive, financial, and purchase actions are never exemptible at any provenance")
+func irreversibleClassesAreNeverExemptible() {
+    let engine = PolicyEngine()
+
+    // Even with the descriptor flag wrongly set AND the user authoring the arguments, the
+    // never-exemptible classes still confirm — the exemption cannot be abused to one-click
+    // something irreversible, financial, or purchasing.
+    for risk in [Risk.destructive, .financial, .purchaseOrBooking] {
+        let evaluation = engine.evaluate(PolicyRequest(
+            toolID: "tool.\(risk.rawValue)", declaredRisk: risk,
+            honorsUserAuthoredExemption: true, provenance: .userAuthored
+        ))
+        #expect(evaluation.decision == .requireConfirmation, "\(risk.rawValue)")
+        #expect(evaluation.reasonCode == "confirm.\(risk.rawValue)", "\(risk.rawValue)")
+    }
+
+    // Shell is not exemptible either: it keeps its own exact-invocation allowlist as the only
+    // way to run without confirmation.
+    #expect(engine.evaluate(PolicyRequest(
+        toolID: "hook.run", declaredRisk: .shell,
+        honorsUserAuthoredExemption: true, provenance: .userAuthored
     )).decision == .requireConfirmation)
 }
 
-@Test("the confirm-every-action overlay re-arms confirmation over a waived external write (NIC-133)")
-func waivedExternalWriteStillConfirmsUnderGlobalToggle() {
-    // "Ask before all actions" is stricter-only, so it overrides the descriptor waiver: even a
-    // low-stakes control confirms when the user has asked to confirm everything.
+@Test("the confirm-every-action overlay re-arms confirmation over a user-authored exemption")
+func userAuthoredExemptionStillConfirmsUnderGlobalToggle() {
+    // "Ask before all actions" is stricter-only, so it overrides the exemption: even a
+    // low-stakes control the user authored confirms when they asked to confirm everything.
     let engine = PolicyEngine(overrides: .confirmEveryAction)
     let evaluation = engine.evaluate(PolicyRequest(
-        toolID: "spotify.control", declaredRisk: .externalWrite, waivesExternalWriteConfirmation: true
+        toolID: "spotify.control", declaredRisk: .externalWrite,
+        honorsUserAuthoredExemption: true, provenance: .userAuthored
     ))
     #expect(evaluation.decision == .requireConfirmation)
     #expect(evaluation.reasonCode == "override.stricter_user_policy")
+}
+
+@Test("every command source is classified, and only direct human surfaces are user-authored")
+func provenanceIsDerivedFromCommandSource() {
+    let expected: [(CerebralHelmCommandEnvelopeSource, ActionProvenance)] = [
+        (.dashboard, .userAuthored),
+        (.hotkey, .userAuthored),
+        (.cli, .userAuthored),
+        (.agent, .modelProposed),
+        (.automation, .modelProposed),
+        (.system, .modelProposed),
+        // A human speaks the intent, but a model turns it into concrete arguments
+        // ("book it near noon" → 12:15), so the values still need disclosing.
+        (.voice, .modelProposed),
+        // An unbuilt surface stays strict until it ships and is deliberately classified.
+        (.ios, .modelProposed),
+    ]
+
+    // Guards that the table spans every declared source — a new source must be classified,
+    // not silently inherit a permissive default.
+    #expect(Set(expected.map(\.0.rawValue)).count == 8)
+
+    for (source, provenance) in expected {
+        #expect(ActionProvenance(source: source) == provenance, "\(source.rawValue)")
+    }
 }
 
 @Test("a caller cannot lower a required confirmation but may raise one (AC-30.2)")

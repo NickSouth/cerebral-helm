@@ -66,10 +66,14 @@ public func makeCommandRuntime(
         metadataStore: SQLiteNoteMetadataStore(database: database),
         searchIndex: SQLiteNoteSearchIndex(database: database)
     )
+    // Course notebooks are folders under the SAME root (quick actions phase 5): a course note is
+    // an ordinary note, so it lists, searches, reads and opens through the note port unchanged.
+    let courseNotebook = MarkdownCourseNotebook(rootURL: knowledgeRoot)
     let registry = try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: paths.toolDescriptorsDirectory,
         capabilities: capabilities,
         knowledge: knowledge,
+        courseNotebook: courseNotebook,
         hookCatalog: hookCatalog,
         modePlanner: modePlanner,
         modeIDs: references.modeIds,
@@ -127,6 +131,26 @@ public func operationalDatabase(_ paths: WorkspacePaths) throws -> SQLiteDatabas
     return database
 }
 
+/// The durable knowledge service over the effective knowledge root and the
+/// operational database — the same composition ``makeCommandRuntime`` builds
+/// internally, exposed for the surfaces that need the concrete service rather
+/// than the port: the `knowledge rebuild` CLI and the settings rebuild action
+/// (NIC-163), both of which reconstruct the derived index.
+///
+/// Resolves the user's `knowledgeRootReference` when set (NIC-138), so a rebuild
+/// always reads the same root the runtime writes to.
+public func makeKnowledgeService(_ paths: WorkspacePaths) throws -> MarkdownKnowledgeService {
+    let database = try operationalDatabase(paths)
+    let stored = try? SQLiteSettingsStore(database: database).load()
+    return MarkdownKnowledgeService(
+        rootURL: EffectiveSettings.knowledgeRootURL(
+            reference: stored?.knowledgeRootReference, default: paths.knowledgeRoot
+        ),
+        metadataStore: SQLiteNoteMetadataStore(database: database),
+        searchIndex: SQLiteNoteSearchIndex(database: database)
+    )
+}
+
 /// The durable settings store over the operational database (FR-CFG-04), for hosts
 /// that bind a ``BridgeSession``.
 public func makeSettingsStore(_ paths: WorkspacePaths) throws -> any SettingsStore {
@@ -149,6 +173,13 @@ public func makeCanvasSnapshotStore(_ paths: WorkspacePaths) throws -> any Canva
 /// the user hide stray School courses/assignments.
 public func makeCanvasHiddenStore(_ paths: WorkspacePaths) throws -> any CanvasHiddenStore {
     SQLiteCanvasHiddenStore(database: try operationalDatabase(paths))
+}
+
+/// The durable news cache over the operational database, for hosts that stream the News panel.
+/// It survives relaunch so a cold start renders the last headlines from disk rather than spending
+/// a request against the provider's small daily quota.
+public func makeNewsCacheStore(_ paths: WorkspacePaths) throws -> any NewsCacheStore {
+    SQLiteNewsCacheStore(database: try operationalDatabase(paths))
 }
 
 /// Writes the command row from its envelope before any event references it (FK

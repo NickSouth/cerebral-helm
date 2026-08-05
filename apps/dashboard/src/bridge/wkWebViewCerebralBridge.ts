@@ -15,7 +15,26 @@ import type {
   CaptureLayoutResult,
   ListAppsResult,
   ListCalendarsResult,
+  ChooseFolderResult,
+  CreateLinearIssueResult,
+  CreateSpotifyPlaylistResult,
+  ListMessageRecipientsResult,
+  ListSportsEventsResult,
+  SendMessageResult,
+  ScaffoldProjectResult,
+  ListLinearOptionsResult,
+  CloneRepositoryResult,
+  CreateCalendarEventResult,
   CanvasStatus,
+  KnowledgeRebuildResult,
+  ListNotesResult,
+  ListCoursesResult,
+  RunSystemChecksResult,
+  ConnectGmailInput,
+  ConnectGmailResult,
+  UnreadMailResult,
+  CreateCourseNoteInput,
+  CreateCourseNoteResult,
   ListUrlsResult,
   OpenLayoutResult,
   PinLayoutWindowResult,
@@ -34,6 +53,7 @@ import type {
   SettingsSnapshot,
   SpeedTestResult,
   StoreSecretResult,
+  SuggestCommandsResult,
   Unsubscribe,
   UpdateQuickAppsResult,
   UpdateSettingsResult
@@ -80,6 +100,8 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "widget.data.changed",
   "weather.changed",
   "news.changed",
+  "mail.changed",
+  "system.checks.changed",
   "schedule.changed"
 ]);
 
@@ -257,6 +279,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     submitCommand(input) {
       return operation<CommandReceipt>("submitCommand", { ...input });
     },
+    suggestCommands(input) {
+      return operation<SuggestCommandsResult>("suggestCommands", { ...input });
+    },
     applyMode(input) {
       return operation<ApplyModeResult>("applyMode", { ...input });
     },
@@ -287,6 +312,12 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     connectSpotify() {
       return operation<ConnectSpotifyResult>("connectSpotify", {});
     },
+    listUnreadMail(limit?: number) {
+      return operation<UnreadMailResult>("listUnreadMail", limit === undefined ? {} : { limit });
+    },
+    connectGmail(input?: ConnectGmailInput) {
+      return operation<ConnectGmailResult>("connectGmail", { ...(input ?? {}) });
+    },
     listApps() {
       return operation<ListAppsResult>("listApps", {});
     },
@@ -299,8 +330,53 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     setCanvasItemHidden(id: string, hidden: boolean) {
       return operation<CanvasStatus>("setCanvasItemHidden", { id, hidden });
     },
+    rebuildKnowledgeIndex() {
+      return operation<KnowledgeRebuildResult>("rebuildKnowledgeIndex", {});
+    },
+    runSystemChecks() {
+      return operation<RunSystemChecksResult>("runSystemChecks", {});
+    },
+    listCourses(limit?: number) {
+      return operation<ListCoursesResult>("listCourses", limit === undefined ? {} : { limit });
+    },
+    createCourseNote(input: CreateCourseNoteInput) {
+      return operation<CreateCourseNoteResult>("createCourseNote", { ...input });
+    },
+    listNotes(limit?: number) {
+      return operation<ListNotesResult>("listNotes", limit === undefined ? {} : { limit });
+    },
     listCalendars() {
       return operation<ListCalendarsResult>("listCalendars", {});
+    },
+    createCalendarEvent(input) {
+      return operation<CreateCalendarEventResult>("createCalendarEvent", { ...input });
+    },
+    cloneRepository(input) {
+      return operation<CloneRepositoryResult>("cloneRepository", { ...input });
+    },
+    chooseFolder() {
+      return operation<ChooseFolderResult>("chooseFolder", {});
+    },
+    listLinearOptions() {
+      return operation<ListLinearOptionsResult>("listLinearOptions", {});
+    },
+    createLinearIssue(input) {
+      return operation<CreateLinearIssueResult>("createLinearIssue", { ...input });
+    },
+    createSpotifyPlaylist(input) {
+      return operation<CreateSpotifyPlaylistResult>("createSpotifyPlaylist", { ...input });
+    },
+    scaffoldProject(input) {
+      return operation<ScaffoldProjectResult>("scaffoldProject", { ...input });
+    },
+    listSportsEvents() {
+      return operation<ListSportsEventsResult>("listSportsEvents", {});
+    },
+    listMessageRecipients() {
+      return operation<ListMessageRecipientsResult>("listMessageRecipients", {});
+    },
+    sendMessage(input) {
+      return operation<SendMessageResult>("sendMessage", { ...input });
     },
     updateQuickApps(input) {
       return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });

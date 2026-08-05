@@ -1,4 +1,9 @@
-import type { BridgeEvent, CerebralBridge } from "../bridge/cerebralBridge";
+import type {
+  BridgeEvent,
+  CerebralBridge,
+  MailChannel,
+  SystemChecksPayload
+} from "../bridge/cerebralBridge";
 import type {
   ConfirmationDisclosure,
   DashboardRegions,
@@ -8,7 +13,8 @@ import type {
   RegionState,
   ScheduleRegion,
   SystemHealthRegion,
-  WeatherChannel
+  WeatherChannel,
+  WiFiPower
 } from "../bridge/types";
 import type {
   DashboardState,
@@ -29,6 +35,8 @@ interface MetricsChannelPayload {
 interface MetricsNetworkPayload {
   readonly availability?: string;
   readonly linkMbps?: number | null;
+  readonly wifiPower?: string | null;
+  readonly signalRssi?: number | null;
   readonly sampledAt?: string | null;
 }
 
@@ -64,6 +72,15 @@ function channelState(availability: string | undefined): RegionState {
   }
 }
 
+/**
+ * Narrow the payload's Wi-Fi power to the contract's union, dropping anything a
+ * future or malformed producer sends rather than passing an unknown string to the
+ * indicator (which would render as an unexplained blank).
+ */
+function wifiPowerFrom(value: string | null | undefined): WiFiPower | undefined {
+  return value === "on" || value === "off" || value === "absent" ? value : undefined;
+}
+
 /** Fold one live metrics snapshot into the system-health region shape. */
 function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthRegion {
   const cpuLive = payload.cpu?.availability === "available";
@@ -77,7 +94,11 @@ function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthReg
     network: {
       state: networkState,
       label: "Network",
-      linkMbps: payload.network?.linkMbps ?? undefined
+      linkMbps: payload.network?.linkMbps ?? undefined,
+      // Not gated on `networkState`: the radio's power is exactly what the indicator
+      // needs when the link-rate metric is unavailable (Wi-Fi off, or on Ethernet).
+      wifiPower: wifiPowerFrom(payload.network?.wifiPower),
+      signalRssi: payload.network?.signalRssi ?? undefined
     },
     battery: {
       state: batteryState,
@@ -235,6 +256,28 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
         return state;
       }
       return { ...state, liveNews: { ...state.liveNews, [payload.profile]: news } };
+    }
+    case "mail.changed": {
+      // The unread-mail producer spoke (Gmail integration). Machine-global, so a single value
+      // rather than a per-mode map. A payload without a well-formed `state` is ignored rather than
+      // clearing a count that is still good.
+      const payload = event.payload as { state?: unknown };
+      if (typeof payload.state !== "string") {
+        return state;
+      }
+      return { ...state, mail: event.payload as unknown as MailChannel };
+    }
+    case "system.checks.changed": {
+      // A health run streamed its current state (quick actions phase 5). Every emission carries
+      // the WHOLE set, so this replaces rather than merges — there is no per-row reconciliation
+      // to drift out of step with the run. Machine-global, not per-mode: whether Accessibility is
+      // granted is a fact about the Mac. A payload without a checks array is ignored rather than
+      // clearing a run that is still going.
+      const payload = event.payload as { checks?: unknown; complete?: unknown };
+      if (!Array.isArray(payload.checks)) {
+        return state;
+      }
+      return { ...state, systemChecks: event.payload as unknown as SystemChecksPayload };
     }
     case "schedule.changed": {
       // A calendar producer streamed a fresh schedule for one relevance profile (NIC-126). Calendar

@@ -4,7 +4,13 @@
   "title": "CerebralHelm Bridge Operation Request",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "messageId", "type", "operation", "payload"],
+  "required": [
+    "schemaVersion",
+    "messageId",
+    "type",
+    "operation",
+    "payload"
+  ],
   "properties": {
     "schemaVersion": {
       "type": "string",
@@ -56,9 +62,27 @@
         "surfaceWindow",
         "closeWindow",
         "listCalendars",
+        "createCalendarEvent",
+        "cloneRepository",
+        "chooseFolder",
+        "listLinearOptions",
+        "listSportsEvents",
+        "listMessageRecipients",
+        "sendMessage",
+        "createLinearIssue",
+        "createSpotifyPlaylist",
+        "scaffoldProject",
         "getCanvasStatus",
         "resetCanvas",
-        "setCanvasItemHidden"
+        "setCanvasItemHidden",
+        "suggestCommands",
+        "rebuildKnowledgeIndex",
+        "listNotes",
+        "listCourses",
+        "createCourseNote",
+        "runSystemChecks",
+        "connectGmail",
+        "listUnreadMail"
       ]
     },
     "payload": {

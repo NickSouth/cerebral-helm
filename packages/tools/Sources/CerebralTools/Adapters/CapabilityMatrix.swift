@@ -19,6 +19,7 @@ public struct CapabilityMatrix: Sendable {
     public enum Capability {
         public static let appOpen = "app.open"
         public static let projectOpen = "project.open"
+        public static let projectScaffold = "project.scaffold"
         public static let urlOpen = "url.open"
         public static let hookRun = "hook.run"
         public static let systemStatusRead = "system.status.read"
@@ -28,11 +29,19 @@ public struct CapabilityMatrix: Sendable {
         public static let workspaceWindows = "workspace.windows"
         public static let appsList = "apps.list"
         public static let applicationLifecycle = "application.lifecycle"
+        public static let calendarWrite = "calendar.write"
         public static let googleSearch = "google.search"
+        public static let youtubeSearch = "youtube.search"
+        public static let gitClone = "git.clone"
+        public static let linearIssue = "linear.issue"
         public static let webOpen = "web.open"
         public static let spotifyControl = "spotify.control"
+        public static let spotifyPlaylist = "spotify.playlist"
+        public static let messagesSend = "messages.send"
+        public static let noteOpen = "note.open"
+        public static let mailOpen = "mail.open"
 
-        public static let all: Set<String> = [appOpen, projectOpen, urlOpen, hookRun, systemStatusRead, networkSpeedTest, secret, window, workspaceWindows, appsList, applicationLifecycle, googleSearch, webOpen, spotifyControl]
+        public static let all: Set<String> = [appOpen, projectOpen, projectScaffold, urlOpen, hookRun, systemStatusRead, networkSpeedTest, secret, window, workspaceWindows, appsList, applicationLifecycle, calendarWrite, googleSearch, youtubeSearch, gitClone, linearIssue, webOpen, spotifyControl, spotifyPlaylist, messagesSend, noteOpen, mailOpen]
     }
 
     /// Every mock capability available — the contract-suite default.

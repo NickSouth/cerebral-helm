@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "mail.open",
+  "version": "1.0.0",
+  "purpose": "Open the user's Gmail inbox, or one message in it, in the browser. The host is fixed to mail.google.com; only the message id varies.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/mail-open-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/mail-open-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "local_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_local_write",
+  "requiredPermissions": ["application_launch"],
+  "secretReferences": [],
+  "timeoutMs": 30000,
+  "retry": { "maxAttempts": 0, "strategy": "none" },
+  "cancellable": false,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["mail.open"],
+    "platforms": ["macos_native"]
+  },
+  "logging": { "redactionPaths": ["/mailMessageId"], "retention": "standard" },
+  "results": ["success", "unavailable", "denied", "timeout", "failure"],
+  "availability": { "preMac": false, "macOS": true }
+}

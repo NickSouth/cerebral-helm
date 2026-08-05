@@ -29,13 +29,45 @@ public struct ToolCapabilities: Sendable {
     /// Opens a Google search in the browser (NIC-134), preferring a running Chrome instance.
     /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
     public let googleSearch: any GoogleSearchCapability
+    /// Opens a YouTube search in the browser (quick-actions phase 4). A separate port from
+    /// ``googleSearch`` so each adapter's destination host stays a literal constant.
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let youtubeSearch: any YouTubeSearchCapability
+    /// Clones a repository into the projects root (quick-actions phase 4). A fixed executable with
+    /// a typed argument list — never a shell. `.none`-matrix mock by default (pre-Mac/tests); the
+    /// macOS shell binds the honest adapter.
+    public let gitClone: any GitCloneCapability
+    /// Creates a new project folder + descriptor under the projects root (quick-actions phase 4).
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let projectScaffold: any ProjectScaffoldCapability
+    /// Creates issues in the user's Linear workspace (quick-actions phase 4). Write only — listing
+    /// teams/projects/labels is a separate read path that never crosses this port.
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let linearIssue: any LinearIssueCapability
     /// Opens an arbitrary https web address in the browser (NIC-127), for news article links,
     /// preferring a running Chrome instance. `.none`-matrix mock by default (pre-Mac/tests); the
     /// macOS shell binds the honest adapter.
     public let webOpen: any WebOpenCapability
+    /// Writes an event into the user's calendar. `.none`-matrix mock by default (pre-Mac/tests);
+    /// the macOS shell binds the honest EventKit adapter.
+    public let calendarWrite: any CalendarWritingCapability
     /// Controls the user's Spotify playback (NIC-133): play/pause/next/previous. `.none`-matrix
     /// mock by default (pre-Mac/tests); the macOS shell binds the honest Web-API adapter.
     public let spotifyControl: any SpotifyControlCapability
+    /// Creates playlists in the user's Spotify account (quick-actions phase 4). Separate from
+    /// ``spotifyControl``: a playback surface must not reach a path that writes to the library.
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let spotifyPlaylist: any SpotifyPlaylistCapability
+    /// Sends one iMessage (quick-actions phase 4) — the only tool that speaks to another person,
+    /// and the only external write that never takes the user-authored exemption.
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let messaging: any MessagingCapability
+    /// Hands one note to the Mac's Markdown editor (quick actions phase 5). Takes only an absolute
+    /// path the knowledge service has already proved is inside the knowledge root.
+    /// `.none`-matrix mock by default (pre-Mac/tests); the macOS shell binds the honest adapter.
+    public let noteOpen: any NoteOpenCapability
+    /// Opens the user's mail in the browser (Gmail integration). Host fixed in the adapter.
+    public let mailOpen: any MailOpenCapability
     /// Stable capability IDs (``CapabilityMatrix/Capability/appOpen`` etc.) bound
     /// to honest native implementations in this bundle. Empty for the mock bundle.
     public let nativeCapabilityIDs: Set<String>
@@ -53,8 +85,17 @@ public struct ToolCapabilities: Sendable {
         applicationLifecycle: any ApplicationLifecycleCapability = MockApplicationLifecycleCapability(matrix: .none),
         appWindows: any AppWindowsCapability = MockAppWindowsCapability(groups: []),
         googleSearch: any GoogleSearchCapability = MockGoogleSearchCapability(matrix: .none),
+        youtubeSearch: any YouTubeSearchCapability = MockYouTubeSearchCapability(matrix: .none),
+        gitClone: any GitCloneCapability = MockGitCloneCapability(matrix: .none),
+        projectScaffold: any ProjectScaffoldCapability = MockProjectScaffoldCapability(matrix: .none),
+        linearIssue: any LinearIssueCapability = MockLinearIssueCapability(matrix: .none),
         webOpen: any WebOpenCapability = MockWebOpenCapability(matrix: .none),
+        calendarWrite: any CalendarWritingCapability = MockCalendarWritingCapability(matrix: .none),
         spotifyControl: any SpotifyControlCapability = MockSpotifyControlCapability(matrix: .none),
+        spotifyPlaylist: any SpotifyPlaylistCapability = MockSpotifyPlaylistCapability(matrix: .none),
+        messaging: any MessagingCapability = MockMessagingCapability(matrix: .none),
+        noteOpen: any NoteOpenCapability = MockNoteOpenCapability(matrix: .none),
+        mailOpen: any MailOpenCapability = MockMailOpenCapability(matrix: .none),
         nativeCapabilityIDs: Set<String> = []
     ) {
         self.app = app
@@ -69,8 +110,17 @@ public struct ToolCapabilities: Sendable {
         self.applicationLifecycle = applicationLifecycle
         self.appWindows = appWindows
         self.googleSearch = googleSearch
+        self.youtubeSearch = youtubeSearch
+        self.gitClone = gitClone
+        self.projectScaffold = projectScaffold
+        self.linearIssue = linearIssue
         self.webOpen = webOpen
+        self.calendarWrite = calendarWrite
         self.spotifyControl = spotifyControl
+        self.spotifyPlaylist = spotifyPlaylist
+        self.messaging = messaging
+        self.noteOpen = noteOpen
+        self.mailOpen = mailOpen
         self.nativeCapabilityIDs = nativeCapabilityIDs
     }
 
@@ -90,8 +140,17 @@ public struct ToolCapabilities: Sendable {
             applicationLifecycle: MockApplicationLifecycleCapability(matrix: matrix),
             appWindows: MockAppWindowsCapability(groups: []),
             googleSearch: MockGoogleSearchCapability(matrix: matrix),
+            youtubeSearch: MockYouTubeSearchCapability(matrix: matrix),
+            gitClone: MockGitCloneCapability(matrix: matrix),
+            projectScaffold: MockProjectScaffoldCapability(matrix: matrix),
+            linearIssue: MockLinearIssueCapability(matrix: matrix),
             webOpen: MockWebOpenCapability(matrix: matrix),
-            spotifyControl: MockSpotifyControlCapability(matrix: matrix)
+            calendarWrite: MockCalendarWritingCapability(matrix: matrix),
+            spotifyControl: MockSpotifyControlCapability(matrix: matrix),
+            spotifyPlaylist: MockSpotifyPlaylistCapability(matrix: matrix),
+            messaging: MockMessagingCapability(matrix: matrix),
+            noteOpen: MockNoteOpenCapability(matrix: matrix),
+            mailOpen: MockMailOpenCapability(matrix: matrix)
         )
     }
 }

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "start-party-mode",
+  "label": "Start Party Mode",
+  "steps": [
+    { "id": "open-spotify", "label": "Open Spotify", "tool": "app.open", "input": { "appId": "spotify" } },
+    { "id": "open-ambient-video", "label": "Open the ambient video", "tool": "url.open", "input": { "urlId": "party-ambient" } }
+  ]
+}

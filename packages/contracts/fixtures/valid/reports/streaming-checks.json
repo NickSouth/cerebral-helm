@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportId": "system-status-checks",
+  "blocks": [
+    {
+      "blockKind": "greeting",
+      "text": "Running checks.",
+      "greetingSize": "standard"
+    },
+    {
+      "blockKind": "checklist",
+      "listItems": [
+        {
+          "text": "Contract drift",
+          "status": "passed"
+        },
+        {
+          "text": "Config validation",
+          "status": "running"
+        },
+        {
+          "text": "Swift tests",
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "blockKind": "empty",
+      "text": "Nothing has failed yet."
+    }
+  ]
+}

@@ -7,7 +7,7 @@ import type {
   WeatherChannel
 } from "../bridge/types";
 import type { WidgetData } from "../widgets/widgetData";
-import type { LayoutSession } from "../bridge/cerebralBridge";
+import type { LayoutSession, MailChannel, SystemChecksPayload } from "../bridge/cerebralBridge";
 
 export type { LayoutSession };
 
@@ -132,6 +132,17 @@ export type DashboardState = DashboardBootstrapState & {
    *  construction (same reasoning as `liveWidgets`) and never disturbs the per-mode mock `schedule`
    *  fixtures. */
   readonly liveSchedule?: Readonly<Record<string, ScheduleRegion>>;
+  /** The current system-health run (quick actions phase 5), folded from `system.checks.changed`.
+   *  Runtime-only and machine-global — health is a property of this Mac, not of a mode — and
+   *  absent until a run is started, which is what lets the report distinguish "never run" from
+   *  "run found nothing". Each event carries the WHOLE set, so this is replaced rather than
+   *  merged: there is no per-row reconciliation to get wrong. */
+  readonly systemChecks?: SystemChecksPayload | null;
+  /** The unread-mail channel (Gmail integration), folded from `mail.changed`. Runtime-only and
+   *  machine-global — how much mail is waiting is a fact about the account, not the mode — and
+   *  absent until the producer has spoken, which is how "never sampled" stays distinct from
+   *  "sampled and found nothing". */
+  readonly mail?: MailChannel | null;
 };
 
 /**

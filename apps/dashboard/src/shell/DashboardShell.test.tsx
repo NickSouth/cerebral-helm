@@ -4,6 +4,8 @@ import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
 import { ActionStatusProvider } from "../state/ActionStatusProvider";
 import { SettingsProvider } from "../state/SettingsProvider";
+import { ReportProvider } from "../state/ReportProvider";
+import { InputProvider } from "../state/InputProvider";
 import { AppearanceProvider } from "../state/AppearanceProvider";
 import { ThemeProvider } from "../app/ThemeProvider";
 import { createBridgeStore } from "../state/bridgeStore";
@@ -22,7 +24,11 @@ function renderProviders(
           <ThemeProvider>
             <ActionStatusProvider>
               <SettingsProvider>
-                <DashboardShell />
+                <ReportProvider>
+                  <InputProvider>
+                    <DashboardShell />
+                  </InputProvider>
+                </ReportProvider>
               </SettingsProvider>
             </ActionStatusProvider>
           </ThemeProvider>
@@ -169,17 +175,65 @@ describe("DashboardShell structure", () => {
     }
   });
 
-  it("renders eight quick-action slots — wired ones enabled, placeholders disabled", () => {
+  it("renders eight quick-action slots, all of them built", () => {
     renderShell();
     const slots = within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole(
       "button"
     );
     expect(slots).toHaveLength(8);
-    // D4 wires capture-note; the rest remain greyed placeholders.
-    expect(screen.getByRole("button", { name: "Capture note" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Daily brief" })).toBeDisabled();
-    const disabled = slots.filter((slot) => slot.hasAttribute("disabled"));
-    expect(disabled).toHaveLength(7);
+    // Every slot is built (Gmail integration, 2026-08-04): `email-report` was the last one, and
+    // the owner overrode the PRD's Workspace exclusion to finish it.
+    for (const name of [
+      "Daily brief",
+      "Capture note",
+      "Create event",
+      "Create project",
+      "Send text",
+      "System status",
+      "Email report",
+      "Shut down"
+    ]) {
+      expect(screen.getByRole("button", { name })).toBeEnabled();
+    }
+    // Nothing is greyed any more. A slot that is configured but unbuilt still renders labelled and
+    // disabled — that rule stands; there is simply no such slot left.
+    expect(slots.filter((slot) => slot.hasAttribute("disabled"))).toHaveLength(0);
+  });
+
+  it("paints only shut-down with the danger tone, and only while it is live", () => {
+    renderShell();
+    const group = screen.getByRole("group", { name: "Quick actions" });
+
+    const danger = within(group)
+      .getAllByRole("button")
+      .filter((slot) => slot.classList.contains("quick-action--danger"));
+    expect(danger).toHaveLength(1);
+    expect(danger[0]).toHaveAccessibleName("Shut down");
+    // Outline, not filled — the weight belongs on the confirmation, not the tile.
+    expect(danger[0]).toHaveClass("quick-action--wired");
+  });
+
+  it("omits unconfigured slots rather than rendering placeholder tiles, keeping the bar/box split", () => {
+    renderShellWithState((base) => ({
+      ...base,
+      modes: base.modes.map((modeView) =>
+        modeView.label === base.mode
+          ? {
+              ...modeView,
+              quickActions: ["daily-brief", null, null, null, "capture-note", null, null, null]
+            }
+          : modeView
+      )
+    }));
+
+    const group = screen.getByRole("group", { name: "Quick actions" });
+    const slots = within(group).getAllByRole("button");
+    expect(slots).toHaveLength(2);
+    // The old "Add action" placeholder tile is gone (docs/quick-actions/PLAN.md).
+    expect(within(group).queryByRole("button", { name: "Add action" })).toBeNull();
+    // The surviving slots stay in their own rows — a bar is not promoted into the box row.
+    expect(slots[0]).toHaveClass("quick-action--bar");
+    expect(slots[1]).toHaveClass("quick-action--box");
   });
 
   it("exposes the persistent global command launcher (enabled)", () => {
@@ -288,14 +342,29 @@ describe("DashboardShell command surfaces (D3 / NIC-58, NIC-124)", () => {
     expect(await screen.findByText("Heimlich not implemented")).toBeInTheDocument();
   });
 
-  it("offers capability-aware suggestions — unavailable actions are visibly disabled", () => {
+  it("offers bridge-ranked, capability-aware suggestions — unavailable actions are visibly disabled (NIC-168)", async () => {
     renderShell();
-    fireEvent.focus(screen.getByLabelText("Type a command"));
+    const launcher = screen.getByLabelText("Type a command");
+    fireEvent.focus(launcher);
 
-    // The always-first "Ask Heimlich" row is gone (NIC-124) — only command matches remain.
-    expect(screen.queryByRole("button", { name: /Ask Heimlich/ })).toBeNull();
-    expect(screen.getByRole("button", { name: /Capture a note/ })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /Open an app/ })).toBeDisabled();
+    // An empty query lists the grammar templates; the "Ask Heimlich" row stays gone (NIC-124).
+    expect(await screen.findByRole("option", { name: /Capture a note/ })).toBeEnabled();
+    expect(screen.queryByRole("option", { name: /Ask Heimlich/ })).toBeNull();
+
+    // A typed query ranks the catalogs; app rows are honestly unavailable in the browser
+    // preview — visibly disabled, never fake-successful (NIC-58).
+    fireEvent.change(launcher, { target: { value: "ter" } });
+    expect(await screen.findByRole("option", { name: /Terminal/ })).toBeDisabled();
+  });
+
+  it("executes a clicked suggestion as its exact command string, not its label (NIC-168)", async () => {
+    const { submissions } = renderWithSubmit();
+    const launcher = screen.getByLabelText("Type a command");
+
+    fireEvent.change(launcher, { target: { value: "exec" } });
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /Executive/ }));
+
+    expect(submissions).toEqual(["mode executive"]);
   });
 });
 
@@ -339,6 +408,74 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     await waitFor(() =>
       expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument()
     );
+  });
+
+  // The Wi-Fi indicator (NIC-156). It reports state only — turning the radio on and
+  // off stays with the macOS menu bar — so every case here is about not lying.
+  describe("Wi-Fi indicator", () => {
+    function renderWithNetwork(network: DashboardState["regions"]["systemHealth"]["network"]) {
+      const { container } = renderShellWithState((base) => ({
+        ...base,
+        regions: {
+          ...base.regions,
+          systemHealth: { ...base.regions.systemHealth, network }
+        }
+      }));
+      return container.querySelector(".bottom-bar__wifi") as HTMLElement;
+    }
+
+    it("reports a connected radio with its link rate and signal strength", () => {
+      const wifi = renderWithNetwork({
+        state: "ready",
+        label: "Network",
+        linkMbps: 866,
+        wifiPower: "on",
+        signalRssi: -48
+      });
+      expect(wifi).toHaveAttribute("data-wifi", "on");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi connected · 866 Mbps");
+      // A strong signal lights all three arcs.
+      expect(wifi.querySelector(".health-glyph")).toHaveAttribute("data-signal", "3");
+    });
+
+    it("dims the outer arcs as the signal weakens", () => {
+      const weak = renderWithNetwork({
+        state: "ready",
+        label: "Network",
+        linkMbps: 90,
+        wifiPower: "on",
+        signalRssi: -82
+      });
+      expect(weak.querySelector(".health-glyph")).toHaveAttribute("data-signal", "1");
+    });
+
+    it("says the radio is off rather than showing it as connected", () => {
+      const wifi = renderWithNetwork({ state: "unavailable", label: "Network", wifiPower: "off" });
+      expect(wifi).toHaveAttribute("data-wifi", "off");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi off");
+    });
+
+    it("keeps a machine on Ethernet honest: radio on, but not connected", () => {
+      // No link rate and no signal, yet the radio is genuinely powered. Claiming
+      // "connected" here is the bug this ticket exists to fix.
+      const wifi = renderWithNetwork({ state: "unavailable", label: "Network", wifiPower: "on" });
+      expect(wifi).toHaveAttribute("data-wifi", "idle");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi on · not connected");
+    });
+
+    it("distinguishes a machine with no Wi-Fi hardware from a radio switched off", () => {
+      const wifi = renderWithNetwork({ state: "unavailable", label: "Network", wifiPower: "absent" });
+      expect(wifi).toHaveAttribute("data-wifi", "absent");
+      expect(wifi).toHaveAttribute("aria-label", "No Wi-Fi interface on this machine");
+    });
+
+    it("admits when it has no reading at all instead of implying the radio is off", () => {
+      const wifi = renderWithNetwork(undefined);
+      expect(wifi).toHaveAttribute("data-wifi", "unknown");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi status unavailable");
+      // No measurement means no dimming — an unmeasured signal is not a weak one.
+      expect(wifi.querySelector(".health-glyph")).not.toHaveAttribute("data-signal");
+    });
   });
 
   it("shows honest-unavailable weather and battery when the dashboard is offline", () => {
@@ -644,16 +781,44 @@ describe("DashboardShell degraded states (E4 / NIC-64)", () => {
 });
 
 describe("DashboardShell quick actions (D4 / NIC-117 b)", () => {
-  it("dispatches the wired capture-note action and surfaces the result in the status line", async () => {
+  it("opens capture-note's form and captures what was typed, reporting the real result", async () => {
     renderShell();
 
+    // The slot now opens a form rather than capturing a fixed placeholder note.
     fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
+    const form = screen.getByRole("region", { name: "Capture note form" });
+
+    fireEvent.change(within(form).getByLabelText(/Title/), {
+      target: { value: "Ask about the lease" }
+    });
+    fireEvent.change(within(form).getByLabelText("Note"), {
+      target: { value: "Renewal window closes in March." }
+    });
+    fireEvent.click(within(form).getByRole("button", { name: "Capture" }));
 
     // The real bridge op runs; the returned note id is reported in the top-left status surface
     // (never a fabricated outcome, and never a chat surface — NIC-124).
     const status = document.querySelector(".action-status") as HTMLElement;
-    await waitFor(() => expect(status).toHaveTextContent(/Captured a quick note \(note_/));
+    await waitFor(() => expect(status).toHaveTextContent(/Captured “Ask about the lease” \(note_/));
     expect(screen.queryByRole("dialog", { name: "Heimlich conversation" })).toBeNull();
+    // A successful capture closes the form.
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Capture note form" })).toBeNull()
+    );
+  });
+
+  it("blocks submission until every required field is filled", () => {
+    renderShell();
+    fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
+    const form = screen.getByRole("region", { name: "Capture note form" });
+
+    // Title is required and starts blank, so the submit says why rather than sitting inert.
+    const submit = within(form).getByRole("button", { name: "Capture" });
+    expect(submit).toBeDisabled();
+    expect(submit).toHaveAttribute("title", "Title required");
+
+    fireEvent.change(within(form).getByLabelText(/Title/), { target: { value: "Something" } });
+    expect(within(form).getByRole("button", { name: "Capture" })).toBeEnabled();
   });
 });
 

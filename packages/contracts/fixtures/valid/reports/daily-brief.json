@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportId": "daily-brief",
+  "blocks": [
+    {
+      "blockKind": "greeting",
+      "text": "Good morning.",
+      "greetingSize": "hero"
+    },
+    {
+      "blockKind": "line",
+      "text": "It's 8:42 AM on Monday, August 3.",
+      "lineEmphasis": "normal"
+    },
+    {
+      "blockKind": "metric",
+      "label": "Outside",
+      "value": "72°F · Partly cloudy",
+      "metricTone": "neutral"
+    },
+    {
+      "blockKind": "list",
+      "listItems": [
+        {
+          "text": "Board prep review",
+          "meta": "5:00 PM",
+          "color": "#e8b765"
+        },
+        {
+          "text": "Investor call",
+          "meta": "5:30 PM",
+          "color": "#5fd2e8"
+        }
+      ]
+    },
+    {
+      "blockKind": "count",
+      "value": "3",
+      "label": "unread",
+      "reportAction": {
+        "action": "email-report"
+      }
+    },
+    {
+      "blockKind": "proposal",
+      "text": "Your afternoon is clear after 6.",
+      "reportActions": [
+        {
+          "action": "create-event",
+          "params": {
+            "when": "evening"
+          }
+        }
+      ]
+    }
+  ]
+}

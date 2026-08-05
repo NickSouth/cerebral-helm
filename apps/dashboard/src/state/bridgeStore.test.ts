@@ -561,6 +561,61 @@ describe("reduceDashboardState", () => {
     expect(health.battery.percent).toBeUndefined();
   });
 
+  it("keeps Wi-Fi power when the link-rate metric is unavailable (NIC-156)", () => {
+    // On Ethernet, or Wi-Fi on but unassociated: there is no link rate to report,
+    // but the radio is genuinely on. Gating the power field on the channel's state
+    // would make the bar indicator claim Wi-Fi is off.
+    const base = loadBootstrapState();
+    const event: BridgeEvent = {
+      eventId: "brevt_metrics03",
+      type: "system.status.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        category: "system_metrics",
+        cpu: { availability: "available", value: 10, unit: "percent", sampledAt: null },
+        memory: { availability: "available", value: 40, unit: "percent", sampledAt: null },
+        network: {
+          availability: "unavailable",
+          linkMbps: null,
+          wifiPower: "on",
+          signalRssi: -61,
+          unit: "mbps",
+          sampledAt: null
+        },
+        battery: { availability: "unavailable", value: null, unit: "percent", sampledAt: null },
+        display: { availability: "available", value: 1, unit: null, sampledAt: null }
+      }
+    };
+
+    const health = reduceDashboardState(base, event).regions.systemHealth;
+    expect(health.network?.state).toBe("unavailable");
+    expect(health.network?.linkMbps).toBeUndefined();
+    expect(health.network?.wifiPower).toBe("on");
+    expect(health.network?.signalRssi).toBe(-61);
+  });
+
+  it("drops an unrecognized Wi-Fi power value rather than passing it through", () => {
+    const base = loadBootstrapState();
+    const event: BridgeEvent = {
+      eventId: "brevt_metrics04",
+      type: "system.status.changed",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-06-23T16:00:00.000Z",
+      payload: {
+        category: "system_metrics",
+        cpu: { availability: "available", value: 10, unit: "percent", sampledAt: null },
+        memory: { availability: "available", value: 40, unit: "percent", sampledAt: null },
+        network: { availability: "available", linkMbps: 100, wifiPower: "sideways", unit: "mbps", sampledAt: null },
+        battery: { availability: "unavailable", value: null, unit: "percent", sampledAt: null },
+        display: { availability: "available", value: 1, unit: null, sampledAt: null }
+      }
+    };
+
+    const health = reduceDashboardState(base, event).regions.systemHealth;
+    expect(health.network?.wifiPower).toBeUndefined();
+  });
+
   it("still folds bridge_failure status changes into read-only recovery (NIC-64)", () => {
     const base = loadBootstrapState();
     const event: BridgeEvent = {

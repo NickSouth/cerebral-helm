@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/linear-create-issue-input.schema.json",
+  "title": "CerebralHelm Linear Create Issue Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issueTitle", "linearTeamID"],
+  "description": "Property names are prefixed because the code generator derives type names from property names: a bare `title`/`description`/`priority` would mint or steal a generic type across the whole shared module.",
+  "properties": {
+    "issueTitle": {
+      "type": "string",
+      "minLength": 1
+    },
+    "issueDescription": {
+      "type": "string",
+      "description": "Markdown body. Optional."
+    },
+    "linearTeamID": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The Linear team the issue belongs to. Required by the API and never inferred: a workspace can have several teams, and guessing one would file the ticket somewhere the user did not choose."
+    },
+    "linearProjectID": {
+      "type": "string",
+      "description": "Optional project. Must belong to the chosen team."
+    },
+    "linearLabelIDs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "description": "Optional labels. A list because Linear issues carry several, and because that is how the labels are actually used here — an issue is routinely both a category and a status."
+    },
+    "issuePriority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Linear's priority scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low."
+    }
+  }
+}

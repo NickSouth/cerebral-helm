@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_createCalendarEventResponse1",
+  "type": "bridge.operation.response",
+  "operation": "createCalendarEvent",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "eventId": "evt-9f2c",
+    "calendarTitle": "Work",
+    "awaitingConfirmation": false
+  }
+}

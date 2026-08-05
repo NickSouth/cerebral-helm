@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/linear-create-issue-output.schema.json",
+  "title": "CerebralHelm Linear Create Issue Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issueIdentifier", "issueURL"],
+  "properties": {
+    "issueIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The human-readable identifier Linear assigned, e.g. NIC-176."
+    },
+    "issueURL": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The issue's web URL, as returned by Linear — never constructed here."
+    }
+  }
+}

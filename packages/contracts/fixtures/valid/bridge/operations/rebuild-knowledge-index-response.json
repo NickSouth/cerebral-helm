@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000100",
+  "type": "bridge.operation.response",
+  "operation": "rebuildKnowledgeIndex",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "rebuilt": true,
+    "root": "/Users/fixture/CerebralHelm/knowledge",
+    "noteCount": 42
+  }
+}

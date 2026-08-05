@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_createLinearIssueRes00001",
+  "type": "bridge.operation.response",
+  "operation": "createLinearIssue",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "identifier": "NIC-176",
+    "url": "https://linear.app/nick-southey/issue/NIC-176/newly-downloaded-apps-arent-visible",
+    "awaitingConfirmation": false
+  }
+}

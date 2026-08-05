@@ -1,9 +1,12 @@
-import { act, render, screen, within, fireEvent, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import { DashboardShell } from "../DashboardShell";
+import { SettingsSurface } from "./SettingsOverlay";
 import { DashboardStateProvider } from "../../state/DashboardStateProvider";
 import { BridgeProvider } from "../../state/BridgeProvider";
 import { ActionStatusProvider } from "../../state/ActionStatusProvider";
 import { SettingsProvider } from "../../state/SettingsProvider";
+import { ReportProvider } from "../../state/ReportProvider";
+import { InputProvider } from "../../state/InputProvider";
 import { AppearanceProvider } from "../../state/AppearanceProvider";
 import { ThemeProvider } from "../../app/ThemeProvider";
 import { createBridgeStore } from "../../state/bridgeStore";
@@ -22,7 +25,11 @@ function renderApp() {
             <ThemeProvider>
               <ActionStatusProvider>
                 <SettingsProvider>
-                  <DashboardShell />
+                  <ReportProvider>
+                    <InputProvider>
+                      <DashboardShell />
+                    </InputProvider>
+                  </ReportProvider>
                 </SettingsProvider>
               </ActionStatusProvider>
             </ThemeProvider>
@@ -36,6 +43,69 @@ function renderApp() {
 function openSettings() {
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   return screen.getByRole("dialog", { name: "Settings" });
+}
+
+interface NotesBrowserWindow {
+  webkit?: { messageHandlers?: { shellControl?: { postMessage(message: unknown): void } } };
+  __cerebralNotesBrowser?: { obsidian?: boolean };
+  __cerebralNotesBrowserUpdate?: (outcome: string) => void;
+}
+
+function asNotesBrowserWindow(): NotesBrowserWindow {
+  return window as unknown as NotesBrowserWindow;
+}
+
+function resetNotesBrowserWindow() {
+  const target = asNotesBrowserWindow();
+  delete target.webkit;
+  delete target.__cerebralNotesBrowser;
+  delete target.__cerebralNotesBrowserUpdate;
+}
+
+/**
+ * Waits for one of the native shell's `__cerebral*Update` callbacks to be registered.
+ *
+ * Each is installed by an effect, which can land after the control it belongs to is already on
+ * screen — so calling it the instant a control appears is a race. Optional-chaining it (`fn?.()`)
+ * turns that race into a silent no-op that surfaces much later as a stale value rather than a
+ * missing wire, which is how this flaked in CI on a slower machine.
+ */
+async function nativeShellCallback(name: string): Promise<(argument: string) => void> {
+  return waitFor(() => {
+    const callback = (window as unknown as Record<string, unknown>)[name];
+    if (typeof callback !== "function") {
+      throw new Error(`the native shell callback ${name} is not registered yet`);
+    }
+    return callback as (argument: string) => void;
+  });
+}
+
+/**
+ * Render the standalone settings surface and return the "Browse notes" field (NIC-162).
+ *
+ * Not via the dashboard gear: once a shell-control channel exists, the gear delegates to the
+ * native shell instead of opening the in-web dialog — which is exactly the condition these
+ * tests need to simulate.
+ */
+async function renderBrowseNotesField(): Promise<HTMLElement> {
+  const bridge = createMockCerebralBridge();
+  const store = createBridgeStore(bridge, loadBootstrapState());
+  render(
+    <BridgeProvider bridge={bridge}>
+      <DashboardStateProvider store={store}>
+        <AppearanceProvider>
+          <ThemeProvider>
+            <SettingsProvider surface="standalone">
+              <SettingsSurface />
+            </SettingsProvider>
+          </ThemeProvider>
+        </AppearanceProvider>
+      </DashboardStateProvider>
+    </BridgeProvider>
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "Setup" }));
+  const label = await screen.findByText("Browse notes", { selector: ".settings-field__label" });
+  return label.closest(".settings-field") as HTMLElement;
 }
 
 describe("SettingsOverlay (E3 / NIC-63)", () => {
@@ -401,9 +471,12 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     const workSelect = await within(dialog).findByLabelText("Mode for Work");
     fireEvent.change(workSelect, { target: { value: "developer" } });
 
-    // The change writes the whole calendar→mode map through the settings path.
+    // The change writes the WHOLE calendar→mode map through the settings path — the edited
+    // entry plus every mapping the user already had, so saving one row never drops the others.
     await waitFor(() => expect(patches).toHaveLength(1));
-    expect(patches[0]).toEqual({ calendarModeMap: { "cal-work": "developer" } });
+    expect(patches[0]).toEqual({
+      calendarModeMap: { "cal-work": "developer", "cal-school": "school" }
+    });
   });
 
   it("shows the Canvas pairing token + last-scrape status and disconnects (NIC-132)", async () => {
@@ -446,6 +519,212 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(canvas.getByText(/2 courses, 2 deadlines/)).toBeInTheDocument();
   });
 
+  it("names Obsidian as the browse destination and reports where the request went (NIC-162)", async () => {
+    const posted: unknown[] = [];
+    const target = asNotesBrowserWindow();
+    // Stand in for the native host: a shell-control channel, and Obsidian installed.
+    // Rendered as the standalone settings surface, because with a native channel
+    // present the dashboard gear delegates to the shell instead of opening a dialog.
+    target.webkit = { messageHandlers: { shellControl: { postMessage: (m) => posted.push(m) } } };
+    target.__cerebralNotesBrowser = { obsidian: true };
+
+    try {
+      const card = within(await renderBrowseNotesField());
+
+      // The button names its destination before the click, not after.
+      fireEvent.click(card.getByRole("button", { name: "Open in Obsidian" }));
+      expect(posted).toEqual([{ action: "browseKnowledgeRoot" }]);
+
+      // Obsidian silently ignores a folder it has not registered as a vault, so the
+      // outcome carries that hint rather than implying the notes are now on screen.
+      const reportOutcome = await nativeShellCallback("__cerebralNotesBrowserUpdate");
+      act(() => reportOutcome("obsidian"));
+      expect(await card.findByText(/Add the folder as a vault in Obsidian first/)).toBeInTheDocument();
+
+      // A Finder fallback says why it happened.
+      act(() => reportOutcome("finder"));
+      expect(await card.findByText(/Obsidian isn't installed/)).toBeInTheDocument();
+    } finally {
+      resetNotesBrowserWindow();
+    }
+  });
+
+  it("offers Finder when Obsidian is absent, and disables browsing off the macOS host (NIC-162)", async () => {
+    // No native channel at all (a plain browser): the action is honestly disabled.
+    const plain = within(await renderBrowseNotesField());
+    expect(plain.getByText("Browsing your notes requires the macOS host")).toBeInTheDocument();
+    cleanup();
+
+    // On the host without Obsidian, the button promises Finder — not Obsidian.
+    const target = asNotesBrowserWindow();
+    target.webkit = { messageHandlers: { shellControl: { postMessage: () => {} } } };
+    target.__cerebralNotesBrowser = { obsidian: false };
+    try {
+      const card = within(await renderBrowseNotesField());
+      expect(card.getByRole("button", { name: "Reveal in Finder" })).toBeInTheDocument();
+      expect(card.queryByRole("button", { name: "Open in Obsidian" })).toBeNull();
+    } finally {
+      resetNotesBrowserWindow();
+    }
+  });
+
+  it("shows the note count, the source root, and the most recent notes (NIC-162)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const label = await within(dialog).findByText("Your notes", {
+      selector: ".settings-field__label"
+    });
+    const card = within(label.closest(".settings-field") as HTMLElement);
+
+    // Five: the two general notes plus STAT 240's three (added with take-notes in phase 5 —
+    // a course note is an ordinary note, so it counts in the library like any other).
+    expect(await card.findByText("5 notes")).toBeInTheDocument();
+    expect(card.getByText("/Users/you/CerebralHelm/knowledge")).toBeInTheDocument();
+    // A note written outside CerebralHelm is listed like any other, titled by filename.
+    expect(card.getByText("Hull Plating")).toBeInTheDocument();
+    expect(card.getByText("Atlas kickoff")).toBeInTheDocument();
+  });
+
+  it("distinguishes an empty library from an unreadable knowledge root (NIC-162)", async () => {
+    const bridge = createMockCerebralBridge();
+    const store = createBridgeStore(bridge, loadBootstrapState());
+    bridge.listNotes = () =>
+      Promise.resolve({ available: true, root: "/Users/me/knowledge", total: 0, notes: [] });
+    render(
+      <BridgeProvider bridge={bridge}>
+        <DashboardStateProvider store={store}>
+          <AppearanceProvider>
+            <ThemeProvider>
+              <ActionStatusProvider>
+                <SettingsProvider>
+                  <ReportProvider>
+                    <InputProvider>
+                      <DashboardShell />
+                    </InputProvider>
+                  </ReportProvider>
+                </SettingsProvider>
+              </ActionStatusProvider>
+            </ThemeProvider>
+          </AppearanceProvider>
+        </DashboardStateProvider>
+      </BridgeProvider>
+    );
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const label = await within(dialog).findByText("Your notes", {
+      selector: ".settings-field__label"
+    });
+    const card = within(label.closest(".settings-field") as HTMLElement);
+
+    // An empty root is empty at a named location — not an error, and not silence.
+    expect(await card.findByText("No notes yet")).toBeInTheDocument();
+    expect(card.getByText("/Users/me/knowledge")).toBeInTheDocument();
+    expect(card.queryByText(/could not be read/)).toBeNull();
+  });
+
+  it("says so when the knowledge root cannot be read, rather than showing it empty (NIC-162)", async () => {
+    const bridge = createMockCerebralBridge();
+    const store = createBridgeStore(bridge, loadBootstrapState());
+    bridge.listNotes = () => Promise.resolve({ available: false, root: "", total: 0, notes: [] });
+    render(
+      <BridgeProvider bridge={bridge}>
+        <DashboardStateProvider store={store}>
+          <AppearanceProvider>
+            <ThemeProvider>
+              <ActionStatusProvider>
+                <SettingsProvider>
+                  <ReportProvider>
+                    <InputProvider>
+                      <DashboardShell />
+                    </InputProvider>
+                  </ReportProvider>
+                </SettingsProvider>
+              </ActionStatusProvider>
+            </ThemeProvider>
+          </AppearanceProvider>
+        </DashboardStateProvider>
+      </BridgeProvider>
+    );
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const label = await within(dialog).findByText("Your notes", {
+      selector: ".settings-field__label"
+    });
+    const card = within(label.closest(".settings-field") as HTMLElement);
+
+    expect(await card.findByText("Your knowledge root could not be read")).toBeInTheDocument();
+    expect(card.queryByText("No notes yet")).toBeNull();
+  });
+
+  it("reports the rebuild as unavailable in the browser preview, never a fake success (NIC-163)", async () => {
+    renderApp();
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    // Scope by the field's label element — the button carries the same text.
+    const label = await within(dialog).findByText("Rebuild index", {
+      selector: ".settings-field__label"
+    });
+    const card = within(label.closest(".settings-field") as HTMLElement);
+
+    // The mock bridge has no knowledge root, so it reports rebuilt: false — the card
+    // must say the surface is unavailable rather than "Rebuilt · 0 notes indexed".
+    fireEvent.click(card.getByRole("button", { name: "Rebuild index" }));
+    expect(await card.findByText("Requires the macOS host")).toBeInTheDocument();
+    expect(card.queryByText(/Rebuilt/)).toBeNull();
+  });
+
+  it("reports how many notes a rebuild indexed, and says so when one fails (NIC-163)", async () => {
+    const bridge = createMockCerebralBridge();
+    const store = createBridgeStore(bridge, loadBootstrapState());
+    let attempt = 0;
+    bridge.rebuildKnowledgeIndex = () => {
+      attempt += 1;
+      return attempt === 1
+        ? Promise.resolve({ rebuilt: true, root: "/Users/me/knowledge", noteCount: 12 })
+        : Promise.reject(new Error("index write failed"));
+    };
+    render(
+      <BridgeProvider bridge={bridge}>
+        <DashboardStateProvider store={store}>
+          <AppearanceProvider>
+            <ThemeProvider>
+              <ActionStatusProvider>
+                <SettingsProvider>
+                  <ReportProvider>
+                    <InputProvider>
+                      <DashboardShell />
+                    </InputProvider>
+                  </ReportProvider>
+                </SettingsProvider>
+              </ActionStatusProvider>
+            </ThemeProvider>
+          </AppearanceProvider>
+        </DashboardStateProvider>
+      </BridgeProvider>
+    );
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    // Scope by the field's label element — the button carries the same text.
+    const label = await within(dialog).findByText("Rebuild index", {
+      selector: ".settings-field__label"
+    });
+    const card = within(label.closest(".settings-field") as HTMLElement);
+
+    // Success reports what the rebuild actually covered, not a bare "done".
+    fireEvent.click(card.getByRole("button", { name: "Rebuild index" }));
+    expect(await card.findByText("Rebuilt · 12 notes indexed")).toBeInTheDocument();
+
+    // A failure is reported as one, and promises the Markdown was left alone.
+    fireEvent.click(card.getByRole("button", { name: "Rebuild index" }));
+    expect(await card.findByText("Rebuild failed. Your notes are unchanged.")).toBeInTheDocument();
+  });
+
   it("applies persisted reduced motion app-wide at startup, before settings is opened (NIC-141)", async () => {
     const bridge = createMockCerebralBridge();
     bridge.getSettings = () =>
@@ -465,7 +744,11 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
             <ThemeProvider>
               <ActionStatusProvider>
                 <SettingsProvider>
-                  <DashboardShell />
+                  <ReportProvider>
+                    <InputProvider>
+                      <DashboardShell />
+                    </InputProvider>
+                  </ReportProvider>
                 </SettingsProvider>
               </ActionStatusProvider>
             </ThemeProvider>
@@ -654,7 +937,6 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
     };
     interface LoginWindow {
       __cerebralLoginItem?: { status?: string };
-      __cerebralLoginItemUpdate?: (status: string) => void;
     }
     (window as unknown as LoginWindow).__cerebralLoginItem = { status: "not-registered" };
 
@@ -673,13 +955,54 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
 
     // The native shell pushes the OS's resulting status back — including the
     // requires-approval state, which the panel explains.
-    act(() => {
-      (window as unknown as LoginWindow).__cerebralLoginItemUpdate?.("requires-approval");
-    });
+    const reportLoginStatus = await nativeShellCallback("__cerebralLoginItemUpdate");
+    act(() => reportLoginStatus("requires-approval"));
     expect(within(surface).getByLabelText("Launch at login")).toBeChecked();
     expect(within(surface).getByText(/Waiting for approval/)).toBeInTheDocument();
 
     delete (window as unknown as LoginWindow).__cerebralLoginItem;
+  });
+
+  it("the pinned shutdown control dispatches the same confirmation-gated shut-down workflow", () => {
+    // The control is macOS-only, so it only becomes live once a shell-control channel exists.
+    const postMessage = vi.fn();
+    (window as unknown as ShellControlWindow).webkit = {
+      messageHandlers: { shellControl: { postMessage } }
+    };
+
+    const bridge = createMockCerebralBridge();
+    const submissions: string[] = [];
+    const spyBridge = {
+      ...bridge,
+      submitCommand(input: { rawInput: string; source: string }) {
+        submissions.push(input.rawInput);
+        return bridge.submitCommand(input);
+      }
+    };
+    const store = createBridgeStore(spyBridge, loadBootstrapState());
+    render(
+      <BridgeProvider bridge={spyBridge}>
+        <DashboardStateProvider store={store}>
+          <AppearanceProvider>
+            <ThemeProvider>
+              <SettingsProvider surface="standalone">
+                <SettingsSurface />
+              </SettingsProvider>
+            </ThemeProvider>
+          </AppearanceProvider>
+        </DashboardStateProvider>
+      </BridgeProvider>
+    );
+
+    const quit = screen.getByRole("button", { name: /Shut down CerebralHelm/ });
+    expect(quit).toBeEnabled();
+    fireEvent.click(quit);
+
+    // Not a direct native quit: it dispatches the same workflow the Executive `shut-down` slot
+    // does, so app.quit's destructive risk class gates this control identically. A settings
+    // control that quit directly would be an unconfirmed second door to the same action.
+    expect(submissions).toEqual(["run shut-down"]);
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ action: "quit" }));
   });
 
   it("the standalone surface rebinds the palette shortcut and closes via the native channel", async () => {
@@ -691,10 +1014,11 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
     render(<SettingsApp />);
     const surface = screen.getByRole("main", { name: "Settings" });
 
-    // The palette shortcut now lives in General (the default tab); it seeds once the read settles.
-    const select = await within(surface).findByRole("combobox", {
-      name: "Command palette shortcut"
-    });
+    // The summon shortcut lives in General (the default tab); it seeds once the read settles.
+    // It now opens the sidebar rather than the palette (owner decision, 2026-08-03), hence the
+    // control's label — the shellControl action keeps its `setPaletteShortcut` name because that
+    // is also the durable persistence key, and renaming it would reset every stored binding.
+    const select = await within(surface).findByRole("combobox", { name: "Sidebar shortcut" });
     fireEvent.change(select, { target: { value: "command-shift-space" } });
     expect(postMessage).toHaveBeenCalledWith({
       action: "setPaletteShortcut",
@@ -703,6 +1027,30 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
 
     fireEvent.click(within(surface).getByRole("button", { name: "Close settings" }));
     expect(postMessage).toHaveBeenCalledWith({ action: "closeSettings" });
+  });
+
+  it("drives the sidebar's edge reveal through the shell, and gates sensitivity on it", async () => {
+    const postMessage = vi.fn();
+    (window as unknown as ShellControlWindow).webkit = {
+      messageHandlers: { shellControl: { postMessage } }
+    };
+    const { SettingsApp } = await import("../../app/SettingsApp");
+    render(<SettingsApp />);
+    const surface = screen.getByRole("main", { name: "Settings" });
+
+    // Both controls are shell state (UserDefaults), not settings-snapshot fields, so they travel
+    // over shellControl rather than the settings patch.
+    const sensitivity = await within(surface).findByRole("combobox", { name: "Edge sensitivity" });
+    fireEvent.change(sensitivity, { target: { value: "relaxed" } });
+    expect(postMessage).toHaveBeenCalledWith({ action: "setSidebarEdge", dwell: "relaxed" });
+
+    const toggle = within(surface).getByRole("checkbox", { name: "Reveal at screen edge" });
+    fireEvent.click(toggle);
+    expect(postMessage).toHaveBeenCalledWith({ action: "setSidebarEdge", enabled: false });
+
+    // Turning the reveal off leaves the dwell control visible but inert — a dead setting should
+    // read as unavailable rather than silently doing nothing.
+    expect(within(surface).getByRole("combobox", { name: "Edge sensitivity" })).toBeDisabled();
   });
 
   it("chooses the knowledge root through the native Finder picker and persists it (NIC-138)", async () => {
@@ -721,11 +1069,8 @@ describe("Settings surfaces under the native shell (backdrop-policy decision, 20
     expect(postMessage).toHaveBeenCalledWith({ action: "pickKnowledgeRoot" });
 
     // The native shell posts the chosen folder back; the panel reflects it in the field.
-    act(() => {
-      (
-        window as unknown as { __cerebralKnowledgeRootUpdate?: (path: string) => void }
-      ).__cerebralKnowledgeRootUpdate?.("/Users/me/CerebralHelm/knowledge");
-    });
+    const applyPickedRoot = await nativeShellCallback("__cerebralKnowledgeRootUpdate");
+    act(() => applyPickedRoot("/Users/me/CerebralHelm/knowledge"));
     expect(within(surface).getByLabelText("Knowledge root reference")).toHaveValue(
       "/Users/me/CerebralHelm/knowledge"
     );

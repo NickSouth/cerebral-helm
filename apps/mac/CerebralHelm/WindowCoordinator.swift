@@ -21,7 +21,13 @@ import CerebralRuntimeHost
 /// the background event relay may hand `self` across the main-queue hop.
 final class WindowCoordinator: @unchecked Sendable {
     private var dashboard: DashboardWindowController?
-    private var palette: CommandPaletteWindowController?
+    /// The left-edge sidebar panel: pre-warmed at launch and kept warm, so a summon is only a
+    /// position + order-front. The global hotkey targets this (the palette is now reachable only
+    /// from the menu bar, pending its removal).
+    private var sidebar: SidebarWindowController?
+    /// Watches the left screen edge and reveals the sidebar on a hover-dwell. Runs for the life
+    /// of the ready session; an enable/disable setting is a follow-on increment.
+    private let edgeMonitor = ScreenEdgeMonitor()
     private var recovery: RecoveryWindowController?
     private var confirmation: ConfirmationWindowController?
     /// The dedicated settings window (backdrop-policy decision): created lazily on
@@ -102,6 +108,9 @@ final class WindowCoordinator: @unchecked Sendable {
     /// Fired on the main queue whenever backdrop visibility changes — the shell
     /// pauses the status publisher only when every backdrop is hidden (NIC-81b).
     var onDashboardVisibilityChange: ((Bool) -> Void)?
+    /// Fired once the dashboard's bridge handshake proves the page can receive events, so the
+    /// runtime can replay live widget state emitted while it was still loading.
+    var onDashboardBridgeReady: (() -> Void)?
 
     /// Ready path: host the dashboard and pre-warm the single command palette against the
     /// shared session. Called once after a clean startup pre-flight.
@@ -119,6 +128,10 @@ final class WindowCoordinator: @unchecked Sendable {
         // handshake proves the page can receive it (the initial topology event
         // always beats the webview's dynamic surface import).
         dashboard.onBridgeReady = { [weak self, weak dashboard] in
+            // Live widget state whose first emit can also beat the page's import (news, served
+            // from a warm cache) is replayed through the runtime, which re-emits from cache
+            // rather than re-fetching — no provider quota is spent to repaint a panel.
+            self?.onDashboardBridgeReady?()
             guard let json = self?.lastTopologyJSON else { return }
             dashboard?.deliverBridgeEvent(json)
         }
@@ -129,14 +142,36 @@ final class WindowCoordinator: @unchecked Sendable {
         // every backdrop is fully occluded or hidden (MAC-ADAPTER-3 battery AC).
         observeOcclusion(of: dashboard.window)
 
-        let palette = CommandPaletteWindowController(dashboardRoot: dashboardRoot, paths: paths, session: session)
-        // A palette submission routes to the dashboard's command bus (NIC-124) rather than
-        // opening a conversation (which no longer exists).
-        palette.onAskHeimlich = { [weak self] text in self?.routeAskHeimlich(text) }
-        // Palette focus targets the main display (NIC-120b), not whichever screen
-        // has keyboard focus.
-        palette.targetScreen = { [weak self] in self?.mainScreen() }
-        self.palette = palette
+        // The edge sidebar shares the same session and the same shell-action routing as the
+        // dashboard, so quick-app pinning and More Apps behave identically from the column.
+        let sidebar = SidebarWindowController(dashboardRoot: dashboardRoot, paths: paths, session: session)
+        sidebar.onShellControl = { [weak self] body in self?.handleShellControl(body, from: nil) }
+        // The sidebar attaches to the desktop's leftmost edge, not the main display.
+        sidebar.targetScreen = { [weak self] in self?.leftmostScreen() }
+        // A Report/Input quick action run from the column opens on the dashboard instead. The
+        // sidebar has already dismissed itself and stowed the covering windows by this point.
+        sidebar.onRevealDashboard = { [weak self] report, input in
+            guard let dashboard = self?.dashboard else { return }
+            if let report { dashboard.openReport(report) }
+            if let input { dashboard.openInput(input) }
+        }
+        self.sidebar = sidebar
+
+        // Hover-dwell at that same edge reveals it (owner decision, 2026-08-03). The monitor stays
+        // suppressed while the sidebar is already out.
+        edgeMonitor.targetScreen = { [weak self] in self?.leftmostScreen() }
+        edgeMonitor.isSuppressed = { [weak self] in self?.sidebar?.isVisible ?? false }
+        // A hover reveal does NOT focus the command input: the user reached for the sidebar with
+        // the pointer, and an autofocused box popping open a suggestion list reads as noise. The
+        // hotkey path focuses, because there the user is already typing.
+        edgeMonitor.onTrigger = { [weak self] in self?.sidebar?.summon(from: .edge) }
+        // A hover-revealed column collapses when the pointer leaves it (standard flyout behavior).
+        // `hoverFrame` returns nil when the sidebar is pinned or was summoned by the hotkey, which
+        // is what keeps those two cases open.
+        edgeMonitor.hoverFrame = { [weak self] in self?.sidebar?.hoverFrame }
+        edgeMonitor.onExit = { [weak self] in self?.sidebar?.dismiss() }
+        applySidebarEdgePreference()
+        edgeMonitor.start()
     }
 
     /// Recovery path: a single read-only recovery window; no dashboard or palette exist.
@@ -188,6 +223,9 @@ final class WindowCoordinator: @unchecked Sendable {
             return
         }
         dashboard?.deliverBridgeEvent(json)
+        // The sidebar renders the same live widgets as the dashboard, so it takes the full event
+        // stream — not the palette's mode-only subset.
+        sidebar?.deliverBridgeEvent(json)
         for secondary in secondaries.values {
             secondary.deliverBridgeEvent(json)
         }
@@ -198,16 +236,23 @@ final class WindowCoordinator: @unchecked Sendable {
         windowNavigator?.deliverBridgeEvent(json)
         projectDetail?.deliverBridgeEvent(json)
         if json.contains("\"config.changed\"") {
-            palette?.deliverBridgeEvent(json)
             // Keep the open dropdown's active-mode highlight and theme current if the mode
             // changes from elsewhere while it's open (NIC-144).
             modeMenu?.deliverBridgeEvent(json)
         }
     }
 
-    /// Summon (or refocus) the single command palette (FR-SHL-02/04). No-op in recovery.
-    func summonPalette() {
-        palette?.summon()
+    /// Toggle the left-edge sidebar and focus its command input — the global hotkey's target.
+    /// No-op in recovery, where no sidebar exists.
+    func toggleSidebar() {
+        sidebar?.toggle()
+    }
+
+    /// Push the persisted edge-reveal preference into the live monitor. Called at startup and
+    /// after every settings change, so a toggle or a dwell change applies without a restart.
+    private func applySidebarEdgePreference() {
+        edgeMonitor.isEnabled = SidebarEdgePreference.isEnabled
+        edgeMonitor.dwell = SidebarEdgePreference.dwell.seconds
     }
 
     /// Display topology changed (NIC-87/120b): reconcile one backdrop per
@@ -360,6 +405,17 @@ final class WindowCoordinator: @unchecked Sendable {
     private func mainScreen() -> NSScreen? {
         guard let topology = lastTopology, let main = mainDescriptor(in: topology) else { return nil }
         return screen(for: main)
+    }
+
+    /// The display holding the leftmost edge of the whole desktop — where the sidebar lives
+    /// regardless of which display is "main" (owner decision, 2026-08-03).
+    ///
+    /// This is the only edge that is a genuine wall rather than a crossing point between monitors,
+    /// so it is both where the column should attach and the only edge the hover trigger can arm
+    /// without firing every time the pointer travels between displays. Recomputed per call, so a
+    /// display being plugged in or rearranged moves the sidebar with no extra bookkeeping.
+    private func leftmostScreen() -> NSScreen? {
+        NSScreen.screens.min { $0.frame.minX < $1.frame.minX }
     }
 
     // MARK: - Backdrop visibility (status-publisher pause, NIC-81b)
@@ -619,18 +675,6 @@ final class WindowCoordinator: @unchecked Sendable {
         layoutEditor = nil
     }
 
-    /// Dismiss the palette (already done by its control channel), bring the dashboard forward,
-    /// and dispatch the submitted text through the dashboard's command bus. The Heimlich chat
-    /// was removed (NIC-124): a command's result surfaces in the dashboard status line, and an
-    /// unrecognized command reports the honest not-implemented state — no conversation opens.
-    private func routeAskHeimlich(_ text: String) {
-        guard let dashboard else { return }
-        // The dashboard is the backdrop and may be covered by other apps; its surfacing UX is
-        // deliberately deferred (backdrop-policy decision, 2026-07-06); do not lift it.
-        NSApp.activate(ignoringOtherApps: true)
-        dashboard.submitCommand(text)
-    }
-
     /// Present or clear the dedicated confirmation panel from one
     /// `confirmation.changed` event. The panel and the dashboard's web overlay
     /// render the same policy-owned disclosure; a decision on either surface
@@ -650,7 +694,6 @@ final class WindowCoordinator: @unchecked Sendable {
             confirmation = nil
             return
         }
-        palette?.dismiss()
         let controller = ConfirmationWindowController(disclosure: disclosure) { [weak self] id, decision in
             self?.decideConfirmation(id: id, decision: decision)
         }
@@ -700,6 +743,18 @@ final class WindowCoordinator: @unchecked Sendable {
             guard let presetID = body["preset"] as? String,
                   let preset = PaletteShortcutPreset(rawValue: presetID) else { return }
             preset.apply()
+        case "setSidebarEdge":
+            // Both fields are optional so the panel can change either control independently.
+            // An unrecognized dwell id is ignored rather than defaulted, so a malformed message
+            // can never silently retune a setting the user did not touch.
+            if let enabled = body["enabled"] as? Bool {
+                SidebarEdgePreference.isEnabled = enabled
+            }
+            if let dwellID = body["dwell"] as? String,
+               let dwell = SidebarEdgePreference.Dwell(rawValue: dwellID) {
+                SidebarEdgePreference.dwell = dwell
+            }
+            applySidebarEdgePreference()
         case "openSettings":
             openSettings()
         case "closeSettings":
@@ -760,6 +815,8 @@ final class WindowCoordinator: @unchecked Sendable {
             fanOutLayoutSession()
         case "pickKnowledgeRoot":
             presentKnowledgeRootPicker()
+        case "browseKnowledgeRoot":
+            browseKnowledgeRoot()
         case "reportBottomBarRect":
             updateReservedStrip(body, from: source)
         default:
@@ -786,6 +843,49 @@ final class WindowCoordinator: @unchecked Sendable {
             barFrame: barFrame, screenFrame: screen.frame
         )
         onReservedStripsChanged?(Array(reservedStrips.values))
+    }
+
+    /// NIC-162: open the knowledge root in Obsidian — the browsing surface for
+    /// durable notes.
+    ///
+    /// The notes are plain Markdown that Obsidian reads far better than a settings
+    /// panel could, so CerebralHelm hands off rather than reimplementing a reader.
+    /// Without Obsidian installed the folder is revealed in Finder instead: the
+    /// action still does something real, and the panel is told which happened so it
+    /// can say so. Nothing is written either way — this only opens what exists.
+    private func browseKnowledgeRoot() {
+        MainActor.assumeIsolated {
+            guard let paths, let root = try? makeKnowledgeService(paths).rootPath else {
+                settings?.pushNotesBrowserOutcome("unavailable")
+                return
+            }
+            let rootURL = URL(fileURLWithPath: root)
+            // A root that was never created (or was moved away) is not something to
+            // open — say so instead of handing Obsidian a path that does not exist.
+            guard FileManager.default.fileExists(atPath: rootURL.path) else {
+                settings?.pushNotesBrowserOutcome("missing-root")
+                return
+            }
+
+            switch ObsidianLink.destination(forRoot: rootURL, obsidianInstalled: Self.obsidianInstalled) {
+            case let .obsidian(url):
+                NSWorkspace.shared.open(url)
+                // Obsidian opens, but only if the folder is already one of its
+                // vaults — the URI cannot register a new one, and there is no way
+                // to detect that from here. The panel carries the one-time hint.
+                settings?.pushNotesBrowserOutcome("obsidian")
+            case let .revealInFinder(url):
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+                settings?.pushNotesBrowserOutcome("finder")
+            }
+        }
+    }
+
+    /// Whether anything on this Mac handles `obsidian://`. Resolved per call rather
+    /// than cached: the user may install Obsidian while the app is running.
+    static var obsidianInstalled: Bool {
+        guard let probe = URL(string: "obsidian://open") else { return false }
+        return NSWorkspace.shared.urlForApplication(toOpen: probe) != nil
     }
 
     /// NIC-138: choose the durable-knowledge root folder through a native directory

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000102",
+  "type": "bridge.operation.response",
+  "operation": "listNotes",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "available": true,
+    "root": "/Users/fixture/CerebralHelm/knowledge",
+    "total": 2,
+    "notes": [
+      {
+        "path": "projects/atlas/kickoff.md",
+        "title": "Atlas kickoff",
+        "folder": "projects/atlas",
+        "updated": "2026-06-23T18:04:00Z"
+      },
+      {
+        "path": "inbox/Hull Plating.md",
+        "title": "Hull Plating",
+        "folder": "inbox",
+        "updated": "2026-06-22T09:15:00Z"
+      }
+    ]
+  }
+}

@@ -25,11 +25,13 @@
 		CE0000000000000000000034 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000033 /* MenuBarController.swift */; };
 		CE0000000000000000000036 /* PaletteShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000035 /* PaletteShortcut.swift */; };
 		CE0000000000000000000038 /* AppBridgeRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000037 /* AppBridgeRuntime.swift */; };
-		CE000000000000000000003A /* CommandPaletteWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000039 /* CommandPaletteWindowController.swift */; };
 		CE000000000000000000003E /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000003D /* WindowCoordinator.swift */; };
 		CE0000000000000000000053 /* ProjectDetailWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000052 /* ProjectDetailWindowController.swift */; };
 		CE0000000000000000000043 /* ConfirmationWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000042 /* ConfirmationWindowController.swift */; };
 		CE0000000000000000000045 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000044 /* SettingsWindowController.swift */; };
+		CE0000000000000000000055 /* SidebarWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000054 /* SidebarWindowController.swift */; };
+		CE0000000000000000000057 /* ScreenEdgeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000056 /* ScreenEdgeMonitor.swift */; };
+		CE0000000000000000000059 /* SidebarEdgePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000058 /* SidebarEdgePreference.swift */; };
 		CE0000000000000000000047 /* MoreAppsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000046 /* MoreAppsWindowController.swift */; };
 		CE0000000000000000000049 /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000048 /* MainMenu.swift */; };
 		CE000000000000000000004B /* ModeMenuWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000004A /* ModeMenuWindowController.swift */; };
@@ -53,11 +55,13 @@
 		CE0000000000000000000033 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000035 /* PaletteShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaletteShortcut.swift; sourceTree = "<group>"; };
 		CE0000000000000000000037 /* AppBridgeRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBridgeRuntime.swift; sourceTree = "<group>"; };
-		CE0000000000000000000039 /* CommandPaletteWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteWindowController.swift; sourceTree = "<group>"; };
 		CE000000000000000000003D /* WindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCoordinator.swift; sourceTree = "<group>"; };
 		CE0000000000000000000052 /* ProjectDetailWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000042 /* ConfirmationWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmationWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000044 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
+		CE0000000000000000000054 /* SidebarWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarWindowController.swift; sourceTree = "<group>"; };
+		CE0000000000000000000056 /* ScreenEdgeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenEdgeMonitor.swift; sourceTree = "<group>"; };
+		CE0000000000000000000058 /* SidebarEdgePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarEdgePreference.swift; sourceTree = "<group>"; };
 		CE0000000000000000000046 /* MoreAppsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreAppsWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000048 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
 		CE000000000000000000004A /* ModeMenuWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeMenuWindowController.swift; sourceTree = "<group>"; };
@@ -115,11 +119,13 @@
 				CE0000000000000000000033 /* MenuBarController.swift */,
 				CE0000000000000000000035 /* PaletteShortcut.swift */,
 				CE0000000000000000000037 /* AppBridgeRuntime.swift */,
-				CE0000000000000000000039 /* CommandPaletteWindowController.swift */,
 				CE000000000000000000003D /* WindowCoordinator.swift */,
 				CE0000000000000000000052 /* ProjectDetailWindowController.swift */,
 				CE0000000000000000000042 /* ConfirmationWindowController.swift */,
 				CE0000000000000000000044 /* SettingsWindowController.swift */,
+				CE0000000000000000000054 /* SidebarWindowController.swift */,
+				CE0000000000000000000056 /* ScreenEdgeMonitor.swift */,
+				CE0000000000000000000058 /* SidebarEdgePreference.swift */,
 				CE0000000000000000000046 /* MoreAppsWindowController.swift */,
 				CE0000000000000000000048 /* MainMenu.swift */,
 				CE000000000000000000004A /* ModeMenuWindowController.swift */,
@@ -222,11 +228,13 @@
 				CE0000000000000000000034 /* MenuBarController.swift in Sources */,
 				CE0000000000000000000036 /* PaletteShortcut.swift in Sources */,
 				CE0000000000000000000038 /* AppBridgeRuntime.swift in Sources */,
-				CE000000000000000000003A /* CommandPaletteWindowController.swift in Sources */,
 				CE000000000000000000003E /* WindowCoordinator.swift in Sources */,
 				CE0000000000000000000053 /* ProjectDetailWindowController.swift in Sources */,
 				CE0000000000000000000043 /* ConfirmationWindowController.swift in Sources */,
 				CE0000000000000000000045 /* SettingsWindowController.swift in Sources */,
+				CE0000000000000000000055 /* SidebarWindowController.swift in Sources */,
+				CE0000000000000000000057 /* ScreenEdgeMonitor.swift in Sources */,
+				CE0000000000000000000059 /* SidebarEdgePreference.swift in Sources */,
 				CE0000000000000000000047 /* MoreAppsWindowController.swift in Sources */,
 				CE0000000000000000000049 /* MainMenu.swift in Sources */,
 				CE000000000000000000004B /* ModeMenuWindowController.swift in Sources */,

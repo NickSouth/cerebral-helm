@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/mail-open-output.schema.json",
+  "title": "CerebralHelm Mail Open Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mailOpened", "mailResolvedURL"],
+  "properties": {
+    "mailOpened": { "type": "boolean" },
+    "mailResolvedURL": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The Gmail URL that was opened."
+    }
+  }
+}

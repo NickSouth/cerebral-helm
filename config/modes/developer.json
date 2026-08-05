@@ -15,13 +15,13 @@
   "quickApps": [],
   "quickActions": [
     "open-developer-layout",
-    "open-workspace",
-    "run-tests",
-    "search-notes",
-    "git-status",
+    "git-clone",
+    "create-event",
+    "create-ticket",
+    "check-ondraft",
     "open-terminal",
-    "review-pull-requests",
-    "capture-note"
+    null,
+    null
   ],
   "widgets": {
     "left": "project-git-status",

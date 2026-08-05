@@ -13,15 +13,15 @@ import CerebralCore
 func spotifyPKCEChallengeVector() {
     // RFC 7636 Appendix B: this exact verifier must produce this exact S256 challenge.
     let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
-    #expect(SpotifyPKCE.challenge(for: verifier) == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
+    #expect(OAuthPKCE.challenge(for: verifier) == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
 }
 
 @Test("a generated verifier is RFC-length and uses only unreserved characters")
 func spotifyPKCEVerifierShape() {
     let unreserved = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
     // Two draws differ (high entropy) and both satisfy the RFC constraints.
-    let a = SpotifyPKCE.makeVerifier()
-    let b = SpotifyPKCE.makeVerifier()
+    let a = OAuthPKCE.makeVerifier()
+    let b = OAuthPKCE.makeVerifier()
     #expect(a != b)
     for verifier in [a, b] {
         #expect((43...128).contains(verifier.count))
@@ -52,13 +52,19 @@ func spotifyAuthorizeURL() throws {
     #expect(!url.absoluteString.contains("code_verifier"))
 }
 
-@Test("the authorize URL requests exactly the read + control scopes the widget needs")
+@Test("the authorize URL requests exactly the scopes the built surfaces need, and no more")
 func spotifyPlaybackScopes() {
+    // Exact, not a superset check: an over-broad scope request is a real fault, and this is the
+    // one place it would be caught. The playlist pair arrived with `create-playlist`
+    // (quick-actions phase 4) — a grant made before them keeps working for playback and is
+    // refused for playlists, which the adapter reports as "reconnect".
     #expect(SpotifyTokenExchange.playbackScopes == [
         "user-read-playback-state",
         "user-read-currently-playing",
         "user-modify-playback-state",
         "user-read-recently-played",
+        "playlist-modify-private",
+        "playlist-modify-public",
     ])
 }
 

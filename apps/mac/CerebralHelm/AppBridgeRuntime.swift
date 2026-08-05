@@ -72,6 +72,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
     /// a fast cadence. Same visibility gate as the other streams; not-connected/nothing-playing
     /// degrade honestly. Refreshed immediately after a successful connect.
     private let spotifyPublisher: SpotifyPublisher
+    private let mailPublisher: MailPublisher
     /// Streams the School `courses`/`deadlines` widgets (NIC-132) from the local Canvas scrape store,
     /// and the loopback endpoint the Chrome extension POSTs scrapes to. Both are absent when the store
     /// can't open — the widgets then stay at their honest bootstrap/unavailable state.
@@ -200,11 +201,15 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // The Spotify producer (NIC-133): resolves a valid access token from the Keychain-backed
         // OAuth session (refreshing as needed) and reads the currently-playing track on a fast
         // cadence. Not connected → an honest "connect" state; nothing playing → a healthy empty.
+        // Hoisted out of the publisher's argument list so connect/disconnect can invalidate the
+        // session's in-memory grant — it holds the refreshed token rather than writing it back to
+        // the Keychain every hour, so nothing else would tell it the grant changed.
+        let spotifySession = SpotifyAuthSession(
+            secretStore: composition.secretStore,
+            refresher: SpotifyTokenExchange()
+        )
         let spotify = SpotifyPublisher(
-            session: SpotifyAuthSession(
-                secretStore: composition.secretStore,
-                refresher: SpotifyTokenExchange()
-            ),
+            session: spotifySession,
             provider: SpotifyWebPlaybackProvider(),
             emit: { relay.emit($0) }
         )
@@ -216,12 +221,22 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // headlines per relevance profile declared in config/news/profiles.json. The profile →
         // category mapping lives in that config (not hardcoded); when it can't be loaded there are
         // no profiles to stream and the panel stays at its honest bootstrap "unavailable" state.
+        // The cache store makes the last headlines survive relaunch, so a cold start renders from
+        // disk instead of spending one of the provider's ~200 daily requests; a store that can't be
+        // opened simply means the publisher caches in memory only (one extra request per launch).
         if let newsCatalog = NewsProfileCatalog.load(configDirectory: paths.configDirectory),
            !newsCatalog.profiles.isEmpty {
             let news = NewsPublisher(
                 profiles: newsCatalog.profiles.keys.sorted(),
                 secretStore: composition.secretStore,
-                provider: NewsDataProvider(catalog: newsCatalog),
+                // Metered first, free second: NewsData when its key and quota allow, otherwise the
+                // publishers' own RSS/Atom feeds — so a rate limit, an outage, or an unconfigured
+                // key degrades the panel's *source*, never the panel itself.
+                provider: FallbackNewsProvider([
+                    NewsDataProvider(catalog: newsCatalog),
+                    RSSNewsProvider(catalog: newsCatalog),
+                ]),
+                cacheStore: try? makeNewsCacheStore(paths),
                 emit: { relay.emit($0) }
             )
             newsPublisher = news
@@ -347,6 +362,43 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 )
             }
         }
+        // The system-health inventory (quick actions phase 5). Built fresh on EVERY run, never
+        // captured once: the whole point of these checks is that the answers change while the app
+        // is running — a permission revoked in System Settings, a key added in Setup — and an
+        // inventory captured at launch would report the state at launch.
+        //
+        // Assembled here as an explicitly typed local rather than inline at the call site: the
+        // BridgeSession initializer is already enormous, and a nested closure inside it defeated
+        // the type checker outright.
+        let canvasHealth = canvasHealthSnapshot(from: canvasStatusClosure)
+        let healthSecrets = composition.secretStore
+        let healthKnowledgeRoot = (try? makeKnowledgeService(paths).rootPath) ?? paths.knowledgeRoot.path
+        let healthDatabasePath = paths.operationalDatabasePath.path
+        // Gmail (2026-08-04, owner override of the PRD's Workspace exclusion). The session and the
+        // coordinator share one secret store so a connect is immediately visible to the reader.
+        let gmailSecretStore = composition.secretStore
+        let gmailCoordinator = GoogleAuthCoordinator(secretStore: gmailSecretStore)
+        let gmailSession = GoogleAuthSession(
+            secretStore: gmailSecretStore, refresher: GoogleTokenExchange()
+        )
+
+        // The Gmail producer (2026-08-04): one `labels.get` every five minutes, which reads no
+        // message at all. Not connected → an honest "connect" state, never a reassuring zero.
+        let gmailProvider = GmailAPIProvider(session: gmailSession)
+        let mail = MailPublisher(provider: gmailProvider, emit: { relay.emit($0) })
+        mailPublisher = mail
+
+        let systemChecksClosure: @Sendable () -> [any HealthCheck] = {
+            SystemHealthChecks.all(
+                permissions: MacPermissionChecker(),
+                secrets: healthSecrets,
+                knowledgeRoot: healthKnowledgeRoot,
+                projectsRoot: WorkspacePaths.defaultProjectsRoot().path,
+                databasePath: healthDatabasePath,
+                canvasStatus: canvasHealth
+            )
+        }
+
         let canvasResetClosure: (@Sendable () async -> CanvasStatusInfo)? = canvasStore.map { store in
             { @Sendable [canvas = canvasPub] in
                 try? store.clear()
@@ -387,6 +439,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // (`spotify_client_id`, entered in Settings) at connect time — absent → an honest "add your
         // Client ID". The tokens never cross back through the bridge; only the granted scope does.
         let spotifyCoordinator = SpotifyAuthCoordinator(secretStore: composition.secretStore)
+        let linearClient = composition.linear
         let spotifySecretStore = composition.secretStore
         // Which widget ids each mode's left/right slots show (config/modes, through the same
         // layered loader bootstrap composes from) — drives the mode-entry widget refresh below.
@@ -443,6 +496,23 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 if reference == "newsdata_api_key", let news { Task { await news.refresh() } }
                 if reference == "github_api_token" { Task { await projectGitStatus.refresh() } }
             },
+            // Disconnect: drop the revoked grant from the session that holds it in memory, then
+            // re-sample so the widget shows its honest "connect" state at once. Without the
+            // invalidate the session would keep using the credential the user just removed.
+            onSecretDeleted: { reference in
+                if reference == SpotifyAuthSession.tokenReference {
+                    Task {
+                        await spotifySession.invalidate()
+                        await spotify.refresh()
+                    }
+                }
+                if reference == GoogleAuthSession.tokenReference {
+                    Task {
+                        await gmailSession.invalidate()
+                        await mail.refresh()
+                    }
+                }
+            },
             // When a settings field changes, refresh the producer it drives so the edit is live at
             // once rather than on its next tick: the tracked-ticker list → stocks (NIC-128), the
             // calendar→mode map → the schedule (NIC-126).
@@ -483,16 +553,99 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 let trimmed = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { throw SpotifyPlaybackError.credentialsMissing }
                 let connection = try await spotifyCoordinator.connect(clientID: trimmed)
+                // The session may hold a token from a previous grant; drop it so the next read uses
+                // the one just stored rather than a stale or revoked predecessor.
+                await spotifySession.invalidate()
                 // Tokens are stored — emit a now-playing sample at once so the widget goes live
                 // immediately rather than on the publisher's next tick.
                 await spotify.refresh()
                 return SpotifyConnectionInfo(scope: connection.scope)
             },
+            chooseFolder: {
+                await MainActor.run { ProjectsFolderChooser() }.choose()
+            },
+            // The `create-ticket` form's dropdowns (quick-actions phase 4): teams, and each
+            // team's projects and labels. A READ closure — separate from the `linear.createissue`
+            // tool that writes — so loading a form's options can never reach the write path, and
+            // so opening a form does not put a command in the log.
+            linearWorkspace: {
+                // The client is captured directly rather than through `composition`, which is not
+                // Sendable — the same pattern the Spotify and Canvas closures use.
+                let workspace = try await linearClient.workspace()
+                return LinearWorkspaceInfo(teams: workspace.teams.map { team in
+                    LinearWorkspaceInfo.Team(
+                        id: team.id,
+                        key: team.key,
+                        name: team.name,
+                        projects: team.projects.map { .init(id: $0.id, name: $0.name) },
+                        labels: team.labels.map { .init(id: $0.id, name: $0.name) }
+                    )
+                })
+            },
+            // The `check-scoreboard` picker and the report it opens (quick-actions phase 4):
+            // current NFL games and PGA tournaments from ESPN's public site API. A read, fetched
+            // on demand — golf's payload is a megabyte and cannot be narrowed at the source, so
+            // trimming happens in the adapter and nothing polls it.
+            sportsEvents: { try await ESPNScoreboardProvider().events() },
+            // The `git-clone` form's location field (quick-actions phase 4): a native folder
+            // picker rooted at the projects root. The chooser — not the caller — decides where the
+            // panel opens and refuses a selection outside that root, so the tool's containment
+            // guarantee is never delegated to the web layer. Main actor: it presents a panel.
+            // The `send-text` recipient picker (quick-actions phase 4): contacts + existing chats.
+            // A READ closure, separate from the `messages.send` tool that writes — a surface that
+            // lists people must not reach the one that sends to them. Both grants (Contacts,
+            // Automation) prompt at point of use, and either can be refused independently.
+            messageRecipients: { try await MessagesRecipientsProvider().recipients() },
             // The Canvas connect/status surface (NIC-132): getCanvasStatus shows the pairing
             // endpoint/token + last-scrape summary; resetCanvas purges the scrape and rotates the token.
             canvasStatus: canvasStatusClosure,
             canvasReset: canvasResetClosure,
             canvasSetHidden: canvasSetHiddenClosure,
+            // Rebuilds the derived note index from the durable Markdown (NIC-163). The user reaches
+            // this from Setup → Library after editing notes in another editor — the index only
+            // learns about those files when it is rebuilt. Composed through the shared
+            // `makeKnowledgeService`, so it reads the same root the runtime writes to, including a
+            // re-pointed one (NIC-138). Runs off the main actor: a large vault is a filesystem walk.
+            knowledgeRebuild: {
+                try await Task.detached(priority: .userInitiated) {
+                    let knowledge = try makeKnowledgeService(paths)
+                    return KnowledgeRebuildInfo(root: knowledge.rootPath, noteCount: try knowledge.rebuild())
+                }.value
+            },
+            // The system-health inventory (quick actions phase 5), built above.
+            systemChecks: systemChecksClosure,
+            // Runs the Gmail OAuth connect for the `connectGmail` op. The Client ID is read from the
+            // Keychain by the coordinator, not from `.env` — a built `.app` cannot read the
+            // developer's environment file (the lesson NIC-133 increment 6 paid for).
+            gmailConnect: {
+                do {
+                    let connection = try await gmailCoordinator.connect()
+                    // The session may hold a token from a previous grant; drop it so the next read
+                    // uses the one just stored rather than a stale or revoked predecessor.
+                    await gmailSession.invalidate()
+                    // Sample now, so the count appears the moment the browser hands back rather
+                    // than on the next five-minute tick.
+                    await mail.refresh()
+                    return GmailConnectionInfo(scope: connection.scope, canRefresh: connection.canRefresh)
+                } catch let error as GoogleAuthError {
+                    switch error {
+                    case .clientIDMissing: throw GmailConnectError.clientIDMissing
+                    case .cancelled: throw GmailConnectError.cancelled
+                    case .notConnected:
+                        throw GmailConnectError.failed("Google didn\u{2019}t accept the connection. Please try again.")
+                    // `providerFailed` carries Google's own `error`/`error_description`, which is
+                    // the only thing that tells one configuration mistake from another. Passed
+                    // through verbatim rather than replaced with a house message.
+                    case let .providerFailed(detail): throw GmailConnectError.failed(detail)
+                    }
+                }
+            },
+            gmailDisconnect: {
+                try await gmailCoordinator.disconnect()
+                await gmailSession.invalidate()
+            },
+            // The email report's on-demand read. Never sampled — one request per message.
+            unreadMail: { limit in try await gmailProvider.unread(limit: limit) },
             // Hides a layout's app windows on closeLayout (NIC-142) — the same
             // permission-free primitive "Windows Stored by Mode" uses.
             workspaceWindows: composition.capabilities.workspaceWindows,
@@ -591,6 +744,18 @@ final class AppBridgeRuntime: @unchecked Sendable {
         )
     }
 
+    /// Re-emit live widget state that a webview may have missed, called once its bridge handshake
+    /// proves it can receive events.
+    ///
+    /// Event delivery is fire-and-forget — an event emitted before the page registers its receiver
+    /// is dropped — so any producer whose first tick can beat the webview's load needs a replay.
+    /// The topology snapshot already has one (`WindowCoordinator.lastTopologyJSON`). News needs it
+    /// too now that its first tick is served from a warm cache instead of a network round trip.
+    /// The other producers all still open with a network fetch, so the page wins their race.
+    func resendLiveWidgetState() {
+        if let news = newsPublisher { Task { await news.resend() } }
+    }
+
     func startStatusPublishing() {
         let metrics = statusPublisher
         let repos = reposPublisher
@@ -602,6 +767,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let calendar = calendarPublisher
         let projectGitStatus = projectGitStatusPublisher
         let spotify = spotifyPublisher
+        let mail = mailPublisher
         Task { await metrics.start() }
         Task { await repos.start() }
         Task { await projects.start() }
@@ -612,6 +778,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         if let calendar { Task { await calendar.start() } }
         Task { await projectGitStatus.start() }
         Task { await spotify.start() }
+        Task { await mail.start() }
         if let canvas = canvasPublisher { Task { await canvas.start() } }
         // Bind the Canvas ingest endpoint (NIC-132) once the app is up. Failing to bind (e.g. the
         // port is taken) disables ingest without affecting the rest of the bridge.
@@ -632,6 +799,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let calendar = calendarPublisher
         let projectGitStatus = projectGitStatusPublisher
         let spotify = spotifyPublisher
+        let mail = mailPublisher
         Task { await metrics.setActive(active) }
         Task { await repos.setActive(active) }
         Task { await projects.setActive(active) }
@@ -642,6 +810,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         if let calendar { Task { await calendar.setActive(active) } }
         Task { await projectGitStatus.setActive(active) }
         Task { await spotify.setActive(active) }
+        Task { await mail.setActive(active) }
         if let canvas = canvasPublisher { Task { await canvas.setActive(active) } }
     }
 
@@ -740,5 +909,24 @@ private final class EventRelay: @unchecked Sendable {
     func emit(_ json: String) {
         lock.lock(); let sink = self.sink; lock.unlock()
         sink?(json)
+    }
+}
+
+/// Projects the Canvas status closure down to the two facts the health check asks for
+/// (quick actions phase 5): is the extension paired, and when did it last scrape.
+///
+/// A named function rather than a `.map` at the call site: an async closure returned from `map`
+/// inside the BridgeSession initializer defeated the type checker outright, and naming it gives
+/// the compiler the signature up front.
+private func canvasHealthSnapshot(
+    from status: (@Sendable () async -> CanvasStatusInfo)?
+) -> (@Sendable () async -> CanvasHealthSnapshot)? {
+    guard let status else { return nil }
+    return {
+        let info = await status()
+        return CanvasHealthSnapshot(
+            paired: info.token != nil,
+            lastScrapedAt: info.lastScrapedAt.flatMap { ISO8601DateFormatter().date(from: $0) }
+        )
     }
 }

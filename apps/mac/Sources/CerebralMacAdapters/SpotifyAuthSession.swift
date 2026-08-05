@@ -68,12 +68,19 @@ public protocol SpotifyTokenRefreshing: Sendable {
 /// at construction, because the publisher is built at launch — before the user has entered it — and
 /// the PKCE refresh grant needs it.
 public actor SpotifyAuthSession {
+    /// The Keychain reference holding the OAuth grant. Public so the host can recognise a
+    /// disconnect of *this* secret and invalidate the session, without duplicating the name.
+    public static let tokenReference = SpotifyTokenBlob.reference
+
     private let secretStore: any SecretStoreManaging
     private let refresher: any SpotifyTokenRefreshing
     private let clientIDReference: String
     /// Refresh when the access token expires within this window, so a tick never uses a token that
     /// lapses mid-request.
     private let refreshMargin: TimeInterval
+    /// The live grant, held in memory so a rotating access token never has to be written back to
+    /// the Keychain. See ``accessToken(now:)``.
+    private var cached: SpotifyTokens?
 
     public init(
         secretStore: any SecretStoreManaging,
@@ -87,11 +94,23 @@ public actor SpotifyAuthSession {
         self.refreshMargin = refreshMargin
     }
 
+    /// Forgets the in-memory grant, so the next call re-reads the Keychain. Called after a connect
+    /// or disconnect: without it a session holding a revoked token would keep playing, and one
+    /// holding a dead token would keep failing after the user reconnected. (Mirrors
+    /// ``GoogleAuthSession/invalidate()`` — the same hazard, the same remedy.)
+    public func invalidate() {
+        cached = nil
+    }
+
     public func accessToken(now: Date = Date()) async throws -> String {
+        if let cached, cached.expiresAt.timeIntervalSince(now) > refreshMargin {
+            return cached.accessToken
+        }
         guard let tokens = try await SpotifyTokenBlob.load(from: secretStore) else {
             throw SpotifyPlaybackError.credentialsMissing
         }
         if tokens.expiresAt.timeIntervalSince(now) > refreshMargin {
+            cached = tokens
             return tokens.accessToken // still valid, no refresh needed
         }
         guard let refreshToken = tokens.refreshToken else {
@@ -106,7 +125,20 @@ public actor SpotifyAuthSession {
             throw SpotifyPlaybackError.notConnected
         }
         let refreshed = try await refresher.refresh(refreshToken: refreshToken, clientID: clientID, now: now)
-        try await SpotifyTokenBlob.save(refreshed, to: secretStore)
+        cached = refreshed
+        // Persist **only when the refresh token itself rotated**. An access token lives about an
+        // hour, so writing every refresh back meant a Keychain `SecItemUpdate` roughly hourly — and
+        // while the app is ad-hoc signed each of those is a password prompt the read cache cannot
+        // absorb (a write has to reach the Keychain). The access token is ephemeral and fully
+        // re-derivable from the refresh token, so skipping the write costs at most one extra
+        // refresh on the next launch. Spotify usually echoes no `refresh_token` and
+        // ``SpotifyTokenExchange`` carries the previous one forward, so this is the common path.
+        //
+        // The `!= nil` guard is deliberate: a refresher that returned a nil refresh token would
+        // otherwise persist a blob that can never be renewed again, silently breaking the grant.
+        if let rotated = refreshed.refreshToken, rotated != tokens.refreshToken {
+            try await SpotifyTokenBlob.save(refreshed, to: secretStore)
+        }
         return refreshed.accessToken
     }
 

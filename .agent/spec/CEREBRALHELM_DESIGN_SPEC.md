@@ -193,30 +193,68 @@ Contains:
 - mode-aware system greeting;
 - Heimlich's consciousness: the animated ribbon field (see 5.8);
 - optional concise contextual summary;
-- exactly eight quick actions at the bottom.
+- up to eight quick actions at the bottom.
 
 Quick-action geometry is binding:
 
-- first row: four compact horizontal action bars;
-- second row: four slightly larger action boxes;
+- first row: up to four compact horizontal action bars;
+- second row: up to four slightly larger action boxes;
 - all actions remain inside the shared Heimlich component;
 - actions are configurable by mode;
-- Developer, School, and Entertainment each include `Open [Mode] Layout` as one of the eight actions.
+- **an unconfigured slot is omitted, not rendered as a placeholder.** Each slot keeps its
+  quarter-row width, so a partly-filled row centers its remaining actions and the bar/box
+  split is preserved. A mode holding slots for later reads as deliberately shorter rather
+  than unfinished. A *configured but not yet built* action still renders — labeled, greyed,
+  and disabled — because hiding it would misrepresent the mode's design;
+- Developer, School, and Entertainment each include `Open [Mode] Layout` as one of their actions.
 
 Executive actions emphasize broad daily orchestration. The other modes emphasize their specific workflow and default layout.
 
-#### Conversation overlay
+Slot treatment (owner decision, 2026-08-04):
 
-Conversation does not replace the ambient view — it is a translucent overlay composited **above the still-running consciousness** (see PLATE 05). The animation never stops; on output it eases aside and lowers energy (the `success` motion signature in 5.8) so the chat reads clearly while the stream continues behind it.
+- Every live slot carries a **leading glyph in the active mode's accent**, re-tinting with the mode — the role the accent token already specifies for icons. Per-action colour was considered and rejected: colour in this product always carries meaning, and eight decorative hues would leave `shut-down`'s red reading as its brand rather than as a warning.
+- The **larger bottom-row boxes carry a larger, heavier glyph** than the thin top bars, so the two rows keep reading as two rows.
+- **A slot whose surface is open takes the mode selector's gradient fill** — the same treatment 5.9 uses for the selected mode, so "this is the active one" is one visual idea across the shell. Background and border only: the tile's geometry never changes, so an opening surface cannot nudge the row.
+- `shut-down` remains the one differently-coloured slot: outlined in the error colour, never filled (5.9's restraint applies — the weight belongs on the confirmation, not the tile).
 
-The overlay opens after a typed Heimlich prompt, a voice request requiring visible dialogue, or an explicit open-chat action. It contains:
+#### Report region (and the conversation surface it becomes)
 
-- a scrollable chat transcript of slightly transparent message bubbles, with activity trace where appropriate;
-- tool, source, and status surfaces required for trust;
-- a persistent text-and-send box at the bottom;
-- a small minimize-chat control.
+*Revised 2026-08-04, with the Report region as built (docs/quick-actions/PLAN.md phase 2). This subsection previously specified a translucent overlay with semi-transparent bubbles over a scrim; the built surface is opaque, and the reasoning for the change is below.*
 
-The overlay must carry enough contrast — a soft scrim or backdrop blur behind the bubbles — that text meets contrast requirements regardless of the animation behind it (NFR-08, FR-UI-09). Minimizing lifts the overlay and may preserve conversation history per product settings. With no overlay active, the consciousness returns to full ambient idle and the quick actions are unobscured.
+Reports and conversation share **one surface**, because they are the same thing arriving from different composers: today a deterministic formula produces the document, later a model produces it, and the renderer does not change between them.
+
+The region occupies the center panel's **left third** — below the Heimlich label, down to above the greeting. It does not replace the ambient view: the animation never stops, and on output it eases aside and lowers energy (the `success` signature in 5.8) so the surface reads clearly while the stream continues beside it (PLATE 05).
+
+Its treatment is **opaque and borderless**, with a soft mask along its right edge so the consciousness dissolves into it rather than being cut off by a hard boundary. Two reasons this replaced the translucent-overlay treatment:
+
+- **Contrast is satisfied outright rather than fought for.** A scrim or backdrop blur is a countermeasure against an animation of unpredictable luminance behind live text — it has to be tuned, and it can still fail on a bright frame. An opaque region meets NFR-08 and FR-UI-09 by construction, at every animation state, with no tuning.
+- **A report is something you read.** Borderless and opaque makes it a page rather than a panel, which is the right weight for prose and the right foundation for scrollback.
+
+It contains, today: a composed document of typed blocks (5.7 `ReportDocument`), a title, and a refresh control **only when the report was built from a fetch that can be repeated** — offering one on a document composed from ambient state would promise something it cannot do.
+
+It gains, when conversation lands: scrollback, activity trace, the tool/source/status surfaces required for trust, a persistent text-and-send box **docked at the bottom of the center**, and a minimize control. None of that changes the geometry or the renderer. Minimizing returns the consciousness to full ambient idle with the quick actions unobscured, and may preserve history per product settings.
+
+Every clickable thing inside the surface is an **action reference**, never a URL (5.7 action references) — because once a model composes the document, every destination in it is model-chosen.
+
+#### Input region
+
+*Added 2026-08-04. The built surface had no section here (docs/quick-actions/PLAN.md phase 3).*
+
+The third center-panel surface: where an action **collects something** before it runs. It sits in the center panel's **lower right** — below the stream, above the quick-action grid — and is opened by pressing a quick action whose archetype needs input.
+
+Unlike the Report region it is a **bordered panel**, and the difference is deliberate: this one is interactive and needs a hit target, where a report is something you read. The two **coexist** — they occupy different parts of the panel, and reading a brief while filling in an event is ordinary.
+
+It hosts two archetypes:
+
+- **Input** — a form of typed fields (text, textarea, select, multi-select, number, combobox, datetime range, folder picker), a cancel control, and a submit whose label names the act (`Create`, `Send`, `Clone`). A disabled submit must say **why** it is disabled.
+- **Picker** — a filter field, a list of results, and the same footer. A picker's **row is the submit**: there is no separate go control, because choosing is the whole interaction. A picker may hand off to another picker, which is how a two-stage choice (a course, then one of its notes) works without a second surface; the region owns the back control so no picker implements navigation.
+
+Binding behaviors:
+
+- **The region is bounded and scrolls inside itself.** The tallest form must never push the quick-action grid off the bottom; on a tall display the cap does not bind and nothing changes.
+- **A failed submit keeps the form and the typing.** Losing what someone wrote because a write failed is the worst available response to a failure.
+- **Switching mode discards it**, exactly as it discards an open report — a half-written note must not follow the user into a mode that does not offer the action.
+- **Never report success for a pending confirmation.** An action that gated says so; it does not say "created".
 
 Heimlich system states include `idle`, `listening`, `thinking`, `acting`, `awaiting_confirmation`, `success`, and `error`. State must be communicated through text and motion, not color alone.
 
@@ -234,7 +272,7 @@ State motion signatures:
 | `thinking` | high energy with an amplitude pulse ("bounce"), increased sparks |
 | `acting` | directed, flowing energy with moderate sparks; purposeful, not agitated |
 | `awaiting_confirmation` | motion settles toward still; a slow color shift continues; minimal sparks. State is still carried by the persistent text label — never color alone, never motion alone |
-| `success` | the field eases aside (center-bias shifts) and lowers energy to make room for the conversation overlay, then returns to idle when the overlay lifts |
+| `success` | the field eases aside (center-bias shifts) and lowers energy to make room for the Report region, then returns to idle when the region closes |
 | `error` | a brief, contained disturbance that settles, with a shift toward the status token; always accompanied by the text state |
 | `offline` / disconnected | dimmed, desaturated, near-static |
 | `listening` | audio-reactive; **deferred to the voice (North Star) phase** — no MVP motion signature |
@@ -513,7 +551,7 @@ The dashboard design is implemented correctly when:
 2. Region placement remains stable while mode color and content change substantially.
 3. Search always places `Ask Heimlich` first and can navigate apps, settings, and local CerebralHelm destinations.
 4. Quick Apps supports one to five configured apps plus More Apps.
-5. Heimlich ambient view has exactly eight actions in the required four-plus-four geometry.
+5. Heimlich ambient view has up to eight actions in the required four-plus-four geometry, with unconfigured slots omitted and the remainder centered within their row.
 6. Developer, School, and Entertainment expose their layout action.
 7. Active conversation is a translucent overlay over the still-running ambient center (it never replaces it), provides follow-up input docked at the bottom of the center, and can be minimized.
 8. System Health contains CPU, memory, battery, and network speed with degraded states.
@@ -534,7 +572,7 @@ The visual reference set contains eight primary plates:
 2. School home dashboard: reference for academic configuration and stronger mode recoloring.
 3. Entertainment home dashboard: reference for evening context, media widgets, and green palette.
 4. Developer home dashboard: reference for engineering context and restrained cool palette.
-5. Active Heimlich with gated action: reference for the conversation overlay (composited over the still-running field, never a replacement) and modal safety.
+5. Active Heimlich with gated action: reference for the Report region (beside the still-running field, never a replacement) and modal safety. The plate shows the surface translucent; it is built opaque with a right-edge mask — see 5.7.
 6. Expanded Financial Advisor: reference for the focused agent workspace as a right-column-width overlay that covers the right column only (center and left column unaffected).
 7. School layout mode: reference for managed multi-app layout, hot-swap bar, and over-app confirmation.
 8. Fullscreen sidebar: reference for compact persistent access while another app owns the screen.

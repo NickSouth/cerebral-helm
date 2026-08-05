@@ -17,7 +17,9 @@ test("repository config validates", () => {
 
   assert.equal(summary.modeCount, 4);
   assert.equal(summary.agentCount, 4);
-  assert.equal(summary.toolCount, 10);
+  // The stricter-only overlays under config/tools/. This count had drifted six behind the
+  // repository (it was last updated before the phase-4 tools landed); `note.open` makes 17.
+  assert.equal(summary.toolCount, 19);
 });
 
 test("development roots stay inside the repository", () => {

@@ -111,6 +111,12 @@ public struct ToolExecutor: Sendable {
         }
 
         // Policy gate. A denied call never reaches the handler (AC-29.1).
+        //
+        // Provenance is deliberately left at its strict `.modelProposed` default here: this
+        // second evaluation acts only on `deny`, and provenance can only ever relax a
+        // `requireConfirmation` — which the runtime has already resolved through the
+        // confirmation coordinator before `execute` is reached. Defaulting strict means the
+        // executor can never widen what the runtime decided.
         let evaluation = policy.evaluate(
             PolicyRequest(
                 toolID: tool.id,
@@ -118,7 +124,7 @@ public struct ToolExecutor: Sendable {
                 runtimeRiskPolicy: tool.descriptor.runtimeRiskPolicy,
                 shellInvocation: invocation.shellInvocation,
                 callerRequestedConfirmation: invocation.callerRequestedConfirmation,
-                waivesExternalWriteConfirmation: tool.descriptor.confirmationPolicyKey == .allowExternalWriteWithoutConfirmation
+                honorsUserAuthoredExemption: tool.descriptor.confirmationPolicyKey == .allowExternalWriteWhenUserAuthored
             )
         )
         if evaluation.decision == .deny {

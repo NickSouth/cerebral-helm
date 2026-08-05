@@ -1,15 +1,15 @@
 import type { CerebralBridge } from "../bridge/cerebralBridge";
 import type { ActionStatusSeverity } from "../state/ActionStatusProvider";
-import wiringManifest from "./quickActions.manifest.json";
+import { quickActionEntry } from "./quickActionRegistry";
+import { submitGoogleSearch } from "./googleSearch";
 
 /**
- * D4 wiring for the trivial quick actions. The 4 + 4 quick-action slots render the active
- * mode's `quickActions` ids; an id present in `quickActions.manifest.json` is **wired** (live),
- * any other id is an allowed placeholder ("coming soon"). The manifest names a `handler` per
- * wired action; the implementations below are keyed by that handler name. The
- * `validateQuickActionWiring` gate (scripts/validate-config.mjs) guarantees every wired
- * handler/workflow target resolves, so a missing implementation here is a typed lookup miss,
- * never a silent no-op.
+ * Quick-action dispatch. The 4 + 4 slots render the active mode's `quickActions` ids; each id
+ * resolves through the dispatch registry (`quickActions.registry.json`), which names the action's
+ * `target` once it is built — a coded `handler` below, a `workflow` run through the command bus, or
+ * a mode `layout`. An entry with no target is planned, not built, and stays a labelled placeholder.
+ * The `validateQuickActionRegistry` gate (scripts/validate-config.mjs) guarantees every declared
+ * target resolves, so a missing implementation here is a typed lookup miss, never a silent no-op.
  *
  * Results stay honest: a handler dispatches the real bridge op and surfaces only what the
  * bridge actually returned via `announce` (the top-left status line — NIC-124). Nothing is
@@ -19,29 +19,67 @@ export interface QuickActionDeps {
   readonly bridge: CerebralBridge;
   /** Surface a transient, honest result in the top-left status line (NIC-124). */
   announce(text: string, severity?: ActionStatusSeverity): void;
+  /**
+   * Open a Report in the centre panel's Report region. Optional: a caller with no report surface
+   * (a test, a future headless dispatcher) leaves a `report` action unresolved rather than
+   * pretending it ran.
+   */
+  openReport?(reportId: string, params?: readonly string[]): void;
+  /** Open an Input's form in the centre panel's Input region. Optional for the same reason. */
+  openInput?(actionId: string): void;
 }
 
 type HandlerName = keyof typeof HANDLERS;
 
-const HANDLERS = {
-  async captureNote({ bridge, announce }: QuickActionDeps): Promise<void> {
-    // No content-entry affordance exists pre-Mac, so this captures a labelled quick note and
-    // reports the real returned id. The status text is explicit that capture is a mock
-    // until the knowledge system lands — honest-unavailable, never fake-rich.
-    const result = await bridge.captureNote({
-      title: "Quick note",
-      body: "",
-      kind: "quick-capture"
-    });
-    announce(
-      `Captured a quick note (${result.noteId}). Quick capture is a mock pre-Mac — note content entry arrives with the knowledge system.`
-    );
-  }
-} satisfies Record<string, (deps: QuickActionDeps) => Promise<void>>;
+/**
+ * Params supplied by an action reference inside a report. **Untrusted by construction**: once a
+ * model composes the document, these are model-chosen values. A handler must validate what it
+ * reads and pass it only as data — never as a destination. That is why `searchTheWeb` hands the
+ * query to the `google.search` tool, which builds the google.com URL host-side.
+ */
+export type QuickActionParams = Readonly<Record<string, unknown>>;
 
-const WIRED_ACTIONS = wiringManifest.wiredActions as Readonly<
-  Record<string, { readonly handler?: string; readonly workflow?: string }>
->;
+function readString(params: QuickActionParams | undefined, key: string): string | null {
+  const value = params?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+const HANDLERS = {
+  /**
+   * Look something up on the web. Reachable only as an action reference from a report — it holds
+   * no quick-action slot — so its query always arrives as a param.
+   */
+  async searchTheWeb({ bridge, announce }: QuickActionDeps, params?: QuickActionParams): Promise<void> {
+    const query = readString(params, "query");
+    if (!query) {
+      announce("That link had nothing to search for.", "error");
+      return;
+    }
+    const receipt = await submitGoogleSearch(bridge, query);
+    if (!receipt.accepted) {
+      announce(`I couldn't search for “${query}” — the command wasn't accepted.`, "error");
+    }
+  },
+  /**
+   * Open the user's mail — the inbox, or one message. Reachable as an action reference from the
+   * daily brief's unread count and from every row of the email report.
+   *
+   * It hands a **message id** to the `mail.open` tool, which builds the mail.google.com URL
+   * host-side. Same construction as `searchTheWeb`: the params are data, never a destination, which
+   * is what makes a link inside a composed document safe.
+   */
+  async openMail({ bridge, announce }: QuickActionDeps, params?: QuickActionParams): Promise<void> {
+    const messageId = readString(params, "messageId");
+    const receipt = await bridge.submitCommand({
+      // Bare `mail` opens the inbox — the daily brief's count passes no id.
+      rawInput: messageId ? `mail ${messageId}` : "mail",
+      source: "dashboard"
+    });
+    if (!receipt.accepted) {
+      announce("I couldn\u2019t open your mail — the command wasn\u2019t accepted.", "error");
+    }
+  }
+} satisfies Record<string, (deps: QuickActionDeps, params?: QuickActionParams) => Promise<void>>;
 
 /**
  * Dispatch a workflow-backed quick action: `run <workflowId>` through the same command
@@ -81,41 +119,51 @@ function openLayout(modeId: string, { bridge, announce }: QuickActionDeps): void
     });
 }
 
-/** Matches a mode's layout-open action id, capturing the mode id. */
-const LAYOUT_ACTION = /^open-([a-z][a-z0-9-]*)-layout$/;
-
 /**
- * Resolve a quick-action id to its click handler, or `null` if the id is a placeholder. A wired
- * action names exactly one target: a `handler` implemented above, or a `workflow` run through
- * the command bus. A wired handler with no implementation here throws — the wiring gate makes
- * that unreachable in a valid build, so the throw is a developer-error guard, not a runtime path.
+ * Resolve a quick-action id to its click handler, or `null` if the action is planned but not
+ * built (no registry target) — the slot then renders as a labelled placeholder. A registered
+ * handler target with no implementation here throws: the registry gate makes that unreachable
+ * in a valid build, so the throw is a developer-error guard, not a runtime path.
  */
-export function resolveQuickAction(actionId: string, deps: QuickActionDeps): (() => void) | null {
-  // A layout-open action enters layout mode through the dedicated openLayout op
-  // (session + windows), not a bare workflow run — even though the manifest wires it
-  // to the same synthesized workflow for the resolution gate.
-  const layoutMatch = LAYOUT_ACTION.exec(actionId);
-  if (layoutMatch) {
-    const modeId = layoutMatch[1];
-    return () => {
-      openLayout(modeId, deps);
-    };
-  }
-  const target = WIRED_ACTIONS[actionId];
-  if (target?.workflow) {
-    const workflowId = target.workflow;
-    return () => {
-      runWorkflow(workflowId, deps);
-    };
-  }
-  if (!target?.handler) {
+export function resolveQuickAction(
+  actionId: string,
+  deps: QuickActionDeps,
+  params?: QuickActionParams
+): (() => void) | null {
+  const target = quickActionEntry(actionId)?.target;
+  if (!target) {
     return null;
   }
-  const handler = HANDLERS[target.handler as HandlerName];
-  if (!handler) {
-    throw new Error(`Quick action "${actionId}" is wired to unknown handler "${target.handler}".`);
+  switch (target.kind) {
+    // A layout action enters layout mode through the dedicated openLayout op (session +
+    // windows), not a bare `run <workflow>` of the same synthesized workflow.
+    case "layout":
+      return () => {
+        openLayout(target.mode, deps);
+      };
+    case "workflow":
+      return () => {
+        runWorkflow(target.workflow, deps);
+      };
+    // A Report renders in the dashboard, so it never touches the command bus — the document is
+    // composed from providers already streaming into dashboard state.
+    case "report": {
+      const openReport = deps.openReport;
+      return openReport ? () => openReport(actionId) : null;
+    }
+    // An Input renders its form in the dashboard; the form's own submit performs the action.
+    case "input": {
+      const openInput = deps.openInput;
+      return openInput ? () => openInput(actionId) : null;
+    }
+    case "handler": {
+      const handler = HANDLERS[target.handler as HandlerName];
+      if (!handler) {
+        throw new Error(`Quick action "${actionId}" targets unknown handler "${target.handler}".`);
+      }
+      return () => {
+        void handler(deps, params);
+      };
+    }
   }
-  return () => {
-    void handler(deps);
-  };
 }

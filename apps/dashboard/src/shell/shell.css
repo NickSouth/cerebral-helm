@@ -436,14 +436,25 @@
   gap: var(--ch-space-2);
 }
 
+/* Flex rather than a 4-column grid: an unconfigured slot is omitted from the DOM, and each slot
+   holds its quarter-row width regardless, so a partly-filled row centres its survivors instead of
+   stretching them across the empty tracks (docs/quick-actions/PLAN.md). */
 .quick-actions__bars,
 .quick-actions__boxes {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
+  justify-content: center;
   gap: var(--ch-space-2);
 }
 
 .quick-action {
+  flex: 0 0 calc((100% - 3 * var(--ch-space-2)) / 4);
+  min-width: 0;
+  /* Leading glyph, then label, centred as a pair. `inline-flex` on a button rather than `flex` so
+     the pair still centres inside the fixed-basis track. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-2);
   font: inherit;
   font-size: var(--ch-font-size-sm);
   color: var(--ch-status-neutral);
@@ -456,7 +467,37 @@
 }
 
 .quick-action--box {
-  min-height: 3.5rem;
+  /* Grown with the glyph (owner decision, 2026-08-04): a 22px icon in a 3.5rem box crowded the
+     label, so the control grew with its contents rather than the icon being shrunk back down. */
+  min-height: 4.15rem;
+  padding: var(--ch-space-3);
+}
+
+/* The glyph never shrinks — a squashed icon reads as a rendering fault. The label absorbs the
+   pressure instead, wrapping as it already did. */
+.quick-action__glyph {
+  flex: none;
+  color: var(--ch-text-muted);
+  transition: color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+/* A live slot's glyph carries the active mode's accent and re-tints with the mode (owner decision,
+   2026-08-04). This is what the accent token already specifies — "primary = borders/buttons/most
+   icons" — so the previously muted glyph was the deviation. `--danger` still overrides below:
+   Shut down's red means DANGER, and it only keeps meaning that while everything around it is one
+   colour. */
+.quick-action--wired .quick-action__glyph {
+  color: var(--ch-accent-primary);
+}
+
+.quick-action__label {
+  min-width: 0;
+}
+
+/* A disabled placeholder's glyph follows its label into the neutral tone rather than staying at
+   text-muted, which would make an unpressable slot look more present than a live one. */
+.quick-action:disabled .quick-action__glyph {
+  color: inherit;
 }
 
 /* The thin top row is inset and centered so the 4+4 stack tapers to a slight pyramid: narrower,
@@ -470,6 +511,8 @@
 }
 
 .quick-action--bar {
+  /* Matches the wider `--ch-space-3` gap the bar row overrides above. */
+  flex-basis: calc((100% - 3 * var(--ch-space-3)) / 4);
   padding-block: var(--ch-space-3);
   font-size: var(--ch-font-size-label);
 }
@@ -486,6 +529,48 @@
 
 .quick-action--wired:hover {
   border-color: var(--ch-accent-primary);
+}
+
+/* "This slot's surface is open right now" — the same soft directional gradient the selected mode
+   button uses (owner decision, 2026-08-04), because once every glyph is mode-accented the glyph's
+   colour can no longer carry this. Reusing the mode selector's treatment also means one visual
+   idea for "this is the active one" across the whole shell. Background and border only: the tile
+   geometry stays put, so an opening surface never nudges the row.
+
+   Compounded with `--wired` deliberately: that rule sets its own background and sits later in the
+   file, so a single-class selector here loses on source order — which it silently did the first
+   time. */
+.quick-action--wired.quick-action--open {
+  /* The `border` SHORTHAND, not the longhands: `.quick-action` sets the shorthand and
+     `.quick-action--wired` sets `border-color` on top of it, and mixing the two levels here left
+     the colour resolving to the panel border while everything else in this block applied. */
+  border: 1px solid var(--ch-accent-primary);
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--ch-accent-primary) 44%, transparent) 0%,
+    color-mix(in srgb, var(--ch-accent-primary) 18%, transparent) 52%,
+    color-mix(in srgb, var(--ch-accent-secondary) 14%, transparent) 100%
+  );
+  color: var(--ch-accent-primary);
+}
+
+/* `shut-down` is the only differently-coloured slot. Outline, never filled: a solid red button
+   reads as "danger, do not touch", but this one is pressed on purpose — the weight belongs on
+   the confirmation, not the tile. */
+.quick-action--danger {
+  color: var(--ch-status-error);
+  border-color: var(--ch-status-error);
+}
+
+/* The one coloured slot colours its glyph too: a red-outlined tile with a grey power icon would
+   read as two different states on one control. */
+.quick-action--danger .quick-action__glyph {
+  color: inherit;
+}
+
+.quick-action--danger:hover {
+  border-color: var(--ch-status-error);
+  background: color-mix(in srgb, var(--ch-status-error) 12%, transparent);
 }
 
 /* R1 — mode switcher: four fixed controls, strong selected state. */
@@ -1104,6 +1189,22 @@
 .bottom-bar__wifi .health-glyph {
   width: 1.4rem;
   height: 1.4rem;
+}
+
+/* A radio that is off (or absent) reads as inactive rather than as an error: the
+   struck-through glyph already carries the meaning, so it only steps down in tint. */
+.bottom-bar__wifi[data-wifi="off"],
+.bottom-bar__wifi[data-wifi="absent"] {
+  color: var(--ch-text-muted);
+}
+
+/* Signal strength (NIC-156): the arcs above the measured level dim, so a weak
+   connection reads at a glance. With no `data-signal` every arc stays full — an
+   unmeasured signal must not look like a weak one. */
+.health-glyph[data-signal="1"] .health-glyph__arc--2,
+.health-glyph[data-signal="1"] .health-glyph__arc--3,
+.health-glyph[data-signal="2"] .health-glyph__arc--3 {
+  opacity: 0.25;
 }
 
 /* Battery: a good amount bigger; the whole icon (outline + fill) is tinted by the charge
@@ -3076,6 +3177,70 @@ button.deadline-row__open:not(:disabled):hover {
   font-size: var(--ch-font-size-label);
   color: var(--ch-status-neutral);
   border: 1px dashed var(--ch-status-neutral);
+  border-radius: var(--ch-radius-pill);
+  padding: 0 var(--ch-space-2);
+}
+
+/* Inline ghost completion (NIC-168): the selected suggestion's remainder painted after the
+   caret. Mirrors the launcher input's box exactly (border-width, padding, font) so the ghost
+   suffix lands where the typed text ends; the typed prefix is laid out but invisible. */
+.command-ghost {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  padding: var(--ch-space-3) var(--ch-space-4);
+  padding-left: calc(var(--ch-space-4) + var(--ch-space-6));
+  font-size: var(--ch-font-size-base);
+  color: var(--ch-text-muted);
+  opacity: 0.6;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.command-ghost__typed {
+  visibility: hidden;
+}
+
+/* The visible keyboard selection (design spec §5.5): the row Enter will execute. */
+.command-suggestion--selected,
+.command-suggestion--selected:hover:not(:disabled) {
+  background: var(--ch-surface-panel);
+  outline: 1px solid var(--ch-accent-primary);
+  outline-offset: -1px;
+}
+
+.command-suggestion__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Right-aligned row meta: the exact command (or grammar) plus a kind pill. */
+.command-suggestion__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.command-suggestion__command {
+  font-family: var(--ch-font-mono, ui-monospace, monospace);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-suggestion__kind {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  border: 1px solid var(--ch-panel-border);
   border-radius: var(--ch-radius-pill);
   padding: 0 var(--ch-space-2);
 }

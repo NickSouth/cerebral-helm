@@ -10,9 +10,14 @@ import { useUpdateSettings } from "./useUpdateSettings";
 import { useSettingsSnapshot } from "./SettingsSnapshotProvider";
 import { postShellControl, isShellControlAvailable } from "../shellControl";
 import { PERMISSION_TOOLS } from "./permissionsCatalog";
-import wiredManifest from "../quickActions.manifest.json";
+import { isQuickActionWired, quickActionEntry, quickActionLabel } from "../quickActionRegistry";
 import type { SettingsCategoryId } from "./categories";
-import type { CalendarInfo, CanvasStatus, CanvasStatusItem } from "../../bridge/cerebralBridge";
+import type {
+  CalendarInfo,
+  CanvasStatus,
+  CanvasStatusItem,
+  ListNotesResult
+} from "../../bridge/cerebralBridge";
 
 /** A titled group within a panel. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -121,6 +126,13 @@ interface LoginItemWindow extends Window {
   __cerebralLoginItemUpdate?: (status: string) => void;
 }
 
+interface NotesBrowserWindow extends Window {
+  /** Seeded by the native shell: whether anything handles `obsidian://` (NIC-162). */
+  __cerebralNotesBrowser?: { obsidian?: boolean };
+  /** Set by the native shell after a browse request resolves, with where it went. */
+  __cerebralNotesBrowserUpdate?: (outcome: string) => void;
+}
+
 interface KnowledgeRootWindow extends Window {
   /** Set by the native shell after the NSOpenPanel folder picker resolves (NIC-138). */
   __cerebralKnowledgeRootUpdate?: (path: string) => void;
@@ -179,15 +191,26 @@ const PALETTE_SHORTCUT_PRESETS: ReadonlyArray<{ id: string; label: string }> = [
 interface HotkeyWindow extends Window {
   webkit?: { messageHandlers?: { shellControl?: { postMessage(message: unknown): void } } };
   __cerebralHotkey?: { preset?: string; label?: string };
+  /** Seeded by the shell from `SidebarEdgePreference` (UserDefaults, not the settings snapshot —
+   *  the edge reveal is Mac-only window behavior, like the hotkey above). */
+  __cerebralSidebar?: { edgeReveal?: boolean; dwell?: string };
 }
 
-/** Ask the native shell to rebind the palette hotkey (a Mac-only concern, off the bridge). */
+/** Ask the native shell to rebind the summon hotkey (a Mac-only concern, off the bridge). */
 function setPaletteShortcut(preset: string): void {
   (window as HotkeyWindow).webkit?.messageHandlers?.shellControl?.postMessage({
     action: "setPaletteShortcut",
     preset
   });
 }
+
+/** The dwell durations the shell accepts (`SidebarEdgePreference.Dwell`). A closed set, like the
+ *  shortcut presets: no arbitrary value from here can make the edge un-triggerable or hair-trigger. */
+const SIDEBAR_DWELL_PRESETS = [
+  { id: "fast", label: "Fast" },
+  { id: "standard", label: "Standard" },
+  { id: "relaxed", label: "Relaxed" }
+] as const;
 
 // --- General --------------------------------------------------------------
 
@@ -211,6 +234,14 @@ function GeneralPanelBody() {
   );
   const [preset, setPreset] = useState(
     () => (window as HotkeyWindow).__cerebralHotkey?.preset ?? "option-space"
+  );
+  // Seeded from the shell's injected globals; the defaults here match the shell's own defaults so
+  // a plain browser preview shows the same state the app would.
+  const [edgeReveal, setEdgeReveal] = useState(
+    () => (window as HotkeyWindow).__cerebralSidebar?.edgeReveal ?? true
+  );
+  const [dwell, setDwell] = useState(
+    () => (window as HotkeyWindow).__cerebralSidebar?.dwell ?? "standard"
   );
   // Only stable identities may be persisted (NIC-87 safe-degradation rule): a
   // session-scoped fallback id would silently stop matching after reconnect.
@@ -243,6 +274,16 @@ function GeneralPanelBody() {
   function onShortcutChange(next: string) {
     setPreset(next);
     setPaletteShortcut(next);
+  }
+
+  function onEdgeRevealToggle(next: boolean) {
+    setEdgeReveal(next);
+    postShellControl("setSidebarEdge", { enabled: next });
+  }
+
+  function onDwellChange(next: string) {
+    setDwell(next);
+    postShellControl("setSidebarEdge", { dwell: next });
   }
 
   return (
@@ -306,15 +347,50 @@ function GeneralPanelBody() {
           </label>
         </Field>
       </Section>
-      <Section title="Command palette">
-        <Field label="Summon shortcut" hint="Press this from anywhere to open the command palette.">
+      <Section title="Sidebar">
+        <Field
+          label="Summon shortcut"
+          hint="Press this from anywhere to open the sidebar with its command box ready to type — including over a fullscreen app."
+        >
           <select
             className="settings-select"
             value={preset}
-            aria-label="Command palette shortcut"
+            aria-label="Sidebar shortcut"
             onChange={(event) => onShortcutChange(event.target.value)}
           >
             {PALETTE_SHORTCUT_PRESETS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field
+          label="Reveal at screen edge"
+          hint="Rest the pointer against the left edge of your leftmost display to slide the sidebar out."
+        >
+          <label className="settings-switch">
+            <input
+              type="checkbox"
+              checked={edgeReveal}
+              aria-label="Reveal at screen edge"
+              onChange={(event) => onEdgeRevealToggle(event.target.checked)}
+            />
+            <span className="settings-switch__track" aria-hidden="true" />
+          </label>
+        </Field>
+        <Field
+          label="Edge sensitivity"
+          hint="How long the pointer must rest at the edge before the sidebar appears. Raise this if it opens when you didn’t mean it to."
+        >
+          <select
+            className="settings-select"
+            value={dwell}
+            aria-label="Edge sensitivity"
+            disabled={!edgeReveal}
+            onChange={(event) => onDwellChange(event.target.value)}
+          >
+            {SIDEBAR_DWELL_PRESETS.map((option) => (
               <option key={option.id} value={option.id}>
                 {option.label}
               </option>
@@ -543,10 +619,6 @@ function ModesPanelBody() {
 
 // --- Actions --------------------------------------------------------------
 
-const WIRED_ACTION_IDS = new Set(
-  Object.keys((wiredManifest as { wiredActions?: Record<string, unknown> }).wiredActions ?? {})
-);
-
 function ActionsPanel() {
   const { modes, mode } = useDashboardState();
   const active = modes.find((modeView) => modeView.label === mode) ?? modes[0];
@@ -555,22 +627,28 @@ function ActionsPanel() {
   return (
     <Section title={`Quick actions — ${active?.label ?? ""}`}>
       <p className="settings-note">
-        The eight quick-action slots for the active mode, and whether each is wired to a workflow
-        yet. Building and rebinding actions arrives in a later pass.
+        The eight quick-action slots for the active mode, read from the dispatch registry: what each
+        is built from, and whether it exists yet. An unconfigured slot is held for a later action and
+        is omitted from the dashboard rather than shown as an empty tile.
       </p>
       <ul className="settings-list">
         {actions.map((action, index) => (
           <li key={`${action ?? "empty"}-${index}`} className="settings-list__item">
             <div className="settings-list__text">
               <span className="settings-list__title">
-                {action ? humanizeId(action) : "Empty slot"}
+                {action ? quickActionLabel(action) : "Empty slot"}
               </span>
+              {action ? (
+                <span className="settings-list__sub">
+                  {quickActionEntry(action)?.archetype ?? "unregistered"}
+                </span>
+              ) : null}
             </div>
             <span className="settings-list__policy">
-              {action && WIRED_ACTION_IDS.has(action)
+              {action && isQuickActionWired(action)
                 ? "Wired"
                 : action
-                  ? "Not wired yet"
+                  ? "Not built yet"
                   : "Unconfigured"}
             </span>
           </li>
@@ -680,8 +758,12 @@ const TMDB_SECRET_REFERENCE = "tmdb_api_key";
 const FINNHUB_SECRET_REFERENCE = "finnhub_api_key";
 const NEWSDATA_SECRET_REFERENCE = "newsdata_api_key";
 const GITHUB_SECRET_REFERENCE = "github_api_token";
+const LINEAR_SECRET_REFERENCE = "linear_api_token";
 const SPOTIFY_CLIENT_ID_REFERENCE = "spotify_client_id";
 const SPOTIFY_OAUTH_REFERENCE = "spotify_oauth";
+const GOOGLE_CLIENT_ID_REFERENCE = "google_client_id";
+const GOOGLE_OAUTH_REFERENCE = "google_oauth";
+const GOOGLE_CLIENT_SECRET_REFERENCE = "google_client_secret";
 
 /**
  * A masked API-key provisioning field for a provider (generalized from the TMDB field, NIC-134;
@@ -777,6 +859,113 @@ function ProviderKeyField({
 }
 
 /**
+ * The Gmail connect control (2026-08-04). Same shape as {@link SpotifyConnectField}: a Connect that
+ * runs the OAuth flow on the macOS host (opens the browser, captures the loopback redirect, stores
+ * tokens in the Keychain) and a Disconnect that clears them. Connection state comes from
+ * `getSecretStatus("google_oauth")` — presence only; the tokens are never read back.
+ *
+ * **A connect that comes back unable to refresh is shown as a warning, not a success.** Such a
+ * grant works for about an hour and then stops, and saying "Connected" would leave the user to
+ * discover that later with nothing to connect it to.
+ */
+function GmailConnectField() {
+  const bridge = useBridge();
+  const [connected, setConnected] = useState<boolean | null>(null); // null while the status settles
+  const [phase, setPhase] = useState<"idle" | "connecting" | "error" | "warning">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      .getSecretStatus({ reference: GOOGLE_OAUTH_REFERENCE })
+      .then((result) => {
+        if (active) setConnected(result.bound);
+      })
+      .catch(() => {
+        if (active) setConnected(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
+  function connect() {
+    setPhase("connecting");
+    setMessage(null);
+    void bridge
+      .connectGmail()
+      .then((result) => {
+        if (!result.connected) {
+          setPhase("error");
+          setMessage("Couldn\u2019t connect Gmail. Please try again.");
+          return;
+        }
+        setConnected(true);
+        if (result.canRefresh) {
+          setPhase("idle");
+          return;
+        }
+        // Connected, but with nothing to renew the token — reported rather than smoothed over.
+        setPhase("warning");
+        setMessage(
+          "Connected, but Google didn\u2019t return a refresh token, so this will stop working in about an hour. Disconnect and connect again."
+        );
+      })
+      .catch((error: unknown) => {
+        setPhase("error");
+        setMessage(
+          error instanceof Error ? error.message : "Couldn\u2019t connect Gmail. Please try again."
+        );
+      });
+  }
+
+  function disconnect() {
+    void bridge
+      .connectGmail({ disconnect: true })
+      .then(() => {
+        setConnected(false);
+        setPhase("idle");
+        setMessage(null);
+      })
+      .catch(() => {
+        // Leave the state as-is; the next status read reconciles it.
+      });
+  }
+
+  const statusLabel = connected === null ? "Checking…" : connected ? "Connected" : "Not connected";
+
+  return (
+    <Field
+      label="Gmail account"
+      hint="Connects Gmail so the daily brief can report unread mail and the Email report action can list it. Read-only access; the app only reads your inbox label count and message senders and subjects. Opens your browser to sign in — you will see an “unverified app” warning, which is your own Google project. Tokens are stored in your macOS Keychain, never in config or logs. Disconnect removes them locally; revoke the grant itself at myaccount.google.com/permissions."
+    >
+      <div className="settings-secret">
+        <span className="settings-secret__status" data-bound={connected === true}>
+          {statusLabel}
+        </span>
+        {connected ? (
+          <button type="button" className="settings-button" onClick={disconnect}>
+            Disconnect
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="settings-button settings-button--primary"
+            disabled={phase === "connecting"}
+            onClick={connect}
+          >
+            {phase === "connecting" ? "Connecting…" : "Connect Gmail"}
+          </button>
+        )}
+      </div>
+      {(phase === "error" || phase === "warning") && message ? (
+        <p className="settings-field__error">{message}</p>
+      ) : null}
+    </Field>
+  );
+}
+
+/**
  * The Spotify connect control (NIC-133): a "Connect Spotify" button that runs the OAuth flow on the
  * macOS host (`connectSpotify` — opens the browser, captures the redirect, stores tokens in the
  * Keychain), and a "Disconnect" that clears them (`deleteSecret`). Connection state comes from
@@ -842,7 +1031,7 @@ function SpotifyConnectField() {
   return (
     <Field
       label="Spotify account"
-      hint="Connect Spotify to show your now-playing track (and controls) on the Entertainment dashboard. Uses the Client ID above; opens your browser to sign in. Tokens are stored in your macOS Keychain — never in config or logs."
+      hint="Connect Spotify to show your now-playing track (and controls) on the Entertainment dashboard, and to create playlists. Uses the Client ID above; opens your browser to sign in. Tokens are stored in your macOS Keychain — never in config or logs. If you connected before playlists existed, reconnect once to grant them — playback keeps working either way."
     >
       <div className="settings-secret">
         <span className="settings-secret__status" data-bound={connected === true}>
@@ -1215,6 +1404,180 @@ function CanvasConnectField() {
   );
 }
 
+/** What the native shell reports a browse request actually did (NIC-162). */
+const BROWSE_OUTCOMES: Record<string, string> = {
+  obsidian: "Opened in Obsidian. Not there? Add the folder as a vault in Obsidian first.",
+  finder: "Obsidian isn't installed — opened the folder in Finder instead.",
+  "missing-root": "That folder doesn't exist yet. Choose a knowledge root above.",
+  unavailable: "Couldn't reach your knowledge root."
+};
+
+/**
+ * "Browse notes" (NIC-162): hands the knowledge root to Obsidian.
+ *
+ * CerebralHelm captures and indexes; Obsidian is where notes are read and edited. Rather than
+ * reimplementing a Markdown reader inside a settings panel, this opens the folder in the tool that
+ * already does it well — and says where the request actually went, because Obsidian silently
+ * ignores a folder it has not registered as a vault, and the shell cannot detect that.
+ *
+ * Off the macOS host there is no channel to ask, so the button is honestly disabled.
+ */
+function BrowseNotesField() {
+  const canBrowse = isShellControlAvailable();
+  const hasObsidian = (window as NotesBrowserWindow).__cerebralNotesBrowser?.obsidian === true;
+  const [outcome, setOutcome] = useState<string | null>(null);
+
+  useEffect(() => {
+    const target = window as NotesBrowserWindow;
+    target.__cerebralNotesBrowserUpdate = (next) => setOutcome(next);
+    return () => {
+      delete target.__cerebralNotesBrowserUpdate;
+    };
+  }, []);
+
+  if (!canBrowse) {
+    return <Unavailable label="Browsing your notes requires the macOS host" />;
+  }
+
+  return (
+    <div className="settings-rebuild">
+      <button
+        type="button"
+        className="settings-button"
+        onClick={() => {
+          setOutcome(null);
+          postShellControl("browseKnowledgeRoot");
+        }}
+      >
+        {/* The label names the destination up front, so the click holds no surprise. */}
+        {hasObsidian ? "Open in Obsidian" : "Reveal in Finder"}
+      </button>
+      {outcome !== null && (
+        <span className="settings-secret__status" role="status">
+          {BROWSE_OUTCOMES[outcome] ?? "Couldn't open your knowledge folder."}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The Library summary (NIC-162): what is actually in the knowledge base — how many notes, where
+ * they live, and when one last changed.
+ *
+ * It reads through the same `note.list` tool an assistant would, so there is no UI-only view of the
+ * knowledge base. Every state is reported as itself: a root that cannot be read says so rather than
+ * showing an empty library, an empty root says it is empty, and a note whose date is unreadable is
+ * listed without a fabricated one.
+ */
+function NoteLibraryField() {
+  const bridge = useBridge();
+  // null while loading — distinct from a loaded-but-empty library.
+  const [library, setLibrary] = useState<ListNotesResult | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void bridge
+      // Only the most recent few are shown; `total` still reports the real size.
+      .listNotes(3)
+      .then((result) => {
+        if (active) setLibrary(result);
+      })
+      .catch(() => {
+        if (active) setLibrary({ available: false, root: "", total: 0, notes: [] });
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge]);
+
+  if (library === null) {
+    return <span className="settings-secret__status">Checking…</span>;
+  }
+  if (!library.available) {
+    return <Unavailable label="Your knowledge root could not be read" />;
+  }
+  if (library.total === 0) {
+    return (
+      <div className="settings-library">
+        <span className="settings-secret__status">No notes yet</span>
+        <code className="settings-library__root">{library.root}</code>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-library">
+      <span className="settings-secret__status" data-bound="true">
+        {library.total} {library.total === 1 ? "note" : "notes"}
+      </span>
+      <code className="settings-library__root">{library.root}</code>
+      <ul className="settings-library__recent">
+        {library.notes.map((note) => (
+          <li key={note.path} className="settings-library__note">
+            <span className="settings-library__note-title">{note.title}</span>
+            <span className="settings-library__note-meta">
+              {note.folder || "root"}
+              {/* A note with no readable date is listed without one, never with a guess. */}
+              {note.updated ? ` · ${formatScrapeAge(note.updated)}` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The "Rebuild index" action (NIC-163): reconstructs the derived note search index from the durable
+ * Markdown, which is what makes notes written in another editor findable.
+ *
+ * Feedback is the awaited response, not a progress stream — a rebuild is a filesystem walk of a
+ * personal knowledge base, fast enough that a spinner and a result line tell the whole story. Each
+ * outcome is reported as itself: how many notes were indexed on success, an honest failure on
+ * error, and "requires the macOS host" where there is no knowledge composition at all. The button
+ * never reports a rebuild that did not happen.
+ */
+function RebuildIndexField() {
+  const bridge = useBridge();
+  const [state, setState] = useState<"idle" | "running" | "done" | "failed" | "unavailable">("idle");
+  const [indexed, setIndexed] = useState(0);
+
+  function rebuild() {
+    setState("running");
+    void bridge
+      .rebuildKnowledgeIndex()
+      .then((result) => {
+        if (!result.rebuilt) {
+          setState("unavailable");
+          return;
+        }
+        setIndexed(result.noteCount);
+        setState("done");
+      })
+      .catch(() => setState("failed"));
+  }
+
+  return (
+    <div className="settings-rebuild">
+      <button type="button" className="settings-button" onClick={rebuild} disabled={state === "running"}>
+        {state === "running" ? "Rebuilding…" : "Rebuild index"}
+      </button>
+      {state === "done" && (
+        <span className="settings-secret__status" data-bound="true" role="status">
+          Rebuilt · {indexed} {indexed === 1 ? "note" : "notes"} indexed
+        </span>
+      )}
+      {state === "failed" && (
+        <span className="settings-rebuild__error" role="status">
+          Rebuild failed. Your notes are unchanged.
+        </span>
+      )}
+      {state === "unavailable" && <Unavailable label="Requires the macOS host" />}
+    </div>
+  );
+}
+
 function SetupPanel() {
   // The knowledge-root control seeds from the persisted read (NIC-141).
   const { status } = useSettingsSnapshot();
@@ -1285,11 +1648,23 @@ function SetupPanelBody() {
         <SectionActions dirty={dirty} onSave={save} onCancel={cancel} />
       </Section>
       <Section title="Library">
-        <Field label="Browse notes">
-          <Unavailable label="Requires the knowledge system" />
+        <Field
+          label="Your notes"
+          hint="Read from the Markdown itself, so notes written in any editor appear here — no rebuild needed."
+        >
+          <NoteLibraryField />
         </Field>
-        <Field label="Rebuild index">
-          <Unavailable label="Requires the knowledge system" />
+        <Field
+          label="Browse notes"
+          hint="Opens your knowledge folder in Obsidian, which reads and edits Markdown far better than this panel could. The first time, add the folder as a vault in Obsidian — it can only open vaults it already knows. Without Obsidian installed, the folder opens in Finder."
+        >
+          <BrowseNotesField />
+        </Field>
+        <Field
+          label="Rebuild index"
+          hint="Search reads a derived index built from your Markdown. Notes you add or edit outside CerebralHelm — in Obsidian, or any editor — become searchable once you rebuild. Your notes are never modified: only the index is reconstructed."
+        >
+          <RebuildIndexField />
         </Field>
       </Section>
       <Section title="Integrations & onboarding">
@@ -1318,12 +1693,31 @@ function SetupPanelBody() {
           placeholder="Paste your GitHub token"
         />
         <ProviderKeyField
+          reference={LINEAR_SECRET_REFERENCE}
+          label="Linear API key"
+          hint="Powers the Developer Create ticket action. Stored in your macOS Keychain — never in config or logs. Create a personal API key under Linear → Settings → Security & access."
+          placeholder="Paste your Linear API key"
+        />
+        <ProviderKeyField
           reference={SPOTIFY_CLIENT_ID_REFERENCE}
           label="Spotify Client ID"
           hint="Powers the Entertainment Spotify widget. Create an app at developer.spotify.com and add the redirect URI http://127.0.0.1:8888/callback — then paste its Client ID here. Public, but stored in your macOS Keychain."
           placeholder="Paste your Spotify Client ID"
         />
         <SpotifyConnectField />
+        <ProviderKeyField
+          reference={GOOGLE_CLIENT_ID_REFERENCE}
+          label="Google Client ID"
+          hint="Powers the Gmail integration. Create a Desktop app OAuth client at console.cloud.google.com (Google Auth Platform → Clients), enable the Gmail API, and add the gmail.readonly scope — then paste the Client ID here. No client secret is needed. Public, but stored in your macOS Keychain."
+          placeholder="Paste your Google Client ID"
+        />
+        <ProviderKeyField
+          reference={GOOGLE_CLIENT_SECRET_REFERENCE}
+          label="Google Client Secret"
+          hint="Required for a Desktop OAuth client — Google issues one and its token endpoint expects it, despite the parameter being labelled optional (that exemption covers Android, iOS and Chrome clients only). Copy it from the same Clients page as the ID. Stored in your macOS Keychain."
+          placeholder="Paste your Google Client Secret"
+        />
+        <GmailConnectField />
         <StocksTickersField />
         <CalendarModeMapField />
         <CanvasConnectField />

@@ -219,6 +219,155 @@ public struct MockGoogleSearchCapability: GoogleSearchCapability {
     }
 }
 
+public struct MockMessagingCapability: MessagingCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func send(body: String, target: String, targetKind: String) async throws -> Bool {
+        try CapabilityGate.check(CapabilityMatrix.Capability.messagesSend, matrix: matrix, fault: fault, subject: target)
+        return true
+    }
+}
+
+public struct MockSpotifyPlaylistCapability: SpotifyPlaylistCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func createPlaylist(name: String, description: String?, isPublic: Bool) async throws -> SpotifyPlaylistResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.spotifyPlaylist, matrix: matrix, fault: fault, subject: name)
+        return SpotifyPlaylistResult(
+            id: "mock-playlist", name: name,
+            url: "https://open.spotify.com/playlist/mock-playlist", opened: true
+        )
+    }
+}
+
+public struct MockLinearIssueCapability: LinearIssueCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func createIssue(
+        title: String,
+        description: String?,
+        teamID: String,
+        projectID: String?,
+        labelIDs: [String],
+        priority: Int?
+    ) async throws -> LinearIssueResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.linearIssue, matrix: matrix, fault: fault, subject: title)
+        return LinearIssueResult(
+            identifier: "MOCK-1",
+            url: "https://linear.app/mock/issue/MOCK-1"
+        )
+    }
+}
+
+public struct MockProjectScaffoldCapability: ProjectScaffoldCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func scaffold(
+        name: String, location: String?, summary: String?, importance: Int?
+    ) async throws -> ProjectScaffoldResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.projectScaffold, matrix: matrix, fault: fault, subject: name)
+        let path = "/mock/Projects/\(location.map { "\($0)/" } ?? "")\(name)"
+        return ProjectScaffoldResult(projectPath: path, descriptorPath: path + "/PROJECT.md")
+    }
+}
+
+public struct MockGitCloneCapability: GitCloneCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func clone(repositoryURL: String, directory: String?) async throws -> GitCloneResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.gitClone, matrix: matrix, fault: fault, subject: repositoryURL)
+        let name = directory ?? "repository"
+        return GitCloneResult(clonedPath: "/mock/Projects/\(name)", repositoryName: name)
+    }
+}
+
+public struct MockYouTubeSearchCapability: YouTubeSearchCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func search(query: String) async throws -> YouTubeSearchResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.youtubeSearch, matrix: matrix, fault: fault, subject: query)
+        return YouTubeSearchResult(
+            query: query,
+            opened: true,
+            resolvedURL: "https://www.youtube.com/results?search_query=\(query)"
+        )
+    }
+}
+
+/// Reports a successful Obsidian hand-off without one, so the pre-Mac runtime and the contract
+/// suite can exercise `note.open` end to end. It never touches the filesystem: containment was
+/// already decided by the knowledge service, and a mock that re-decided it would be testing itself.
+public struct MockNoteOpenCapability: NoteOpenCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(absolutePath: String) async throws -> NoteOpenResult {
+        try CapabilityGate.check(
+            CapabilityMatrix.Capability.noteOpen, matrix: matrix, fault: fault, subject: absolutePath
+        )
+        return NoteOpenResult(opened: true, target: .obsidian)
+    }
+}
+
+public struct MockMailOpenCapability: MailOpenCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(messageID: String?) async throws -> MailOpenResult {
+        try CapabilityGate.check(
+            CapabilityMatrix.Capability.mailOpen, matrix: matrix, fault: fault,
+            subject: messageID ?? "inbox"
+        )
+        return MailOpenResult(opened: true, resolvedURL: "https://mail.google.com/mail/u/0/")
+    }
+}
+
 public struct MockSpotifyControlCapability: SpotifyControlCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/course-note-create-input.schema.json",
+  "title": "CerebralHelm Course Note Create Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["noteCourse", "noteTitle"],
+  "properties": {
+    "noteCourse": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The course to file the note under, as a human course name or code. The adapter DERIVES the folder from it inside the school root and creates it if this is the course's first note — the caller never names a folder, so a note can only ever land under the school root."
+    },
+    "noteTitle": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The note's title. It becomes the H1 and the filename's readable part; the filename is date-prefixed by the adapter so a course folder sorts chronologically on its own."
+    }
+  }
+}

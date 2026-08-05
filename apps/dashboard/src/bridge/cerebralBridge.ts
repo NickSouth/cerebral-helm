@@ -24,7 +24,9 @@ export type BridgeEventType =
   | "widget.data.changed"
   | "weather.changed"
   | "news.changed"
-  | "schedule.changed";
+  | "mail.changed"
+  | "schedule.changed"
+  | "system.checks.changed";
 
 export interface BridgeEvent {
   readonly eventId: string;
@@ -48,6 +50,31 @@ export interface CommandReceipt {
   readonly accepted: boolean;
 }
 
+/** Input for {@link CerebralBridge.suggestCommands} (NIC-168). An empty query is
+ *  valid — it lists the supported grammar. */
+export interface SuggestCommandsInput {
+  readonly query: string;
+  readonly limit?: number;
+}
+/** One ranked, capability-aware candidate for the palette / launcher (NIC-168).
+ *  `command` is always an exact string in the parser's grammar: executing a
+ *  suggestion means submitting `command` verbatim — except `requiresArgument`
+ *  rows, whose `command` is a fill-in prefix (`"note "`) that completes the
+ *  input instead of executing. Unavailable rows render visibly disabled, never
+ *  fake-successful (NIC-58, FR-UI-07). */
+export interface SuggestedCommand {
+  readonly command: string;
+  readonly label: string;
+  readonly detail?: string | null;
+  readonly kind: "app" | "url" | "workflow" | "mode" | "hook" | "command" | "pattern";
+  readonly requiresArgument: boolean;
+  readonly available: boolean;
+  readonly unavailableReason?: string | null;
+}
+export interface SuggestCommandsResult {
+  readonly suggestions: readonly SuggestedCommand[];
+}
+
 export interface ApplyModeInput {
   readonly modeId: string;
 }
@@ -65,6 +92,200 @@ export interface CaptureNoteResult {
   readonly noteId: string;
 }
 
+/**
+ * The `create-event` form's collected values. Times are LOCAL WALL-CLOCK ISO strings
+ * (`2026-08-03T14:00`), matching the calendar read side — the time typed is the time meant.
+ * `calendarTitle` rides along so a confirmation prompt can name the calendar in words.
+ */
+export interface CreateCalendarEventInput {
+  readonly title: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly calendarId?: string;
+  readonly calendarTitle?: string;
+  readonly location?: string;
+  readonly notes?: string;
+}
+export interface CreateCalendarEventResult {
+  /** The event id, or the pending command id when the action gated on confirmation. */
+  readonly eventId: string;
+  readonly calendarTitle?: string;
+  /** True when a confirmation is now pending — never report "created" in that case. */
+  readonly awaitingConfirmation: boolean;
+}
+
+export interface CloneRepositoryInput {
+  readonly repositoryUrl: string;
+  /** Optional folder under the projects root; the host derives one from the repository otherwise. */
+  readonly directory?: string;
+}
+export interface CloneRepositoryResult {
+  /** The cloned path, or the pending command id when the action gated on confirmation. */
+  readonly clonedPath: string;
+  readonly repositoryName: string;
+  /** True when a confirmation is now pending — never report "cloned" in that case. */
+  readonly awaitingConfirmation: boolean;
+}
+
+/**
+ * What a native folder picker returned (quick actions phase 4). `relativeFolder` is the selection
+ * relative to the projects root — `""` for the root itself. `outsideRoot` is a refused selection,
+ * which is a different fact from `cancelled`: one deserves an explanation, the other silence.
+ * `available: false` means the host has no picker at all, so the form falls back to typing.
+ */
+export interface ChooseFolderResult {
+  readonly folderPath: string | null;
+  readonly relativeFolder: string | null;
+  readonly cancelled: boolean;
+  readonly outsideRoot: boolean;
+  readonly available: boolean;
+}
+
+/** One Linear team and the projects/labels scoped to it (quick actions phase 4). Nested rather
+ *  than flattened: a project belongs to exactly one team, and a flat list would let the form offer
+ *  one from another team, which Linear rejects at write time. */
+export interface LinearOption {
+  readonly id: string;
+  readonly name: string;
+}
+export interface LinearTeam {
+  readonly id: string;
+  readonly key: string;
+  readonly name: string;
+  readonly projects: readonly LinearOption[];
+  readonly labels: readonly LinearOption[];
+}
+export interface ListLinearOptionsResult {
+  readonly teams: readonly LinearTeam[];
+  /** False on a host with no Linear client at all — different from an empty workspace. */
+  readonly available: boolean;
+  /** Present when the workspace could not be read, so the form says so rather than rendering
+   *  empty dropdowns that look like the user has no teams. */
+  readonly reason: string | null;
+}
+
+export interface CreateLinearIssueInput {
+  readonly title: string;
+  readonly description?: string;
+  readonly teamId: string;
+  /** Display names ride along so a confirmation can name the destination in words. */
+  readonly teamName?: string;
+  readonly projectId?: string;
+  readonly projectName?: string;
+  /** A list: a Linear issue routinely carries several labels. */
+  readonly labelIds?: readonly string[];
+  readonly labelNames?: readonly string[];
+  /** Linear's scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low. */
+  readonly priority?: number;
+}
+export interface CreateLinearIssueResult {
+  /** The issue identifier, or the pending command id when the action gated on confirmation. */
+  readonly identifier: string;
+  readonly url: string | null;
+  /** True when a confirmation is now pending — never report "created" in that case. */
+  readonly awaitingConfirmation: boolean;
+}
+
+export interface CreateSpotifyPlaylistInput {
+  readonly name: string;
+  readonly description?: string;
+  /** Absent means private — Spotify's own API defaults this to true, which is not a default worth
+   *  inheriting when it publishes to someone's profile. */
+  readonly isPublic?: boolean;
+}
+export interface CreateSpotifyPlaylistResult {
+  /** The playlist id, or the pending command id when the action gated on confirmation. */
+  readonly playlistId: string;
+  readonly name: string;
+  readonly url: string | null;
+  /** Whether Spotify came forward at the new playlist — best-effort, never a failure. */
+  readonly opened: boolean;
+  readonly awaitingConfirmation: boolean;
+  readonly needsReconnect: boolean;
+}
+
+export interface ScaffoldProjectInput {
+  readonly name: string;
+  /** Optional folder under the projects root; the host joins the name onto it. */
+  readonly location?: string;
+  readonly summary?: string;
+  /** Ordering weight for the Projects widget (higher first). */
+  readonly importance?: number;
+}
+export interface ScaffoldProjectResult {
+  /** The created folder's path, or the pending command id when the action gated. */
+  readonly projectPath: string;
+  readonly awaitingConfirmation: boolean;
+}
+
+/** One side of a team game. `color` is bare hex with no leading `#`, as the provider sends it. */
+export interface SportsCompetitor {
+  readonly abbreviation: string;
+  readonly name: string;
+  readonly score: string;
+  readonly color: string | null;
+  readonly isHome: boolean;
+  readonly record: string | null;
+}
+/** One row of an individual-event leaderboard. `position` is empty on a finished event. */
+export interface SportsLeaderboardEntry {
+  readonly order: number;
+  readonly position: string | null;
+  readonly name: string;
+  readonly score: string;
+  readonly thru: string | null;
+}
+/** A game or tournament. `competitors` is filled for a team sport, `leaderboard` for an individual
+ *  one — they differ in which collection is populated, not in shape. */
+export interface SportsEvent {
+  readonly id: string;
+  readonly league: string;
+  readonly name: string;
+  readonly shortName: string;
+  readonly state: "pre" | "in" | "post";
+  readonly detail: string;
+  /** Where it is played, when the source says. NFL supplies a stadium; golf carries no course. */
+  readonly venue?: string | null;
+  readonly competitors: readonly SportsCompetitor[];
+  readonly leaderboard: readonly SportsLeaderboardEntry[];
+}
+export interface ListSportsEventsResult {
+  readonly events: readonly SportsEvent[];
+  /** False on a host with no sports provider — different from "nothing is on today". */
+  readonly available: boolean;
+  /** Present when the read failed, so the picker says so rather than showing an empty list. */
+  readonly reason: string | null;
+}
+
+/** Someone (or some thread) a message can go to. `groupSize` is present only for a real group. */
+export interface MessageRecipient {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: "participant" | "chat";
+  readonly groupSize: number | null;
+  readonly handle: string | null;
+}
+export interface ListMessageRecipientsResult {
+  readonly recipients: readonly MessageRecipient[];
+  readonly available: boolean;
+  readonly reason: string | null;
+}
+
+export interface SendMessageInput {
+  readonly body: string;
+  readonly target: string;
+  readonly targetKind: "participant" | "chat";
+  /** Carried so the confirmation names who this is going to, rather than a phone number. */
+  readonly targetName?: string;
+  readonly groupSize?: number;
+}
+export interface SendMessageResult {
+  readonly targetName: string;
+  readonly sent: boolean;
+  /** True on the normal path — this action always confirms before sending. */
+  readonly awaitingConfirmation: boolean;
+}
+
 export interface SearchNotesInput {
   readonly text: string;
   readonly limit?: number;
@@ -73,6 +294,12 @@ export interface NoteSearchHit {
   readonly noteId: string;
   readonly title: string;
   readonly excerpt: string;
+  /** The note's root-relative path (quick actions phase 5): the key the `search-notes` picker
+   *  merges the file listing and the index on, and the handle it opens by. `noteId` cannot do
+   *  that job — a note authored outside CerebralHelm has no frontmatter id. Optional because an
+   *  index written before this field existed has none, and a hit without one is skipped rather
+   *  than rendered as a row that would fail on click. */
+  readonly path?: string;
 }
 export interface SearchNotesResult {
   readonly results: readonly NoteSearchHit[];
@@ -195,6 +422,153 @@ export interface CanvasStatus {
   /** Every scraped course/assignment (hidden ones flagged) for the manage-list. */
   readonly courses: readonly CanvasStatusItem[];
   readonly deadlines: readonly CanvasStatusItem[];
+}
+
+/** One note in the Setup → Library card (NIC-162), projected from its Markdown file. `path` is
+ *  relative to the knowledge root and `folder` is its containing folder (`inbox`, `projects/atlas`),
+ *  empty at the root. `updated` is ISO-8601, or null when neither the note's frontmatter nor the
+ *  file's date is readable. */
+export interface NoteListItem {
+  readonly path: string;
+  readonly title: string;
+  readonly folder: string;
+  readonly updated: string | null;
+}
+
+/** The durable notes under the knowledge root (NIC-162). `available` is false when the root could
+ *  not be read at all — the card then says so, because "no notes yet" and "your knowledge root is
+ *  gone" must never look the same. `total` counts every note under the root regardless of the
+ *  requested limit, so a card showing the most recent few still reports the real size. */
+export interface ListNotesResult {
+  readonly available: boolean;
+  readonly root: string;
+  readonly total: number;
+  readonly notes: readonly NoteListItem[];
+}
+
+/** The unread-mail channel (Gmail integration), folded from `mail.changed`.
+ *
+ *  `unread` is **optional and absent unless it was actually measured** — the one thing that keeps
+ *  this honest. Zero unread and "not connected" are completely different facts, and a surface that
+ *  rendered both as 0 would tell you your inbox is clear when nobody has looked. */
+export interface MailChannel {
+  readonly state: "ready" | "not-connected" | "reconnect" | "unavailable";
+  readonly unread?: number | null;
+  /** True when counting stopped at a ceiling: there are **at least** `unread`. Rendered as "100+",
+   *  never as a precise number the host never measured. */
+  readonly unreadCapped?: boolean;
+  /** Which slice was counted: `primary` (personal mail, promotions and the other category tabs
+   *  excluded) or the whole `inbox` when the account does not categorize. The surface says which,
+   *  because the two numbers differ enormously and "12 unread" would be false for an inbox with
+   *  340 waiting. */
+  readonly unreadScope?: "primary" | "inbox" | null;
+  readonly reason?: string | null;
+}
+
+/** One unread message as the report renders it. `messageId` is the RFC 5322 Message-ID — the
+ *  handle `open-mail` takes. Absent when the sender omitted one, in which case the row is text
+ *  rather than a link. */
+export interface UnreadMailItem {
+  readonly id: string;
+  readonly byline: string;
+  readonly subject: string;
+  readonly receivedAt?: string | null;
+  readonly messageId?: string | null;
+}
+/** `state` is what separates "your inbox is clear" from "we could not look" — an empty array
+ *  alone cannot, and rendering both as an empty report would claim you are caught up. */
+export interface UnreadMailResult {
+  readonly state: "ready" | "not-connected" | "reconnect" | "unavailable";
+  readonly messages: readonly UnreadMailItem[];
+  readonly reason?: string | null;
+}
+
+export interface ConnectGmailInput {
+  readonly disconnect?: boolean;
+}
+/** The outcome of connecting Gmail. `canRefresh` false means the grant CANNOT renew itself — it
+ *  works for an hour and then stops — so the surface reports it as a problem rather than a
+ *  successful connection. */
+export interface ConnectGmailResult {
+  readonly connected: boolean;
+  readonly scope: string | null;
+  readonly canRefresh: boolean;
+}
+
+/** The receipt for starting a health run. It deliberately carries no results — a payload that
+ *  looked like results would invite a caller to read the first snapshot as the answer. `started`
+ *  is false on a host with no checks to run (the browser preview). */
+export interface RunSystemChecksResult {
+  readonly started: boolean;
+  readonly checkCount: number;
+}
+
+/** One health check's current state, streamed on `system.checks.changed`. `skipped` is NOT a
+ *  failure: a check the user never configured, or one held back because probing would spend a
+ *  small daily quota, is neither passing nor broken. */
+export interface SystemCheck {
+  readonly id: string;
+  readonly title: string;
+  readonly group: "permissions" | "integrations" | "storage";
+  readonly state: "pending" | "running" | "passed" | "failed" | "skipped";
+  readonly detail?: string | null;
+  /** The one step that would fix a failure, where there is one. */
+  readonly remediation?: string | null;
+  readonly durationMs?: number | null;
+}
+
+export interface SystemChecksPayload {
+  readonly checks: readonly SystemCheck[];
+  /** True once nothing is pending — the surface can stop saying "checking". */
+  readonly complete: boolean;
+  readonly failureCount: number;
+}
+
+/** One course notebook (quick actions phase 5). `folder` is root-relative, so it can be compared
+ *  directly to a note listing's `folder` — which is how the picker's second stage finds a course's
+ *  notes without a second read. */
+export interface CourseFolder {
+  readonly course: string;
+  readonly folder: string;
+  readonly noteCount: number;
+  readonly updated: string | null;
+}
+
+/** The courses on disk. `available` is false when the knowledge root could not be read at all —
+ *  "no courses yet" and "your vault is gone" must never look the same. */
+export interface ListCoursesResult {
+  readonly available: boolean;
+  /** The root-relative school folder the courses came from. */
+  readonly root: string;
+  readonly courses: readonly CourseFolder[];
+}
+
+export interface CreateCourseNoteInput {
+  readonly course: string;
+  readonly title: string;
+}
+
+/** The created note. `path` is the same handle `notes-open` takes, so the picker can open what it
+ *  just created — except while `awaitingConfirmation`, where nothing has been written yet. */
+export interface CreateCourseNoteResult {
+  readonly course: string;
+  readonly path: string;
+  readonly title: string;
+  /** False when a note of that title already existed for that day and was returned rather than
+   *  overwritten. Creating a note never clobbers one. */
+  readonly created: boolean;
+  readonly awaitingConfirmation: boolean;
+}
+
+/** The outcome of rebuilding the derived note search index (NIC-163). `rebuilt` is false only when
+ *  the host has no knowledge composition (the browser preview) — the card then shows the action as
+ *  unavailable rather than reporting a rebuild that never ran. Otherwise `root` is the knowledge
+ *  root that was read and `noteCount` is how many notes were indexed. The durable Markdown is never
+ *  written: a rebuild only reconstructs derived state. */
+export interface KnowledgeRebuildResult {
+  readonly rebuilt: boolean;
+  readonly root: string;
+  readonly noteCount: number;
 }
 
 /** On-demand internet speed test result (NIC-135). `status` is "ok" (both
@@ -509,6 +883,10 @@ export interface CerebralBridge {
   getBootstrapState(): Promise<DashboardBootstrapState>;
   getRecentActivity(query?: RecentActivityQuery): Promise<RecentActivity>;
   submitCommand(input: SubmitCommandInput): Promise<CommandReceipt>;
+  /** Ranked, capability-aware command suggestions over the live catalogs
+   *  (NIC-168). Read-only — executing a suggestion still goes through
+   *  {@link submitCommand}. */
+  suggestCommands(input: SuggestCommandsInput): Promise<SuggestCommandsResult>;
   applyMode(input: ApplyModeInput): Promise<ApplyModeResult>;
   captureNote(input: CaptureNoteInput): Promise<CaptureNoteResult>;
   searchNotes(input: SearchNotesInput): Promise<SearchNotesResult>;
@@ -528,11 +906,44 @@ export interface CerebralBridge {
    *  the redirect, and persists tokens to the Keychain. Resolves with the granted scope, or rejects
    *  with an honest message (no Client ID, cancelled, rejected). */
   connectSpotify(): Promise<ConnectSpotifyResult>;
+  /** Run the Gmail OAuth connect on the macOS host, or clear the stored grant with
+   *  `{disconnect: true}`. Tokens are written to the Keychain and never returned. */
+  connectGmail(input?: ConnectGmailInput): Promise<ConnectGmailResult>;
+  /** The unread messages themselves, for the email report. On demand only — one request per
+   *  message, so this is never sampled on a cadence the way the count is. */
+  listUnreadMail(limit?: number): Promise<UnreadMailResult>;
   /** Read-only application discovery for the More Apps picker (NIC-119). */
   listApps(): Promise<ListAppsResult>;
   /** List the user's calendars for the Settings calendar→mode mapping (NIC-126). Requests
    *  Calendar access at point of use; a denied grant returns `authorized: false` + no calendars. */
   listCalendars(): Promise<ListCalendarsResult>;
+  /** Create one calendar event from the `create-event` form (quick actions phase 3). */
+  createCalendarEvent(input: CreateCalendarEventInput): Promise<CreateCalendarEventResult>;
+  /** Clone a repository into the projects root from the `git-clone` form (quick actions phase 4).
+   *  Structured rather than a `clone <url>` text submit because the form carries an optional folder
+   *  name, which no text grammar carries without becoming lossy about quoting. */
+  cloneRepository(input: CloneRepositoryInput): Promise<CloneRepositoryResult>;
+  /** Open a native folder picker rooted at the projects root (quick actions phase 4). Takes no
+   *  input by design: a caller-supplied starting directory is the first step toward a
+   *  caller-chosen destination, which the root constraint exists to prevent. */
+  chooseFolder(): Promise<ChooseFolderResult>;
+  /** Read the Linear workspace for the `create-ticket` form's dropdowns (quick actions phase 4).
+   *  A read that never touches the command bus, like `listCalendars`. */
+  listLinearOptions(): Promise<ListLinearOptionsResult>;
+  /** Create one Linear issue from the `create-ticket` form. */
+  createLinearIssue(input: CreateLinearIssueInput): Promise<CreateLinearIssueResult>;
+  /** Create one Spotify playlist from the `create-playlist` form (quick actions phase 4). Rejects
+   *  with `spotify_reconnect_required` when the stored grant predates the playlist scopes. */
+  createSpotifyPlaylist(input: CreateSpotifyPlaylistInput): Promise<CreateSpotifyPlaylistResult>;
+  /** Create a project folder with a PROJECT.md descriptor (quick actions phase 4). */
+  scaffoldProject(input: ScaffoldProjectInput): Promise<ScaffoldProjectResult>;
+  /** Read current NFL games and PGA tournaments for `check-scoreboard` (quick actions phase 4).
+   *  One call serves both the picker and the report it opens — they read the same document. */
+  listSportsEvents(): Promise<ListSportsEventsResult>;
+  /** Contacts and existing chats for the `send-text` picker (quick actions phase 4). */
+  listMessageRecipients(): Promise<ListMessageRecipientsResult>;
+  /** Send one message. Always gates: the result normally reports `awaitingConfirmation`. */
+  sendMessage(input: SendMessageInput): Promise<SendMessageResult>;
   /** The Canvas ingest connection state for the Settings connect card (NIC-132) — the pairing
    *  endpoint/token (minted on demand) plus the last scrape's age/counts. */
   getCanvasStatus(): Promise<CanvasStatus>;
@@ -542,6 +953,26 @@ export interface CerebralBridge {
   /** Hide or unhide a scraped Canvas course/assignment (NIC-132) from the School widgets, returning
    *  the fresh status with each item's hidden flag. Persists across scrapes. */
   setCanvasItemHidden(id: string, hidden: boolean): Promise<CanvasStatus>;
+  /** Rebuild the derived note search index from the durable Markdown (NIC-163), for Setup →
+   *  Library. Needed after editing notes outside CerebralHelm — the index only learns about those
+   *  files when it is rebuilt. Never destructive to the Markdown; rejects if the rebuild fails. */
+  rebuildKnowledgeIndex(): Promise<KnowledgeRebuildResult>;
+  /** The durable notes under the knowledge root (NIC-162), for the Setup → Library card. `limit`
+   *  caps the returned notes (most recently changed first); the reported total is unaffected. */
+  listNotes(limit?: number): Promise<ListNotesResult>;
+  /** The course notebooks on disk (quick actions phase 5), for `take-notes`' first stage. Reports
+   *  only what the vault contains — the live Canvas courses are already in dashboard state, and
+   *  the picker merges the two, which is what keeps a finished semester's notes reachable. */
+  listCourses(limit?: number): Promise<ListCoursesResult>;
+  /** Start a system-health run (quick actions phase 5). Returns as soon as the run STARTS — the
+   *  results arrive as `system.checks.changed` events, each carrying the whole set, because the
+   *  inventory reaches several third parties and a caller awaiting one response would show
+   *  nothing while the interesting part (which checks exist) is already known. */
+  runSystemChecks(): Promise<RunSystemChecksResult>;
+  /** Create one templated note in a course (quick actions phase 5), minting the course folder on
+   *  first use. The caller names a COURSE, never a folder: the host derives the folder inside the
+   *  school root, so a note can only ever land there. Never overwrites an existing note. */
+  createCourseNote(input: CreateCourseNoteInput): Promise<CreateCourseNoteResult>;
   /** Set a mode's quick-app slots through the validated config-write path (NIC-119c). */
   updateQuickApps(input: UpdateQuickAppsInput): Promise<UpdateQuickAppsResult>;
   /** Mint a user URL reference (NIC-146) so a typed URL can be pinned as a quick app,

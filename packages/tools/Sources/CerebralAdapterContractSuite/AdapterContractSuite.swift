@@ -54,6 +54,8 @@ public struct AdapterContractFixtures: Sendable {
     public var expectedHookStdout: String?
     /// A note-search query the runner's knowledge service answers with ≥ 1 hit.
     public var searchQuery: String
+    /// A note path the runner's knowledge service lists and reads (NIC-162).
+    public var notePath: String
     /// Metrics the status capability is asked for (shape-checked per reading).
     public var metrics: [SystemMetricID]
 
@@ -65,6 +67,7 @@ public struct AdapterContractFixtures: Sendable {
         hookInvocation: HookInvocation,
         expectedHookStdout: String? = nil,
         searchQuery: String,
+        notePath: String = "inbox/ch-idea-001.md",
         metrics: [SystemMetricID] = [.cpu, .memory]
     ) {
         self.appID = appID
@@ -74,6 +77,7 @@ public struct AdapterContractFixtures: Sendable {
         self.hookInvocation = hookInvocation
         self.expectedHookStdout = expectedHookStdout
         self.searchQuery = searchQuery
+        self.notePath = notePath
         self.metrics = metrics
     }
 }

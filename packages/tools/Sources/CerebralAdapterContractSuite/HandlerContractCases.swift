@@ -62,6 +62,40 @@ public extension AdapterContractSuite {
                 let decoded = try CerebralHelmNoteSearchOutput(data: output)
                 try ContractCheck.expect(!decoded.results.isEmpty, "note.search handler contract", "the fixture query must return at least one result")
             },
+            AdapterContractCase(name: "note.list handler contract") {
+                let output = try await handler("note.list", "note.list handler contract")
+                    .execute(input: Data("{}".utf8))
+                let decoded = try CerebralHelmNoteListOutput(data: output)
+                try ContractCheck.expect(!decoded.root.isEmpty, "note.list handler contract", "the listing must cite the knowledge root it read")
+                try ContractCheck.expect(
+                    decoded.notes.contains { $0.path == fixtures.notePath },
+                    "note.list handler contract",
+                    "the fixture note '\(fixtures.notePath)' must appear in the listing"
+                )
+            },
+            AdapterContractCase(name: "note.read handler contract") {
+                let output = try await handler("note.read", "note.read handler contract")
+                    .execute(input: Data(#"{"path":"\#(fixtures.notePath)"}"#.utf8))
+                let decoded = try CerebralHelmNoteReadOutput(data: output)
+                try ContractCheck.expect(decoded.path == fixtures.notePath, "note.read handler contract", "output must echo the note path")
+                try ContractCheck.expect(!decoded.title.isEmpty, "note.read handler contract", "every note reads with a title")
+            },
+            AdapterContractCase(name: "note.read refuses a path outside the knowledge root (AC-33.2)") {
+                let caseName = "note.read refuses a path outside the knowledge root (AC-33.2)"
+                do {
+                    // Contract-shaped (root-relative, Markdown) but climbing out:
+                    // the refusal must come from the service resolving the path,
+                    // not from input validation alone.
+                    _ = try await handler("note.read", caseName)
+                        .execute(input: Data(#"{"path":"inbox/../../escape.md"}"#.utf8))
+                } catch {
+                    return
+                }
+                throw AdapterContractViolation(
+                    caseName: caseName,
+                    reason: "a path resolving outside the knowledge root must fail, never return a file's contents"
+                )
+            },
             AdapterContractCase(name: "hook.run handler contract") {
                 let output = try await handler("hook.run", "hook.run handler contract")
                     .execute(input: Data(#"{"hookId":"\#(fixtures.hookID)"}"#.utf8))

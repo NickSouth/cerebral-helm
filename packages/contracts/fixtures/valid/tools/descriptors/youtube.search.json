@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "youtube.search",
+  "version": "1.0.0",
+  "purpose": "Open a YouTube search for the given query in the browser, preferring a running Google Chrome instance.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/youtube-search-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/youtube-search-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "local_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_local_write",
+  "requiredPermissions": ["application_launch"],
+  "secretReferences": [],
+  "timeoutMs": 30000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["youtube.search"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "denied", "timeout", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

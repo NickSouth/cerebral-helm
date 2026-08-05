@@ -19,6 +19,7 @@ private final class FakeMetricSource: SystemMetricSampling, @unchecked Sendable 
     private var cpuSamples: [CPUTicksSample?]
     private var memorySample: MemorySample?
     private var wifiLink: Double?
+    private var wifi: WiFiStateSample?
     private var batterySample: BatterySample?
     private var displays: Int?
 
@@ -26,12 +27,14 @@ private final class FakeMetricSource: SystemMetricSampling, @unchecked Sendable 
         cpu: [CPUTicksSample?] = [],
         memory: MemorySample? = nil,
         wifiLink: Double? = nil,
+        wifi: WiFiStateSample? = WiFiStateSample(power: .on, rssi: -59),
         battery: BatterySample? = nil,
         displays: Int? = nil
     ) {
         self.cpuSamples = cpu
         self.memorySample = memory
         self.wifiLink = wifiLink
+        self.wifi = wifi
         self.batterySample = battery
         self.displays = displays
     }
@@ -46,6 +49,7 @@ private final class FakeMetricSource: SystemMetricSampling, @unchecked Sendable 
     func memory() -> MemorySample? { memorySample }
     // The Wi-Fi link rate is instantaneous — the same reading on every sample.
     func wifiLinkMbps() -> Double? { lock.lock(); defer { lock.unlock() }; return wifiLink }
+    func wifiState() -> WiFiStateSample? { lock.lock(); defer { lock.unlock() }; return wifi }
     func battery() -> BatterySample? { batterySample }
     func displayCount() -> Int? { displays }
 }
@@ -110,6 +114,68 @@ func noWifiInterfaceIsUnavailable() async throws {
     let zero = MacSystemStatusCapability(source: FakeMetricSource(wifiLink: 0))
     let zeroReadings = try await zero.readMetrics([.network])
     #expect(reading(zeroReadings, .network)?.availability == .unavailable)
+}
+
+// MARK: - Wi-Fi radio state (NIC-156)
+
+@Test("the radio's power state is reported independently of the link rate")
+func wifiPowerIsIndependentOfLinkRate() async {
+    // On Ethernet: no link rate to report, but the Wi-Fi radio is genuinely on.
+    // The indicator must not read this as "Wi-Fi off".
+    let onEthernet = MacSystemStatusCapability(source: FakeMetricSource(
+        wifiLink: nil,
+        wifi: WiFiStateSample(power: .on, rssi: -59)
+    ))
+    let ethernet = await onEthernet.snapshot().network
+    #expect(ethernet.availability == .unavailable)
+    #expect(ethernet.linkMbps == nil)
+    #expect(ethernet.power == .on)
+    #expect(ethernet.signalRssi == -59)
+
+    // Radio switched off: distinct from both "on" and "absent".
+    let off = MacSystemStatusCapability(source: FakeMetricSource(
+        wifiLink: nil,
+        wifi: WiFiStateSample(power: .off, rssi: nil)
+    ))
+    #expect(await off.snapshot().network.power == .off)
+}
+
+@Test("an unsamplable Wi-Fi subsystem reports absent rather than guessing off")
+func unsamplableWifiIsAbsent() async {
+    let capability = MacSystemStatusCapability(source: FakeMetricSource(wifiLink: nil, wifi: nil))
+    let network = await capability.snapshot().network
+    #expect(network.power == .absent)
+    #expect(network.signalRssi == nil)
+}
+
+@Test("signal strength is dropped whenever the radio is not on")
+func signalOnlyReportedWhilePowered() async {
+    // A stale rssi carried alongside a powered-down radio would dim the indicator's
+    // arcs as though there were a live connection.
+    let off = MacSystemStatusCapability(source: FakeMetricSource(
+        wifiLink: nil,
+        wifi: WiFiStateSample(power: .off, rssi: -59)
+    ))
+    #expect(await off.snapshot().network.signalRssi == nil)
+
+    let absent = MacSystemStatusCapability(source: FakeMetricSource(
+        wifiLink: nil,
+        wifi: WiFiStateSample(power: .absent, rssi: -59)
+    ))
+    #expect(await absent.snapshot().network.signalRssi == nil)
+}
+
+@Test("a connected radio keeps both its link rate and its signal strength")
+func connectedRadioReportsBoth() async {
+    let capability = MacSystemStatusCapability(source: FakeMetricSource(
+        wifiLink: 866,
+        wifi: WiFiStateSample(power: .on, rssi: -45)
+    ))
+    let network = await capability.snapshot().network
+    #expect(network.availability == .available)
+    #expect(network.linkMbps == 866)
+    #expect(network.power == .on)
+    #expect(network.signalRssi == -45)
 }
 
 // MARK: - Independent per-metric availability
@@ -196,6 +262,17 @@ func liveSourceSanity() async throws {
     // present it is a positive Mbps figure.
     if let link = source.wifiLinkMbps() {
         #expect(link > 0)
+    }
+
+    // The radio always reports a definite state (never nil — an unreadable subsystem
+    // is `.absent`). A signal reading only accompanies a powered radio, and dBm is
+    // negative by construction.
+    let wifi = try #require(source.wifiState())
+    if wifi.power != .on {
+        #expect(wifi.rssi == nil)
+    }
+    if let rssi = wifi.rssi {
+        #expect(rssi < 0 && rssi > -120)
     }
 
     let displays = try #require(source.displayCount())

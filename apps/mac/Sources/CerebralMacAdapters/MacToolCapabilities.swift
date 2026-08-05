@@ -20,6 +20,10 @@ public enum MacToolCapabilities {
         public let capabilities: ToolCapabilities
         public let systemStatus: MacSystemStatusCapability
         public let secretStore: KeychainSecretCapability
+        /// The Linear GraphQL client (quick-actions phase 4). Exposed on the composition so the
+        /// bridge's read-only `listLinearOptions` closure can use the same client — and the same
+        /// Keychain-resolved key — as the write tool, without going through the tool.
+        public let linear: LinearAPIClient
         /// URL-quick-app favicon fetcher (NIC-147). Carried here rather than on
         /// `ToolCapabilities` because no tool handler consumes it — `BridgeSession`
         /// drives it directly off `listUrls`/`addUrlReference`, like `secretStore`.
@@ -57,6 +61,7 @@ public enum MacToolCapabilities {
         // One launcher shared by both open paths so its profile→window registry is
         // consistent across app-tile and URL-tile opens (NIC-151).
         let chromeLauncher = ChromeProfileLauncher(workspace: workspace)
+        let linearClient = LinearAPIClient(secretStore: secretStore)
         return Composition(
             capabilities: ToolCapabilities(
                 app: NSWorkspaceAppCapability(
@@ -83,7 +88,14 @@ public enum MacToolCapabilities {
                 applicationLifecycle: MacApplicationLifecycleCapability(),
                 appWindows: MacAppWindowsCapability(),
                 googleSearch: NSWorkspaceGoogleSearchCapability(workspace: workspace),
+                youtubeSearch: NSWorkspaceYouTubeSearchCapability(workspace: workspace),
+                gitClone: MacGitCloneCapability(),
+                projectScaffold: ProjectScaffolder(),
+                // One client serves both the write port and the workspace read; the ports stay
+                // separate so a surface that only lists options cannot reach the write path.
+                linearIssue: linearClient,
                 webOpen: NSWorkspaceWebOpenCapability(workspace: workspace),
+                calendarWrite: EventKitCalendarWriter(),
                 // Playback control (NIC-133): resolves a valid token from the same Keychain-backed
                 // OAuth session the now-playing publisher uses, and sends play/pause/skip to the
                 // active device via the Web API.
@@ -91,9 +103,35 @@ public enum MacToolCapabilities {
                     authSession: SpotifyAuthSession(secretStore: secretStore, refresher: SpotifyTokenExchange()),
                     refreshSignal: spotifyRefresh
                 ),
+                // Playlist creation (quick-actions phase 4): the same Keychain-backed session,
+                // a separate capability — control is transport, this writes to the library.
+                spotifyPlaylist: SpotifyWebPlaylistCapability(
+                    authSession: SpotifyAuthSession(secretStore: secretStore, refresher: SpotifyTokenExchange())
+                ),
+                // The one tool that speaks to another person; every send confirms first.
+                messaging: MessagesCapability(),
+                // Hands a located note to Obsidian; the knowledge service decided which note.
+                noteOpen: ObsidianNoteOpenCapability(workspace: workspace),
+                // Opens Gmail in the Chrome profile signed into the connected account. Both lookups
+                // are closures read at open time, not values captured here: at launch there may be
+                // no account connected yet, and the user can re-sign-in a Chrome profile at any
+                // point without the app being told.
+                mailOpen: NSWorkspaceMailOpenCapability(
+                    workspace: workspace,
+                    accountAddress: { (try? await GoogleTokenBlob.load(from: secretStore))?.address },
+                    profileForAccount: { address in
+                        MacChromeProfileDiscoveryCapability.profileDirectory(
+                            forAccount: address,
+                            chromeSupportDirectory: MacChromeProfileDiscoveryCapability.defaultSupportDirectory
+                        )
+                    },
+                    chromeLauncher: chromeLauncher,
+                    currentModeProvider: currentModeProvider
+                ),
                 nativeCapabilityIDs: [
                     CapabilityMatrix.Capability.appOpen,
                     CapabilityMatrix.Capability.projectOpen,
+                    CapabilityMatrix.Capability.projectScaffold,
                     CapabilityMatrix.Capability.urlOpen,
                     CapabilityMatrix.Capability.hookRun,
                     CapabilityMatrix.Capability.systemStatusRead,
@@ -103,12 +141,21 @@ public enum MacToolCapabilities {
                     CapabilityMatrix.Capability.window,
                     CapabilityMatrix.Capability.appsList,
                     CapabilityMatrix.Capability.googleSearch,
+                    CapabilityMatrix.Capability.youtubeSearch,
+                    CapabilityMatrix.Capability.gitClone,
+                    CapabilityMatrix.Capability.linearIssue,
                     CapabilityMatrix.Capability.webOpen,
+                    CapabilityMatrix.Capability.calendarWrite,
                     CapabilityMatrix.Capability.spotifyControl,
+                    CapabilityMatrix.Capability.spotifyPlaylist,
+                    CapabilityMatrix.Capability.noteOpen,
+                    CapabilityMatrix.Capability.mailOpen,
+                    CapabilityMatrix.Capability.messagesSend,
                 ]
             ),
             systemStatus: systemStatus,
             secretStore: secretStore,
+            linear: linearClient,
             favicon: favicon,
             chromeProfiles: chromeProfiles
         )

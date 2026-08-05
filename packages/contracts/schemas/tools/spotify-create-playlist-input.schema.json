@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/spotify-create-playlist-input.schema.json",
+  "title": "CerebralHelm Spotify Create Playlist Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["playlistName"],
+  "description": "Property names are prefixed because the code generator derives type names from property names: a bare `name`/`description` would mint or steal a generic type across the whole shared module.",
+  "properties": {
+    "playlistName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "playlistDescription": {
+      "type": "string",
+      "description": "Optional description, as shown in Spotify clients."
+    },
+    "playlistIsPublic": {
+      "type": "boolean",
+      "description": "Whether the playlist appears on the user's public profile. Absent means private: Spotify's own API defaults this to true, and silently publishing something to someone's profile is not a default worth inheriting."
+    }
+  }
+}

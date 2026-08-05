@@ -54,12 +54,30 @@ const bridgeOperations = new Set([
   "closeAllWindows",
   "listWindows",
   "listCalendars",
+  "createCalendarEvent",
+  "cloneRepository",
+  "chooseFolder",
+  "listLinearOptions",
+  "listSportsEvents",
+  "listMessageRecipients",
+  "sendMessage",
+  "createLinearIssue",
+  "createSpotifyPlaylist",
+  "scaffoldProject",
   "minimizeWindow",
   "surfaceWindow",
   "closeWindow",
   "getCanvasStatus",
   "resetCanvas",
-  "setCanvasItemHidden"
+  "setCanvasItemHidden",
+  "suggestCommands",
+  "rebuildKnowledgeIndex",
+  "listNotes",
+  "listCourses",
+  "createCourseNote",
+  "runSystemChecks",
+  "connectGmail",
+  "listUnreadMail"
 ]);
 
 function readJson(filePath) {

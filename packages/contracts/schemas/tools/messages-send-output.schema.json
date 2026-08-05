@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/messages-send-output.schema.json",
+  "title": "CerebralHelm Messages Send Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageSent"],
+  "properties": {
+    "messageSent": {
+      "type": "boolean"
+    },
+    "messageTargetName": {
+      "type": "string",
+      "description": "Who it went to, echoed back so the result names them rather than repeating a handle."
+    }
+  }
+}

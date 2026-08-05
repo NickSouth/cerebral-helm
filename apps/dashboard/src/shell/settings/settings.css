@@ -437,6 +437,60 @@
 
 /* Canvas connect card (NIC-132): the pairing endpoint + token to paste into the Chrome extension,
    the last-scrape status line, and a Disconnect button. */
+/* Library summary (NIC-162): the note count, the source root, and the most recent notes. */
+.settings-library {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  align-items: flex-end;
+  text-align: right;
+}
+
+.settings-library__root {
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  word-break: break-all;
+}
+
+.settings-library__recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.settings-library__note {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.settings-library__note-title {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-primary);
+}
+
+.settings-library__note-meta {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* Rebuild-index action (NIC-163): the button plus its outcome line. */
+.settings-rebuild {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  flex-wrap: wrap;
+}
+
+.settings-rebuild__error {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-status-error);
+}
+
 .settings-canvas {
   display: flex;
   flex-direction: column;
@@ -961,6 +1015,12 @@
 
 .settings-button--primary:hover:not(:disabled) {
   background: var(--ch-accent-primary);
+}
+
+/* Matches the `shut-down` quick action: outline red, never filled. */
+.settings-shutdown:hover:not(:disabled) {
+  border-color: var(--ch-status-error);
+  background: color-mix(in srgb, var(--ch-status-error) 12%, transparent);
 }
 
 .settings-select:focus-visible,

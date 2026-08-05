@@ -12,110 +12,6 @@ public struct SpotifyConnection: Sendable, Equatable {
     public let expiresAt: Date
 }
 
-/// A one-shot loopback HTTP server (NIC-133): binds `127.0.0.1:<port>`, opens the browser once it is
-/// listening, and resolves with the query params of the first callback request. This is the
-/// side-effectful seam — like the AppleScript scripting seams, the real socket is exercised by a
-/// loopback integration test and the manual OAuth smoke; the request parsing and response building
-/// are pure static helpers on ``SpotifyAuthCoordinator``. All state is confined to one serial queue,
-/// so `@unchecked Sendable` is sound.
-final class SpotifyLoopbackListener: @unchecked Sendable {
-    private let listener: NWListener
-    private let queue = DispatchQueue(label: "com.cerebralhelm.spotify.loopback")
-    private var continuation: CheckedContinuation<[String: String], Error>?
-    private var buffer = Data()
-    private var done = false
-
-    init(port: UInt16) throws {
-        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-            throw SpotifyPlaybackError.providerFailed("Invalid loopback port \(port).")
-        }
-        let parameters = NWParameters.tcp
-        parameters.allowLocalEndpointReuse = true
-        // Bind loopback only — the callback is local; nothing off-machine can reach it.
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: nwPort)
-        self.listener = try NWListener(using: parameters)
-    }
-
-    /// Starts listening, calls `onListening` once ready (open the browser there), and resolves with
-    /// the first callback's query params. Fails on listener error or after `timeout`.
-    func awaitCallback(
-        timeout: TimeInterval, onListening: @escaping @Sendable () -> Void
-    ) async throws -> [String: String] {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: String], Error>) in
-            queue.async { self.continuation = continuation }
-            listener.stateUpdateHandler = { [weak self] state in
-                switch state {
-                case .ready:
-                    onListening()
-                case let .failed(error):
-                    self?.finish(.failure(SpotifyPlaybackError.providerFailed(
-                        "The loopback listener failed: \(error.localizedDescription)")))
-                default:
-                    break
-                }
-            }
-            listener.newConnectionHandler = { [weak self] connection in
-                self?.handle(connection)
-            }
-            listener.start(queue: queue)
-            queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
-                self?.finish(.failure(SpotifyPlaybackError.providerFailed(
-                    "Timed out waiting for the Spotify authorization callback.")))
-            }
-        }
-    }
-
-    private func handle(_ connection: NWConnection) {
-        connection.start(queue: queue)
-        receive(on: connection)
-    }
-
-    private func receive(on connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
-            guard let self else { return }
-            if let data { self.buffer.append(data) }
-            if let line = Self.requestLine(from: self.buffer) {
-                let query = SpotifyAuthCoordinator.query(fromRequestLine: line)
-                self.respond(on: connection)
-                self.finish(.success(query))
-                return
-            }
-            if isComplete || error != nil {
-                self.finish(.failure(SpotifyPlaybackError.providerFailed(
-                    "The authorization callback closed before a request was received.")))
-                return
-            }
-            self.receive(on: connection)
-        }
-    }
-
-    /// The first CRLF-terminated line of an accumulated HTTP request, or nil until it arrives.
-    private static func requestLine(from buffer: Data) -> String? {
-        guard let range = buffer.range(of: Data("\r\n".utf8)) else { return nil }
-        return String(decoding: buffer[..<range.lowerBound], as: UTF8.self)
-    }
-
-    private func respond(on connection: NWConnection) {
-        let response = SpotifyAuthCoordinator.httpResponse(html: SpotifyAuthCoordinator.successHTML)
-        connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
-    }
-
-    /// Resolves the continuation exactly once and tears the listener down.
-    private func finish(_ result: Result<[String: String], Error>) {
-        guard !done else { return }
-        done = true
-        let continuation = self.continuation
-        self.continuation = nil
-        listener.cancel()
-        switch result {
-        case let .success(query):
-            continuation?.resume(returning: query)
-        case let .failure(error):
-            continuation?.resume(throwing: error)
-        }
-    }
-}
-
 /// Runs the Spotify Authorization Code + PKCE connect flow on this Mac (NIC-133): generate PKCE,
 /// bind a loopback listener, open the system browser to Spotify's consent page, capture the
 /// redirected `?code`, exchange it for tokens, and persist them to the Keychain. The redirect URI is
@@ -152,20 +48,28 @@ public struct SpotifyAuthCoordinator: Sendable {
     public var redirectURI: String { "http://127.0.0.1:\(port)\(callbackPath)" }
 
     public func connect(clientID: String, now: Date = Date()) async throws -> SpotifyConnection {
-        let verifier = SpotifyPKCE.makeVerifier()
-        let challenge = SpotifyPKCE.challenge(for: verifier)
-        let state = SpotifyPKCE.makeState()
+        let verifier = OAuthPKCE.makeVerifier()
+        let challenge = OAuthPKCE.challenge(for: verifier)
+        let state = OAuthPKCE.makeState()
         guard let authorizeURL = exchange.authorizeURL(
             clientID: clientID, redirectURI: redirectURI, challenge: challenge, state: state
         ) else {
             throw SpotifyPlaybackError.providerFailed("Could not build the Spotify authorize URL.")
         }
 
-        let listener = try SpotifyLoopbackListener(port: port)
+        let listener = try LoopbackAuthListener(port: port, responseHTML: Self.successHTML)
         let workspace = self.workspace
-        let query = try await listener.awaitCallback(timeout: timeout) {
-            // Open the browser only once the listener is accepting, so the redirect can't race the bind.
-            Task { try? await workspace.openURL(authorizeURL) }
+        let query: [String: String]
+        do {
+            query = try await listener.awaitCallback(timeout: timeout) { _ in
+                // The bound port is the fixed registered one, so `authorizeURL`'s redirect already
+                // matches. Open the browser only once the listener is accepting, so the redirect
+                // cannot race the bind.
+                Task { try? await workspace.openURL(authorizeURL) }
+            }
+        } catch let error as LoopbackAuthError {
+            // The shared listener is provider-neutral; the message the user sees is not.
+            throw SpotifyPlaybackError.providerFailed(Self.describe(error))
         }
 
         let code = try Self.authorizationCode(fromQuery: query, expectedState: state).get()
@@ -189,12 +93,18 @@ public struct SpotifyAuthCoordinator: Sendable {
     // MARK: - Pure helpers (unit-tested)
 
     /// The query params of an HTTP request line like `GET /callback?code=abc&state=xyz HTTP/1.1`.
+    /// Parsing moved to the shared listener; this forwards so the behaviour stays covered here too.
     static func query(fromRequestLine line: String) -> [String: String] {
-        let parts = line.split(separator: " ")
-        guard parts.count >= 2, let components = URLComponents(string: String(parts[1])) else { return [:] }
-        var query: [String: String] = [:]
-        for item in components.queryItems ?? [] { query[item.name] = item.value ?? "" }
-        return query
+        LoopbackAuthListener.query(fromRequestLine: line)
+    }
+
+    /// Spotify's wording for a provider-neutral listener failure.
+    static func describe(_ error: LoopbackAuthError) -> String {
+        switch error {
+        case let .bindFailed(detail): return "The loopback listener failed: \(detail)"
+        case .timedOut: return "Timed out waiting for the Spotify authorization callback."
+        case .closedEarly: return "The authorization callback closed before a request was received."
+        }
     }
 
     /// Validates the callback and extracts the authorization code. An `error` param (e.g. the user
@@ -215,14 +125,9 @@ public struct SpotifyAuthCoordinator: Sendable {
         return .success(code)
     }
 
-    /// A minimal HTTP/1.1 response wrapping `html`, with an explicit length and a close.
+    /// A minimal HTTP/1.1 response wrapping `html`. Forwards to the shared listener.
     static func httpResponse(html: String) -> Data {
-        let body = Data(html.utf8)
-        let header = "HTTP/1.1 200 OK\r\n"
-            + "Content-Type: text/html; charset=utf-8\r\n"
-            + "Content-Length: \(body.count)\r\n"
-            + "Connection: close\r\n\r\n"
-        return Data(header.utf8) + body
+        LoopbackAuthListener.httpResponse(html: html)
     }
 
     /// The page the browser shows after the redirect is captured.

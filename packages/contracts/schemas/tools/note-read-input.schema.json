@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/note-read-input.schema.json",
+  "title": "CerebralHelm Note Read Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["path"],
+  "properties": {
+    "path": {
+      "type": "string",
+      "minLength": 3,
+      "pattern": "^[^/].*\\.md$",
+      "description": "The note's path relative to the knowledge root, as reported by note.list. Root-relative and Markdown only; the adapter additionally resolves the path and refuses anything that lands outside the knowledge root, so this pattern is a first gate, not the boundary.",
+      "examples": ["inbox/ch-idea-001.md", "projects/atlas/kickoff.md"]
+    }
+  }
+}

@@ -24,13 +24,17 @@ import CerebralTools
 /// a counter so concurrent suites can never see each other's items.
 private let serviceCounter = NSLock()
 private nonisolated(unsafe) var serviceSequence = 0
-private func isolatedAdapter() -> KeychainSecretCapability {
+private func isolatedService() -> String {
     serviceCounter.lock()
     serviceSequence += 1
     let sequence = serviceSequence
     serviceCounter.unlock()
     let pid = ProcessInfo.processInfo.processIdentifier
-    return KeychainSecretCapability(service: "local.cerebralhelm.test.\(pid).\(sequence)")
+    return "local.cerebralhelm.test.\(pid).\(sequence)"
+}
+
+private func isolatedAdapter() -> KeychainSecretCapability {
+    KeychainSecretCapability(service: isolatedService())
 }
 
 /// `true` when the run opted into real-keychain tests AND the environment has a
@@ -62,10 +66,14 @@ func secretRoundTrip() async throws {
     let resolution = try await adapter.resolve(reference: "openai_api_key")
     #expect(resolution.isResolved)
     #expect(resolution.reference == "openai_api_key")
+    // Invalidated first so the read proves the value was *persisted*, not merely
+    // seeded into the write-through cache (SecretValueCacheTests covers the cache).
+    SecretValueCache.shared.invalidateAll()
     #expect(try await adapter.readValue(reference: "openai_api_key") == "test-value-1")
 
     // Update replaces the value in place.
     try await adapter.store(reference: "openai_api_key", value: "test-value-2")
+    SecretValueCache.shared.invalidateAll()
     #expect(try await adapter.readValue(reference: "openai_api_key") == "test-value-2")
 
     try await adapter.delete(reference: "openai_api_key")
@@ -130,5 +138,25 @@ func serviceNamespacesAreIsolated() async throws {
     try await first.store(reference: "shared_name", value: "first-value")
     #expect(try await first.resolve(reference: "shared_name").isResolved == true)
     #expect(try await second.resolve(reference: "shared_name").isResolved == false)
+}
+
+@Test("store is write-through, so a just-stored secret is read back without touching the Keychain")
+func storeIsWriteThrough() async throws {
+    let service = isolatedService()
+    let adapter = KeychainSecretCapability(service: service)
+    guard await keychainUsable(adapter) else { return }
+    defer { try? adapter.deleteAll() }
+
+    SecretValueCache.shared.invalidateAll()
+    try await adapter.store(reference: "spotify_oauth", value: "token-blob")
+
+    // Remove the underlying item through a *separate* adapter with its own cache:
+    // the Keychain item is gone, but the shared cache the first adapter seeded on
+    // store is untouched. A value coming back therefore proves the read was served
+    // from the cache — the property that spares the authorization prompt.
+    let sideDoor = KeychainSecretCapability(service: service, cache: SecretValueCache())
+    try await sideDoor.delete(reference: "spotify_oauth")
+    #expect(try await adapter.resolve(reference: "spotify_oauth").isResolved == false)
+    #expect(try await adapter.readValue(reference: "spotify_oauth") == "token-blob")
 }
 #endif

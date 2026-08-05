@@ -13,6 +13,68 @@ public struct SpotifyConnectionInfo: Sendable, Equatable {
     }
 }
 
+/// The Linear workspace the `create-ticket` form's dropdowns read (quick-actions phase 4).
+///
+/// Projects and labels are nested **inside** their team, not flattened, because they are scoped to
+/// it: a flat list would let the form offer a project belonging to another team, which Linear
+/// rejects at write time. `available` is false when the host has no Linear client at all, which is
+/// a different fact from "you have no teams".
+public struct LinearWorkspaceInfo: Sendable, Equatable {
+    public struct Option: Sendable, Equatable {
+        public let id: String
+        public let name: String
+        public init(id: String, name: String) {
+            self.id = id
+            self.name = name
+        }
+    }
+
+    public struct Team: Sendable, Equatable {
+        public let id: String
+        public let key: String
+        public let name: String
+        public let projects: [Option]
+        public let labels: [Option]
+
+        public init(id: String, key: String, name: String, projects: [Option], labels: [Option]) {
+            self.id = id
+            self.key = key
+            self.name = name
+            self.projects = projects
+            self.labels = labels
+        }
+    }
+
+    public let teams: [Team]
+    public init(teams: [Team]) {
+        self.teams = teams
+    }
+}
+
+/// A folder the user picked in a native open panel (quick-actions phase 4, `git-clone`).
+///
+/// `relativePath` is the selection expressed relative to the projects root — the empty string when
+/// the root itself was chosen. `outsideRoot` reports a selection the host refused for being outside
+/// that root, which is a different fact from cancelling: one deserves an explanation, the other
+/// deserves silence. Both are false when nothing was picked at all.
+public struct FolderSelectionInfo: Sendable, Equatable {
+    public let absolutePath: String?
+    public let relativePath: String?
+    public let cancelled: Bool
+    public let outsideRoot: Bool
+
+    public init(absolutePath: String?, relativePath: String?, cancelled: Bool, outsideRoot: Bool) {
+        self.absolutePath = absolutePath
+        self.relativePath = relativePath
+        self.cancelled = cancelled
+        self.outsideRoot = outsideRoot
+    }
+
+    public static let cancelledSelection = FolderSelectionInfo(
+        absolutePath: nil, relativePath: nil, cancelled: true, outsideRoot: false
+    )
+}
+
 /// The Canvas ingest connection state (NIC-132), returned by the host's status/reset closures to the
 /// `getCanvasStatus`/`resetCanvas` ops. `endpoint` and `token` are what the user pairs the Chrome
 /// extension with; `lastScrapedAt` (ISO-8601, nil when never) and the counts describe the last
@@ -47,6 +109,20 @@ public struct CanvasStatusInfo: Sendable, Equatable {
     }
 }
 
+/// The outcome of a knowledge-index rebuild (NIC-163), returned by the host's rebuild closure to the
+/// `rebuildKnowledgeIndex` op: the knowledge root that was read and how many notes were indexed, so
+/// the settings panel reports what the rebuild covered instead of a bare "done". The durable
+/// Markdown is never written — only the derived index is reconstructed.
+public struct KnowledgeRebuildInfo: Sendable, Equatable {
+    public let root: String
+    public let noteCount: Int
+
+    public init(root: String, noteCount: Int) {
+        self.root = root
+        self.noteCount = noteCount
+    }
+}
+
 /// One scraped Canvas item in the settings manage-list (NIC-132): its id, a display label, and
 /// whether the user has hidden it from the School widgets.
 public struct CanvasStatusItem: Sendable, Equatable {
@@ -74,6 +150,13 @@ public struct CanvasStatusItem: Sendable, Equatable {
 public final class BridgeSession: @unchecked Sendable {
     private let runtime: CommandRuntime
     private let configDirectory: URL
+    /// Ranks command suggestions (NIC-168) over the runtime's live reference
+    /// store, so a reference minted mid-session is suggestible immediately.
+    private let suggestionEngine: CommandSuggestionEngine
+    /// Parses submitted input pre-bus for the layout-open re-route (unification,
+    /// 2026-07-31). Shares the runtime's live reference store, so it always agrees
+    /// with the bus parser.
+    private let directParser: DirectCommandParser
     /// The full workspace, when the host has one (the shell). Enables the
     /// user-overrides read side (bootstrap composes through `ConfigLoader`, so
     /// pinned quick apps appear — NIC-119c) and the validated override write
@@ -142,6 +225,13 @@ public final class BridgeSession: @unchecked Sendable {
     /// leaves it nil.
     private let onSecretStored: (@Sendable (String) -> Void)?
 
+    /// Invoked with the reference after a secret is successfully removed, so a consumer holding
+    /// that grant in memory can drop it. Required for correctness, not just freshness: an OAuth
+    /// session caches its token to avoid re-reading the Keychain, so without this a Disconnect
+    /// would leave the session happily using the credential the user just revoked. Optional; a
+    /// host with no such consumer leaves it nil.
+    private let onSecretDeleted: (@Sendable (String) -> Void)?
+
     /// Invoked after a settings patch is durably applied, carrying the applied changes, so a
     /// host can refresh a live producer that depends on a setting (e.g. the Stocks producer
     /// re-samples when the ticker list changes, NIC-128) instead of waiting out its slow
@@ -165,11 +255,60 @@ public final class BridgeSession: @unchecked Sendable {
     /// endpoint/token plus the last-scrape summary. Optional: a host without the Mac ingest store
     /// reports the surface unavailable. `canvasReset` purges the scraped data and rotates the token
     /// (the disconnect path), returning the fresh state.
+    /// Opens a native folder picker rooted at the projects root and returns what the user chose
+    /// (quick-actions phase 4). Optional: a host with no window server — pre-Mac, tests, the
+    /// browser preview — reports the picker unavailable rather than pretending to open one. The
+    /// **root constraint is enforced host-side**, not by the caller, so a selection outside it
+    /// comes back refused rather than as a path the tool would then have to reject.
+    private let chooseFolder: (@Sendable () async -> FolderSelectionInfo)?
+
+    /// Reads the Linear workspace for `listLinearOptions` (quick-actions phase 4) — the teams,
+    /// projects and labels the `create-ticket` dropdowns offer. Optional: a host without the Linear
+    /// client reports the surface unavailable. Deliberately a **read** closure, separate from the
+    /// `linear.createissue` tool that writes, so listing options can never reach the write path.
+    private let linearWorkspace: (@Sendable () async throws -> LinearWorkspaceInfo)?
+
+    /// Reads current sports events for `listSportsEvents` (quick-actions phase 4) — the
+    /// `check-scoreboard` picker and the report it opens. Optional: a host without the provider
+    /// reports the surface unavailable. A read, never the command bus: the user is choosing games
+    /// and reading scores, not acting on the world.
+    private let sportsEvents: (@Sendable () async throws -> [SportsEvent])?
+
+    /// Lists who a message can go to for `listMessageRecipients` (quick-actions phase 4). A read
+    /// closure, deliberately separate from the `messages.send` tool: a surface that lists people
+    /// must not be able to reach the one that sends to them.
+    private let messageRecipients: (@Sendable () async throws -> [MessageRecipient])?
+
     private let canvasStatus: (@Sendable () async -> CanvasStatusInfo)?
     private let canvasReset: (@Sendable () async -> CanvasStatusInfo)?
     /// Hides or unhides a scraped Canvas item by id (NIC-132), returning the fresh status. Optional —
     /// a host without the ingest store reports the surface unavailable.
     private let canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)?
+
+    /// Rebuilds the derived note search index from the durable Markdown for
+    /// `rebuildKnowledgeIndex` (NIC-163), returning the knowledge root it read and
+    /// how many notes it indexed. Deliberately **not** a bus tool: it maintains
+    /// derived state rather than acting on the user's behalf, like `resetCanvas`.
+    /// It never writes to the Markdown — a rebuild can lose nothing, because the
+    /// files are the source of truth. Optional: a host without a workspace reports
+    /// the surface honestly unavailable rather than claiming a rebuild happened.
+    private let knowledgeRebuild: (@Sendable () async throws -> KnowledgeRebuildInfo)?
+    /// The health checks this host can run (quick actions phase 5). Injected rather than built
+    /// here: the inventory is platform-specific (macOS permissions, installed apps) and this file
+    /// stays AppKit-free. A host with none simply has no checks to run and says so.
+    private let systemChecks: (@Sendable () -> [any HealthCheck])?
+    /// Runs the Gmail OAuth connect on the macOS host. Returns the granted scope and whether the
+    /// grant can renew itself; the tokens never cross back to the UI.
+    private let gmailConnect: (@Sendable () async throws -> GmailConnectionInfo)?
+    /// Removes the stored Gmail grant (local only — it does not revoke at Google).
+    private let gmailDisconnect: (@Sendable () async throws -> Void)?
+    /// Lists unread mail on demand for the email report. **Never sampled** — one request per
+    /// message, so it runs when the report opens and not on any cadence.
+    private let unreadMail: (@Sendable (Int) async throws -> [MailMessage])?
+    /// Guards the single-run slot. A plain lock rather than an actor because the whole critical
+    /// section is two field accesses, and the surrounding session is not isolated.
+    private let systemCheckLock = NSLock()
+    private var systemCheckRunning = false
 
     /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
     /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
@@ -227,12 +366,22 @@ public final class BridgeSession: @unchecked Sendable {
         calendarProvider: (any CalendarProvider)? = nil,
         secretStore: (any SecretManaging)? = nil,
         onSecretStored: (@Sendable (String) -> Void)? = nil,
+        onSecretDeleted: (@Sendable (String) -> Void)? = nil,
         onSettingsChanged: (@Sendable (SettingsChanges) -> Void)? = nil,
         onModeApplied: (@Sendable (String) -> Void)? = nil,
         spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil,
+        chooseFolder: (@Sendable () async -> FolderSelectionInfo)? = nil,
+        linearWorkspace: (@Sendable () async throws -> LinearWorkspaceInfo)? = nil,
+        sportsEvents: (@Sendable () async throws -> [SportsEvent])? = nil,
+        messageRecipients: (@Sendable () async throws -> [MessageRecipient])? = nil,
         canvasStatus: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasReset: (@Sendable () async -> CanvasStatusInfo)? = nil,
         canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)? = nil,
+        knowledgeRebuild: (@Sendable () async throws -> KnowledgeRebuildInfo)? = nil,
+        systemChecks: (@Sendable () -> [any HealthCheck])? = nil,
+        gmailConnect: (@Sendable () async throws -> GmailConnectionInfo)? = nil,
+        gmailDisconnect: (@Sendable () async throws -> Void)? = nil,
+        unreadMail: (@Sendable (Int) async throws -> [MailMessage])? = nil,
         workspaceWindows: (any WorkspaceWindowsCapability)? = nil,
         app: (any AppCapability)? = nil,
         url: (any URLCapability)? = nil,
@@ -251,12 +400,22 @@ public final class BridgeSession: @unchecked Sendable {
         self.calendarProvider = calendarProvider
         self.secretStore = secretStore
         self.onSecretStored = onSecretStored
+        self.onSecretDeleted = onSecretDeleted
         self.onSettingsChanged = onSettingsChanged
         self.onModeApplied = onModeApplied
         self.spotifyConnect = spotifyConnect
+        self.chooseFolder = chooseFolder
+        self.linearWorkspace = linearWorkspace
+        self.sportsEvents = sportsEvents
+        self.messageRecipients = messageRecipients
         self.canvasStatus = canvasStatus
         self.canvasReset = canvasReset
         self.canvasSetHidden = canvasSetHidden
+        self.knowledgeRebuild = knowledgeRebuild
+        self.systemChecks = systemChecks
+        self.gmailConnect = gmailConnect
+        self.gmailDisconnect = gmailDisconnect
+        self.unreadMail = unreadMail
         self.workspaceWindows = workspaceWindows
         self.app = app
         self.url = url
@@ -265,6 +424,21 @@ public final class BridgeSession: @unchecked Sendable {
         self.defaultBrowserBundleID = defaultBrowserBundleID
         self.currentCapabilities = capabilities
         self.emitEventJSON = emitEventJSON
+        // Suggestion ranking (NIC-168) shares the parser's live reference store and
+        // adds display labels for the id-only catalogs (modes, workflows). Label
+        // loading degrades to bare ids — never blocks the session.
+        var modeLabels: [String: String] = [:]
+        if case let .valid(config) = ConfigValidator.validate(configDirectory: configDirectory) {
+            modeLabels = Dictionary(config.modes.map { ($0.id, $0.label) }, uniquingKeysWith: { first, _ in first })
+        }
+        let workflowLabels = ((try? WorkflowCatalogLoader.load(configDirectory: configDirectory)) ?? [:])
+            .mapValues(\.label)
+        self.suggestionEngine = CommandSuggestionEngine(
+            referenceStore: runtime.referenceCatalog,
+            modeLabels: modeLabels,
+            workflowLabels: workflowLabels
+        )
+        self.directParser = DirectCommandParser(referenceStore: runtime.referenceCatalog)
     }
 
     /// The one composition every snapshot/bootstrap emission uses: through the
@@ -310,6 +484,8 @@ public final class BridgeSession: @unchecked Sendable {
             return ok(request, payload: composeBootstrapState())
         case .submitCommand:
             return await submitCommand(request)
+        case .suggestCommands:
+            return await suggestCommands(request)
         case .applyMode:
             return await applyMode(request)
         case .captureNote:
@@ -368,12 +544,46 @@ public final class BridgeSession: @unchecked Sendable {
             return await listWindows(request)
         case .listCalendars:
             return await listCalendars(request)
+        case .createCalendarEvent:
+            return await createCalendarEvent(request)
+        case .cloneRepository:
+            return await cloneRepository(request)
+        case .chooseFolder:
+            return await chooseFolderOperation(request)
+        case .listLinearOptions:
+            return await listLinearOptions(request)
+        case .listSportsEvents:
+            return await listSportsEvents(request)
+        case .listMessageRecipients:
+            return await listMessageRecipients(request)
+        case .sendMessage:
+            return await sendMessage(request)
+        case .createLinearIssue:
+            return await createLinearIssue(request)
+        case .createSpotifyPlaylist:
+            return await createSpotifyPlaylist(request)
+        case .scaffoldProject:
+            return await scaffoldProject(request)
         case .getCanvasStatus:
             return await getCanvasStatus(request)
         case .resetCanvas:
             return await resetCanvas(request)
         case .setCanvasItemHidden:
             return await setCanvasItemHidden(request)
+        case .rebuildKnowledgeIndex:
+            return await rebuildKnowledgeIndex(request)
+        case .listNotes:
+            return await listNotes(request)
+        case .listCourses:
+            return await listCourses(request)
+        case .createCourseNote:
+            return await createCourseNote(request)
+        case .runSystemChecks:
+            return await runSystemChecks(request)
+        case .connectGmail:
+            return await connectGmail(request)
+        case .listUnreadMail:
+            return await listUnreadMail(request)
         case .minimizeWindow:
             return await windowAction(request) { try await $0.minimize(windowID: $1) }
         case .surfaceWindow:
@@ -398,11 +608,119 @@ public final class BridgeSession: @unchecked Sendable {
         // Honor an explicit, known source; default to `dashboard`. This keeps the
         // command bus honest about provenance (FR-CMD-01) without trusting arbitrary
         // strings.
+        // Layout-open unification (owner decision, 2026-07-31): a submitted
+        // `run open-<mode>-layout` enters the SAME layout session the bottom bar
+        // opens — override-merged frames, hotswap prep, quick-toggle in the bar —
+        // instead of replaying the shipped-config workflow through the bus. One
+        // behavior for every entry point (typed command, suggestion, quick-action
+        // tile, bottom bar). A mode without an authored layout keeps running its
+        // static workflow through the bus unchanged.
+        if case let .parsed(.runAction(actionID)) = directParser.parse(input.rawInput),
+           let modeID = layoutModeID(forWorkflowID: actionID),
+           await enterLayoutSession(modeID: modeID) {
+            recordRecentCommand(input.rawInput)
+            // The session entry is the executor-bypass path authorized at open
+            // (NIC-142 owner direction) — no bus command exists, so the receipt
+            // carries no command id.
+            return ok(request, payload: CommandReceipt(commandId: "", accepted: true))
+        }
         let source = input.source.flatMap(CommandSource.init(rawValue:)) ?? .dashboard
         let outcome = await runtime.submit(input.rawInput, source: source)
         registerAwaitingConfirmation(outcome)
         await emitConfigChangedIfModeApplied(outcome)
-        return ok(request, payload: receipt(for: outcome))
+        let commandReceipt = receipt(for: outcome)
+        if commandReceipt.accepted {
+            recordRecentCommand(input.rawInput)
+        }
+        return ok(request, payload: commandReceipt)
+    }
+
+    // MARK: - Recent direct commands (NIC-168 / PRD §9.4)
+
+    /// A bounded, session-local ring of accepted raw inputs, newest first — the
+    /// source for empty-query "recent direct commands" suggestions. Deliberately
+    /// in-memory only: durable command history persists REDACTED input (nil today,
+    /// FR-CMD-06), so re-runnable raw strings never touch storage. A fresh launch
+    /// starts empty and the surface degrades to the grammar listing.
+    private static let recentCommandsCap = 20
+    private let recentCommandsLock = NSLock()
+    private var recentRawInputs: [String] = []
+
+    private func recordRecentCommand(_ rawInput: String) {
+        let trimmed = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        recentCommandsLock.lock()
+        defer { recentCommandsLock.unlock() }
+        recentRawInputs.removeAll { $0 == trimmed }
+        recentRawInputs.insert(trimmed, at: 0)
+        if recentRawInputs.count > Self.recentCommandsCap {
+            recentRawInputs.removeLast(recentRawInputs.count - Self.recentCommandsCap)
+        }
+    }
+
+    private func snapshotRecentCommands() -> [String] {
+        recentCommandsLock.lock()
+        defer { recentCommandsLock.unlock() }
+        return recentRawInputs
+    }
+
+    /// Ranked, capability-aware command suggestions for the palette and launcher
+    /// (NIC-168). Read-only: ranking never executes anything — execution still
+    /// flows through `submitCommand`, the bus, and the policy engine. Availability
+    /// is stamped from the live capability set so a suggestion is never shown
+    /// runnable when the bridge cannot perform it (FR-UI-07). An empty query is
+    /// valid and lists the supported grammar.
+    private func suggestCommands(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: SuggestCommandsInput = decodePayload(request) else {
+            return invalidInput(request, "suggestCommands requires a query string.")
+        }
+        // Installed-app completeness (NIC-168): a throttled discovery mints every
+        // installed app into the reference catalog, so any app is matchable by
+        // name — at most one scan per TTL, and only where discovery is available.
+        await refreshAppCatalogForSuggestionsIfDue()
+        let limit = min(max(input.limit ?? CommandSuggestionEngine.defaultLimit, 1), 25)
+        var ranked = suggestionEngine.suggest(input.query, limit: limit)
+        if input.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // PRD §9.4: an empty query leads with recent direct commands (this
+            // session's accepted, still-resolvable ones), then the grammar.
+            let recents = suggestionEngine.recentSuggestions(snapshotRecentCommands())
+            let recentCommands = Set(recents.map(\.command))
+            ranked = Array((recents + ranked.filter { !recentCommands.contains($0.command) }).prefix(limit))
+        }
+        let capabilityByID = Dictionary(
+            capabilities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
+        )
+        let suggestions = ranked.map { suggestion in
+            let requirement = Self.requiredCapability(for: suggestion.kind)
+            let capability = requirement.flatMap { capabilityByID[$0] }
+            let available = requirement == nil || capability?.available == true
+            return CommandSuggestionDTO(
+                command: suggestion.command,
+                label: suggestion.label,
+                detail: suggestion.detail,
+                kind: suggestion.kind.rawValue,
+                requiresArgument: suggestion.requiresArgument,
+                available: available,
+                unavailableReason: available
+                    ? nil
+                    : (capability?.degradedReason ?? "Not available on this host yet.")
+            )
+        }
+        return ok(request, payload: SuggestCommandsResult(suggestions: suggestions))
+    }
+
+    /// The capability a suggestion kind depends on to actually execute; nil means
+    /// the kind runs everywhere the bus does (modes, notes, workflows degrade
+    /// step-by-step at execution rather than being hidden here).
+    private static func requiredCapability(for kind: CommandSuggestion.Kind) -> String? {
+        switch kind {
+        case .app: return "native.app.open"
+        case .url: return "native.url.open"
+        case .hook: return "native.hook.run"
+        case .workflow, .mode, .command, .pattern: return nil
+        }
     }
 
     /// A raw `mode <id>` command (palette, CLI-over-bridge) that succeeded also
@@ -599,29 +917,52 @@ public final class BridgeSession: @unchecked Sendable {
         guard BootstrapComposer.modeExists(input.modeId, configDirectory: configDirectory) else {
             return ok(request, payload: OpenLayoutResult(accepted: false, modeId: input.modeId))
         }
-        guard let layout = resolveLayout(modeID: input.modeId) else {
+        guard await enterLayoutSession(modeID: input.modeId) else {
             return errorResponse(
                 request, category: .unavailableCapability,
                 code: "no_layout",
                 message: "Mode \"\(input.modeId)\" has no authored layout."
             )
         }
+        return ok(request, payload: OpenLayoutResult(accepted: true, modeId: input.modeId))
+    }
 
-        let session = buildLayoutSession(modeID: input.modeId, layout: layout)
+    /// Enters layout mode for a mode with an authored layout: builds the session,
+    /// emits `layout.session.changed` (the bottom bar grows its quick-toggle), and
+    /// opens + arranges the whole layout. The single implementation behind BOTH the
+    /// `openLayout` operation and a submitted `run open-<mode>-layout` command
+    /// (unification, owner decision 2026-07-31) — every entry point produces the
+    /// identical layout-mode experience. Returns false when the mode has no
+    /// resolvable layout.
+    ///
+    /// Force the correct setup on open (NIC-142, owner direction 2026-07-15): open and
+    /// arrange EVERY static window + hotswap target from the authored (override-merged)
+    /// layout so nothing cold-starts on toggle, then hide the inactive hotswaps.
+    /// Direct capability calls (authorized once at open; the same executor bypass as
+    /// toggle/close). This supersedes the synthesized-workflow open, which read the
+    /// SHIPPED layout and so fought the override-merged session's frames.
+    private func enterLayoutSession(modeID: String) async -> Bool {
+        guard let layout = resolveLayout(modeID: modeID) else { return false }
+        let session = buildLayoutSession(modeID: modeID, layout: layout)
         setActiveLayoutSession(session)
         emit(BridgeEventFactory.layoutSessionChangedEvent(
             session: session.snapshot, id: BridgeEventFactory.newEventID(), timestamp: Date()
         ))
-
-        // Force the correct setup on open (NIC-142, owner direction 2026-07-15): open and
-        // arrange EVERY static window + hotswap target from the authored (override-merged)
-        // layout so nothing cold-starts on toggle, then hide the inactive hotswaps.
-        // Direct capability calls (authorized once at open; the same executor bypass as
-        // toggle/close). This supersedes the synthesized-workflow open, which read the
-        // SHIPPED layout and so fought the override-merged session's frames.
         await openAndArrangeLayout(layout: layout, session: session)
+        return true
+    }
 
-        return ok(request, payload: OpenLayoutResult(accepted: true, modeId: input.modeId))
+    /// The mode whose authored layout a synthesized `open-<mode>-layout` workflow id
+    /// names, or nil when the id is not a layout opener — or the mode has no authored
+    /// layout, in which case its static workflow (if any) stays a plain bus workflow.
+    private func layoutModeID(forWorkflowID id: String) -> String? {
+        guard id.hasPrefix("open-"), id.hasSuffix("-layout") else { return nil }
+        let modeID = String(id.dropFirst("open-".count).dropLast("-layout".count))
+        guard !modeID.isEmpty,
+              BootstrapComposer.modeExists(modeID, configDirectory: configDirectory),
+              resolveLayout(modeID: modeID) != nil
+        else { return nil }
+        return modeID
     }
 
     /// Opens + arranges an entire layout on entry (NIC-142): every static window and
@@ -1209,6 +1550,9 @@ public final class BridgeSession: @unchecked Sendable {
         }
         do {
             try await secretStore.delete(reference: input.reference)
+            // Tell any consumer holding this grant in memory to drop it, so a disconnect is real
+            // rather than cosmetic (see `onSecretDeleted`).
+            onSecretDeleted?(input.reference)
             return ok(request, payload: DeleteSecretResult(reference: input.reference, deleted: true))
         } catch {
             // Absent (or an unreadable store) — nothing to remove, an honest idempotent no-op.
@@ -1271,18 +1615,50 @@ public final class BridgeSession: @unchecked Sendable {
             return ok(request, payload: SearchNotesResult(results: []))
         }
         let hits = output.results.map {
-            NoteHit(noteId: $0.noteID, title: $0.title, excerpt: $0.excerpt)
+            NoteHit(noteId: $0.noteID, title: $0.title, excerpt: $0.excerpt, path: $0.path)
         }
         return ok(request, payload: SearchNotesResult(results: hits))
     }
 
-    /// Read-only application discovery (NIC-119): wraps the `apps` command so the
-    /// More Apps picker rides the same command bus as every other input source,
-    /// and unwraps the tool output for the dashboard. Pre-Mac (or on any tool
-    /// failure) this is a structured unavailable — the picker renders honestly.
-    private func listApps(
-        _ request: CerebralHelmBridgeOperationRequest
-    ) async -> CerebralHelmBridgeOperationResponse {
+    // MARK: - App discovery + auto-mint (NIC-119/150/168)
+
+    /// Suggestion ranking should know every installed app, not only the already
+    /// referenced ones (design spec §5.5 "best matching installed application"),
+    /// but a filesystem scan per keystroke is out of the question: at most one
+    /// discovery per TTL, claimed up front so concurrent calls never double-scan.
+    /// Minted references are durable, so the catalog stays warm across sessions.
+    private static let appDiscoveryTTL: TimeInterval = 15 * 60
+    private let appDiscoveryLock = NSLock()
+    private var lastAppDiscovery: Date?
+
+    private func claimAppDiscoverySlot() -> Bool {
+        appDiscoveryLock.lock()
+        defer { appDiscoveryLock.unlock() }
+        if let last = lastAppDiscovery, Date().timeIntervalSince(last) < Self.appDiscoveryTTL {
+            return false
+        }
+        // Claimed before the scan runs (and kept on failure), so a failing host
+        // attempts at most once per TTL instead of on every keystroke.
+        lastAppDiscovery = Date()
+        return true
+    }
+
+    /// Synchronous on purpose: `NSLock` may not be taken directly inside an async
+    /// function, so the async discovery path stamps through this helper.
+    private func stampAppDiscovery() {
+        appDiscoveryLock.lock()
+        lastAppDiscovery = Date()
+        appDiscoveryLock.unlock()
+    }
+
+    /// Runs the read-only `apps` discovery command and auto-mints references
+    /// (owner decision, 2026-07-06): any discovered app that no reference targets
+    /// gets one minted, then the shared reference catalog live-reloads so
+    /// `open <minted-id>` — and its suggestion — resolves this session too
+    /// (NIC-150): the parser and, on the macOS shell, the app.open target map
+    /// both read the runtime's reference store. Returns nil on any failure —
+    /// discovery is an enrichment, never a gate.
+    private func discoverAndMintApps() async -> CerebralHelmAppsListOutput? {
         let outcome = await runtime.submit("apps", source: .dashboard)
         guard
             case let .completed(_, status, result) = outcome,
@@ -1290,20 +1666,9 @@ public final class BridgeSession: @unchecked Sendable {
             let data = result?.output,
             let output = try? CerebralHelmAppsListOutput(data: data)
         else {
-            return errorResponse(
-                request, category: .unavailableCapability,
-                code: "apps_list_unavailable",
-                message: "Application discovery is unavailable."
-            )
+            return nil
         }
-        // Auto-mint (owner decision, 2026-07-06): any discovered app that no
-        // reference targets gets one minted now, so a mid-session install is
-        // pinnable immediately. Then live-reload the shared reference catalog so
-        // `open <minted-id>` resolves this session too (NIC-150): the parser and —
-        // on the macOS shell — the app.open target map both read the runtime's
-        // reference store, exactly as `addUrlReference` reloads after minting a
-        // URL. Without the reload a freshly installed app opened only after a
-        // relaunch (the store composes once at startup).
+        stampAppDiscovery()
         if let workspace {
             let shipped = (try? ReferenceCatalogLoader.load(configDirectory: configDirectory))
                 .map { Array($0.apps.values) } ?? []
@@ -1319,6 +1684,33 @@ public final class BridgeSession: @unchecked Sendable {
             ) {
                 runtime.updateReferences(fresh)
             }
+        }
+        return output
+    }
+
+    /// The suggestion-triggered variant (NIC-168): refresh only when this host can
+    /// actually discover (capability available), there is a workspace to mint
+    /// into, and the TTL elapsed. Pre-Mac and capability-degraded sessions skip
+    /// entirely — no doomed `apps` submissions polluting command history.
+    private func refreshAppCatalogForSuggestionsIfDue() async {
+        let discoveryAvailable = capabilities.first { $0.id == "native.apps.list" }?.available == true
+        guard workspace != nil, discoveryAvailable, claimAppDiscoverySlot() else { return }
+        _ = await discoverAndMintApps()
+    }
+
+    /// Read-only application discovery (NIC-119): wraps the `apps` command so the
+    /// More Apps picker rides the same command bus as every other input source,
+    /// and unwraps the tool output for the dashboard. Pre-Mac (or on any tool
+    /// failure) this is a structured unavailable — the picker renders honestly.
+    private func listApps(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let output = await discoverAndMintApps() else {
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "apps_list_unavailable",
+                message: "Application discovery is unavailable."
+            )
         }
         // Join discovered apps onto the configured app references by bundle id
         // (the reference `target`). `referenceId` is the pinnable key: only a
@@ -1546,6 +1938,469 @@ public final class BridgeSession: @unchecked Sendable {
         }
     }
 
+    /// Creates a calendar event from the `create-event` Input form (quick-actions phase 3).
+    ///
+    /// Enters the command bus like every other action — the runtime evaluates policy, gates on
+    /// confirmation, executes and emits lifecycle events. What is different is only that the input
+    /// arrives already typed: there is no text grammar that could carry a title, two datetimes, a
+    /// calendar and notes without becoming lossy, so this uses the runtime's structured entry
+    /// point instead of a `rawInput` string.
+    ///
+    /// `calendar.createevent` is `external_write` but opts into the user-authored exemption, so a
+    /// form the user filled in and submitted runs one-click; the same call from an agent still
+    /// confirms with its values disclosed. When it does gate, the response carries the command id
+    /// and the confirmation surfaces through the event stream, exactly as `captureNote` does.
+    private func createCalendarEvent(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: CreateCalendarEventInput = decodePayload(request),
+              !input.title.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "createCalendarEvent requires a title.")
+        }
+        guard input.startsAt <= input.endsAt else {
+            return invalidInput(request, "createCalendarEvent requires endsAt to be at or after startsAt.")
+        }
+
+        let draft = CalendarEventDraft(
+            title: input.title.trimmingCharacters(in: .whitespaces),
+            startsAt: input.startsAt,
+            endsAt: input.endsAt,
+            calendarID: input.calendarId,
+            calendarTitle: input.calendarTitle,
+            location: input.location,
+            notes: input.notes
+        )
+        let outcome = await runtime.submit(
+            intent: .createCalendarEvent(draft),
+            source: .dashboard,
+            summary: "Create calendar event \"\(draft.title)\""
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(commandID, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmCalendarCreateEventOutput(data: data) {
+                return ok(request, payload: CreateCalendarEventResult(
+                    eventId: output.eventID, calendarTitle: output.calendarTitle, awaitingConfirmation: false
+                ))
+            }
+            // Reached the terminal without an event: the tool was unavailable, denied, or failed.
+            // Report that honestly rather than returning a success shape with a command id in it.
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "calendar_event_not_created",
+                message: "The event was not created (\(status.rawValue)). Calendar access is granted in System Settings."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            return ok(request, payload: CreateCalendarEventResult(
+                eventId: commandID, calendarTitle: nil, awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "calendar_event_rejected", message: reason
+            )
+        }
+    }
+
+    /// Clones a repository into the projects root (quick-actions phase 4), from the `git-clone`
+    /// Input form.
+    ///
+    /// Structured rather than a `clone <url>` text submit because the form carries an optional
+    /// folder name, and no text grammar carries an optional second argument without becoming lossy
+    /// about quoting. `git.clone` is `local_write`, so it runs one-click — but the gated path is
+    /// still handled: "ask before all actions" re-arms confirmation over every tool, and reporting
+    /// a clone as done while its confirmation is pending would be a lie.
+    private func cloneRepository(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: CloneRepositoryInput = decodePayload(request),
+              !input.repositoryUrl.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "cloneRepository requires a repository URL.")
+        }
+        let url = input.repositoryUrl.trimmingCharacters(in: .whitespaces)
+        let directory = input.directory?.trimmingCharacters(in: .whitespaces)
+
+        let outcome = await runtime.submit(
+            intent: .cloneRepository(url: url, directory: (directory?.isEmpty ?? true) ? nil : directory),
+            source: .dashboard,
+            summary: "Clone repository \(url)"
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(commandID, status, result):
+            _ = commandID
+            if let data = result?.output,
+               let output = try? CerebralHelmGitCloneOutput(data: data) {
+                return ok(request, payload: CloneRepositoryResult(
+                    clonedPath: output.clonedPath,
+                    repositoryName: output.clonedRepositoryName,
+                    awaitingConfirmation: false
+                ))
+            }
+            // No output means the tool was unavailable, denied, or failed — say so rather than
+            // returning a success shape with no clone behind it.
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "repository_not_cloned",
+                message: "The repository was not cloned (\(status.rawValue))."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            return ok(request, payload: CloneRepositoryResult(
+                clonedPath: commandID, repositoryName: "", awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "clone_rejected", message: reason
+            )
+        }
+    }
+
+    /// Opens the native folder picker for the `git-clone` form's location field.
+    ///
+    /// The operation takes **no input**: a caller-supplied starting directory would be the first
+    /// step toward a caller-chosen destination, which is exactly what the projects-root constraint
+    /// exists to prevent. The host decides where the panel opens and refuses anything outside it,
+    /// so what comes back is already inside the root or is honestly reported as refused.
+    private func chooseFolderOperation(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let chooseFolder else {
+            return ok(request, payload: FolderSelectionResult(
+                folderPath: nil, relativeFolder: nil, cancelled: true, outsideRoot: false, available: false
+            ))
+        }
+        let selection = await chooseFolder()
+        return ok(request, payload: FolderSelectionResult(
+            folderPath: selection.absolutePath,
+            relativeFolder: selection.relativePath,
+            cancelled: selection.cancelled,
+            outsideRoot: selection.outsideRoot,
+            available: true
+        ))
+    }
+
+    /// Lists contacts and existing chats for the `send-text` recipient picker.
+    ///
+    /// Two grants sit behind it — Contacts and Automation — and each can be refused independently,
+    /// so a partial list is a normal outcome rather than a failure. The contacts never leave the
+    /// machine: they cross to a local webview so the user can pick one.
+    private func listMessageRecipients(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let messageRecipients else {
+            return ok(request, payload: MessageRecipientsResult(recipients: [], available: false, reason: nil))
+        }
+        do {
+            let found = try await messageRecipients()
+            return ok(request, payload: MessageRecipientsResult(
+                recipients: found.map(MessageRecipientsResult.Recipient.init), available: true, reason: nil
+            ))
+        } catch {
+            return ok(request, payload: MessageRecipientsResult(
+                recipients: [], available: true,
+                reason: "Contacts couldn\u{2019}t be read. Grant Contacts access in System Settings."
+            ))
+        }
+    }
+
+    /// Sends one message from the `send-text` form.
+    ///
+    /// **This one is expected to gate.** `messages.send` takes no user-authored exemption, so the
+    /// normal outcome here is `awaitingConfirmation` — the response says so, and the form reports
+    /// that it needs confirming rather than that it was sent.
+    private func sendMessage(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: SendMessageInput = decodePayload(request),
+              !input.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return invalidInput(request, "sendMessage requires a message.")
+        }
+        guard !input.target.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return invalidInput(request, "sendMessage requires a recipient.")
+        }
+
+        let outcome = await runtime.submit(
+            intent: .sendMessage(MessageDraft(
+                body: input.body.trimmingCharacters(in: .whitespacesAndNewlines),
+                target: input.target,
+                targetKind: input.targetKind == "chat" ? "chat" : "participant",
+                targetName: input.targetName,
+                groupSize: input.groupSize
+            )),
+            source: .dashboard,
+            // The summary names the recipient but NOT the body: it is the line that reaches the
+            // command log, and the body belongs only in the confirmation the user reads.
+            summary: "Send a message to \(input.targetName ?? input.target)"
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(_, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmMessagesSendOutput(data: data), output.messageSent {
+                return ok(request, payload: SendMessageResult(
+                    targetName: output.messageTargetName ?? input.targetName ?? input.target,
+                    sent: true, awaitingConfirmation: false
+                ))
+            }
+            let denied = result?.status == .denied
+            return errorResponse(
+                request, category: denied ? .permissionDenied : .unavailableCapability,
+                code: denied ? "messages_permission_required" : "message_not_sent",
+                message: denied
+                    ? "Messages refused. Allow CerebralHelm to control Messages in System Settings → Privacy & Security → Automation."
+                    : "The message was not sent (\(status.rawValue))."
+            )
+        case .awaitingConfirmation:
+            // The expected path, not an error: every send is confirmed.
+            return ok(request, payload: SendMessageResult(
+                targetName: input.targetName ?? input.target, sent: false, awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "message_rejected", message: reason
+            )
+        }
+    }
+
+    /// Lists current sports events for the `check-scoreboard` picker and the report it opens.
+    ///
+    /// **One operation serves both** because they read the same document: the picker shows the
+    /// names, the report shows the detail already inside them. Fetching twice would pay golf's
+    /// megabyte twice for data the host had in hand. The report re-calls it on submit so the
+    /// scores are current at the moment the user asked for them — the snapshot semantics the
+    /// action was designed around.
+    private func listSportsEvents(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let sportsEvents else {
+            return ok(request, payload: SportsEventsResult(events: [], available: false, reason: nil))
+        }
+        do {
+            let events = try await sportsEvents()
+            return ok(request, payload: SportsEventsResult(
+                events: events.map(SportsEventsResult.Event.init), available: true, reason: nil
+            ))
+        } catch {
+            // Unreadable is not the same fact as "nothing is on today", and the picker says which.
+            let reason: String
+            if case let SportsScoreboardError.providerFailed(message) = error {
+                reason = message
+            } else {
+                reason = "Scores couldn't be read right now."
+            }
+            return ok(request, payload: SportsEventsResult(events: [], available: true, reason: reason))
+        }
+    }
+
+    /// Lists the Linear workspace for the `create-ticket` form's dropdowns.
+    ///
+    /// A read that never touches the command bus, like `listCalendars`: the user is filling in a
+    /// form, not performing an action, and routing option-loading through the executor would put a
+    /// command in the log every time a form opens.
+    private func listLinearOptions(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let linearWorkspace else {
+            return ok(request, payload: LinearOptionsResult(teams: [], available: false, reason: nil))
+        }
+        do {
+            let workspace = try await linearWorkspace()
+            return ok(request, payload: LinearOptionsResult(
+                teams: workspace.teams.map(LinearOptionsResult.Team.init),
+                available: true,
+                reason: nil
+            ))
+        } catch {
+            // An unreadable workspace is reported as such rather than as an empty one: "you have no
+            // teams" and "we could not read your teams" are different facts, and the form says which.
+            return ok(request, payload: LinearOptionsResult(
+                teams: [], available: true, reason: "\(error)"
+            ))
+        }
+    }
+
+    /// Creates a project folder from the `create-project` form.
+    ///
+    /// Structured for the same reason as the others: a name, a location, a summary and an
+    /// importance do not survive a text grammar without becoming lossy about quoting.
+    private func scaffoldProject(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: ScaffoldProjectInput = decodePayload(request),
+              !input.name.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "scaffoldProject requires a name.")
+        }
+        let name = input.name.trimmingCharacters(in: .whitespaces)
+        let location = input.location?.trimmingCharacters(in: .whitespaces)
+
+        let outcome = await runtime.submit(
+            intent: .scaffoldProject(
+                name: name,
+                location: (location?.isEmpty ?? true) ? nil : location,
+                summary: input.summary,
+                importance: input.importance
+            ),
+            source: .dashboard,
+            summary: "Create project \"\(name)\""
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(_, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmProjectScaffoldOutput(data: data) {
+                return ok(request, payload: ScaffoldProjectResult(
+                    projectPath: output.projectPath, awaitingConfirmation: false
+                ))
+            }
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "project_not_created",
+                message: "The project was not created (\(status.rawValue))."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            return ok(request, payload: ScaffoldProjectResult(
+                projectPath: commandID, awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "project_rejected", message: reason
+            )
+        }
+    }
+
+    /// Creates one Spotify playlist from the `create-playlist` form.
+    ///
+    /// A `403` from Spotify is the **scope gap**, not a broken account: the playlist scopes were
+    /// added alongside this action, so a grant made earlier still works for playback and is refused
+    /// here. That is reported as its own code so the form can say "reconnect" rather than
+    /// "something went wrong".
+    private func createSpotifyPlaylist(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: CreateSpotifyPlaylistInput = decodePayload(request),
+              !input.name.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "createSpotifyPlaylist requires a name.")
+        }
+        let name = input.name.trimmingCharacters(in: .whitespaces)
+
+        let outcome = await runtime.submit(
+            intent: .createSpotifyPlaylist(
+                name: name,
+                description: input.description,
+                // Absent means private: Spotify defaults this to true, and publishing to someone's
+                // profile because a field was omitted is not a default worth inheriting.
+                isPublic: input.isPublic ?? false
+            ),
+            source: .dashboard,
+            summary: "Create Spotify playlist \"\(name)\""
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(_, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmSpotifyCreatePlaylistOutput(data: data) {
+                return ok(request, payload: CreateSpotifyPlaylistResult(
+                    playlistId: output.playlistID,
+                    name: output.playlistName,
+                    url: output.playlistURL,
+                    opened: output.playlistOpened ?? false,
+                    awaitingConfirmation: false,
+                    needsReconnect: false
+                ))
+            }
+            // `denied` is specifically the scope gap or a dead authorization, which the user can
+            // fix in one step — so it is reported apart from a generic failure.
+            let denied = result?.status == .denied
+            return errorResponse(
+                request, category: denied ? .permissionDenied : .unavailableCapability,
+                code: denied ? "spotify_reconnect_required" : "playlist_not_created",
+                message: denied
+                    ? "Spotify refused the write. Reconnect Spotify under Settings → Setup to allow playlists."
+                    : "The playlist was not created (\(status.rawValue))."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            return ok(request, payload: CreateSpotifyPlaylistResult(
+                playlistId: commandID, name: name, url: nil, opened: false,
+                awaitingConfirmation: true, needsReconnect: false
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "playlist_rejected", message: reason
+            )
+        }
+    }
+
+    /// Creates one Linear issue from the `create-ticket` form.
+    ///
+    /// Structured, like `createCalendarEvent`, because no text grammar carries a title, a body, a
+    /// team, a project, a label and a priority without becoming lossy about quoting. The display
+    /// names ride along purely so a confirmation can name the destination in words.
+    private func createLinearIssue(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: CreateLinearIssueInput = decodePayload(request),
+              !input.title.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "createLinearIssue requires a title.")
+        }
+        guard !input.teamId.trimmingCharacters(in: .whitespaces).isEmpty else {
+            // Never inferred: a workspace can have several teams, and picking one would file the
+            // ticket somewhere the user did not choose.
+            return invalidInput(request, "createLinearIssue requires a team.")
+        }
+
+        let draft = LinearIssueDraft(
+            title: input.title.trimmingCharacters(in: .whitespaces),
+            description: input.description,
+            teamID: input.teamId,
+            teamName: input.teamName,
+            projectID: input.projectId,
+            projectName: input.projectName,
+            labelIDs: input.labelIds ?? [],
+            labelNames: input.labelNames ?? [],
+            priority: input.priority
+        )
+        let outcome = await runtime.submit(
+            intent: .createLinearIssue(draft),
+            source: .dashboard,
+            summary: "Create Linear issue \"\(draft.title)\""
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(_, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmLinearCreateIssueOutput(data: data) {
+                return ok(request, payload: CreateLinearIssueResult(
+                    identifier: output.issueIdentifier, url: output.issueURL, awaitingConfirmation: false
+                ))
+            }
+            return errorResponse(
+                request, category: .unavailableCapability,
+                code: "linear_issue_not_created",
+                message: "The ticket was not created (\(status.rawValue))."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            return ok(request, payload: CreateLinearIssueResult(
+                identifier: commandID, url: nil, awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "linear_issue_rejected", message: reason
+            )
+        }
+    }
+
     /// Reports the Canvas ingest connection state (NIC-132): the loopback endpoint + pairing token to
     /// paste into the Chrome extension, and the last scrape's age/counts. A host without the Mac
     /// ingest store reports `available: false`, so the settings surface shows "requires the macOS
@@ -1583,6 +2438,275 @@ public final class BridgeSession: @unchecked Sendable {
             return invalidInput(request, "setCanvasItemHidden requires an item id and a hidden flag.")
         }
         return ok(request, payload: CanvasStatusResult(await canvasSetHidden(input.id, input.hidden)))
+    }
+
+    /// Lists the durable notes for the Setup → Library card (NIC-162).
+    ///
+    /// Goes through the bus like `searchNotes`, so the settings surface reads the
+    /// knowledge base through the same `note.list` tool an assistant would — there
+    /// is no second, UI-only read path. The reported `total` is every note under
+    /// the root regardless of `limit`, so a card that shows the few most recent
+    /// notes still states honestly how many there are.
+    ///
+    /// An unreachable root is `available: false` rather than an empty list: "no
+    /// notes yet" and "your knowledge root is gone" must never look the same.
+    private func listNotes(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let input: ListNotesInput? = decodePayload(request)
+        let limit = input?.limit
+        let outcome = await runtime.submit(
+            limit.map { "notes-list \($0)" } ?? "notes-list", source: .dashboard
+        )
+        guard
+            case let .completed(_, _, result) = outcome,
+            result?.error == nil,
+            let data = result?.output,
+            let output = try? CerebralHelmNoteListOutput(data: data)
+        else {
+            return ok(request, payload: ListNotesResult.unavailable)
+        }
+        return ok(request, payload: ListNotesResult(output))
+    }
+
+    /// Lists the course notebooks under the school folder (quick actions phase 5).
+    ///
+    /// The `take-notes` picker's first stage. It reports only what is **on disk** — the live
+    /// Canvas courses are already in dashboard state, and the surface merges the two. Keeping them
+    /// apart is what lets last semester's notes stay reachable after Canvas stops listing a course.
+    ///
+    /// An unreadable knowledge root is `available: false` rather than an empty list, for the same
+    /// reason `listNotes` distinguishes them: "no courses yet" and "your vault is gone" must never
+    /// look the same.
+    private func listCourses(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let input: ListCoursesInput? = decodePayload(request)
+        let outcome = await runtime.submit(
+            input?.limit.map { "courses-list \($0)" } ?? "courses-list", source: .dashboard
+        )
+        guard
+            case let .completed(_, _, result) = outcome,
+            result?.error == nil,
+            let data = result?.output,
+            let output = try? CerebralHelmCourseListOutput(data: data)
+        else {
+            return ok(request, payload: ListCoursesResult.unavailable)
+        }
+        return ok(request, payload: ListCoursesResult(output))
+    }
+
+    /// Creates one templated note in a course (quick actions phase 5), from the `take-notes` picker.
+    ///
+    /// Structured rather than a text submit because it carries two free-text fields, either of
+    /// which can contain spaces — the same reason `create-event` and `create-ticket` skip parsing.
+    ///
+    /// The caller names a **course**, never a folder: the notebook derives the folder inside the
+    /// school root and mints it on first use, so a note can only ever land there. `local_write`
+    /// runs one-click, but the gated path is still handled — "ask before all actions" re-arms
+    /// confirmation over every tool, and reporting a note as written while its confirmation is
+    /// pending would be a lie.
+    private func createCourseNote(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: CreateCourseNoteInput = decodePayload(request),
+              !input.course.trimmingCharacters(in: .whitespaces).isEmpty,
+              !input.title.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "createCourseNote requires a course and a title.")
+        }
+        let course = input.course.trimmingCharacters(in: .whitespaces)
+        let title = input.title.trimmingCharacters(in: .whitespaces)
+
+        let outcome = await runtime.submit(
+            intent: .createCourseNote(course: course, title: title),
+            source: .dashboard,
+            summary: "Create the note \"\(title)\" in \(course)"
+        )
+        registerAwaitingConfirmation(outcome)
+
+        switch outcome {
+        case let .completed(_, status, result):
+            if let data = result?.output,
+               let output = try? CerebralHelmCourseNoteCreateOutput(data: data) {
+                return ok(request, payload: CreateCourseNoteResult(
+                    course: output.noteCourse,
+                    path: output.notePath,
+                    title: output.noteTitle,
+                    created: output.noteCreated,
+                    awaitingConfirmation: false
+                ))
+            }
+            return errorResponse(
+                request, category: .unavailableCapability, code: "course_note_not_created",
+                message: "The note was not created (\(status.rawValue)). Your notes are unchanged."
+            )
+        case let .awaitingConfirmation(commandID, _, _):
+            // No path yet — nothing has been written. The surface must not offer to open one.
+            return ok(request, payload: CreateCourseNoteResult(
+                course: course, path: commandID, title: title,
+                created: false, awaitingConfirmation: true
+            ))
+        case let .rejected(reason, _):
+            return errorResponse(
+                request, category: .invalidInput, code: "course_note_rejected", message: reason
+            )
+        }
+    }
+
+    /// The unread messages themselves, for the email report (Gmail integration).
+    ///
+    /// On demand only. Each message costs a request, so this is deliberately not a channel the
+    /// dashboard samples — the count on the daily brief comes from a single label read instead.
+    ///
+    /// A failure is reported with its own reason rather than an empty list: "no unread mail" and
+    /// "we could not read your mail" are opposite facts, and rendering both as an empty report
+    /// would tell the user they were caught up when nobody looked.
+    private func listUnreadMail(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let unreadMail else {
+            return ok(request, payload: UnreadMailResult.unavailable(state: "not-connected", reason: nil))
+        }
+        let input: ListUnreadMailInput? = decodePayload(request)
+        do {
+            let messages = try await unreadMail(input?.limit ?? 5)
+            return ok(request, payload: UnreadMailResult(messages))
+        } catch let error as MailError {
+            switch error {
+            case .notConnected:
+                return ok(request, payload: UnreadMailResult.unavailable(state: "not-connected", reason: nil))
+            case .reconnectRequired:
+                return ok(request, payload: UnreadMailResult.unavailable(
+                    state: "reconnect", reason: "Gmail needs reconnecting — Settings → Setup."
+                ))
+            case let .providerFailed(detail):
+                return ok(request, payload: UnreadMailResult.unavailable(state: "unavailable", reason: detail))
+            }
+        } catch {
+            return ok(request, payload: UnreadMailResult.unavailable(
+                state: "unavailable", reason: error.localizedDescription
+            ))
+        }
+    }
+
+    /// Runs the Gmail OAuth connect, or disconnects (Gmail integration).
+    ///
+    /// One operation with a `disconnect` flag rather than two, because they are the two halves of
+    /// one control and the surface always renders exactly one of them.
+    ///
+    /// **A connect that returns no refresh token is reported as a problem, not a success.** Such a
+    /// grant works for an hour and then cannot renew itself — the failure `access_type=offline` and
+    /// `prompt=consent` exist to prevent — and telling the user it worked would leave them to
+    /// discover it an hour later with no idea why.
+    private func connectGmail(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        let input: ConnectGmailInput? = decodePayload(request)
+        if input?.disconnect == true {
+            guard let gmailDisconnect else {
+                return ok(request, payload: ConnectGmailResult(connected: false, scope: nil, canRefresh: false))
+            }
+            try? await gmailDisconnect()
+            return ok(request, payload: ConnectGmailResult(connected: false, scope: nil, canRefresh: false))
+        }
+        guard let gmailConnect else {
+            return errorResponse(
+                request, category: .unavailableCapability, code: "gmail_connect_unavailable",
+                message: "Connecting Gmail requires the macOS host."
+            )
+        }
+        do {
+            let connection = try await gmailConnect()
+            return ok(request, payload: ConnectGmailResult(
+                connected: true, scope: connection.scope, canRefresh: connection.canRefresh
+            ))
+        } catch let error as GmailConnectError {
+            return errorResponse(
+                request, category: error.category, code: error.code, message: error.message
+            )
+        } catch {
+            return errorResponse(
+                request, category: .providerFailure, code: "gmail_connect_failed",
+                message: "Couldn\u{2019}t connect Gmail. Please try again."
+            )
+        }
+    }
+
+    /// Runs the system health checks, streaming each result as it lands (quick actions phase 5).
+    ///
+    /// **Streamed rather than awaited.** The inventory reaches several third parties, so a run
+    /// takes seconds — long enough that a surface waiting on one response would show nothing at
+    /// all while the interesting part (which checks exist) is already known. The operation returns
+    /// the first snapshot, every check `pending`, and each completion arrives as a
+    /// `system.checks.changed` event carrying the **whole** set.
+    ///
+    /// One run at a time: a second press while a run is in flight is answered with the run already
+    /// going rather than starting a competing one, because two runs would interleave their
+    /// emissions and the reader would watch rows flicker between two truths.
+    private func runSystemChecks(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let systemChecks else {
+            return ok(request, payload: SystemChecksResult.unavailable)
+        }
+        let checks = systemChecks()
+        guard !checks.isEmpty else {
+            return ok(request, payload: SystemChecksResult.unavailable)
+        }
+        guard claimSystemCheckRun() else {
+            return ok(request, payload: SystemChecksResult(started: true, checkCount: checks.count))
+        }
+
+        // Detached from the request: the response returns now and the emissions continue.
+        Task { [weak self] in
+            for await run in HealthCheckRunner().run(checks) {
+                guard let self else { return }
+                self.emit(BridgeEventFactory.systemChecksEvent(
+                    run: run, id: BridgeEventFactory.newEventID(), timestamp: Date()
+                ))
+                if run.complete { self.releaseSystemCheckRun() }
+            }
+        }
+        return ok(request, payload: SystemChecksResult(started: true, checkCount: checks.count))
+    }
+
+    /// Claims the single run slot, or reports that one is already going.
+    private func claimSystemCheckRun() -> Bool {
+        systemCheckLock.lock()
+        defer { systemCheckLock.unlock() }
+        if systemCheckRunning { return false }
+        systemCheckRunning = true
+        return true
+    }
+
+    private func releaseSystemCheckRun() {
+        systemCheckLock.lock()
+        systemCheckRunning = false
+        systemCheckLock.unlock()
+    }
+
+    /// Rebuilds the derived note search index from the durable Markdown (NIC-163).
+    ///
+    /// The user reaches this from Setup → Library after editing notes outside
+    /// CerebralHelm — the index only learns about those files when it is rebuilt.
+    /// It is safe by construction: the Markdown is the source of truth, so the
+    /// worst a failed rebuild costs is search results, never a note. A failure is
+    /// reported as one; the response never claims a rebuild that did not happen.
+    private func rebuildKnowledgeIndex(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let knowledgeRebuild else {
+            return ok(request, payload: KnowledgeRebuildResult.unavailable)
+        }
+        do {
+            return ok(request, payload: KnowledgeRebuildResult(try await knowledgeRebuild()))
+        } catch {
+            return errorResponse(
+                request, category: .providerFailure, code: "knowledge_rebuild_failed",
+                message: "The search index could not be rebuilt. Your notes are unchanged."
+            )
+        }
     }
 
     /// Mints an app reference that opens Google Chrome in a specific profile (NIC-151),
@@ -1878,6 +3002,22 @@ public final class BridgeSession: @unchecked Sendable {
         let rawInput: String
         let source: String?
     }
+    private struct SuggestCommandsInput: Decodable {
+        let query: String
+        let limit: Int?
+    }
+    private struct CommandSuggestionDTO: Encodable {
+        let command: String
+        let label: String
+        let detail: String?
+        let kind: String
+        let requiresArgument: Bool
+        let available: Bool
+        let unavailableReason: String?
+    }
+    private struct SuggestCommandsResult: Encodable {
+        let suggestions: [CommandSuggestionDTO]
+    }
     private struct CommandReceipt: Encodable {
         let commandId: String
         let accepted: Bool
@@ -1901,10 +3041,170 @@ public final class BridgeSession: @unchecked Sendable {
         let text: String
         let limit: Int?
     }
+    /// `listNotes` input (NIC-162): how many of the most recently changed notes to
+    /// return. The reported total is unaffected by it.
+    private struct ListNotesInput: Decodable {
+        let limit: Int?
+    }
+    /// The library wire shape (NIC-162). `available` is false when the knowledge root could not be
+    /// read at all — the card then says so instead of showing an empty library.
+    private struct NoteListItemDTO: Encodable {
+        let path: String
+        let title: String
+        let folder: String
+        let updated: String?
+    }
+    private struct ListNotesResult: Encodable {
+        let available: Bool
+        let root: String
+        /// Every note under the root, regardless of the requested limit.
+        let total: Int
+        let notes: [NoteListItemDTO]
+
+        init(_ output: CerebralHelmNoteListOutput) {
+            available = true
+            root = output.root
+            total = output.total
+            notes = output.notes.map {
+                NoteListItemDTO(path: $0.path, title: $0.title, folder: $0.folder, updated: $0.updated)
+            }
+        }
+
+        private init() {
+            available = false
+            root = ""
+            total = 0
+            notes = []
+        }
+
+        static let unavailable = ListNotesResult()
+    }
+    /// `listCourses` input (quick actions phase 5): how many courses to return, most recently
+    /// written first.
+    /// The receipt for starting a run (quick actions phase 5). It deliberately carries no results:
+    /// they arrive as events, and a payload that looked like results would invite a caller to read
+    /// the first snapshot as the answer.
+    private struct ListUnreadMailInput: Decodable {
+        let limit: Int?
+    }
+    private struct UnreadMailItemDTO: Encodable {
+        let id: String
+        let byline: String
+        let subject: String
+        let receivedAt: String?
+        /// The RFC 5322 Message-ID — the handle `mail.open` takes. Absent when the sender omitted
+        /// one, in which case the row renders as text rather than a link.
+        let messageId: String?
+    }
+    /// The unread messages, or an honest reason there are none to show. `state` distinguishes
+    /// "your inbox is clear" from "we could not look", which an empty array alone cannot.
+    private struct UnreadMailResult: Encodable {
+        let state: String
+        let messages: [UnreadMailItemDTO]
+        let reason: String?
+
+        init(_ messages: [MailMessage]) {
+            state = "ready"
+            reason = nil
+            self.messages = messages.map {
+                UnreadMailItemDTO(
+                    id: $0.id, byline: $0.byline, subject: $0.subject,
+                    receivedAt: $0.receivedAt, messageId: $0.rfc822MessageID
+                )
+            }
+        }
+
+        private init(state: String, reason: String?) {
+            self.state = state
+            self.reason = reason
+            self.messages = []
+        }
+
+        static func unavailable(state: String, reason: String?) -> UnreadMailResult {
+            UnreadMailResult(state: state, reason: reason)
+        }
+    }
+    private struct ConnectGmailInput: Decodable {
+        let disconnect: Bool?
+    }
+    /// The outcome of connecting. `canRefresh` false means the grant cannot renew itself and the
+    /// surface must say so — it is not a successful connection.
+    private struct ConnectGmailResult: Encodable {
+        let connected: Bool
+        let scope: String?
+        let canRefresh: Bool
+    }
+    private struct SystemChecksResult: Encodable {
+        let started: Bool
+        let checkCount: Int
+
+        static let unavailable = SystemChecksResult(started: false, checkCount: 0)
+    }
+    private struct ListCoursesInput: Decodable {
+        let limit: Int?
+    }
+    private struct CourseFolderDTO: Encodable {
+        let course: String
+        /// Root-relative, so the picker can compare it directly to a note listing's folder and
+        /// filter that course's notes without a second read.
+        let folder: String
+        let noteCount: Int
+        let updated: String?
+    }
+    /// The course notebooks on disk (quick actions phase 5). `available` is false when the
+    /// knowledge root could not be read at all — "no courses yet" and "your vault is gone" must
+    /// never look the same, the same distinction ``ListNotesResult`` draws.
+    private struct ListCoursesResult: Encodable {
+        let available: Bool
+        /// The root-relative school folder the courses came from.
+        let root: String
+        let courses: [CourseFolderDTO]
+
+        init(_ output: CerebralHelmCourseListOutput) {
+            available = true
+            root = output.courseRoot
+            courses = output.courses.map {
+                CourseFolderDTO(
+                    course: $0.courseName, folder: $0.courseFolder,
+                    noteCount: $0.courseNoteCount, updated: $0.courseUpdated
+                )
+            }
+        }
+
+        private init() {
+            available = false
+            root = ""
+            courses = []
+        }
+
+        static let unavailable = ListCoursesResult()
+    }
+    private struct CreateCourseNoteInput: Decodable {
+        let course: String
+        let title: String
+    }
+    /// The created note (quick actions phase 5). `path` is the same handle `note.open` takes, so
+    /// the picker can open what it just created — except while `awaitingConfirmation`, where
+    /// nothing has been written yet and there is no path to offer.
+    private struct CreateCourseNoteResult: Encodable {
+        let course: String
+        let path: String
+        let title: String
+        /// False when a note of that title already existed for that day and was returned rather
+        /// than overwritten.
+        let created: Bool
+        let awaitingConfirmation: Bool
+    }
     private struct NoteHit: Encodable {
         let noteId: String
         let title: String
         let excerpt: String
+        /// The note's root-relative path (quick actions phase 5) — the identity the
+        /// `search-notes` picker merges on and the handle it opens by. It is the one
+        /// key both note sources agree on: a note authored outside CerebralHelm has
+        /// no frontmatter id, so `noteId` cannot address the whole library. Relative
+        /// by construction; an absolute path never crosses this boundary.
+        let path: String
     }
     private struct SearchNotesResult: Encodable {
         let results: [NoteHit]
@@ -2090,11 +3390,258 @@ public final class BridgeSession: @unchecked Sendable {
         let title: String
         let colorHex: String?
     }
+    /// The `create-event` form's collected values. `calendarTitle` is carried alongside the id
+    /// purely so a confirmation disclosure can name the calendar in words — the id alone would be
+    /// unreadable in a prompt.
+    private struct MessageRecipientsResult: Encodable {
+        struct Recipient: Encodable {
+            let id: String
+            let name: String
+            let kind: String
+            let groupSize: Int?
+            let handle: String?
+
+            init(_ recipient: MessageRecipient) {
+                id = recipient.id
+                name = recipient.name
+                kind = recipient.kind
+                groupSize = recipient.groupSize
+                handle = recipient.handle
+            }
+        }
+
+        let recipients: [Recipient]
+        let available: Bool
+        let reason: String?
+    }
+
+    private struct SendMessageInput: Decodable {
+        let body: String
+        let target: String
+        let targetKind: String
+        let targetName: String?
+        let groupSize: Int?
+    }
+
+    private struct SendMessageResult: Encodable {
+        let targetName: String
+        let sent: Bool
+        /// True on the normal path — this action always confirms.
+        let awaitingConfirmation: Bool
+    }
+
+    private struct SportsEventsResult: Encodable {
+        struct Competitor: Encodable {
+            let abbreviation: String
+            let name: String
+            let score: String
+            let color: String?
+            let isHome: Bool
+            let record: String?
+        }
+
+        struct LeaderboardEntry: Encodable {
+            let order: Int
+            let position: String?
+            let name: String
+            let score: String
+            let thru: String?
+        }
+
+        struct Event: Encodable {
+            let id: String
+            let league: String
+            let name: String
+            let shortName: String
+            let state: String
+            let detail: String
+            let venue: String?
+            let competitors: [Competitor]
+            let leaderboard: [LeaderboardEntry]
+
+            init(_ event: SportsEvent) {
+                id = event.id
+                league = event.league
+                name = event.name
+                shortName = event.shortName
+                state = event.state.rawValue
+                detail = event.detail
+                venue = event.venue
+                competitors = event.competitors.map {
+                    Competitor(
+                        abbreviation: $0.abbreviation, name: $0.name, score: $0.score,
+                        color: $0.color, isHome: $0.isHome, record: $0.record
+                    )
+                }
+                leaderboard = event.leaderboard.map {
+                    LeaderboardEntry(
+                        order: $0.order, position: $0.position, name: $0.name,
+                        score: $0.score, thru: $0.thru
+                    )
+                }
+            }
+        }
+
+        let events: [Event]
+        /// False on a host with no sports provider at all — different from "nothing is on today".
+        let available: Bool
+        /// Present when the read failed, so the picker says so rather than showing an empty list.
+        let reason: String?
+    }
+
+    private struct LinearOptionsResult: Encodable {
+        struct Option: Encodable {
+            let id: String
+            let name: String
+        }
+
+        struct Team: Encodable {
+            let id: String
+            let key: String
+            let name: String
+            let projects: [Option]
+            let labels: [Option]
+
+            init(_ team: LinearWorkspaceInfo.Team) {
+                id = team.id
+                key = team.key
+                name = team.name
+                projects = team.projects.map { Option(id: $0.id, name: $0.name) }
+                labels = team.labels.map { Option(id: $0.id, name: $0.name) }
+            }
+        }
+
+        let teams: [Team]
+        /// False on a host with no Linear client at all — a different fact from an empty workspace.
+        let available: Bool
+        /// Present when the workspace could not be read, so the form can say so rather than
+        /// rendering empty dropdowns that look like the user has no teams.
+        let reason: String?
+    }
+
+    private struct ScaffoldProjectInput: Decodable {
+        let name: String
+        let location: String?
+        let summary: String?
+        let importance: Int?
+    }
+
+    private struct ScaffoldProjectResult: Encodable {
+        /// The created folder's path, or — when the action gated — the pending command id.
+        let projectPath: String
+        let awaitingConfirmation: Bool
+    }
+
+    private struct CreateSpotifyPlaylistInput: Decodable {
+        let name: String
+        let description: String?
+        let isPublic: Bool?
+    }
+
+    private struct CreateSpotifyPlaylistResult: Encodable {
+        /// The playlist id, or — when the action gated — the pending command id.
+        let playlistId: String
+        let name: String
+        let url: String?
+        /// Whether Spotify came forward at the new playlist — best-effort, never a failure.
+        let opened: Bool
+        let awaitingConfirmation: Bool
+        /// Reserved for the ok-path shape; the reconnect case is an error response.
+        let needsReconnect: Bool
+    }
+
+    private struct CreateLinearIssueInput: Decodable {
+        let title: String
+        let description: String?
+        let teamId: String
+        let teamName: String?
+        let projectId: String?
+        let projectName: String?
+        let labelIds: [String]?
+        let labelNames: [String]?
+        let priority: Int?
+    }
+
+    private struct CreateLinearIssueResult: Encodable {
+        /// The issue identifier (`NIC-176`), or — when the action gated — the command id whose
+        /// confirmation is pending. `awaitingConfirmation` says which.
+        let identifier: String
+        let url: String?
+        let awaitingConfirmation: Bool
+    }
+
+    private struct FolderSelectionResult: Encodable {
+        let folderPath: String?
+        let relativeFolder: String?
+        let cancelled: Bool
+        let outsideRoot: Bool
+        /// False on a host with no picker at all, so the form can fall back to typing rather than
+        /// showing a button that silently does nothing.
+        let available: Bool
+    }
+
+    private struct CloneRepositoryInput: Decodable {
+        let repositoryUrl: String
+        let directory: String?
+    }
+
+    private struct CloneRepositoryResult: Encodable {
+        /// The path the repository was cloned to, or — when the action gated — the command id whose
+        /// confirmation is now pending. `awaitingConfirmation` says which, so a caller never
+        /// reports "cloned" for something still waiting on the user.
+        let clonedPath: String
+        let repositoryName: String
+        let awaitingConfirmation: Bool
+    }
+
+    private struct CreateCalendarEventInput: Decodable {
+        let title: String
+        let startsAt: String
+        let endsAt: String
+        let calendarId: String?
+        let calendarTitle: String?
+        let location: String?
+        let notes: String?
+    }
+
+    private struct CreateCalendarEventResult: Encodable {
+        /// The created event's id, or — when the action gated — the command id whose confirmation
+        /// is now pending. `awaitingConfirmation` says which, so a caller never reports "created"
+        /// for something still waiting on the user.
+        let eventId: String
+        let calendarTitle: String?
+        let awaitingConfirmation: Bool
+    }
+
     private struct CalendarsResult: Encodable {
         /// Whether Calendar access is granted; false → the UI shows "grant Calendar access".
         let authorized: Bool
         let calendars: [CalendarDTO]
     }
+    /// The knowledge-rebuild wire shape (NIC-163). `rebuilt` is false only when the host has no
+    /// knowledge composition (pre-Mac/tests) — the UI then shows the surface as unavailable rather
+    /// than reporting a rebuild that never ran. Otherwise it carries the root that was read and how
+    /// many notes were indexed, so the panel can say what the rebuild actually covered.
+    private struct KnowledgeRebuildResult: Encodable {
+        let rebuilt: Bool
+        let root: String
+        let noteCount: Int
+
+        init(_ info: KnowledgeRebuildInfo) {
+            rebuilt = true
+            root = info.root
+            noteCount = info.noteCount
+        }
+
+        private init() {
+            rebuilt = false
+            root = ""
+            noteCount = 0
+        }
+
+        static let unavailable = KnowledgeRebuildResult()
+    }
+
     /// The Canvas ingest status wire shape (NIC-132). `available` is false only when the host has no
     /// ingest store (pre-Mac/tests) — the UI then shows "requires the macOS host". Otherwise it
     /// carries the pairing endpoint/token and the last scrape's age/counts.
@@ -2250,5 +3797,49 @@ public final class BridgeSession: @unchecked Sendable {
             code: "bridge_operation_unimplemented",
             message: "This bridge operation is not wired to the runtime yet."
         )
+    }
+}
+
+/// What the host reports back from a Gmail connect (Gmail integration).
+///
+/// Carried as a plain value rather than the adapter's own type so `BridgeSession` stays free of
+/// AppKit — the same seam every other host-injected closure uses.
+public struct GmailConnectionInfo: Sendable, Equatable {
+    public let scope: String?
+    /// False means the grant cannot renew itself. Reported, never smoothed over.
+    public let canRefresh: Bool
+
+    public init(scope: String?, canRefresh: Bool) {
+        self.scope = scope
+        self.canRefresh = canRefresh
+    }
+}
+
+/// A connect failure the surface can act on, mapped by the host from its adapter's error.
+///
+/// The three cases have three different remedies, and collapsing them into "connect failed" would
+/// send the user looking in the wrong place: enter a Client ID, press Connect again, or nothing at
+/// all because they simply closed the browser.
+public struct GmailConnectError: Error, Sendable {
+    public let category: CerebralContracts.Category
+    public let code: String
+    public let message: String
+
+    public init(category: CerebralContracts.Category, code: String, message: String) {
+        self.category = category
+        self.code = code
+        self.message = message
+    }
+
+    public static let clientIDMissing = GmailConnectError(
+        category: .invalidInput, code: "gmail_client_id_missing",
+        message: "Add your Google Client ID in Settings → Setup, then connect."
+    )
+    public static let cancelled = GmailConnectError(
+        category: .invalidInput, code: "gmail_connect_cancelled",
+        message: "Gmail wasn’t connected — the browser was closed or consent was declined."
+    )
+    public static func failed(_ detail: String) -> GmailConnectError {
+        GmailConnectError(category: .providerFailure, code: "gmail_connect_failed", message: detail)
     }
 }

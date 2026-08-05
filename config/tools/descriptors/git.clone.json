@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "git.clone",
+  "version": "1.0.0",
+  "purpose": "Clone a git repository into a folder under the projects root, using a fixed git executable and no shell.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/git-clone-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/git-clone-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "local_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_local_write",
+  "requiredPermissions": ["projects_root_write"],
+  "secretReferences": [],
+  "timeoutMs": 300000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": true,
+  "idempotency": "non_idempotent",
+  "adapterRequirements": {
+    "capabilities": ["git.clone"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "denied", "timeout", "failure", "cancelled"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

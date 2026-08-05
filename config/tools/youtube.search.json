@@ -1,0 +1,6 @@
+{
+  "id": "youtube.search",
+  "risk": "local_write",
+  "timeoutMs": 30000,
+  "availableInPreMac": false
+}

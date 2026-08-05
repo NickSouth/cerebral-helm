@@ -105,6 +105,259 @@ public struct GoogleSearchResult: Equatable, Sendable {
     }
 }
 
+// MARK: - messages.send
+
+/// Sends one iMessage (quick-actions phase 4) — the only tool in the MVP that speaks to another
+/// person.
+///
+/// **This is the one external write that never takes the user-authored exemption.** A calendar
+/// event can be edited, a Linear ticket closed, a playlist deleted; a message lands on someone
+/// else's device and cannot be unsent. So `messages.send` is `confirm_external_write` outright:
+/// every send confirms, with the recipient named and the **body shown in full** — the disclosure
+/// is the user re-reading their own message before it leaves, which is exactly the moment a typo
+/// or a wrong recipient is catchable.
+///
+/// The body is passed to the adapter as an argument and never interpolated into a script, so
+/// quotes and AppleScript keywords inside it are data rather than syntax.
+public protocol MessagingCapability: Sendable {
+    /// `targetKind` is `participant` (one person, by handle) or `chat` (an existing thread).
+    func send(body: String, target: String, targetKind: String) async throws -> Bool
+}
+
+/// Someone (or some thread) a message can be sent to.
+public struct MessageRecipient: Equatable, Sendable {
+    /// The handle for a person, or the chat identifier for a thread.
+    public let id: String
+    public let name: String
+    /// `participant` or `chat`.
+    public let kind: String
+    /// How many people are in the thread, for a group. Nil for one person.
+    public let groupSize: Int?
+    /// The phone number or Apple ID behind a person, shown so two "John Smith"s are separable.
+    public let handle: String?
+
+    public init(id: String, name: String, kind: String, groupSize: Int?, handle: String?) {
+        self.id = id
+        self.name = name
+        self.kind = kind
+        self.groupSize = groupSize
+        self.handle = handle
+    }
+}
+
+/// Reading who can be messaged is a **separate port** from sending — the fourth instance of that
+/// split, and the one where it matters most: a surface that lists contacts must not be able to
+/// reach the path that sends to them.
+public protocol MessageRecipientsProviding: Sendable {
+    func recipients() async throws -> [MessageRecipient]
+}
+
+// MARK: - spotify.createplaylist
+
+/// Creates an empty playlist in the user's connected Spotify account (quick-actions phase 4).
+///
+/// Separate from ``SpotifyControlCapability`` even though both speak to the same account and share
+/// one OAuth session: control is transport (play/pause/skip), this is a **write to the user's
+/// library**, and it needs scopes control does not. Keeping them apart means a playback surface can
+/// never reach the path that creates something.
+public protocol SpotifyPlaylistCapability: Sendable {
+    func createPlaylist(name: String, description: String?, isPublic: Bool) async throws -> SpotifyPlaylistResult
+}
+
+public struct SpotifyPlaylistResult: Equatable, Sendable {
+    public let id: String
+    public let name: String
+    /// The playlist's Spotify URL **as returned by the API** — never constructed here. Nil when
+    /// Spotify omitted it.
+    public let url: String?
+    /// Whether Spotify was opened at the new playlist. Best-effort: the playlist exists either
+    /// way, so a failed open is reported rather than turned into a failed create.
+    public let opened: Bool
+
+    public init(id: String, name: String, url: String?, opened: Bool = false) {
+        self.id = id
+        self.name = name
+        self.url = url
+        self.opened = opened
+    }
+}
+
+// MARK: - linear.createissue
+
+/// Creates one issue in the user's Linear workspace (quick-actions phase 4).
+///
+/// **Write only.** Reading the workspace (teams, projects, labels — what the form's dropdowns need)
+/// is a separate concern that never crosses this port, the same split as
+/// ``CalendarWritingCapability`` versus ``CalendarProvider``: a surface that only lists options can
+/// never reach the path that files a ticket.
+///
+/// The API key is resolved by the adapter from the Keychain, never passed in — a token travelling
+/// through the tool boundary would end up in a disclosure or a log.
+public protocol LinearIssueCapability: Sendable {
+    func createIssue(
+        title: String,
+        description: String?,
+        teamID: String,
+        projectID: String?,
+        labelIDs: [String],
+        priority: Int?
+    ) async throws -> LinearIssueResult
+}
+
+public struct LinearIssueResult: Equatable, Sendable {
+    /// The identifier Linear assigned, e.g. `NIC-176`.
+    public let identifier: String
+    /// The issue's web URL **as returned by Linear** — never constructed here, so a workspace
+    /// slug we do not know can never be guessed wrong.
+    public let url: String
+
+    public init(identifier: String, url: String) {
+        self.identifier = identifier
+        self.url = url
+    }
+}
+
+// MARK: - project.scaffold
+
+/// Creates a new project folder under the projects root, with a `PROJECT.md` descriptor
+/// (quick-actions phase 4).
+///
+/// A **project folder is a container, not a repository** (``ActiveProjectsProvider``): the repos
+/// live one level inside it. So this deliberately does not `git init` anything — a project folder
+/// that was itself a repo would be a different shape from every project the widget already reads.
+///
+/// Same containment invariant as ``GitCloneCapability``: the destination is resolved inside the
+/// projects root and re-checked after standardizing, and an existing path is a refusal rather than
+/// an overwrite. Nothing here runs a process.
+public protocol ProjectScaffoldCapability: Sendable {
+    func scaffold(
+        name: String,
+        location: String?,
+        summary: String?,
+        importance: Int?
+    ) async throws -> ProjectScaffoldResult
+}
+
+public struct ProjectScaffoldResult: Equatable, Sendable {
+    public let projectPath: String
+    public let descriptorPath: String
+
+    public init(projectPath: String, descriptorPath: String) {
+        self.projectPath = projectPath
+        self.descriptorPath = descriptorPath
+    }
+}
+
+// MARK: - git.clone
+
+/// Clones a git repository into a folder under the projects root (quick-actions phase 4).
+///
+/// Deliberately **not** a wrapper over ``ProcessCapability``'s hook path: a hook is free-form
+/// configured shell, which is why `hook.run` is `shell`-class and confirms every run. This is one
+/// fixed executable with a typed argument list — no shell, no caller-chosen program — so it is
+/// honestly `local_write` and runs one-click, exactly like `project.open`.
+///
+/// Two invariants belong to the adapter, not the caller: the destination is resolved *inside* the
+/// projects root and re-checked after standardizing (so `..` cannot escape), and a URL carrying
+/// embedded credentials is refused outright rather than redacted, so a token can never reach the
+/// command log in the first place.
+public protocol GitCloneCapability: Sendable {
+    func clone(repositoryURL: String, directory: String?) async throws -> GitCloneResult
+}
+
+public struct GitCloneResult: Equatable, Sendable {
+    /// The absolute path the repository was cloned to, always inside the projects root.
+    public let clonedPath: String
+    /// The folder name the clone landed in.
+    public let repositoryName: String
+
+    public init(clonedPath: String, repositoryName: String) {
+        self.clonedPath = clonedPath
+        self.repositoryName = repositoryName
+    }
+}
+
+// MARK: - youtube.search
+
+/// Opens a YouTube search for a query in the browser (quick-actions phase 4). Deliberately a
+/// **separate port** from ``GoogleSearchCapability`` rather than a `site:` parameter on it: the
+/// whole safety property of both is that the destination host is a literal constant in the adapter,
+/// and a host chosen by the caller — even from a closed set — would give that up for nothing. Two
+/// small adapters keep "the query is only ever data" true by construction.
+public protocol YouTubeSearchCapability: Sendable {
+    func search(query: String) async throws -> YouTubeSearchResult
+}
+
+public struct YouTubeSearchResult: Equatable, Sendable {
+    public let query: String
+    public let opened: Bool
+    /// The YouTube results URL that was opened.
+    public let resolvedURL: String
+
+    public init(query: String, opened: Bool, resolvedURL: String) {
+        self.query = query
+        self.opened = opened
+        self.resolvedURL = resolvedURL
+    }
+}
+
+// MARK: - note.open
+
+/// Hands one note to the Mac's Markdown editor (quick actions phase 5).
+///
+/// It takes an **absolute** path, because that is what an editor needs — and takes it only from
+/// ``KnowledgeService/locate(_:)``, which has already proved the note sits inside the knowledge
+/// root. The containment rule lives there rather than here for the reason it always does: a second
+/// rule in the adapter could only disagree with the first.
+///
+/// The port is named for the job, not for Obsidian, so the editor stays an adapter decision. What
+/// the adapter must never do is *invent* a destination: it either opens the file it was given or
+/// reports that nothing took it.
+public protocol NoteOpenCapability: Sendable {
+    func open(absolutePath: String) async throws -> NoteOpenResult
+}
+
+public struct NoteOpenResult: Equatable, Sendable {
+    /// Which surface received the note. Kept as an enum rather than a bool because "revealed in
+    /// Finder because nothing handles `obsidian://`" is a materially different outcome from
+    /// "opened in your editor", and the picker says which one happened.
+    public enum Target: String, Equatable, Sendable {
+        case obsidian
+        case finder
+        case none
+    }
+
+    public let opened: Bool
+    public let target: Target
+
+    public init(opened: Bool, target: Target) {
+        self.opened = opened
+        self.target = target
+    }
+}
+
+// MARK: - mail.open
+
+/// Opens the user's mail in the browser (Gmail integration, 2026-08-04).
+///
+/// The **host is a literal constant in the adapter** and only the message id varies — the same
+/// construction `google.search` and `youtube.search` use, and for the same reason: it is what keeps
+/// an id that arrived in a report from ever choosing where the browser goes.
+public protocol MailOpenCapability: Sendable {
+    /// `messageID` is an RFC 5322 Message-ID without angle brackets; nil opens the inbox.
+    func open(messageID: String?) async throws -> MailOpenResult
+}
+
+public struct MailOpenResult: Equatable, Sendable {
+    public let opened: Bool
+    public let resolvedURL: String
+
+    public init(opened: Bool, resolvedURL: String) {
+        self.opened = opened
+        self.resolvedURL = resolvedURL
+    }
+}
+
 // MARK: - spotify.control
 
 /// Controls the user's Spotify playback (NIC-133): play/pause/next/previous, sent to the active
@@ -346,6 +599,37 @@ public protocol ApplicationLifecycleCapability: Sendable {
     /// Requests a graceful quit of each application; returns the ids actually asked
     /// to terminate (an id no longer running is simply absent).
     func quitApplications(bundleIDs: [String]) async throws -> [String]
+
+    /// Requests a graceful quit of **the host application itself** — the complement of
+    /// ``quitApplications(bundleIDs:)``, which always excludes the host.
+    ///
+    /// It takes no target by design: quitting CerebralHelm and quitting someone else's app
+    /// are different capabilities, and keeping them apart means no caller can reach one
+    /// through the other. Returns once termination has been *requested*; the process is on
+    /// its way out, so there is no later status to observe.
+    func quitHostApplication() async throws
+}
+
+/// Writes an event into the user's calendar (`calendar.createevent`).
+///
+/// Deliberately a SEPARATE port from `CalendarProvider`, which reads. A reader should not have to
+/// implement writing to satisfy a protocol, and keeping the two apart means the widgets/publishers
+/// that only read the calendar cannot reach the write path at all.
+///
+/// `startsAt`/`endsAt` are local wall-clock ISO strings, matching the read side's convention
+/// (NIC-126): a time a user typed into a form means the time they meant, in their own zone.
+public protocol CalendarWritingCapability: Sendable {
+    /// Creates the event and returns its store identifier plus the calendar it landed in, so the
+    /// result can say WHERE it went rather than only that it worked. A `nil` `calendarID` writes
+    /// to the host's default calendar rather than guessing which one was meant.
+    func createEvent(
+        title: String,
+        startsAt: String,
+        endsAt: String,
+        calendarID: String?,
+        location: String?,
+        notes: String?
+    ) async throws -> (eventID: String, calendarTitle: String?)
 }
 
 // MARK: - application windows (window navigator)

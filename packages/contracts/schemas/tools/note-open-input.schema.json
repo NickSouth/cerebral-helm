@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/note-open-input.schema.json",
+  "title": "CerebralHelm Note Open Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["notePath"],
+  "properties": {
+    "notePath": {
+      "type": "string",
+      "minLength": 3,
+      "pattern": "^[^/].*\\.md$",
+      "description": "The note's path relative to the knowledge root, as reported by note.list and note.search. Root-relative and Markdown only; the knowledge service additionally resolves the path and refuses anything landing outside the root, so this pattern is a first gate, not the boundary. Named `notePath` rather than `path` because the code generator derives type names from property names, and a schema structurally identical to note-read-input would otherwise collapse into one shared type.",
+      "examples": ["inbox/ch-idea-001.md", "projects/atlas/kickoff.md"]
+    }
+  }
+}

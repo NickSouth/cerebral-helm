@@ -13,7 +13,7 @@
   },
   "risk": "external_write",
   "runtimeRiskPolicy": "descriptor_risk",
-  "confirmationPolicyKey": "allow_external_write_without_confirmation",
+  "confirmationPolicyKey": "allow_external_write_when_user_authored",
   "requiredPermissions": [],
   "secretReferences": [],
   "timeoutMs": 15000,

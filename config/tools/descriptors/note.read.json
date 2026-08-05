@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "note.read",
+  "version": "1.0.0",
+  "purpose": "Read one Markdown note by its root-relative path, returning its frontmatter and body without ever resolving outside the knowledge root.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/note-read-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/note-read-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "read_only",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "allow_read_without_confirmation",
+  "requiredPermissions": ["knowledge_root_read"],
+  "secretReferences": [],
+  "timeoutMs": 5000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": true,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["note.read"],
+    "platforms": ["pre_mac_mock", "macos_native"]
+  },
+  "logging": {
+    "redactionPaths": ["/body", "/frontmatter"],
+    "retention": "standard"
+  },
+  "results": ["success", "partial_success", "unavailable", "timeout", "failure", "cancelled"],
+  "availability": {
+    "preMac": true,
+    "macOS": true
+  }
+}

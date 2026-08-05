@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "course.list",
+  "version": "1.0.0",
+  "purpose": "List the course notebooks under the school folder, reading the folders themselves so a course added outside CerebralHelm is listed without any stored mapping.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/course-list-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/course-list-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "read_only",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "allow_read_without_confirmation",
+  "requiredPermissions": ["knowledge_root_read"],
+  "secretReferences": [],
+  "timeoutMs": 5000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": true,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["course.list"],
+    "platforms": ["pre_mac_mock", "macos_native"]
+  },
+  "logging": {
+    "redactionPaths": ["/courses"],
+    "retention": "standard"
+  },
+  "results": ["success", "partial_success", "unavailable", "timeout", "failure", "cancelled"],
+  "availability": {
+    "preMac": true,
+    "macOS": true
+  }
+}

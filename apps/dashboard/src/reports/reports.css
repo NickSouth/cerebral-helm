@@ -1,0 +1,448 @@
+/* --- The Report region (docs/quick-actions/PLAN.md) -----------------------------------------
+
+   The centre panel's left third, from below the Heimlich wordmark down to above the greeting.
+   Opaque and BORDERLESS with a right-edge mask: the consciousness stream dissolves into the
+   report rather than being boxed away from it, which is also what makes the same geometry work
+   as the future conversation surface.
+
+   It is a normal flex child of `.heimlich`'s column, sitting between the wordmark and the foot
+   group, so it claims exactly the space that column already left empty — no magic inset numbers.
+   An earlier absolute-positioned version with rem insets collapsed to a 16px sliver whenever the
+   panel was short, because the panel's height is viewport-driven. `position: relative` keeps it
+   above the WebGL field, which is what makes it composite over a still-running stream. */
+
+.report-region {
+  position: relative;
+  z-index: 2;
+  align-self: flex-start;
+  flex: 1 1 auto;
+  /* Without this a flex child refuses to shrink below its content and re-introduces overflow. */
+  min-height: 0;
+  /* Widened from 33% (owner, 2026-08-04). Reports were sized for counts and short lines; they now
+     carry subjects, headlines and prose, and a third forced almost every row onto two lines. */
+  width: 40%;
+  max-width: 48%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: var(--ch-space-4);
+  background: transparent;
+}
+
+/* The fade lives on a BACKGROUND layer, not on the region itself.
+   Masking the region masks its text too — the first version faded the event times into
+   unreadability. The surface is what should dissolve into the consciousness stream; the content
+   stays crisp and simply stops before the fade begins. The layer extends past the content box to
+   the right so the gradient runs through empty space. */
+.report-region::before {
+  content: "";
+  position: absolute;
+  inset: 0 calc(var(--ch-space-6) * -1) 0 0;
+  z-index: -1;
+  background: var(--ch-surface-panel);
+  mask-image: linear-gradient(to right, black 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 70%, transparent 100%);
+}
+
+.report-region__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+}
+
+.report-region__title {
+  margin: 0;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  font-weight: var(--ch-font-weight-light);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ch-text-muted);
+}
+
+.report-region__close {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  line-height: 1;
+  padding: 0 var(--ch-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  cursor: pointer;
+}
+
+.report-region__close:hover {
+  color: var(--ch-text-primary);
+}
+
+.report-region__pending {
+  margin: 0;
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+}
+
+.report-region__blocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+}
+
+/* Block-level top-down stagger rather than character-level: it reads better at this density and
+   maps directly onto a model streaming blocks in later — the renderer does not change. */
+.report-region__block {
+  animation: ch-report-block-in var(--ch-motion-slow) var(--ch-ease-standard) both;
+  animation-delay: calc(var(--ch-report-block-index, 0) * 70ms);
+}
+
+@keyframes ch-report-block-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-region__block {
+    animation: none;
+  }
+}
+
+/* --- Blocks --- */
+
+.report-greeting {
+  margin: 0;
+  color: var(--ch-text-primary);
+  font-weight: var(--ch-font-weight-light);
+}
+
+.report-greeting[data-size="hero"] {
+  font-size: var(--ch-font-size-xl);
+}
+
+.report-greeting[data-size="standard"] {
+  font-size: var(--ch-font-size-lg);
+}
+
+.report-line {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+}
+
+/* Emphasis uses WEIGHT, never colour — inside a report, colour means actionable. */
+.report-line__text[data-emphasis="normal"] {
+  color: var(--ch-text-primary);
+}
+
+.report-line__text[data-emphasis="strong"] {
+  color: var(--ch-text-primary);
+  font-weight: var(--ch-font-weight-medium);
+}
+
+.report-line__text[data-emphasis="muted"] {
+  color: var(--ch-text-muted);
+}
+
+.report-metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+}
+
+.report-metric__label {
+  color: var(--ch-text-muted);
+}
+
+.report-metric__value {
+  color: var(--ch-text-primary);
+}
+
+.report-metric[data-tone="warning"] .report-metric__value {
+  color: var(--ch-status-warning, var(--ch-text-muted));
+}
+
+.report-metric[data-tone="critical"] .report-metric__value {
+  color: var(--ch-status-error);
+}
+
+.report-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-list__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ch-space-2);
+  font-size: var(--ch-font-size-sm);
+}
+
+.report-list__dot {
+  flex: 0 0 auto;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--ch-accent-secondary);
+}
+
+.report-list__dot[data-status="passed"] {
+  background: var(--ch-status-success, var(--ch-accent-secondary));
+}
+
+.report-list__dot[data-status="failed"] {
+  background: var(--ch-status-error);
+}
+
+.report-list__dot[data-status="running"] {
+  background: var(--ch-accent-primary);
+}
+
+.report-list__dot[data-status="pending"] {
+  background: var(--ch-status-neutral);
+}
+
+/* Skipped reads as "not applicable", never as a pass or a problem: hollow rather than filled, so
+   a glance down the list separates what was checked from what deliberately was not. */
+.report-list__dot[data-status="skipped"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ch-status-neutral);
+}
+
+/* Wraps to two lines, then truncates. Both halves matter: a subject is scanned rather than read,
+   so the first two lines carry the sense of it, while unbounded wrapping lets one shouty marketing
+   subject push every other row off the panel. `min-width: 0` is what actually permits the shrink —
+   without it a flex child refuses to go below its content width and pushes the time out of the
+   row instead. */
+.report-list__text {
+  flex: 1 1 auto;
+  color: var(--ch-text-primary);
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  /* A subject can be one unbroken token (a URL, a tracking code); without this it would overflow
+     the clamp rather than being broken. */
+  overflow-wrap: anywhere;
+}
+
+/* The time never shrinks and never wraps: it is four characters, it is always relevant, and it is
+   the first thing a squeezed row would otherwise drop. */
+.report-list__meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--ch-text-muted);
+}
+
+.report-empty {
+  margin: 0;
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+}
+
+.report-count {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+}
+
+.report-count__value {
+  color: var(--ch-text-primary);
+  font-weight: var(--ch-font-weight-medium);
+}
+
+.report-count__label {
+  color: var(--ch-text-muted);
+  margin-inline-start: var(--ch-space-1);
+}
+
+.report-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.report-proposal__text {
+  margin: 0;
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+}
+
+.report-proposal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2);
+}
+
+/* --- Action references ---
+   Accent means ACTIONABLE. That is the one meaning it carries inside a report, which is what
+   lets it keep working when a model writes the prose. */
+
+.report-link {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ch-accent-primary);
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.report-link:hover {
+  text-decoration: underline;
+}
+
+.report-link:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: 2px;
+  border-radius: var(--ch-radius-sm);
+}
+
+.report-proposal__action.report-link {
+  padding: var(--ch-space-1) var(--ch-space-3);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 45%, transparent);
+  border-radius: var(--ch-radius-md);
+  font-size: var(--ch-font-size-sm);
+}
+
+.report-proposal__action.report-link:hover {
+  text-decoration: none;
+  background: color-mix(in srgb, var(--ch-accent-primary) 12%, transparent);
+}
+
+/* --- Scoreboard block (check-scoreboard) ---------------------------------------------------
+   Two sides stacked, away first. The team colour is a thin accent bar, never a fill: a tile
+   flooded with team colour would be the loudest thing in a dashboard built on one accent per
+   mode, and inside a report colour means *actionable*. A bar reads as identity without
+   pretending to be a link. */
+.report-scoreboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.report-scoreboard__side {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ch-space-2);
+}
+
+.report-scoreboard__accent {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 3px;
+  border-radius: 2px;
+  /* A team with no colour still lines up with one that has: the bar stays, unpainted. */
+  background: var(--ch-panel-border);
+}
+
+.report-scoreboard__abbr {
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-sm);
+  letter-spacing: 0.06em;
+  color: var(--ch-text-primary);
+}
+
+.report-scoreboard__record {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.report-scoreboard__score {
+  margin-left: auto;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-md);
+  color: var(--ch-text-primary);
+}
+
+.report-scoreboard__status {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* --- Leaderboard block ---------------------------------------------------------------------- */
+
+.report-leaderboard__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.report-leaderboard__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ch-space-2);
+  font-size: var(--ch-font-size-sm);
+}
+
+.report-leaderboard__position {
+  flex: 0 0 2.25rem;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.report-leaderboard__name {
+  color: var(--ch-text-primary);
+  /* The name yields first when the row is tight; the score must never be the thing that clips. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-leaderboard__thru {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.report-leaderboard__score {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-family: var(--ch-font-mono);
+  color: var(--ch-text-primary);
+}
+
+.report-leaderboard__more,
+.report-region__refresh {
+  font: inherit;
+  font-size: var(--ch-font-size-label);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  /* Accent because it IS actionable — the report's one colour rule, honoured. */
+  color: var(--ch-accent-primary);
+  cursor: pointer;
+}
+
+.report-leaderboard__more {
+  margin-top: var(--ch-space-2);
+}
+
+.report-leaderboard__more:hover,
+.report-region__refresh:hover {
+  text-decoration: underline;
+}
+
+.report-leaderboard__more:focus-visible,
+.report-region__refresh:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: 2px;
+}

@@ -8,6 +8,7 @@ import type {
   LayoutSession,
   RecentActivity,
   SettingsSnapshot,
+  SuggestedCommand,
   Unsubscribe,
   UrlReference
 } from "./cerebralBridge";
@@ -224,6 +225,7 @@ export function createMockCerebralBridge(
 ): MockCerebralBridge {
   const bootstrapKey = options.bootstrapKey ?? DEFAULT_BOOTSTRAP_KEY;
   const listeners = new Set<BridgeEventListener>();
+  let mailSeeded = false;
   // The active layout session (NIC-142), held mutably so toggleLayout can swap the
   // dynamic slot and re-broadcast, mirroring the real bridge.
   let activeLayout: LayoutSession | null = null;
@@ -293,7 +295,10 @@ export function createMockCerebralBridge(
     workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
     modeColors: {},
     stocks: { tickers: ["SPY", "AAPL", "NVDA", "VTI"] },
-    calendarModeMap: {}
+    // A representative mapping over the same calendars `listCalendars` returns, so browser
+    // previews exercise the mode-aware default in `create-event` (Executive → Work) and the
+    // unmapped fallback (Entertainment → Default calendar) rather than only the empty case.
+    calendarModeMap: { "cal-work": "executive", "cal-school": "school" }
   };
   let settingsEventSeq = 0;
   // The bound secret references (NIC-134), held mutably so storeSecret visibly binds one and
@@ -331,6 +336,25 @@ export function createMockCerebralBridge(
   // visibly mints and listChromeProfiles reflects it (mirrors urlReferences).
   let chromeProfileRefs: AppReference[] = [];
 
+  // This session's submitted commands, newest first — the browser stand-in for the
+  // bridge's session-local "recent direct commands" (NIC-168 / PRD §9.4).
+  const recentCommands: string[] = [];
+
+  function recordRecentCommand(rawInput: string): void {
+    const trimmed = rawInput.trim();
+    if (!trimmed) {
+      return;
+    }
+    const existing = recentCommands.indexOf(trimmed);
+    if (existing >= 0) {
+      recentCommands.splice(existing, 1);
+    }
+    recentCommands.unshift(trimmed);
+    if (recentCommands.length > 5) {
+      recentCommands.pop();
+    }
+  }
+
   function emit(event: BridgeEvent): void {
     // Snapshot so a listener that unsubscribes mid-dispatch can't mutate the live set.
     for (const listener of [...listeners]) {
@@ -345,7 +369,74 @@ export function createMockCerebralBridge(
     getRecentActivity() {
       return Promise.resolve(RECENT_ACTIVITY);
     },
+    suggestCommands(input) {
+      // The browser stand-in for the core suggestion engine (NIC-168): grammar
+      // templates plus the mock catalogs, ranked by a naive prefix/substring
+      // score. The deterministic lexical engine lives in Swift core — this only
+      // lets the suggestion UI render and be exercised in browser previews.
+      // App/URL rows carry the honest pre-Mac unavailability (NIC-58).
+      const hostHint = "Available on the macOS host";
+      const patterns: SuggestedCommand[] = [
+        { command: "open ", label: "Open an app or URL", detail: "open <app|url>", kind: "pattern", requiresArgument: true, available: true },
+        { command: "mode ", label: "Switch mode", detail: "mode <id>", kind: "pattern", requiresArgument: true, available: true },
+        { command: "note ", label: "Capture a note", detail: "note <text>", kind: "pattern", requiresArgument: true, available: true },
+        { command: "search ", label: "Search notes", detail: "search <text>", kind: "pattern", requiresArgument: true, available: true }
+      ];
+      const apps: SuggestedCommand[] = [
+        { command: "open terminal", label: "Terminal", kind: "app", requiresArgument: false, available: false, unavailableReason: hostHint },
+        { command: "open vscode", label: "Visual Studio Code", kind: "app", requiresArgument: false, available: false, unavailableReason: hostHint },
+        { command: "open claude-desktop", label: "Claude", kind: "app", requiresArgument: false, available: false, unavailableReason: hostHint }
+      ];
+      const urls: SuggestedCommand[] = urlReferences.map((reference) => ({
+        command: `open ${reference.id}`,
+        label: reference.label,
+        kind: "url",
+        requiresArgument: false,
+        available: false,
+        unavailableReason: hostHint
+      }));
+      const modes: SuggestedCommand[] = ["executive", "developer", "school", "entertainment"].map((id) => ({
+        command: `mode ${id}`,
+        label: id.charAt(0).toUpperCase() + id.slice(1),
+        kind: "mode",
+        requiresArgument: false,
+        available: true
+      }));
+      const query = input.query.trim().toLowerCase();
+      const score = (candidate: SuggestedCommand): number => {
+        if (!query) {
+          return candidate.kind === "pattern" ? 1 : 0;
+        }
+        const label = candidate.label.toLowerCase();
+        const command = candidate.command.toLowerCase();
+        if (label.startsWith(query) || command.startsWith(query)) {
+          return 3;
+        }
+        return label.includes(query) || command.includes(query) ? 2 : 0;
+      };
+      let suggestions = [...patterns, ...apps, ...urls, ...modes]
+        .map((candidate) => ({ candidate, rank: score(candidate) }))
+        .filter((entry) => entry.rank > 0)
+        .sort((a, b) => (a.rank === b.rank ? a.candidate.label.localeCompare(b.candidate.label) : b.rank - a.rank))
+        .map((entry) => entry.candidate);
+      if (!query && recentCommands.length > 0) {
+        // An empty query leads with this session's recent commands (PRD §9.4).
+        const recents: SuggestedCommand[] = recentCommands.slice(0, 3).map((command) => ({
+          command,
+          label: command,
+          kind: "command",
+          requiresArgument: false,
+          available: true
+        }));
+        const recentSet = new Set(recents.map((recent) => recent.command));
+        suggestions = [...recents, ...suggestions.filter((entry) => !recentSet.has(entry.command))];
+      }
+      return Promise.resolve({ suggestions: suggestions.slice(0, input.limit ?? 8) });
+    },
     submitCommand(input) {
+      // The mock accepts every submission, so every one enters the recents surface
+      // (the real bridge records only accepted commands — NIC-168).
+      recordRecentCommand(input.rawInput);
       // A `run <workflowId>` submission simulates the runtime's workflow execution
       // (NIC-85): a canned two-step progress sequence bracketed by lifecycle
       // transitions, so the progress renderer and store paths are exercisable in
@@ -422,8 +513,29 @@ export function createMockCerebralBridge(
     captureNote() {
       return Promise.resolve({ noteId: "note_000000000000000000000001" });
     },
-    searchNotes() {
-      return Promise.resolve({ results: [] });
+    searchNotes(input) {
+      // Stands in for the derived index, which is deliberately NOT the same set as `listNotes`
+      // (quick actions phase 5): only the captured note is indexed, so a browser preview shows
+      // the real asymmetry — a full-text match on one note, and the stale-index notice for
+      // everything else — instead of implying search sees the whole vault.
+      const indexed = [
+        {
+          noteId: "ch-quick-capture-001",
+          title: "Atlas kickoff",
+          path: "projects/atlas/kickoff.md",
+          excerpt: "Scope, owners, and the first milestone for the Atlas rollout."
+        }
+      ];
+      const needle = input.text.trim().toLowerCase();
+      const results =
+        needle.length === 0
+          ? []
+          : indexed.filter(
+              (note) =>
+                note.title.toLowerCase().includes(needle) ||
+                note.excerpt.toLowerCase().includes(needle)
+            );
+      return Promise.resolve({ results });
     },
     decideConfirmation(input) {
       // The UI submits the decision; the bridge owns the resulting state change. Clearing the
@@ -480,6 +592,30 @@ export function createMockCerebralBridge(
       const deleted = boundSecrets.delete(input.reference);
       return Promise.resolve({ reference: input.reference, deleted });
     },
+    listUnreadMail(limit?: number) {
+      // A representative inbox for browser previews: enough to exercise the cap and the "and N
+      // more" line, with one message deliberately lacking a Message-ID so the non-link row renders.
+      const messages = [
+        { id: "1", byline: "Linear", subject: "NIC-170 was assigned to you", receivedAt: "2026-08-04T16:40:00Z", messageId: "a1@linear.app" },
+        { id: "2", byline: "Mum", subject: "Sunday lunch?", receivedAt: "2026-08-04T15:02:00Z", messageId: "b2@mail.example" },
+        { id: "3", byline: "GitHub", subject: "[cerebral-helm] CI passed on prod", receivedAt: "2026-08-04T12:11:00Z", messageId: "c3@github.com" },
+        { id: "4", byline: "UMass Amherst", subject: "Fall registration opens Monday", receivedAt: "2026-08-03T21:30:00Z", messageId: null },
+        { id: "5", byline: "Spotify", subject: "Your Discover Weekly is ready", receivedAt: "2026-08-03T09:00:00Z", messageId: "e5@spotify.com" }
+      ];
+      return Promise.resolve({
+        state: "ready" as const,
+        messages: limit === undefined ? messages : messages.slice(0, limit),
+        reason: null
+      });
+    },
+    connectGmail(input?: { disconnect?: boolean }) {
+      // The browser preview has no host to run OAuth on, so a connect reports honestly rather than
+      // faking a grant; a disconnect is a no-op success, which is what it is with nothing stored.
+      if (input?.disconnect) {
+        return Promise.resolve({ connected: false, scope: null, canRefresh: false });
+      }
+      return Promise.reject(new Error("Connecting Gmail requires the macOS host."));
+    },
     connectSpotify() {
       // The browser stand-in for the OAuth round trip (NIC-133): binds the token reference so the
       // Settings control flips to "Connected", without any real browser flow.
@@ -503,6 +639,163 @@ export function createMockCerebralBridge(
           { bundleId: "com.anthropic.claudefordesktop", name: "Claude", referenceId: "claude-desktop" }
         ],
         truncated: false
+      });
+    },
+    createCalendarEvent(input: { title: string; calendarTitle?: string }) {
+      // The browser preview has no calendar store, so this reports a synthetic id — and reports
+      // it as CREATED rather than pending, because the mock never gates. The real gating happens
+      // in the Swift runtime, where the policy engine lives.
+      return Promise.resolve({
+        eventId: `evt_${input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
+        calendarTitle: input.calendarTitle,
+        awaitingConfirmation: false
+      });
+    },
+    cloneRepository(input: { repositoryUrl: string; directory?: string }) {
+      // The browser preview clones nothing — it reports the path the host WOULD use, so the form's
+      // wiring can be exercised without a network or a projects folder. Reported as done rather
+      // than pending because the mock never gates; the real policy engine lives in Swift.
+      const derived = input.repositoryUrl.replace(/\/+$/, "").split("/").pop() ?? "repository";
+      const name = input.directory || derived.replace(/\.git$/, "");
+      return Promise.resolve({
+        clonedPath: `/mock/Projects/${name}`,
+        repositoryName: name,
+        awaitingConfirmation: false
+      });
+    },
+    chooseFolder() {
+      // The browser has no Finder. Reporting the picker as unavailable is the honest answer, and
+      // it also exercises the fallback the macOS host will never show: the form keeps its typed
+      // location field instead of offering a button that does nothing.
+      return Promise.resolve({
+        folderPath: null,
+        relativeFolder: null,
+        cancelled: true,
+        outsideRoot: false,
+        available: false
+      });
+    },
+    listLinearOptions() {
+      // A representative workspace for browser previews of the create-ticket form: one team with a
+      // project and two labels, enough to exercise the team-scoped dropdowns.
+      return Promise.resolve({
+        teams: [
+          {
+            id: "team-nic",
+            key: "NIC",
+            name: "CerebralHelm Development",
+            projects: [{ id: "proj-ch", name: "CerebralHelm" }],
+            labels: [
+              { id: "label-polish", name: "MVP Polish" },
+              { id: "label-debt", name: "Tech Debt" }
+            ]
+          }
+        ],
+        available: true,
+        reason: null
+      });
+    },
+    createLinearIssue(input: { title: string }) {
+      // The browser files nothing. It reports a synthetic identifier — and reports it as created
+      // rather than pending, because the mock never gates; the policy engine lives in Swift.
+      return Promise.resolve({
+        identifier: "NIC-000",
+        url: `https://linear.app/mock/issue/NIC-000/${input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 32)}`,
+        awaitingConfirmation: false
+      });
+    },
+    createSpotifyPlaylist(input: { name: string; isPublic?: boolean }) {
+      // The browser creates nothing; it reports a synthetic id so the form's wiring is exercisable
+      // without an OAuth round trip. Reported as created rather than pending — the mock never gates.
+      return Promise.resolve({
+        playlistId: "mock-playlist",
+        name: input.name,
+        url: "https://open.spotify.com/playlist/mock-playlist",
+        opened: true,
+        awaitingConfirmation: false,
+        needsReconnect: false
+      });
+    },
+    scaffoldProject(input: { name: string; location?: string }) {
+      // The browser writes nothing; it reports the path the host WOULD use so the form's wiring is
+      // exercisable without a projects folder.
+      const parent = input.location ? `${input.location}/` : "";
+      return Promise.resolve({
+        projectPath: `/mock/Projects/${parent}${input.name}`,
+        awaitingConfirmation: false
+      });
+    },
+    listSportsEvents() {
+      // A representative pair for browser previews: one scheduled NFL game and one finished
+      // tournament — the two shapes the report has to render, and the two states August actually
+      // produces.
+      return Promise.resolve({
+        events: [
+          {
+            id: "nfl-1",
+            league: "nfl",
+            name: "Carolina Panthers at Arizona Cardinals",
+            shortName: "CAR VS ARI",
+            state: "pre" as const,
+            detail: "8/6 - 8:00 PM EDT",
+            venue: "Tom Benson Hall of Fame Stadium · Canton",
+            competitors: [
+              {
+                abbreviation: "ARI", name: "Arizona Cardinals", score: "0",
+                color: "a40227", isHome: true, record: "0-0"
+              },
+              {
+                abbreviation: "CAR", name: "Carolina Panthers", score: "0",
+                color: "0085ca", isHome: false, record: "0-0"
+              }
+            ],
+            leaderboard: []
+          },
+          {
+            id: "pga-1",
+            league: "pga",
+            name: "Rocket Classic",
+            shortName: "Rocket Classic",
+            state: "post" as const,
+            detail: "Final",
+            competitors: [],
+            leaderboard: [
+              { order: 1, position: null, name: "Michael Thorbjornsen", score: "-18", thru: null },
+              { order: 2, position: null, name: "Xander Schauffele", score: "-16", thru: null },
+              { order: 3, position: null, name: "Davis Riley", score: "-15", thru: null }
+            ]
+          }
+        ],
+        available: true,
+        reason: null
+      });
+    },
+    listMessageRecipients() {
+      // A representative pair for browser previews: one group thread and one person, which are
+      // the two shapes the picker and the confirmation have to handle.
+      return Promise.resolve({
+        recipients: [
+          { id: "chat123", name: "Ski trip", kind: "chat" as const, groupSize: 6, handle: null },
+          {
+            id: "+15551234567",
+            name: "Jamie Rivera",
+            kind: "participant" as const,
+            groupSize: null,
+            handle: "+15551234567"
+          }
+        ],
+        available: true,
+        reason: null
+      });
+    },
+    sendMessage(input: { target: string; targetName?: string }) {
+      // The browser sends nothing. It reports the SENT shape, which is the normal one: the tool
+      // takes the user-authored exemption, so a message the user typed and pressed Send on does
+      // not re-ask. The gated shape belongs to an agent-proposed send, which the mock never makes.
+      return Promise.resolve({
+        targetName: input.targetName ?? input.target,
+        sent: true,
+        awaitingConfirmation: false
       });
     },
     listCalendars() {
@@ -542,6 +835,142 @@ export function createMockCerebralBridge(
       if (hidden) canvasHidden.add(id);
       else canvasHidden.delete(id);
       return Promise.resolve(canvasStatus());
+    },
+    listNotes(limit?: number) {
+      // A representative library for browser previews of the Setup → Library card (NIC-162):
+      // a captured note and one authored elsewhere (no CerebralHelm id, filename as title).
+      // `total` stays the real size even when `limit` trims the list, mirroring the tool.
+      const notes = [
+        {
+          path: "projects/atlas/kickoff.md",
+          title: "Atlas kickoff",
+          folder: "projects/atlas",
+          updated: "2026-06-23T18:04:00Z"
+        },
+        {
+          path: "inbox/Hull Plating.md",
+          title: "Hull Plating",
+          folder: "inbox",
+          updated: "2026-06-22T09:15:00Z"
+        },
+        // The three notes `listCourses` reports for STAT 240 (quick actions phase 5). They live
+        // here rather than in a course-specific fixture because a course note IS an ordinary note —
+        // and because a preview whose course says "3 notes" and then shows none would teach the
+        // surface's own contract wrong.
+        {
+          path: "areas/school-umass/STAT 240/2026-08-03 Lecture 3 — Bayes.md",
+          title: "Lecture 3 — Bayes",
+          folder: "areas/school-umass/STAT 240",
+          updated: "2026-08-03T15:20:00Z"
+        },
+        {
+          path: "areas/school-umass/STAT 240/2026-07-29 Lecture 2.md",
+          title: "Lecture 2",
+          folder: "areas/school-umass/STAT 240",
+          updated: "2026-07-29T15:10:00Z"
+        },
+        {
+          path: "areas/school-umass/STAT 240/2026-07-22 Lecture 1.md",
+          title: "Lecture 1",
+          folder: "areas/school-umass/STAT 240",
+          updated: "2026-07-22T15:05:00Z"
+        }
+      ];
+      return Promise.resolve({
+        available: true,
+        root: "/Users/you/CerebralHelm/knowledge",
+        total: notes.length,
+        notes: limit === undefined ? notes : notes.slice(0, limit)
+      });
+    },
+    runSystemChecks() {
+      // A representative run for browser previews (quick actions phase 5), streamed rather than
+      // returned — the same shape the host emits, so the preview exercises the real path including
+      // the pending-then-settled transition. The mix is deliberate: a pass, a real failure with a
+      // remediation, and two skips, because "not set up" and "broken" must look different.
+      const checks = [
+        { id: "permission.accessibility", title: "Accessibility", group: "permissions" as const, detail: "Granted." },
+        { id: "surface.obsidian", title: "Obsidian", group: "permissions" as const, detail: "Installed. Your knowledge folder must be added as a vault once — that can't be detected from here." },
+        { id: "integration.linear", title: "Linear", group: "integrations" as const, detail: "Answered." },
+        { id: "integration.newsdata", title: "NewsData", group: "integrations" as const, skipped: "Not set up." },
+        { id: "integration.espn", title: "ESPN scoreboard", group: "integrations" as const, failed: "An ESPN event no longer reports `status.type.state`.", remediation: "Nothing to fix locally: the mapper degrades rather than throwing." },
+        { id: "storage.knowledge", title: "Knowledge root", group: "storage" as const, detail: "/Users/you/Knowledge" }
+      ];
+      const row = (check: (typeof checks)[number], settled: boolean) => ({
+        id: check.id,
+        title: check.title,
+        group: check.group,
+        state: !settled
+          ? ("pending" as const)
+          : "failed" in check
+            ? ("failed" as const)
+            : "skipped" in check
+              ? ("skipped" as const)
+              : ("passed" as const),
+        detail: settled
+          ? ("failed" in check ? check.failed : "skipped" in check ? check.skipped : check.detail)
+          : null,
+        remediation: settled && "remediation" in check ? check.remediation : null,
+        durationMs: settled ? 42 : null
+      });
+      const emitRun = (settled: boolean) =>
+        emit({
+          eventId: `brevt_checks${settled ? "1" : "0"}`,
+          type: "system.checks.changed",
+          schemaVersion: "1.0.0",
+          timestamp: "2026-08-04T17:00:00.000Z",
+          payload: {
+            checks: checks.map((check) => row(check, settled)),
+            complete: settled,
+            failureCount: settled ? 1 : 0
+          }
+        });
+      emitRun(false);
+      // Settles on a turn of the event loop, so a consumer sees the pending state first.
+      setTimeout(() => emitRun(true), 40);
+      return Promise.resolve({ started: true, checkCount: checks.length });
+    },
+    listCourses(limit?: number) {
+      // A representative notebook for browser previews (quick actions phase 5): one course with
+      // notes and one that exists but is empty, because "a course you have not written in yet" is
+      // a real state the picker has to render honestly rather than hide.
+      const courses = [
+        {
+          course: "STAT 240",
+          folder: "areas/school-umass/STAT 240",
+          noteCount: 3,
+          updated: "2026-08-03T15:20:00Z"
+        },
+        {
+          course: "CS 260",
+          folder: "areas/school-umass/CS 260",
+          noteCount: 0,
+          updated: null
+        }
+      ];
+      return Promise.resolve({
+        available: true,
+        root: "areas/school-umass",
+        courses: limit === undefined ? courses : courses.slice(0, limit)
+      });
+    },
+    createCourseNote(input: { course: string; title: string }) {
+      // Mirrors the host's naming so a preview shows the real path shape — date-prefixed, inside
+      // the course folder — rather than a placeholder that hides what will land on disk.
+      const course = input.course.trim();
+      const title = input.title.trim();
+      return Promise.resolve({
+        course,
+        path: `areas/school-umass/${course}/2026-08-04 ${title}.md`,
+        title,
+        created: true,
+        awaitingConfirmation: false
+      });
+    },
+    rebuildKnowledgeIndex() {
+      // The browser preview has no knowledge root and no index, so there is nothing to
+      // rebuild — reported honestly rather than faking a successful rebuild (NIC-163).
+      return Promise.resolve({ rebuilt: false, root: "", noteCount: 0 });
     },
     updateQuickApps(input) {
       // Stand in for the validated override path (NIC-119c): the same
@@ -830,6 +1259,27 @@ export function createMockCerebralBridge(
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);
+      // A live producer's first tick lands shortly after the dashboard subscribes, so the preview
+      // seeds the mail channel the same way rather than baking a count into the bootstrap fixture
+      // — `state.mail` is runtime-only by design, and a fixture would make it look otherwise.
+      if (!mailSeeded) {
+        mailSeeded = true;
+        setTimeout(() => {
+          emit({
+            eventId: "brevt_mail0001",
+            type: "mail.changed",
+            schemaVersion: "1.0.0",
+            timestamp: "2026-08-04T17:00:00.000Z",
+            payload: {
+              state: "ready",
+              unread: 12,
+              unreadCapped: false,
+              unreadScope: "primary",
+              reason: null
+            }
+          });
+        }, 0);
+      }
       return () => {
         listeners.delete(listener);
       };

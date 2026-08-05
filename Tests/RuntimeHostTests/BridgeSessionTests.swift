@@ -44,7 +44,9 @@ private func decode<T: Decodable>(_ response: CerebralHelmBridgeOperationRespons
 }
 
 private struct Receipt: Decodable { let commandId: String; let accepted: Bool }
+private struct CreatedEvent: Decodable { let eventId: String; let awaitingConfirmation: Bool }
 private struct ApplyModeResult: Decodable { let modeId: String; let status: String }
+private struct ClonedRepository: Decodable { let clonedPath: String; let repositoryName: String; let awaitingConfirmation: Bool }
 
 // MARK: - submitCommand
 
@@ -80,6 +82,205 @@ func submitCommandRequiresInput() async throws {
     let response = await session.execute(operationRequest(.submitCommand, #"{"rawInput":""}"#))
     #expect(response.status == .error)
     #expect(response.error?.category == .invalidInput)
+}
+
+// MARK: - suggestCommands (NIC-168)
+
+private struct Suggestion: Decodable {
+    let command: String
+    let label: String
+    let detail: String?
+    let kind: String
+    let requiresArgument: Bool
+    let available: Bool
+    let unavailableReason: String?
+}
+private struct Suggestions: Decodable { let suggestions: [Suggestion] }
+
+@Test("suggestCommands resolves a typo'd app name, stamped honestly unavailable pre-Mac")
+func suggestCommandsResolvesTypo() async throws {
+    let session = try makeSession() // default capabilities: every native one unavailable
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"vscoed"}"#))
+
+    #expect(response.status == .ok)
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "open vscode")
+    #expect(top.label == "Visual Studio Code")
+    #expect(top.kind == "app")
+    #expect(top.available == false)
+    #expect(top.unavailableReason?.isEmpty == false)
+}
+
+@Test("suggestCommands marks an app runnable when native.app.open is available")
+func suggestCommandsHonorsCapabilities() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        capabilities: [CerebralContracts.Capability(
+            available: true, degradedReason: nil, id: "native.app.open", source: .native
+        )]
+    )
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"vscode"}"#))
+
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "open vscode")
+    #expect(top.available)
+    #expect(top.unavailableReason == nil)
+}
+
+@Test("suggestCommands carries mode display labels, and modes are never capability-gated")
+func suggestCommandsModeLabels() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"developer"}"#))
+
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "mode developer")
+    #expect(top.label == "Developer")
+    #expect(top.kind == "mode")
+    #expect(top.available)
+}
+
+@Test("suggestCommands with an empty query lists the grammar and honors the limit")
+func suggestCommandsEmptyQuery() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"","limit":3}"#))
+
+    let suggestions = try decode(response, as: Suggestions.self).suggestions
+    #expect(suggestions.count == 3)
+    #expect(suggestions.first?.command == "open ")
+    #expect(suggestions.first?.kind == "pattern")
+    #expect(suggestions.first?.requiresArgument == true)
+    #expect(suggestions.first?.available == true)
+}
+
+@Test("suggestCommands without a query string is an invalid-input error")
+func suggestCommandsRequiresQuery() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.suggestCommands, #"{}"#))
+
+    #expect(response.status == .error)
+    #expect(response.error?.category == .invalidInput)
+}
+
+@Test("empty-query suggestions lead with this session's recent direct commands (PRD §9.4)")
+func suggestCommandsRecentsFirst() async throws {
+    let session = try makeSession()
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"mode developer"}"#))
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"open vscode"}"#))
+    // A rejected input and a free-text capture never enter the recents surface.
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"tell me a joke"}"#))
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"note secret plans"}"#))
+
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":""}"#))
+    let suggestions = try decode(response, as: Suggestions.self).suggestions
+
+    // Newest accepted first, with its real label — and capability-stamped like
+    // any other suggestion (apps are honestly unavailable pre-Mac).
+    #expect(suggestions.first?.command == "open vscode")
+    #expect(suggestions.first?.label == "Visual Studio Code")
+    #expect(suggestions.first?.available == false)
+    #expect(suggestions.dropFirst().first?.command == "mode developer")
+    #expect(!suggestions.contains { $0.command == "note secret plans" })
+    #expect(!suggestions.contains { $0.command == "tell me a joke" })
+    // The grammar listing still follows the recents.
+    #expect(suggestions.contains { $0.command == "open " })
+}
+
+// MARK: - suggestCommands app-discovery refresh (NIC-168 installed-app completeness)
+
+/// Counts discovery scans so the suggest-triggered throttle is observable.
+private final class CountingAppDiscovery: AppDiscoveryCapability, @unchecked Sendable {
+    private let inner = MockAppDiscoveryCapability()
+    private let lock = NSLock()
+    private var count = 0
+    var scans: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+    private func recordScan() {
+        lock.lock()
+        count += 1
+        lock.unlock()
+    }
+    func listApplications(includeIcons: Bool) async throws -> AppDiscoveryResult {
+        recordScan()
+        return try await inner.listApplications(includeIcons: includeIcons)
+    }
+}
+
+/// A workspace-bound macOS-phase session whose discovery adapter counts its scans.
+/// `discoveryAvailable` drives the session capability map, not the adapter itself —
+/// exactly the gate the suggest-triggered refresh consults.
+private func makeDiscoverySession(
+    discovery: CountingAppDiscovery, discoveryAvailable: Bool = true
+) throws -> BridgeSession {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let base = ToolCapabilities.mocks()
+    let runtime = try makeCommandRuntime(
+        paths: paths,
+        phase: .macOS,
+        capabilities: ToolCapabilities(
+            app: base.app, url: base.url, process: base.process,
+            systemStatus: base.systemStatus, appDiscovery: discovery
+        )
+    )
+    return BridgeSession(
+        runtime: runtime,
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        capabilities: discoveryAvailable
+            ? [
+                CerebralContracts.Capability(
+                    available: true, degradedReason: nil, id: "native.apps.list", source: .native
+                ),
+                CerebralContracts.Capability(
+                    available: true, degradedReason: nil, id: "native.app.open", source: .native
+                ),
+            ]
+            : []
+    )
+}
+
+@Test("suggestCommands mints discovered apps so any installed app is matchable by name")
+func suggestCommandsDiscoversInstalledApps() async throws {
+    let discovery = CountingAppDiscovery()
+    let session = try makeDiscoverySession(discovery: discovery)
+
+    // Safari has no shipped reference; the first suggest query discovers, mints,
+    // and ranks it in one pass.
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"safari"}"#))
+
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "open safari")
+    #expect(top.kind == "app")
+    #expect(top.available)
+    #expect(discovery.scans == 1)
+}
+
+@Test("suggest-triggered discovery is throttled — repeated queries never rescan")
+func suggestCommandsDiscoveryThrottled() async throws {
+    let discovery = CountingAppDiscovery()
+    let session = try makeDiscoverySession(discovery: discovery)
+
+    _ = await session.execute(operationRequest(.suggestCommands, #"{"query":"saf"}"#))
+    _ = await session.execute(operationRequest(.suggestCommands, #"{"query":"safar"}"#))
+    _ = await session.execute(operationRequest(.suggestCommands, #"{"query":"mail"}"#))
+
+    #expect(discovery.scans == 1)
+}
+
+@Test("suggestCommands skips discovery entirely when the capability is unavailable")
+func suggestCommandsSkipsDiscoveryWhenUnavailable() async throws {
+    let discovery = CountingAppDiscovery()
+    let session = try makeDiscoverySession(discovery: discovery, discoveryAvailable: false)
+
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"vscode"}"#))
+
+    // Reference-catalog suggestions still flow; no doomed scan ran.
+    #expect(response.status == .ok)
+    #expect(discovery.scans == 0)
 }
 
 // MARK: - applyMode
@@ -404,6 +605,60 @@ func openLayoutEmitsSession() async throws {
     #expect(windows?.contains { $0["ref"] as? String == "claude-desktop" } == true)
     let toggle = sess?["quickToggle"] as? [String: Any]
     #expect(toggle?["activeRef"] as? String == "vscode")
+}
+
+@Test("a submitted `run open-<mode>-layout` enters the layout session, not the bus workflow (unification)")
+func submittedLayoutOpenEntersSession() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"run open-developer-layout"}"#)
+    )
+
+    let receipt = try decode(response, as: Receipt.self)
+    #expect(receipt.accepted)
+    // The session entry is the executor-bypass path — no bus command exists.
+    #expect(receipt.commandId.isEmpty)
+    let events = layoutSessionEvents(emitted)
+    #expect(events.count >= 1)
+    let sess = (events.first?["payload"] as? [String: Any])?["session"] as? [String: Any]
+    #expect(sess?["modeId"] as? String == "developer")
+
+    // The entry lands in the recent-commands surface like any accepted command.
+    let suggest = await session.execute(operationRequest(.suggestCommands, #"{"query":""}"#))
+    let top = try #require(try decode(suggest, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "run open-developer-layout")
+    #expect(top.label == "Open Developer Layout")
+}
+
+@Test("a layout-open workflow for a mode WITHOUT an authored layout still runs through the bus")
+func submittedLayoutOpenWithoutLayoutStaysOnBus() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // Executive ships no authored layout (NIC-142) but has a static workflow file.
+    let response = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"run open-executive-layout"}"#)
+    )
+
+    let receipt = try decode(response, as: Receipt.self)
+    #expect(receipt.accepted)
+    // The bus path minted a real command id; no layout session was started.
+    #expect(!receipt.commandId.isEmpty)
+    #expect(layoutSessionEvents(emitted).isEmpty)
 }
 
 @Test("openLayout for a mode with no authored layout is an honest error")
@@ -1927,6 +2182,118 @@ func closeAllWindowsGatesOnConfirmation() async throws {
     #expect(disclosure?["risk"] as? String == "destructive")
 }
 
+// MARK: - Create event (quick actions phase 3)
+
+@Test("a user-authored createCalendarEvent writes one-click; an agent-proposed one confirms")
+func createCalendarEventHonorsProvenance() async throws {
+    // The provenance tier's motivating case, end to end: a person who filled in the form and
+    // pressed Create has already authored exactly what will happen, so re-confirming would
+    // restate what they just typed. The same call from an agent still gates.
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let payload = #"""
+    {"title":"Board prep","startsAt":"2026-08-03T16:00","endsAt":"2026-08-03T17:00"}
+    """#
+    let response = await session.execute(operationRequest(.createCalendarEvent, payload))
+    #expect(response.status == .ok)
+
+    // It reached the executor instead of stopping at a confirmation: the descriptor's
+    // `allow_external_write_when_user_authored` key plus `.dashboard` provenance exempts it.
+    let created = try decode(response, as: CreatedEvent.self)
+    #expect(created.awaitingConfirmation == false, "a user-authored write must not gate")
+    #expect(!created.eventId.isEmpty)
+}
+
+@Test("createCalendarEvent refuses a backwards range and a blank title before reaching the bus")
+func createCalendarEventValidatesInput() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let backwards = await session.execute(operationRequest(
+        .createCalendarEvent,
+        #"{"title":"x","startsAt":"2026-08-03T17:00","endsAt":"2026-08-03T16:00"}"#
+    ))
+    #expect(backwards.status == .error)
+
+    let blank = await session.execute(operationRequest(
+        .createCalendarEvent,
+        #"{"title":"   ","startsAt":"2026-08-03T16:00","endsAt":"2026-08-03T17:00"}"#
+    ))
+    #expect(blank.status == .error)
+}
+
+// MARK: - Clone repository (quick actions phase 4)
+
+@Test("cloneRepository reaches git.clone without a confirmation, and refuses a blank URL")
+func cloneRepositoryRunsWithoutConfirmation() async throws {
+    // The whole point of a narrow typed tool instead of a hook wrapper: a hook is shell-class and
+    // confirms every run, while git.clone is local_write and runs one-click. The clone itself
+    // fails here — the temporary workspace has no honest adapter bound — which is exactly what
+    // proves it reached the executor rather than stopping at a confirmation.
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let response = await session.execute(operationRequest(
+        .cloneRepository,
+        #"{"repositoryUrl":"https://github.com/owner/repo.git","directory":"repo"}"#
+    ))
+    // Either it cloned or it honestly reported that it did not — never a pending confirmation.
+    if response.status == .ok {
+        let cloned = try decode(response, as: ClonedRepository.self)
+        #expect(cloned.awaitingConfirmation == false, "a local_write clone must not gate")
+        #expect(!cloned.repositoryName.isEmpty)
+    } else {
+        #expect(response.error?.code == "repository_not_cloned")
+    }
+
+    let blank = await session.execute(operationRequest(.cloneRepository, #"{"repositoryUrl":"   "}"#))
+    #expect(blank.status == .error)
+}
+
+// MARK: - Shut down (quick actions phase 1)
+
+@Test("the shut-down quick action gates on a destructive confirmation before quitting")
+func shutDownGatesOnConfirmation() async throws {
+    // Both the Executive `shut-down` slot and the Settings quit button submit `run shut-down`,
+    // so this covers the single path either one takes. app.quit is macOS-only, hence the
+    // macOS-phase composition.
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"run shut-down","source":"dashboard"}"#)
+    )
+    #expect(response.status == .ok)
+
+    // The app must never quit on the first press: the plan's aggregate risk is the
+    // strictest step (app.quit → destructive), which is never exemptible at any provenance,
+    // so a confirmation disclosure is raised instead.
+    let confirmations = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "confirmation.changed" }
+    let disclosure = (confirmations.last?["payload"] as? [String: Any])?["confirmation"] as? [String: Any]
+    #expect(disclosure?["risk"] as? String == "destructive")
+}
+
 // MARK: - Window navigator (NIC-143)
 
 private struct WindowInventoryResult: Decodable {
@@ -2083,4 +2450,266 @@ func resetCanvasReturnsFreshState() async throws {
     #expect(status.lastScrapedAt == nil)
     #expect(status.courseCount == 0)
     #expect(status.deadlineCount == 0)
+}
+
+// MARK: - Rebuild knowledge index (NIC-163)
+
+private struct KnowledgeRebuildDecode: Decodable {
+    let rebuilt: Bool
+    let root: String
+    let noteCount: Int
+}
+
+@Test("rebuildKnowledgeIndex reports the root it read and how many notes it indexed (NIC-163)")
+func rebuildKnowledgeIndexReportsCoverage() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        knowledgeRebuild: { KnowledgeRebuildInfo(root: "/Users/fixture/knowledge", noteCount: 42) }
+    )
+
+    let response = await session.execute(operationRequest(.rebuildKnowledgeIndex, "{}"))
+
+    #expect(response.status == .ok)
+    let result = try decode(response, as: KnowledgeRebuildDecode.self)
+    #expect(result.rebuilt)
+    #expect(result.root == "/Users/fixture/knowledge")
+    #expect(result.noteCount == 42)
+}
+
+@Test("rebuildKnowledgeIndex reports unavailable without a knowledge composition, never a fake rebuild")
+func rebuildKnowledgeIndexUnavailableWithoutHost() async throws {
+    let session = try makeSession() // no knowledgeRebuild closure injected
+
+    let response = await session.execute(operationRequest(.rebuildKnowledgeIndex, "{}"))
+
+    #expect(response.status == .ok)
+    let result = try decode(response, as: KnowledgeRebuildDecode.self)
+    // The distinction that matters: nothing was rebuilt, and the response says so
+    // rather than reporting a successful rebuild of zero notes.
+    #expect(result.rebuilt == false)
+    #expect(result.noteCount == 0)
+}
+
+@Test("a failed rebuild is reported as a failure that left the notes alone")
+func rebuildKnowledgeIndexFailureIsStructured() async throws {
+    struct RebuildFailure: Error {}
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        knowledgeRebuild: { throw RebuildFailure() }
+    )
+
+    let response = await session.execute(operationRequest(.rebuildKnowledgeIndex, "{}"))
+
+    #expect(response.status == .error)
+    #expect(response.error?.code == "knowledge_rebuild_failed")
+    // The user's Markdown is the source of truth, so a failed rebuild costs search
+    // results and nothing else — the message must say so.
+    #expect(response.error?.message.contains("notes are unchanged") == true)
+}
+
+// MARK: - List notes (NIC-162)
+
+private struct ListNotesDecode: Decodable {
+    struct Item: Decodable {
+        let path: String
+        let title: String
+        let folder: String
+        let updated: String?
+    }
+    let available: Bool
+    let root: String
+    let total: Int
+    let notes: [Item]
+}
+
+@Test("listNotes reads the durable Markdown through the bus, including notes CerebralHelm never wrote")
+func listNotesReadsTheKnowledgeRoot() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+
+    // One captured through the runtime, one written by hand — the Obsidian case.
+    _ = await session.execute(operationRequest(.captureNote, #"{"title":"Quarterly plan","body":"targets"}"#))
+    let external = paths.knowledgeRoot.appendingPathComponent("inbox/Hull Plating.md")
+    try FileManager.default.createDirectory(
+        at: external.deletingLastPathComponent(), withIntermediateDirectories: true
+    )
+    try Data("rivets\n".utf8).write(to: external)
+
+    let response = await session.execute(operationRequest(.listNotes, "{}"))
+
+    #expect(response.status == .ok)
+    let library = try decode(response, as: ListNotesDecode.self)
+    #expect(library.available)
+    #expect(library.root == paths.knowledgeRoot.path)
+    #expect(library.total == 2)
+    let handWritten = try #require(library.notes.first { $0.path == "inbox/Hull Plating.md" })
+    #expect(handWritten.title == "Hull Plating")   // no frontmatter: the filename is the title
+    #expect(handWritten.folder == "inbox")
+}
+
+@Test("a limit trims the notes but never the reported total (NIC-162)")
+func listNotesTotalIgnoresTheLimit() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+    for index in 0..<3 {
+        _ = await session.execute(
+            operationRequest(.captureNote, #"{"title":"Note \#(index)","body":"b"}"#)
+        )
+    }
+
+    let response = await session.execute(operationRequest(.listNotes, #"{"limit":1}"#))
+
+    let library = try decode(response, as: ListNotesDecode.self)
+    #expect(library.notes.count == 1)
+    // The card shows one note but must still say how many there are.
+    #expect(library.total == 3)
+}
+
+@Test("an unreadable knowledge root is unavailable, never an empty library (NIC-162)")
+func listNotesUnavailableRootIsNotEmpty() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+    // The root has never been created: nothing to read, and "no notes yet" would be a lie.
+    try? FileManager.default.removeItem(at: paths.knowledgeRoot)
+
+    let response = await session.execute(operationRequest(.listNotes, "{}"))
+
+    #expect(response.status == .ok)
+    let library = try decode(response, as: ListNotesDecode.self)
+    #expect(library.available == false)
+    #expect(library.total == 0)
+}
+
+// MARK: - course notebooks (quick actions phase 5)
+
+private struct CourseDecode: Decodable {
+    struct Item: Decodable {
+        let course: String
+        let folder: String
+        let noteCount: Int
+        let updated: String?
+    }
+    let available: Bool
+    let root: String
+    let courses: [Item]
+}
+private struct CreatedCourseNote: Decodable {
+    let course: String
+    let path: String
+    let title: String
+    let created: Bool
+    let awaitingConfirmation: Bool
+}
+
+@Test("an existing vault with no courses lists none; a missing root is unavailable, not empty")
+func listCoursesDistinguishesEmptyFromMissing() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+
+    // A knowledge root that has never been created is NOT an empty library — the same distinction
+    // `listNotes` draws, so "no courses yet" and "your vault is gone" never look the same.
+    let missing = try decode(
+        await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self
+    )
+    #expect(!missing.available)
+
+    // A real vault with nothing school-related in it: available, and empty.
+    try FileManager.default.createDirectory(at: paths.knowledgeRoot, withIntermediateDirectories: true)
+    let empty = try decode(
+        await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self
+    )
+    #expect(empty.available)
+    #expect(empty.courses.isEmpty)
+    #expect(empty.root == "areas/school-umass")
+}
+
+@Test("taking a note mints its course, and the note lists as an ordinary note (phase 5)")
+func createCourseNoteMintsAndIsAnOrdinaryNote() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+
+    let response = await session.execute(operationRequest(
+        .createCourseNote, #"{"course":"STAT 240 - Probability (Fall 2026)","title":"Lecture 3"}"#
+    ))
+    let created = try decode(response, as: CreatedCourseNote.self)
+    #expect(created.created)
+    #expect(!created.awaitingConfirmation)
+    // The course as RESOLVED — the derived code, not the long Canvas title that was submitted.
+    #expect(created.course == "STAT 240")
+    #expect(created.path.hasPrefix("areas/school-umass/STAT 240/"))
+
+    // The course exists because its FOLDER does; nothing wrote a stored mapping.
+    let courses = try decode(await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self)
+    #expect(courses.courses.count == 1)
+    #expect(courses.courses.first?.course == "STAT 240")
+    #expect(courses.courses.first?.noteCount == 1)
+    #expect(courses.courses.first?.folder == "areas/school-umass/STAT 240")
+
+    // And it is an ordinary note: `listNotes`, which knows nothing about courses, lists it — which
+    // is the whole reason a course is just a folder.
+    let library = try decode(await session.execute(operationRequest(.listNotes, "{}")), as: ListNotesDecode.self)
+    let entry = try #require(library.notes.first { $0.path == created.path })
+    #expect(entry.title == "Lecture 3")
+    #expect(entry.folder == "areas/school-umass/STAT 240")
+
+    // Really on disk under the workspace's knowledge root, not merely reported.
+    let fileURL = paths.knowledgeRoot.appendingPathComponent(created.path)
+    let content = try String(contentsOf: fileURL, encoding: .utf8)
+    #expect(content.contains("# Lecture 3"))
+    #expect(content.contains("## Notes"))
+    #expect(content.contains("course: STAT 240"))
+}
+
+@Test("a repeat create returns the existing note rather than overwriting what was typed into it")
+func createCourseNoteNeverOverwritesThroughTheBus() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+    let payload = #"{"course":"STAT 240","title":"Lecture 3"}"#
+
+    let first = try decode(
+        await session.execute(operationRequest(.createCourseNote, payload)), as: CreatedCourseNote.self
+    )
+    let fileURL = paths.knowledgeRoot.appendingPathComponent(first.path)
+    try Data("# Lecture 3\n\nwhat I actually wrote\n".utf8).write(to: fileURL)
+
+    let second = try decode(
+        await session.execute(operationRequest(.createCourseNote, payload)), as: CreatedCourseNote.self
+    )
+
+    // Reported as NOT created, so the surface never claims a new note it did not make.
+    #expect(!second.created)
+    #expect(second.path == first.path)
+    #expect(try String(contentsOf: fileURL, encoding: .utf8).contains("what I actually wrote"))
+}
+
+@Test("a create with nothing to write is rejected, and mints nothing on the way")
+func createCourseNoteRejectsEmptyInput() async throws {
+    let session = try makeSession()
+
+    for payload in [
+        #"{"course":"STAT 240","title":"   "}"#,
+        #"{"course":"  ","title":"Lecture"}"#,
+        #"{"title":"Lecture"}"#
+    ] {
+        let response = await session.execute(operationRequest(.createCourseNote, payload))
+        #expect(response.status == .error, "\(payload) must be rejected")
+    }
+    let courses = try decode(await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self)
+    #expect(courses.courses.isEmpty)
 }

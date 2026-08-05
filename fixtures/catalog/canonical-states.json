@@ -30,7 +30,7 @@
             "state": "ready",
             "cpuPercent": 18,
             "memoryPercent": 50,
-            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "linkMbps": 120 },
+            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "linkMbps": 120, "wifiPower": "on", "signalRssi": -48 },
             "battery": { "state": "ready", "label": "82%", "percent": 82 }
           },
           "news": {
@@ -91,7 +91,7 @@
             "state": "ready",
             "cpuPercent": 22,
             "memoryPercent": 58,
-            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "linkMbps": 120 },
+            "network": { "state": "ready", "label": "Wi-Fi · 120 Mbps", "linkMbps": 120, "wifiPower": "on", "signalRssi": -65 },
             "battery": { "state": "ready", "label": "47%", "percent": 47 }
           },
           "news": {
@@ -191,7 +191,7 @@
             "state": "ready",
             "cpuPercent": 16,
             "memoryPercent": 44,
-            "network": { "state": "ready", "label": "Wi-Fi · 90 Mbps", "linkMbps": 90 },
+            "network": { "state": "ready", "label": "Wi-Fi · 90 Mbps", "linkMbps": 90, "wifiPower": "on", "signalRssi": -78 },
             "battery": { "state": "ready", "label": "88%", "percent": 88 }
           },
           "news": {
@@ -252,7 +252,7 @@
             "state": "ready",
             "cpuPercent": 12,
             "memoryPercent": 40,
-            "network": { "state": "ready", "label": "Wi-Fi · 200 Mbps", "linkMbps": 200 },
+            "network": { "state": "ready", "label": "Wi-Fi · 200 Mbps", "linkMbps": 200, "wifiPower": "on", "signalRssi": -52 },
             "battery": { "state": "ready", "label": "15%", "percent": 15 }
           },
           "news": {

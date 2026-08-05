@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/youtube-search-output.schema.json",
+  "title": "CerebralHelm YouTube Search Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["youtubeQuery", "youtubeOpened", "youtubeResolvedURL"],
+  "properties": {
+    "youtubeQuery": {
+      "type": "string",
+      "minLength": 1
+    },
+    "youtubeOpened": {
+      "type": "boolean"
+    },
+    "youtubeResolvedURL": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The YouTube results URL that was opened."
+    }
+  }
+}

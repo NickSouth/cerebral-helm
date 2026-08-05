@@ -3,12 +3,16 @@ import "../app.css";
 import "../styles/responsive.css";
 import "../shell/shell.css";
 import "../shell/settings/settings.css";
+import "../reports/reports.css";
+import "../inputs/inputs.css";
 import { DashboardShell } from "../shell/DashboardShell";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
 import { ActionStatusProvider } from "../state/ActionStatusProvider";
 import { SettingsProvider } from "../state/SettingsProvider";
 import { AppearanceProvider } from "../state/AppearanceProvider";
+import { ReportProvider } from "../state/ReportProvider";
+import { InputProvider } from "../state/InputProvider";
 import { ThemeProvider } from "./ThemeProvider";
 import { createDashboardRuntime, readStateNameFromLocation } from "../state/bootstrapStore";
 import { withModeWave } from "../shell/modeWave";
@@ -33,10 +37,14 @@ export function AppRoot() {
           <ThemeProvider>
             <ActionStatusProvider>
               <SettingsProvider>
-                <a className="skip-link" href="#main">
-                  Skip to main content
-                </a>
-                <DashboardShell />
+                <ReportProvider>
+                  <InputProvider>
+                    <a className="skip-link" href="#main">
+                      Skip to main content
+                    </a>
+                    <DashboardShell />
+                  </InputProvider>
+                </ReportProvider>
               </SettingsProvider>
             </ActionStatusProvider>
           </ThemeProvider>

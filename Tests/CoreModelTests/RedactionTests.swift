@@ -61,6 +61,62 @@ func noteBodySecretIsRedacted() throws {
     #expect(text.contains("note.capture"))
 }
 
+@Test("a note read never writes the note's contents into the tool-call record (NIC-162)")
+func noteReadContentsAreRedacted() throws {
+    let canary = "CANARY-note-2274"
+    let input = Data(#"{"path":"inbox/ch-idea-001.md"}"#.utf8)
+    let output = Data("""
+    {"root":"/Users/fixture/knowledge","path":"inbox/ch-idea-001.md","title":"Fixture note",\
+    "noteId":"ch-idea-001","frontmatter":{"project":"\(canary)"},"body":"\(canary)"}
+    """.utf8)
+    let result = ToolExecutionResult(toolID: "note.read", status: .success, output: output, error: nil, durationMs: 2)
+
+    let record = ToolCallRecorder.record(
+        descriptor: try descriptor("note.read"),
+        input: input,
+        result: result,
+        startedAt: Date(timeIntervalSinceReferenceDate: 0),
+        completedAt: Date(timeIntervalSinceReferenceDate: 0)
+    )
+    let text = String(decoding: try record.jsonData(), as: UTF8.self)
+
+    // The body and frontmatter are what a note actually says; neither reaches the log.
+    #expect(!text.contains(canary))
+    #expect(text.contains(SchemaRedactor.marker))
+    // What the audit trail needs survives: which note was read, and that it was.
+    // (The encoder escapes `/`, so match on the unescaped segments.)
+    #expect(text.contains("ch-idea-001.md"))
+    #expect(text.contains("note.read"))
+}
+
+@Test("a note listing never writes the library inventory into the tool-call record (NIC-162)")
+func noteListInventoryIsRedacted() throws {
+    let canary = "CANARY-title-8815"
+    let input = Data(#"{"limit":50}"#.utf8)
+    let output = Data("""
+    {"root":"/Users/fixture/knowledge","truncated":false,\
+    "notes":[{"path":"inbox/\(canary).md","title":"\(canary)","folder":"inbox"}]}
+    """.utf8)
+    let result = ToolExecutionResult(toolID: "note.list", status: .success, output: output, error: nil, durationMs: 4)
+
+    let record = ToolCallRecorder.record(
+        descriptor: try descriptor("note.list"),
+        input: input,
+        result: result,
+        startedAt: Date(timeIntervalSinceReferenceDate: 0),
+        completedAt: Date(timeIntervalSinceReferenceDate: 0)
+    )
+    let text = String(decoding: try record.jsonData(), as: UTF8.self)
+
+    // A listing is an inventory of what the user thinks about — titles and paths
+    // are themselves sensitive, so the whole array goes.
+    #expect(!text.contains(canary))
+    #expect(text.contains(SchemaRedactor.marker))
+    // The call itself stays auditable: which root was listed, and that it was.
+    #expect(text.contains("note.list"))
+    #expect(text.contains("knowledge"))
+}
+
 @Test("a secret in hook output is redacted in the tool-call record (AC-34.1)")
 func hookOutputSecretIsRedacted() throws {
     let canary = "CANARY-out-4410"

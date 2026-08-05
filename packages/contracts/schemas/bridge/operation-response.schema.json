@@ -4,7 +4,15 @@
   "title": "CerebralHelm Bridge Operation Response",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "messageId", "type", "operation", "status", "payload", "error"],
+  "required": [
+    "schemaVersion",
+    "messageId",
+    "type",
+    "operation",
+    "status",
+    "payload",
+    "error"
+  ],
   "properties": {
     "schemaVersion": {
       "type": "string",
@@ -56,14 +64,35 @@
         "surfaceWindow",
         "closeWindow",
         "listCalendars",
+        "createCalendarEvent",
+        "cloneRepository",
+        "chooseFolder",
+        "listLinearOptions",
+        "listSportsEvents",
+        "listMessageRecipients",
+        "sendMessage",
+        "createLinearIssue",
+        "createSpotifyPlaylist",
+        "scaffoldProject",
         "getCanvasStatus",
         "resetCanvas",
-        "setCanvasItemHidden"
+        "setCanvasItemHidden",
+        "suggestCommands",
+        "rebuildKnowledgeIndex",
+        "listNotes",
+        "listCourses",
+        "createCourseNote",
+        "runSystemChecks",
+        "connectGmail",
+        "listUnreadMail"
       ]
     },
     "status": {
       "type": "string",
-      "enum": ["ok", "error"]
+      "enum": [
+        "ok",
+        "error"
+      ]
     },
     "payload": {
       "type": "object",
@@ -71,8 +100,12 @@
     },
     "error": {
       "anyOf": [
-        { "$ref": "../commands/structured-error.schema.json" },
-        { "type": "null" }
+        {
+          "$ref": "../commands/structured-error.schema.json"
+        },
+        {
+          "type": "null"
+        }
       ]
     }
   }

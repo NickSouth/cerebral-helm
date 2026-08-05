@@ -1,9 +1,0 @@
-{
-  "handlers": ["captureNote"],
-  "wiredActions": {
-    "capture-note": { "handler": "captureNote" },
-    "open-developer-layout": { "workflow": "open-developer-layout" },
-    "open-school-layout": { "workflow": "open-school-layout" },
-    "open-entertainment-layout": { "workflow": "open-entertainment-layout" }
-  }
-}

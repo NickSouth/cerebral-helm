@@ -226,8 +226,41 @@ describe("MockCerebralBridge", () => {
     expect(settings.appearance.assistantName).toBe("Heimlich");
     expect(settings.confirmAllActions).toBe(false);
     expect(settings.modeColors).toEqual({});
-    expect(settings.calendarModeMap).toEqual({});
+    // Representative, not empty: previews of the calendar→mode mapping and of `create-event`'s
+    // mode-aware default both need a map that actually maps something.
+    expect(settings.calendarModeMap).toEqual({ "cal-work": "executive", "cal-school": "school" });
     expect(settings.workspace.mainDisplayId).toBe("system-primary");
     expect(settings.schemaVersion).toBe("1.0.0");
+  });
+
+  it("suggestCommands ranks catalog matches and keeps app rows honestly unavailable (NIC-168)", async () => {
+    const bridge = createMockCerebralBridge();
+
+    const matched = await bridge.suggestCommands({ query: "ter" });
+    expect(matched.suggestions[0]?.command).toBe("open terminal");
+    expect(matched.suggestions[0]?.kind).toBe("app");
+    // The browser preview cannot open apps — the row is visibly unavailable (NIC-58).
+    expect(matched.suggestions[0]?.available).toBe(false);
+    expect(matched.suggestions[0]?.unavailableReason).toContain("macOS host");
+
+    const empty = await bridge.suggestCommands({ query: "" });
+    expect(empty.suggestions.length).toBeGreaterThan(0);
+    expect(empty.suggestions.every((suggestion) => suggestion.kind === "pattern")).toBe(true);
+
+    const limited = await bridge.suggestCommands({ query: "mode", limit: 2 });
+    expect(limited.suggestions).toHaveLength(2);
+  });
+
+  it("empty-query suggestions lead with this session's recent commands (NIC-168 / PRD §9.4)", async () => {
+    const bridge = createMockCerebralBridge();
+
+    await bridge.submitCommand({ rawInput: "mode developer", source: "dashboard" });
+    await bridge.submitCommand({ rawInput: "open terminal", source: "dashboard" });
+
+    const result = await bridge.suggestCommands({ query: "" });
+    expect(result.suggestions[0]?.command).toBe("open terminal");
+    expect(result.suggestions[1]?.command).toBe("mode developer");
+    // The grammar templates still follow the recents.
+    expect(result.suggestions.some((suggestion) => suggestion.kind === "pattern")).toBe(true);
   });
 });

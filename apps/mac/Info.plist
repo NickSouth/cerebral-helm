@@ -21,9 +21,13 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>CerebralHelm uses Apple Events to focus the browser tab it already opened for a link, instead of opening a duplicate.</string>
+	<string>CerebralHelm uses Apple Events to focus a browser tab it already opened for a link instead of duplicating it, and to send a message from the Send text action. Every message is confirmed first, with the recipient and the full text shown.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>CerebralHelm reads your contacts so you can pick who a message goes to in the Send text action. Contacts are never sent anywhere; they are only listed for you to choose from.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>CerebralHelm reads your calendar events to show your upcoming schedule in the dashboard, filtered by mode.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>CerebralHelm adds events you create from the Create Event action to your calendar. It does not read your events with this permission.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>CerebralHelm uses your location to show the current weather for where you are in the dashboard.</string>
 	<key>NSHighResolutionCapable</key>

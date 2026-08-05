@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_sendMessageReq00000001",
+  "type": "bridge.operation.request",
+  "operation": "sendMessage",
+  "payload": {
+    "body": "Running ten minutes late.",
+    "target": "+15551234567",
+    "targetKind": "participant",
+    "targetName": "Jamie Rivera"
+  }
+}
