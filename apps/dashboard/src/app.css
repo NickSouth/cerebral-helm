@@ -278,6 +278,26 @@ body {
   outline: none;
 }
 
+/* Cursor affordance for every control, DERIVED from its actual enabled state instead of being
+   restated per component. A control that hardcodes `cursor: not-allowed` on its base rule keeps
+   claiming to be unavailable after its adapter lands — which is exactly how the Quick Apps tiles
+   and "View full schedule" ended up showing the no-entry cursor while working perfectly (NIC-173).
+   Deriving it here means a control can never disagree with itself again.
+
+   Zero-specificity :where() (the same shape as the focus ring above) so this only ever fills a
+   gap: any component rule still wins. That matters, because the shell deliberately runs two
+   disabled conventions — `not-allowed` for a control the user might otherwise press, and
+   `default` for a row that is merely inert (`.news__link:disabled`, `.widget-list__button:disabled`,
+   the pager arrows). Those overrides keep working untouched. */
+:where(button, [role="button"]) {
+  cursor: pointer;
+}
+
+:where(button, [role="button"]):disabled,
+:where(button, [role="button"])[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 /* Skip link: hidden until focused, revealed via transform so it never adds scroll. */
 .skip-link {
   position: absolute;

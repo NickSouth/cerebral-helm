@@ -15,8 +15,10 @@ import { useInputs } from "../state/InputProvider";
 import { useActionStatus } from "../state/ActionStatusProvider";
 import { useSettings } from "../state/SettingsProvider";
 import { useUiPosture } from "../state/useUiPosture";
+import { useSurfaceReceded } from "../state/surfacePresence";
+import { useStartupIntro } from "./useStartupIntro";
 import { useAmbientBeam } from "./useAmbientBeam";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 /** The native shell's intent channel into the dashboard (NIC-76 window-role choreography). */
 interface ShellIntentWindow extends Window {
@@ -53,7 +55,43 @@ export function DashboardShell() {
   const inputs = useInputs();
   const posture = useUiPosture();
   const shellRef = useRef<HTMLDivElement>(null);
-  useAmbientBeam(shellRef);
+  // While receded the sweep is confined to the bottom bar (NIC-152) — the bar is exempt from the
+  // whole treatment, and travelling light across every panel outline is the loudest thing here.
+  useAmbientBeam(shellRef, useSurfaceReceded());
+  // The launch sequence starts once real data has replaced the skeleton, so it introduces the
+  // dashboard itself rather than playing over a loading state (NIC-157).
+  const intro = useStartupIntro(!posture.loading);
+
+  // Measure how far the Heimlich panel sits from each edge of the SCREEN, so the launch sequence
+  // can start the field at full viewport width and close it in to the panel (NIC-157). CSS cannot
+  // derive this: the distance depends on the rail widths, the canvas max-width cap and the
+  // centring margin, none of which are expressible as a constant. Measured rather than guessed,
+  // re-measured on resize, and cleared when the sequence ends so nothing lingers in the DOM.
+  // Layout effect, not effect: the crop animation's `from` state applies on the very frame
+  // `data-intro` lands, so the measurement has to be in place before that frame paints or the
+  // field would start at panel width and jump outward.
+  useLayoutEffect(() => {
+    const shell = shellRef.current;
+    const panel = shell?.querySelector<HTMLElement>(".heimlich");
+    if (!intro || !shell || !panel) {
+      return;
+    }
+    const measure = () => {
+      const rect = panel.getBoundingClientRect();
+      shell.style.setProperty("--ch-intro-bleed-left", `${Math.max(0, rect.left)}px`);
+      shell.style.setProperty(
+        "--ch-intro-bleed-right",
+        `${Math.max(0, window.innerWidth - rect.right)}px`
+      );
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      shell.style.removeProperty("--ch-intro-bleed-left");
+      shell.style.removeProperty("--ch-intro-bleed-right");
+    };
+  }, [intro]);
 
   // Dispatch a raw command through the shared bridge (FR-CMD-01), from the top launcher or the
   // native shell-intent hook. An accepted command surfaces its result through the event stream /
@@ -113,15 +151,20 @@ export function DashboardShell() {
   }, []);
 
   return (
-    <div className="dashboard-shell" ref={shellRef} data-read-only={posture.readOnly || undefined}>
+    <div
+      className="dashboard-shell"
+      ref={shellRef}
+      data-read-only={posture.readOnly || undefined}
+      data-intro={intro || undefined}
+    >
       {/* Full-width degraded ribbon (sibling of the capped canvas), never replacing the shell. */}
       <SystemStatusBanner />
       {posture.loading ? (
-        <div className="dashboard-canvas dashboard-canvas--loading">
+        <div className="dashboard-canvas dashboard-canvas--loading recede-target">
           <DashboardSkeleton />
         </div>
       ) : (
-        <div className="dashboard-canvas">
+        <div className="dashboard-canvas recede-target">
           {/* Top-left header cell: the single execution-feedback surface (NIC-124). */}
           <ActionStatusIndicator />
           <div className="shell-search">

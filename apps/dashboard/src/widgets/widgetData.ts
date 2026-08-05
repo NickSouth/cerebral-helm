@@ -294,3 +294,46 @@ export function resolveWidgetData(
 ): WidgetData {
   return liveWidgets?.[widgetId] ?? fallback;
 }
+
+/**
+ * The generic placeholder widget ids the native bootstrap composes before any producer has
+ * spoken (`BootstrapComposer.unavailableWidget()` builds `widgetID: "left" | "right"` with
+ * `state: .unavailable`). A real payload always carries its own widget id — `stocks`, `spotify`,
+ * `deadlines` — so the id alone distinguishes "nobody has reported yet" from "the producer
+ * reported that this is unavailable". Nothing else in the tree may use these two ids.
+ */
+const BOOTSTRAP_STUB_WIDGET_IDS: ReadonlySet<string> = new Set(["left", "right"]);
+
+/**
+ * Is this slot still waiting on its first word from a producer? (NIC-174)
+ *
+ * The bootstrap stub is `unavailable` because, at compose time, the native side genuinely does
+ * not know anything yet — but rendering it as "Unavailable" states a conclusion nobody has
+ * reached, which is what makes a freshly-entered mode look broken for the beat before its
+ * producer streams. Pending is the honest reading of that same stub: *no answer yet*.
+ *
+ * True only when BOTH hold — no live payload has arrived for this slot's widget, AND the
+ * fallback is the generic stub rather than real config/bootstrap data. So a producer's genuine
+ * `unavailable` (it carries the real widget id) is never mistaken for loading, which is the
+ * honesty line this must not cross: a skeleton that outlives the truth is its own kind of lie.
+ *
+ * This mirrors what NIC-136 already did for system health, where the composer emits `.empty`
+ * instead of `.unavailable` when a provider is expected, precisely so the shell shows a
+ * same-shape skeleton rather than an unavailable flash. The mode widgets never got that
+ * treatment; deriving it here covers them without a contract change, and without the native
+ * side having to predict which producers a given mode will hear from.
+ */
+export function isWidgetPending(
+  liveWidgets: Readonly<Record<string, WidgetData>> | undefined,
+  slotWidgetId: string | undefined,
+  fallback: WidgetData
+): boolean {
+  // A slot with no assigned widget has nothing inbound to wait for.
+  if (!slotWidgetId || BOOTSTRAP_STUB_WIDGET_IDS.has(slotWidgetId)) {
+    return false;
+  }
+  if (liveWidgets?.[slotWidgetId]) {
+    return false;
+  }
+  return BOOTSTRAP_STUB_WIDGET_IDS.has(fallback.widgetId);
+}

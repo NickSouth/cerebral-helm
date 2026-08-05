@@ -5,7 +5,7 @@ import { AgentRoster } from "./AgentRoster";
 import { WidgetSlot } from "./WidgetSlot";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useActiveMode } from "./useActiveMode";
-import { resolveWidgetData } from "../widgets/widgetData";
+import { isWidgetPending, resolveWidgetData } from "../widgets/widgetData";
 
 /**
  * The right operational rail (constitution §6 / design spec §5.9–§5.11): R1 Mode Switcher
@@ -23,6 +23,7 @@ export function RightRail() {
   // Resolve the right slot: the live-streamed widget for this mode's assigned id
   // (NIC-131 blueprint) over the bootstrap value. Every future live widget inherits this.
   const rightWidget = resolveWidgetData(liveWidgets, activeMode.widgets.right, regions.widgets.right);
+  const rightPending = isWidgetPending(liveWidgets, activeMode.widgets.right, regions.widgets.right);
 
   return (
     <aside className="shell-rail shell-right" aria-label="Operations">
@@ -34,7 +35,12 @@ export function RightRail() {
         <AgentRoster />
       </Panel>
 
-      <WidgetSlot data={rightWidget} labelId="region-widget-right" slotWidgetId={activeMode.widgets.right} />
+      <WidgetSlot
+        data={rightWidget}
+        labelId="region-widget-right"
+        slotWidgetId={activeMode.widgets.right}
+        pending={rightPending}
+      />
     </aside>
   );
 }

@@ -35,9 +35,21 @@ interface LightTarget {
   readonly oy: number;
 }
 
-/** One beam's light tiles across all mounted overlays, with current surface offsets. */
-function collectTargets(root: HTMLElement, beam: string): LightTarget[] {
-  const lights = root.querySelectorAll<HTMLElement>(`.beam-overlay__light[data-beam="${beam}"]`);
+/**
+ * While receded, the sweep is confined to the bottom bar (NIC-152). The bar must look and behave
+ * identically in both postures, and the beams are the loudest thing on the surface — travelling
+ * light across every panel outline is exactly the "noise" the receded posture exists to remove.
+ * Confining rather than stopping keeps the bar's own reflections running, and costs one element
+ * per beam instead of dozens.
+ */
+const RECEDED_SCOPE = ".bottom-bar ";
+
+/** One beam's light tiles across the in-scope overlays, with current surface offsets. */
+function collectTargets(root: HTMLElement, beam: string, receded: boolean): LightTarget[] {
+  const scope = receded ? RECEDED_SCOPE : "";
+  const lights = root.querySelectorAll<HTMLElement>(
+    `${scope}.beam-overlay__light[data-beam="${beam}"]`
+  );
   return Array.from(lights, (el) => {
     const rect = (el.parentElement ?? el).getBoundingClientRect();
     return { el, ox: rect.left, oy: rect.top };
@@ -45,7 +57,12 @@ function collectTargets(root: HTMLElement, beam: string): LightTarget[] {
 }
 
 /** Run one independent beam loop moving the given beam's tiles; returns a cleanup. */
-function runBeam(root: HTMLElement, beam: string, initialDelay: number): () => void {
+function runBeam(
+  root: HTMLElement,
+  beam: string,
+  initialDelay: number,
+  receded: boolean
+): () => void {
   let raf = 0;
   let timer = 0;
   let cancelled = false;
@@ -54,7 +71,7 @@ function runBeam(root: HTMLElement, beam: string, initialDelay: number): () => v
   // Surfaces move only when the viewport changes (the dashboard never scrolls): refresh the
   // cached offsets on resize, plus at every pass start — which also adopts newly mounted panels.
   const refresh = (): void => {
-    targets = collectTargets(root, beam);
+    targets = collectTargets(root, beam, receded);
   };
   window.addEventListener("resize", refresh);
 
@@ -106,10 +123,17 @@ function runBeam(root: HTMLElement, beam: string, initialDelay: number): () => v
     cancelAnimationFrame(raf);
     window.clearTimeout(timer);
     window.removeEventListener("resize", refresh);
+    // Drop the inline transform so every tile falls back to its CSS resting position (parked
+    // off-screen at -3000px). Deliberately unscoped: a tile abandoned mid-sweep would otherwise
+    // keep its last transform and sit on the panel as a stationary glow, which is precisely the
+    // stillness bug a posture change could introduce.
+    for (const { el } of collectTargets(root, beam, false)) {
+      el.style.transform = "";
+    }
   };
 }
 
-export function useAmbientBeam(ref: RefObject<HTMLElement | null>): void {
+export function useAmbientBeam(ref: RefObject<HTMLElement | null>, receded = false): void {
   useEffect(() => {
     const root = ref.current;
     if (!root || typeof requestAnimationFrame !== "function") {
@@ -120,8 +144,10 @@ export function useAmbientBeam(ref: RefObject<HTMLElement | null>): void {
     }
 
     // Two independent beams; the second starts after a short random offset so they don't mirror.
-    const cleanups = [runBeam(root, "a", 0), runBeam(root, "b", randomPause())];
+    // Changing posture restarts both loops: re-scoping mid-sweep would leave stranded tiles frozen
+    // wherever the last frame put them, and a restart is invisible underneath the recede fade.
+    const cleanups = [runBeam(root, "a", 0, receded), runBeam(root, "b", randomPause(), receded)];
 
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [ref]);
+  }, [ref, receded]);
 }

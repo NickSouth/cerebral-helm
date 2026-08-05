@@ -122,6 +122,37 @@
   --ch-motion-sampled: 1800ms;
   --ch-ease-linear: linear;
 
+  /* --- Receded posture (NIC-152): how far the dashboard pulls back when it is acting as
+     backdrop rather than as the thing being used. Owner-tunable — these four numbers ARE the
+     design decision, and changing them never touches a component. The bottom bar and the system
+     surfaces are deliberately exempt (see shell.css), so the treatment covers only the canvas. */
+  --ch-recede-opacity: 0.62;
+  --ch-recede-saturate: 0.7;
+  --ch-recede-blur: 1px;
+  /* Slow on the way out (it should feel like settling, not switching off) and quicker on the way
+     back, so returning to the dashboard feels immediately responsive. */
+  --ch-recede-out: 620ms;
+  --ch-recede-in: 240ms;
+
+  /* --- Startup sequence (NIC-157) — a set-piece, not a reveal. CerebralHelm launches at login
+     and is rarely restarted (owner decision, 2026-08-05), so the sequence is deliberately
+     unhurried: the field draws itself in over ~4s, the panel closes in around it, then the shell
+     assembles. These are the CSS half; the WebGL half is `FIELD_DURATION_MS` in useStartupIntro.ts,
+     which must equal `--ch-intro-delay-window` + `--ch-intro-window` — the field and the panel
+     contract together, so the shader's clock has to run exactly until the pinch ends. Collapsed
+     under reduced motion with the other durations, below. */
+  /* The panel's pinch-in. Slower than a normal region arrival on purpose — it is travelling the
+     width of the screen, and it carries the whole field with it. Everything after it waits until
+     it has finished, so the centre never fills in while the box is still moving. */
+  --ch-intro-window: 900ms;
+  --ch-intro-region: 420ms;
+  --ch-intro-rise: 0.5rem;
+  --ch-intro-delay-window: 4020ms;
+  --ch-intro-delay-center: 4980ms;
+  --ch-intro-delay-rails: 5180ms;
+  --ch-intro-delay-header: 5420ms;
+  --ch-intro-delay-bottombar: 5620ms;
+
   /* --- Focus (visible ring + offset; never color alone) --- */
   --ch-focus-ring-color: #7fb7ff;
   --ch-focus-ring-width: 2px;
@@ -193,5 +224,15 @@
     --ch-motion-base: 0ms;
     --ch-motion-slow: 0ms;
     --ch-motion-sampled: 0ms;
+    /* The launch sequence collapses to nothing: the dashboard is simply there. Delays go to zero
+       too — a staggered set of instant appearances would still read as motion. */
+    --ch-intro-window: 0ms;
+    --ch-intro-region: 0ms;
+    --ch-intro-rise: 0rem;
+    --ch-intro-delay-window: 0ms;
+    --ch-intro-delay-center: 0ms;
+    --ch-intro-delay-rails: 0ms;
+    --ch-intro-delay-header: 0ms;
+    --ch-intro-delay-bottombar: 0ms;
   }
 }

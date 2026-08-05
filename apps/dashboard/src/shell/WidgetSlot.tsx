@@ -5,6 +5,7 @@ import { StaleMarker } from "../components/StaleMarker";
 import { SkeletonBone } from "../components/Skeleton";
 import { Unavailable } from "../components/Unavailable";
 import { EmptyState } from "../components/EmptyState";
+import { WidgetSkeleton } from "./WidgetSkeleton";
 import { WIDGET_REGISTRY } from "../widgets/widgets";
 import type {
   CourseGradeWidgetItem,
@@ -1401,10 +1402,38 @@ function CanvasSeasonalEmpty() {
   );
 }
 
+/**
+ * How long a slot may show a loading state before it stops claiming one (NIC-174). A skeleton is
+ * a promise that data is coming; if no producer has spoken by now, the honest reading is that
+ * none is going to, and an indefinite shimmer would be as dishonest as the "Unavailable" flash
+ * this replaced — just slower to admit it. Generous enough to cover a cold network fetch
+ * (stocks, releases, GitHub) rather than tuned to the fastest producer.
+ */
+const PENDING_TIMEOUT_MS = 10_000;
+
+/**
+ * Gate a pending state on a deadline. Resets whenever the slot's widget changes, so switching
+ * modes gives the incoming widget its own full grace period rather than inheriting the
+ * outgoing one's expired clock.
+ */
+function usePendingWithDeadline(pending: boolean, widgetId: string): boolean {
+  const [expired, setExpired] = useState(false);
+  useEffect(() => {
+    setExpired(false);
+    if (!pending) {
+      return;
+    }
+    const id = window.setTimeout(() => setExpired(true), PENDING_TIMEOUT_MS);
+    return () => window.clearTimeout(id);
+  }, [pending, widgetId]);
+  return pending && !expired;
+}
+
 export function WidgetSlot({
   data,
   labelId,
-  slotWidgetId
+  slotWidgetId,
+  pending = false
 }: {
   data: WidgetData;
   labelId: string;
@@ -1412,10 +1441,17 @@ export function WidgetSlot({
    *  `data.widgetId` for the label/icon/empty-state, because the resolved data can still be the
    *  generic bootstrap stub ("left"/"right", "Unavailable") until a producer streams. */
   slotWidgetId?: string;
+  /** No producer has reported for this slot yet (`isWidgetPending`) — render the loader rather
+   *  than the stub's "Unavailable", which states a conclusion nobody has reached (NIC-174). */
+  pending?: boolean;
 }) {
   const widgetId = slotWidgetId ?? data.widgetId;
   const label = WIDGET_LABELS.get(widgetId) ?? widgetId;
   const live = data.state === "ready" || data.state === "stale";
+  // Deliberately outranks the Canvas seasonal note and the Spotify idle card below: both are
+  // conclusions about the widget's content, and while we are still waiting there is no
+  // conclusion to draw.
+  const loading = usePendingWithDeadline(pending, widgetId);
   // The School widgets (NIC-132) share a friendly, date-aware empty/unavailable state instead of the
   // generic messages — a seasonal greeting over break, a "sync now" nudge during term. Keyed on the
   // slot's widget so it shows even before the producer streams (over the "Unavailable" bootstrap stub).
@@ -1434,6 +1470,8 @@ export function WidgetSlot({
           <WidgetBody widgetId={data.widgetId} data={data.data} />
           {data.freshness ? <p className="widget__freshness">{data.freshness.label}</p> : null}
         </div>
+      ) : loading ? (
+        <WidgetSkeleton widgetId={widgetId} label={label} />
       ) : isCanvasWidget ? (
         <CanvasSeasonalEmpty />
       ) : widgetId === "spotify" ? (

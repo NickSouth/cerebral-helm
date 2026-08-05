@@ -31,12 +31,62 @@ const DEFAULT_BOOTSTRAP_KEY = "mode.executive.ready";
 const RECENT_ACTIVITY = (recentActivityResponse.payload as { recentActivity: RecentActivity })
   .recentActivity;
 
+/**
+ * Model the real host's widget arrival gap (NIC-174), opt-in via `?widgetdelay[=ms]`.
+ *
+ * The native bootstrap composes the mode widgets as the generic `left`/`right` stub and the
+ * producers stream `widget.data.changed` moments later. The fixtures instead hand widgets over
+ * already `ready`, so the preview has never shown that gap — which is precisely why the
+ * "Unavailable" flash on a mode switch reached the Mac unnoticed. Turning this on makes the
+ * preview behave like the host, exactly as the mail channel already does further down (a
+ * delayed `mail.changed` rather than a count baked into the fixture).
+ *
+ * **Default is off**, so fixtures, tests and the visual baselines are untouched. Making it the
+ * default is the right end state, but it changes first render for every consumer and belongs
+ * with a test pass rather than here.
+ */
+const WIDGET_ARRIVAL_DELAY_MS = readWidgetArrivalDelay();
+
+function readWidgetArrivalDelay(): number {
+  if (typeof window === "undefined") {
+    return 0;
+  }
+  const raw = new URLSearchParams(window.location.search).get("widgetdelay");
+  if (raw === null) {
+    return 0;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  // A bare `?widgetdelay` means "a realistic beat"; an explicit value tunes it.
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1500;
+}
+
+type SnapshotWidgets = DashboardBootstrapState["regions"]["widgets"];
+
+/** The generic placeholder the native `BootstrapComposer` emits before any producer speaks. */
+function pendingWidgetStub<K extends keyof SnapshotWidgets>(widgetId: K): SnapshotWidgets[K] {
+  return { widgetId, state: "unavailable", emptyMessage: "Unavailable" } as SnapshotWidgets[K];
+}
+
+/** Strip a snapshot's widget payloads back to the stub, so they must arrive by event. */
+function withPendingWidgets(snapshot: DashboardBootstrapState): DashboardBootstrapState {
+  if (WIDGET_ARRIVAL_DELAY_MS <= 0) {
+    return snapshot;
+  }
+  return {
+    ...snapshot,
+    regions: {
+      ...snapshot.regions,
+      widgets: { left: pendingWidgetStub("left"), right: pendingWidgetStub("right") }
+    }
+  };
+}
+
 /** Compose a full bootstrap state from the eager config bundle and a per-state snapshot. */
 function composeBootstrapState(canonicalKey: string): DashboardBootstrapState {
-  return {
+  return withPendingWidgets({
     ...getDashboardConfigBundle(),
     ...getDashboardFixture(canonicalKey)
-  };
+  });
 }
 
 /**
@@ -226,6 +276,7 @@ export function createMockCerebralBridge(
   const bootstrapKey = options.bootstrapKey ?? DEFAULT_BOOTSTRAP_KEY;
   const listeners = new Set<BridgeEventListener>();
   let mailSeeded = false;
+  let widgetsSeeded = false;
   // The active layout session (NIC-142), held mutably so toggleLayout can swap the
   // dynamic slot and re-broadcast, mirroring the real bridge.
   let activeLayout: LayoutSession | null = null;
@@ -359,6 +410,38 @@ export function createMockCerebralBridge(
     // Snapshot so a listener that unsubscribes mid-dispatch can't mutate the live set.
     for (const listener of [...listeners]) {
       listener(event);
+    }
+  }
+
+  /**
+   * Deliver a snapshot's widgets the way a producer does — as `widget.data.changed`, one per
+   * slot, after the arrival delay. Keyed by each envelope's own widget id, which is what the
+   * reducer requires (it drops any event whose key and envelope disagree). A no-op when
+   * `?widgetdelay` is off, so default behaviour is unchanged.
+   */
+  function emitWidgetArrivals(snapshot: DashboardBootstrapState, tag: string): void {
+    if (WIDGET_ARRIVAL_DELAY_MS <= 0) {
+      return;
+    }
+    const widgets = snapshot.regions?.widgets;
+    if (!widgets) {
+      return;
+    }
+    for (const slot of ["left", "right"] as const) {
+      const widget = widgets[slot];
+      // The stub carries no real producer identity, so there is nothing to deliver for it.
+      if (!widget || widget.widgetId === "left" || widget.widgetId === "right") {
+        continue;
+      }
+      setTimeout(() => {
+        emit({
+          eventId: `brevt_widget_${tag}_${slot}`,
+          type: "widget.data.changed",
+          schemaVersion: "1.0.0",
+          timestamp: "2026-08-05T12:00:00.000Z",
+          payload: { widgetId: widget.widgetId, widget }
+        });
+      }, WIDGET_ARRIVAL_DELAY_MS);
     }
   }
 
@@ -497,7 +580,8 @@ export function createMockCerebralBridge(
       // mode's resolved snapshot as a `config.changed` event the store folds in (the theme
       // re-themes via data-mode; the heavy region data resolves on switch).
       try {
-        const snapshot = getDashboardFixture(`mode.${input.modeId}.ready`);
+        const resolved = getDashboardFixture(`mode.${input.modeId}.ready`) as DashboardBootstrapState;
+        const snapshot = withPendingWidgets(resolved);
         emit({
           eventId: `brevt_applymode_${input.modeId}`,
           type: "config.changed",
@@ -505,6 +589,9 @@ export function createMockCerebralBridge(
           timestamp: "2026-06-23T16:00:00.000Z",
           payload: { snapshot }
         });
+        // The entered mode's producers report a beat later, as they do on the host — this is the
+        // window NIC-174's loaders fill. A no-op unless `?widgetdelay` is on.
+        emitWidgetArrivals(resolved, `applymode_${input.modeId}`);
         return Promise.resolve({ modeId: input.modeId, status: "ok" as const });
       } catch {
         return Promise.resolve({ modeId: input.modeId, status: "error" as const });
@@ -1259,6 +1346,17 @@ export function createMockCerebralBridge(
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);
+      // The mode the dashboard booted into gets its widgets the same way a switched-into mode
+      // does — by event, once. Seeded here rather than in `getBootstrapState` because a producer
+      // reports to subscribers, and this keeps first paint and every later mode switch on the
+      // one path. A no-op unless `?widgetdelay` is on.
+      if (!widgetsSeeded) {
+        widgetsSeeded = true;
+        emitWidgetArrivals(
+          getDashboardFixture(bootstrapKey) as DashboardBootstrapState,
+          "bootstrap"
+        );
+      }
       // A live producer's first tick lands shortly after the dashboard subscribes, so the preview
       // seeds the mail channel the same way rather than baking a count into the bootstrap fixture
       // — `state.mail` is runtime-only by design, and a fixture would make it look otherwise.
