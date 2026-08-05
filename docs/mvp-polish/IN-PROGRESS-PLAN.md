@@ -41,8 +41,8 @@ not as gospel.
 | 6 | NIC-172 | Weather replay on new surfaces | ☑ |
 | 7 | NIC-175 | Nested-folder app discovery | ☑ |
 | 8 | NIC-175 | `apps.changed` event + surface refresh | ☑ |
-| 9 | NIC-167 | Shared search field + `ReferencePicker` | ☐ |
-| 10 | NIC-167 | More Apps + pin popover | ☐ |
+| 9 | NIC-167 | Shared search field + `ReferencePicker` | ☑ |
+| 10 | NIC-167 | More Apps + pin popover | ☑ |
 | 11 | NIC-115 | GRDB dependency + Linux CI provisioning | ☐ |
 | 12 | NIC-115 | Reimplement `SQLiteDatabase` over GRDB | ☐ |
 | 13 | NIC-115 | Drop `swift-toolchain-sqlite` | ☐ |
@@ -633,6 +633,34 @@ scoring**. That also matches the NIC-168 owner decision (lexical, not semantic).
 - **Tests:** `filterApps` case-insensitivity, bundle-id match, empty query = identity; typing
   narrows and clearing restores.
 
+**BUILT 2026-08-05.** Gates: dashboard **584** green (51 files) · `tsc`/eslint clean ·
+browser-verified live on `?surface=layoutpin`. No Swift touched.
+
+Reusable pieces increment 10 should just wire up, not re-invent:
+
+- **`filterApps(apps, query)`** — trimmed, case-insensitive substring on name, falling back to
+  bundle id (so `com.apple` works). Empty query returns the array **by reference** (identity), so
+  callers pass raw input with no special-casing. Ordering is preserved deliberately: discovery
+  already sorted alphabetically and a filter is not the place to re-rank.
+- **`PickerSearchField`** — autofocusing `type="search"` input. It deliberately does **not** handle
+  Escape: that belongs to the dialog, and swallowing it would break "Escape closes the picker" once
+  the field holds focus. There is a regression test for exactly that.
+- **`.pin-pop__field--search`** CSS modifier: the base `.pin-pop__field` is sized for the URL form's
+  flex row (`flex: 1 1 auto`), which is inert in a block section — the modifier makes it span the
+  section, and recolors the WebKit clear button, which is otherwise near-invisible on this surface.
+
+**Focus decision:** the search field takes mount focus, replacing `ReferencePicker`'s previous
+`cardRef.focus()`. Two autofocus effects would have raced (child effects run before parent, so the
+card won and the field never held focus). Escape still works because keydown bubbles from the input
+to the card's handler.
+
+**Empty states are distinguished:** "No applications match “zzz”." vs "No applications found."
+Collapsing them would blame the query for an empty inventory.
+
+Verified in the browser rather than only in jsdom: field autofocuses, spans the section, filters
+live on name (`ter` → Terminal) and on bundle id (`com.apple` → Safari/Mail/Terminal), shows the
+honest note at zero matches, and restores the full list when cleared.
+
 ### Increment 2 — More Apps and the pin popover
 
 - **Changes:** wire `PickerSearchField` + `filterApps` into `MoreAppsPicker` and into
@@ -641,6 +669,28 @@ scoring**. That also matches the NIC-168 owner decision (lexical, not semantic).
   section above it stays unfiltered — it's a short fixed list and hiding it on a query would
   surprise. Easy to reverse.
 - **Depends on:** Increment 1.
+
+**BUILT 2026-08-05 — NIC-167 feature-complete; all four surfaces filter.** Gates: dashboard **593**
+green (53 files) · `tsc`/eslint clean. No Swift touched.
+
+- Both surfaces reuse `PickerSearchField` + `filterApps` unchanged — no new filtering logic.
+- `MoreAppsPicker` needed its own `.apps-picker__search` class rather than the `pin-pop` one: its
+  layout is a flex column with a scrolling tile grid, so the field is `flex: 0 0 auto` to stay
+  pinned between the header and the grid instead of scrolling away with the tiles. Verified live
+  (`searchTop` 43 vs `gridTop` 62).
+- Mount focus moved to the search field on both, replacing their `dialogRef`/`cardRef` focus — the
+  same trade as increment 9, with Escape still bubbling. Both have a regression test for Escape.
+- The Chrome-profiles-stay-unfiltered decision is now **pinned by a test**, not just a comment.
+
+**`PinPopover` cannot be browser-verified.** Its quick-app slots are disabled off the macOS host
+(gated on `native.apps.list`), so the popover never opens in the preview — the slots render as
+"App discovery is available on the macOS host". Covered by 4 jsdom tests instead, and the two
+shared components it uses were verified live through `ReferencePicker` and `MoreAppsPicker`. It
+needs a Mac-host pass to be seen for real.
+
+Test-harness gotchas for anyone touching these: `PinPopover`'s `anchor` prop is a real
+`HTMLElement` (it calls `getBoundingClientRect`), not a rect literal; and a launcher tile's
+accessible name is its **content** (the app name), not its `title` attribute.
 
 ---
 

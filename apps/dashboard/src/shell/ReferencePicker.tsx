@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -9,6 +10,8 @@ import { useBridge } from "../state/BridgeProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import type { ChromeProfile } from "../bridge/cerebralBridge";
 import { useDiscoveredApps } from "./useDiscoveredApps";
+import { PickerSearchField } from "./PickerSearchField";
+import { filterApps } from "./filterApps";
 import { AppGlyph } from "./AppGlyph";
 
 /** The kind of reference an "Add" resolves to (mirrors the layout schema). */
@@ -50,10 +53,15 @@ export function ReferencePicker({
   const [urlProfile, setUrlProfile] = useState("");
   const [urlError, setUrlError] = useState<string | null>(null);
   const [chromeProfiles, setChromeProfiles] = useState<readonly ChromeProfile[]>([]);
+  const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    cardRef.current?.focus();
-  }, []);
+  // The search field takes mount focus instead of the card (NIC-167): this surface is summoned to
+  // find one specific app, so the keyboard belongs in the filter. Escape still closes, because the
+  // keydown bubbles from the input to the card's handler below.
+  const visibleApps = useMemo(
+    () => (picker.status === "ready" ? filterApps(picker.apps, query) : []),
+    [picker, query]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -238,13 +246,25 @@ export function ReferencePicker({
 
           <section className="pin-pop__section" aria-label="Applications">
             <h3 className="pin-pop__section-title">Applications</h3>
+            {/* Scoped to this section on purpose: the Chrome-profile list above is short and fixed,
+                and hiding it on an app query would surprise. */}
+            <PickerSearchField value={query} onChange={setQuery} label="Search applications" />
             {picker.status === "loading" ? (
               <p className="pin-pop__note">Discovering installed applications…</p>
             ) : null}
             {picker.status === "error" ? <p className="pin-pop__note">{picker.message}</p> : null}
+            {/* Distinguish "your search found nothing" from "this host has no apps" — collapsing
+                them would blame the query for an empty inventory. */}
+            {picker.status === "ready" && visibleApps.length === 0 ? (
+              <p className="pin-pop__note">
+                {query.trim().length > 0
+                  ? `No applications match “${query.trim()}”.`
+                  : "No applications found."}
+              </p>
+            ) : null}
             {picker.status === "ready" ? (
               <ul className="pin-pop__list">
-                {picker.apps.map((app) => (
+                {visibleApps.map((app) => (
                   <li key={app.bundleId} className="pin-pop__row" title={app.bundleId}>
                     <span className="pin-pop__avatar" aria-hidden="true">
                       {app.iconPng ? (

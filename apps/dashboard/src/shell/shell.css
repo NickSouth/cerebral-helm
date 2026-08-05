@@ -3789,6 +3789,34 @@ button.deadline-row__open:not(:disabled):hover {
 }
 
 /* Two-wide, scrollable list of launchable apps. */
+/* The launcher's search field (NIC-167). Sits between the header and the tile grid; the grid
+   scrolls beneath it, so `flex: 0 0 auto` keeps the field pinned rather than scrolling away. */
+.apps-picker__search {
+  flex: 0 0 auto;
+  margin: var(--ch-space-3) var(--ch-space-3) 0;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+  background: var(--ch-surface-base);
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-1) var(--ch-space-2);
+}
+
+.apps-picker__search:focus {
+  outline: none;
+  border-color: var(--ch-text-muted);
+}
+
+.apps-picker__search::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0.7rem;
+  width: 0.7rem;
+  cursor: pointer;
+  background-color: var(--ch-text-muted);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 4l8 8M12 4l-8 8' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
 .apps-picker__grid {
   list-style: none;
   margin: 0;
@@ -4002,6 +4030,26 @@ button.deadline-row__open:not(:disabled):hover {
 .pin-pop__field:focus {
   outline: none;
   border-color: var(--ch-text-muted);
+}
+
+/* The app-list search field (NIC-167). The base field is sized for the URL form's flex row;
+   this one owns a block of its own above a list, so it spans the section width. */
+.pin-pop__field--search {
+  display: block;
+  width: 100%;
+  margin-block-end: var(--ch-space-2);
+}
+
+/* The platform clear affordance renders as a dark glyph that vanishes on this surface — recolor
+   it to the muted text token so it stays visible in both themes. */
+.pin-pop__field--search::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0.7rem;
+  width: 0.7rem;
+  cursor: pointer;
+  background-color: var(--ch-text-muted);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 4l8 8M12 4l-8 8' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 .pin-pop__field:disabled {
