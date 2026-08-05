@@ -45,6 +45,7 @@ private final class SuiteMetricSource: SystemMetricSampling, @unchecked Sendable
         return CPUTicksSample(busyTicks: ticks / 4, totalTicks: ticks)
     }
     func memory() -> MemorySample? { MemorySample(usedBytes: 8, totalBytes: 16) }
+    func memoryPressure() -> MemoryPressureLevel? { .normal }
     func wifiLinkMbps() -> Double? { 866 }
     func wifiState() -> WiFiStateSample? { WiFiStateSample(power: .on, rssi: -59) }
     func battery() -> BatterySample? { BatterySample(percent: 88, isCharging: false, isPluggedIn: true) }

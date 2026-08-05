@@ -5,6 +5,9 @@ import {
   readInjectedBootstrap
 } from "./wkWebViewCerebralBridge";
 import type { BridgeEvent } from "./cerebralBridge";
+// The authoritative event-type set, generated from the bridge event schema — imported so the gate
+// test cannot drift out of step with the contract (NIC-175).
+import { CerebralHelmBridgeEventType } from "../../../../packages/contracts/generated/typescript/contracts";
 
 interface TestWindow {
   webkit?: { messageHandlers?: { cerebral?: { postMessage: (m: string) => void } } };
@@ -199,10 +202,36 @@ describe("wkWebViewCerebralBridge", () => {
     ]);
   });
 
+  it("admits every event type the contract defines — no silent drops (NIC-126/175)", () => {
+    // The trap this guards: an event type missing from EVENT_TYPES is silently dropped by the
+    // WKWebView transport, so the reducer never runs and the panel sits at its bootstrap state.
+    // It passes every other test, because the mock bridge has no such gate — the bug only appears
+    // on the real host.
+    //
+    // Derived from the generated contract enum rather than a hand-written list (NIC-175): the
+    // previous version enumerated four events by hand, so adding a fifth to the schema and
+    // forgetting the allowlist still went green. Now the schema IS the test.
+    installChannel();
+    const bridge = createWKWebViewCerebralBridge();
+    const seen: string[] = [];
+    bridge.subscribe((e) => seen.push(e.type));
+
+    const contractTypes = Object.values(CerebralHelmBridgeEventType);
+    contractTypes.forEach((type, index) => {
+      reply({
+        type,
+        eventId: `brevt_gate${String(index).padStart(4, "0")}`,
+        schemaVersion: "1.0.0",
+        timestamp: "2026-08-05T00:00:00.000Z",
+        payload: {}
+      });
+    });
+
+    expect(seen).toEqual(contractTypes);
+  });
+
   it("passes the live-data events (widget/weather/news/schedule) through the type gate", () => {
-    // Regression (NIC-126): every runtime-fed live event must be in EVENT_TYPES or the WKWebView
-    // silently drops it — the reducer never runs and the panel stays at its bootstrap state. The
-    // mock bridge has no such gate, so a missing entry passes every test *except* on the real host.
+    // Keeps the realistic payload shapes covered alongside the exhaustive gate check above.
     installChannel();
     const bridge = createWKWebViewCerebralBridge();
     const events: BridgeEvent[] = [];

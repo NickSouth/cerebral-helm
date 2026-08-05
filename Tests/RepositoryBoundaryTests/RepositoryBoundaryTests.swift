@@ -146,3 +146,51 @@ func onlyStorageLinksSQLiteEngine() throws {
     // vacuously.
     #expect(storageImporters > 0)
 }
+
+// NIC-116: `CerebralKnowledge` is the ONLY package that may import Yams.
+//
+// The knowledge module parses user-authored note frontmatter, which is real YAML — tag lists,
+// nested mappings, block scalars — so it needs a real parser. `CerebralShared` deliberately keeps
+// its own narrow, dependency-free reader (``MarkdownFrontmatter``) instead of sharing this one,
+// because *every* package depends on Shared: putting a C-backed parser there would pull libYAML
+// into Core, Tools, Storage, and Contracts to serve one integer key in `PROJECT.md`.
+//
+// Same shape and same reasoning as the SQLite confinement above — a dependency that belongs to one
+// package's job should not become everyone's transitive weight. If a second package ever genuinely
+// needs YAML, that is a deliberate decision to make, not something to discover from a build graph.
+@Test("only CerebralKnowledge imports the YAML parser")
+func onlyKnowledgeImportsYams() throws {
+    let repositoryRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let packagesRoot = repositoryRoot.appendingPathComponent("packages", isDirectory: true)
+    let knowledgeRoot = packagesRoot.appendingPathComponent("knowledge", isDirectory: true)
+
+    let importPattern = #"(?m)^\s*(?:@_exported\s+|@testable\s+)?import\s+Yams\b"#
+    let regex = try NSRegularExpression(pattern: importPattern)
+
+    let files = FileManager.default.enumerator(
+        at: packagesRoot,
+        includingPropertiesForKeys: [.isRegularFileKey]
+    )
+
+    var violations: [String] = []
+    var knowledgeImporters = 0
+    while let file = files?.nextObject() as? URL {
+        guard file.pathExtension == "swift" else { continue }
+        let source = try String(contentsOf: file, encoding: .utf8)
+        let range = NSRange(source.startIndex..., in: source)
+        guard regex.firstMatch(in: source, range: range) != nil else { continue }
+
+        if file.path.hasPrefix(knowledgeRoot.path) {
+            knowledgeImporters += 1
+        } else {
+            violations.append(file.path)
+        }
+    }
+
+    #expect(violations.isEmpty)
+    // Fails loudly rather than vacuously if the parser is swapped out or the import renamed.
+    #expect(knowledgeImporters > 0)
+}

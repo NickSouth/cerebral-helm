@@ -10,11 +10,69 @@ import { Unavailable } from "../components/Unavailable";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useBridge } from "../state/BridgeProvider";
 import type { SpeedTestResult } from "../bridge/cerebralBridge";
-import type { WiFiPower } from "../bridge/types";
+import type { MemoryPressure, WiFiPower } from "../bridge/types";
 
-/** Usage-bar tone: mode accent normally, red once a utilization metric crosses 90% (owner rule). */
-function usageTone(percent: number): string {
-  return percent > 90 ? "danger" : "accent";
+/**
+ * CPU tone (NIC-158): green under sustained-load territory, yellow where the fan and battery start
+ * paying for it, red where the machine is saturated enough that you'd want to stop what you're
+ * doing.
+ *
+ * The thresholds only mean that because the streamed value is **time-averaged** over ~30s
+ * (smoothed in `SystemStatusPublisher`, not here): a transient spike cannot reach them, while
+ * genuinely sustained load climbs into them over tens of seconds. Reading these numbers against an
+ * instantaneous sample would make the bar strobe on every app launch and mean nothing.
+ *
+ * The value is a fraction of *total* capacity, so it is inherently machine-relative — one saturated
+ * core is ~5% on an 18-core machine and ~12% on an 8-core one. These bounds are calibrated to what
+ * the user feels (thermals, then responsiveness), not to a core count.
+ */
+function cpuTone(percent: number): string {
+  if (percent > 85) return "danger";
+  if (percent >= 60) return "warning";
+  return "good";
+}
+
+/**
+ * Memory tone (NIC-158): the colour comes from **macOS's own pressure level**, never from the
+ * used/total percentage. The percentage cannot carry it — macOS deliberately keeps RAM full of
+ * cache, so a perfectly healthy machine sits near 100% and a percentage-thresholded bar would
+ * simply be red all the time. That was the reported bug.
+ *
+ * With no pressure level (a non-macOS host, or a sampling failure) we genuinely do not know whether
+ * memory is under strain, so the bar makes no claim: it keeps the mode accent and falls back to the
+ * pre-existing 90% danger rule rather than inventing a green/yellow/red verdict from a number that
+ * cannot support one.
+ */
+function memoryTone(pressure: MemoryPressure | undefined, percent: number): string {
+  switch (pressure) {
+    case "critical":
+      return "danger";
+    case "warn":
+      return "warning";
+    case "normal":
+      return "good";
+    default:
+      return percent > 90 ? "danger" : "accent";
+  }
+}
+
+/**
+ * What the memory bar is telling you. The figure and the colour answer different questions — how
+ * full RAM is, versus whether that fullness is costing you anything — so the tooltip names both
+ * rather than leaving a near-100% bar looking alarming when the machine is fine.
+ */
+function memoryTitle(pressure: MemoryPressure | undefined): string {
+  const used = "Memory in use (macOS keeps RAM full of cache, so a high figure is normal)";
+  switch (pressure) {
+    case "critical":
+      return `${used} — pressure: critical`;
+    case "warn":
+      return `${used} — pressure: elevated`;
+    case "normal":
+      return `${used} — pressure: normal`;
+    default:
+      return used;
+  }
 }
 
 /** Battery tone (owner rule): green above 60, yellow down to 20, red below 20. */
@@ -30,6 +88,7 @@ function BarRow({
   label,
   percent,
   tone,
+  title,
   charging = false,
   chargingTitle = "Charging"
 }: {
@@ -37,12 +96,13 @@ function BarRow({
   label: string;
   percent: number;
   tone: string;
+  title?: string;
   charging?: boolean;
   chargingTitle?: string;
 }) {
   const clamped = Math.max(0, Math.min(100, percent));
   return (
-    <li className="metric">
+    <li className="metric" title={title}>
       <span className="metric__icon">
         <HealthGlyph name={glyph} />
       </span>
@@ -287,7 +347,8 @@ export function SystemHealthPanel() {
               glyph="cpu"
               label="CPU"
               percent={systemHealth.cpuPercent}
-              tone={usageTone(systemHealth.cpuPercent)}
+              tone={cpuTone(systemHealth.cpuPercent)}
+              title="Average CPU load over the last ~30 seconds, across all cores"
             />
           ) : null}
           {typeof systemHealth.memoryPercent === "number" ? (
@@ -295,7 +356,8 @@ export function SystemHealthPanel() {
               glyph="memory"
               label="Memory"
               percent={systemHealth.memoryPercent}
-              tone={usageTone(systemHealth.memoryPercent)}
+              tone={memoryTone(systemHealth.memoryPressure, systemHealth.memoryPercent)}
+              title={memoryTitle(systemHealth.memoryPressure)}
             />
           ) : null}
           {network ? (

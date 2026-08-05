@@ -18,6 +18,7 @@ private final class FakeMetricSource: SystemMetricSampling, @unchecked Sendable 
     private let lock = NSLock()
     private var cpuSamples: [CPUTicksSample?]
     private var memorySample: MemorySample?
+    private var pressure: MemoryPressureLevel?
     private var wifiLink: Double?
     private var wifi: WiFiStateSample?
     private var batterySample: BatterySample?
@@ -26,6 +27,7 @@ private final class FakeMetricSource: SystemMetricSampling, @unchecked Sendable 
     init(
         cpu: [CPUTicksSample?] = [],
         memory: MemorySample? = nil,
+        pressure: MemoryPressureLevel? = nil,
         wifiLink: Double? = nil,
         wifi: WiFiStateSample? = WiFiStateSample(power: .on, rssi: -59),
         battery: BatterySample? = nil,
@@ -33,6 +35,7 @@ private final class FakeMetricSource: SystemMetricSampling, @unchecked Sendable 
     ) {
         self.cpuSamples = cpu
         self.memorySample = memory
+        self.pressure = pressure
         self.wifiLink = wifiLink
         self.wifi = wifi
         self.batterySample = battery
@@ -47,6 +50,7 @@ private final class FakeMetricSource: SystemMetricSampling, @unchecked Sendable 
 
     func cpuTicks() -> CPUTicksSample? { pop(&cpuSamples) }
     func memory() -> MemorySample? { memorySample }
+    func memoryPressure() -> MemoryPressureLevel? { pressure }
     // The Wi-Fi link rate is instantaneous — the same reading on every sample.
     func wifiLinkMbps() -> Double? { lock.lock(); defer { lock.unlock() }; return wifiLink }
     func wifiState() -> WiFiStateSample? { lock.lock(); defer { lock.unlock() }; return wifi }
@@ -82,6 +86,62 @@ func firstReadCpuLoadingLinkAvailable() async throws {
     #expect(reading(readings, .memory)?.value == 50.0)
     #expect(reading(readings, .battery)?.value == 80.0)
     #expect(reading(readings, .display)?.value == 2.0)
+}
+
+// MARK: - Memory pressure (NIC-158)
+
+@Test("the memory channel carries the kernel's pressure level alongside the usage percentage")
+func memoryChannelCarriesPressure() async throws {
+    for level in [MemoryPressureLevel.normal, .warn, .critical] {
+        let capability = MacSystemStatusCapability(source: FakeMetricSource(
+            memory: MemorySample(usedBytes: 12, totalBytes: 16),
+            pressure: level
+        ))
+
+        let snapshot = await capability.snapshot()
+        #expect(snapshot.memory.availability == .available)
+        #expect(snapshot.memory.value == 75.0)
+        #expect(snapshot.memory.pressure == level)
+    }
+}
+
+@Test("an unsamplable pressure level is absent, never a fabricated normal")
+func unsamplablePressureIsAbsent() async throws {
+    // The whole point of the level is to say whether memory is under strain. Reporting `normal`
+    // when we could not read it would claim the machine is fine on no evidence — the dashboard
+    // must instead fall back to thresholding the percentage.
+    let capability = MacSystemStatusCapability(source: FakeMetricSource(
+        memory: MemorySample(usedBytes: 12, totalBytes: 16),
+        pressure: nil
+    ))
+
+    let snapshot = await capability.snapshot()
+    #expect(snapshot.memory.availability == .available)
+    #expect(snapshot.memory.value == 75.0)
+    #expect(snapshot.memory.pressure == nil)
+}
+
+@Test("pressure and the usage percentage are independent — either can be absent alone")
+func pressureIndependentOfUsage() async throws {
+    // vm statistics unreadable, pressure still readable: the bar has no figure but the colour
+    // signal survives. Mirrors how the Wi-Fi radio's power is independent of its link rate.
+    let capability = MacSystemStatusCapability(source: FakeMetricSource(
+        memory: nil,
+        pressure: .critical
+    ))
+
+    let snapshot = await capability.snapshot()
+    #expect(snapshot.memory.availability == .unavailable)
+    #expect(snapshot.memory.value == nil)
+    #expect(snapshot.memory.sampledAt == nil)
+    #expect(snapshot.memory.pressure == .critical)
+
+    // The portable tool reading is the percentage only — pressure never leaks into it, so the
+    // `system.status.read` contract is unchanged by this addition.
+    let readings = try await capability.readMetrics([.memory])
+    #expect(reading(readings, .memory)?.availability == .unavailable)
+    #expect(reading(readings, .memory)?.value == nil)
+    #expect(reading(readings, .memory)?.unit == "percent")
 }
 
 @Test("the second read computes CPU load from the tick delta")
@@ -257,6 +317,12 @@ func liveSourceSanity() async throws {
     let memory = try #require(source.memory())
     #expect(memory.totalBytes > 0)
     #expect(memory.usedBytes > 0 && memory.usedBytes <= memory.totalBytes)
+
+    // The pressure sysctl is readable on any macOS host, so a nil here would mean the kernel
+    // reported a level this adapter does not map — which is exactly what we want to notice.
+    // A machine running a test suite is not under critical pressure.
+    let pressure = try #require(source.memoryPressure())
+    #expect(pressure == .normal || pressure == .warn)
 
     // Wi-Fi link rate may legitimately be nil (Ethernet, Wi-Fi off, CI); when
     // present it is a positive Mbps figure.

@@ -143,11 +143,21 @@ func serviceNamespacesAreIsolated() async throws {
 @Test("store is write-through, so a just-stored secret is read back without touching the Keychain")
 func storeIsWriteThrough() async throws {
     let service = isolatedService()
-    let adapter = KeychainSecretCapability(service: service)
+    // A cache instance of its own, NOT `SecretValueCache.shared` (flakiness fix, found while
+    // running NIC-123's acceptance protocol). This test seeds the cache and then asserts a value
+    // still comes back after the Keychain item is deleted — but swift-testing runs tests in
+    // parallel, and the round-trip test above calls `SecretValueCache.shared.invalidateAll()` to
+    // prove *persistence*. When that landed between this test's store and its read, the cached
+    // value vanished and this failed with `.notFound` (reproduced ~1 run in 5, on `main`).
+    //
+    // The property under test is "a store seeds the cache so the read skips the Keychain", which
+    // is about the cache's behaviour, not about that one shared instance — `SecretValueCacheTests`
+    // covers `.shared` separately. Using a private instance keeps the assertion identical and
+    // makes it independent of what any other test does.
+    let adapter = KeychainSecretCapability(service: service, cache: SecretValueCache())
     guard await keychainUsable(adapter) else { return }
     defer { try? adapter.deleteAll() }
 
-    SecretValueCache.shared.invalidateAll()
     try await adapter.store(reference: "spotify_oauth", value: "token-blob")
 
     // Remove the underlying item through a *separate* adapter with its own cache:

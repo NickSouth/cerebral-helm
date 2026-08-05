@@ -2,17 +2,33 @@ import Foundation
 
 /// Minimal, parse-only YAML-frontmatter reader for Markdown descriptor files (NIC-129).
 ///
-/// A deliberately small, dependency-free sibling of the knowledge module's
-/// `FrontmatterCodec`, which `CerebralCore` cannot import — `CerebralKnowledge` is a
-/// *sibling* of `CerebralCore` (both sit above it), not a dependency of it. `CerebralCore`
-/// does depend on `CerebralShared`, so the parse half the Projects reader needs lives here.
+/// A deliberately small, dependency-free sibling of the knowledge module's `FrontmatterCodec`,
+/// which `CerebralCore` cannot import — `CerebralKnowledge` is a *sibling* of `CerebralCore` (both
+/// sit above it), not a dependency of it. `CerebralCore` does depend on `CerebralShared`, so the
+/// parse half the Projects reader needs lives here.
 ///
-/// It splits a Markdown document into its leading `---` frontmatter block, parsed to a flat
-/// `key: value` map, and the body that follows. It parses only the flat scalar shape the
-/// `PROJECT.md` project descriptors use — no nested YAML, sequences, or block scalars. A
-/// document with no leading `---` block (or an unterminated one) yields an empty map and the
-/// whole content as the body, so a descriptor without frontmatter reads as pure body, never
-/// an error.
+/// ## Why this is not just `FrontmatterCodec` (NIC-116)
+///
+/// `FrontmatterCodec` moved to Yams so it can read real user-authored YAML. Sharing that
+/// implementation would mean moving Yams down into `CerebralShared` — and *every* package depends
+/// on Shared, so a C-backed YAML parser would land in Core, Tools, Storage, and Contracts to serve
+/// the single integer key this file exists to read. `RepositoryBoundaryTests` enforces the
+/// confinement (`only CerebralKnowledge imports the YAML parser`), mirroring the rule that keeps the
+/// SQLite engine inside `CerebralStorage`.
+///
+/// The two readers are held in agreement by `FrontmatterParserConformanceTests`, which runs both
+/// over the flat-scalar grammar they share.
+///
+/// ## What it supports
+///
+/// Only the flat `key: value` scalar shape `PROJECT.md` descriptors use — the frontmatter
+/// CerebralHelm's own scaffolder and the shipped template write is exactly `importance: <int>`.
+/// **Not supported, by design:** sequences (`- item`), nested mappings, block scalars (`|`, `>`),
+/// comments, and multi-document streams. A descriptor needing any of those is not a descriptor;
+/// note frontmatter is `FrontmatterCodec`'s job.
+///
+/// A document with no leading `---` block (or an unterminated one) yields an empty map and the whole
+/// content as the body, so a descriptor without frontmatter reads as pure body, never an error.
 public enum MarkdownFrontmatter {
     /// Splits `markdown` into its frontmatter map and body. Values wrapped in matching
     /// double quotes are unquoted; lines without a colon (e.g. YAML comments) are skipped.

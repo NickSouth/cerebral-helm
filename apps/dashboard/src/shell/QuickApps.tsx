@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Panel } from "./Panel";
 import { AppGlyph } from "./AppGlyph";
 import { MoreAppsPicker } from "./MoreAppsPicker";
 import { PinPopover } from "./PinPopover";
+import { useDiscoveredApps } from "./useDiscoveredApps";
 import { postShellControl } from "./shellControl";
 import { toModeId } from "../tokens/tokens";
 import type { AppReference, ChromeProfile, DiscoveredApp, UrlReference } from "../bridge/cerebralBridge";
@@ -113,33 +114,21 @@ export function QuickApps() {
   // Real OS icons on tiles (NIC-119): once discovery is available, map each
   // configured reference id onto its discovered app (icon + real name). The
   // category glyph stays the honest fallback for anything unmatched.
-  const [discovered, setDiscovered] = useState<ReadonlyMap<string, DiscoveredApp>>(new Map());
-  useEffect(() => {
-    if (!canDiscover) {
-      return;
+  // Re-reads on `apps.changed` (NIC-175), so a tile pinned to a just-installed app picks up its
+  // real icon and name without a relaunch. Discovery failing never degrades the tiles — the
+  // category glyph stays the honest fallback, so the error state simply yields an empty map.
+  const installed = useDiscoveredApps(canDiscover);
+  const discovered = useMemo<ReadonlyMap<string, DiscoveredApp>>(() => {
+    const byReference = new Map<string, DiscoveredApp>();
+    if (installed.status === "ready") {
+      for (const app of installed.apps) {
+        if (app.referenceId) {
+          byReference.set(app.referenceId, app);
+        }
+      }
     }
-    let cancelled = false;
-    void bridge
-      .listApps()
-      .then((result) => {
-        if (cancelled) {
-          return;
-        }
-        const byReference = new Map<string, DiscoveredApp>();
-        for (const app of result.apps) {
-          if (app.referenceId) {
-            byReference.set(app.referenceId, app);
-          }
-        }
-        setDiscovered(byReference);
-      })
-      .catch(() => {
-        // Discovery failing never degrades the tiles — glyphs remain.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [canDiscover, bridge]);
+    return byReference;
+  }, [installed]);
 
   // Pinned URL references (NIC-146) resolve their label + favicon from the URL
   // catalog — the counterpart of the app-discovery join above, since a URL has no

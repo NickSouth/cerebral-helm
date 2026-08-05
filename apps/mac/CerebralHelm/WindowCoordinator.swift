@@ -108,8 +108,13 @@ final class WindowCoordinator: @unchecked Sendable {
     /// Fired on the main queue whenever backdrop visibility changes — the shell
     /// pauses the status publisher only when every backdrop is hidden (NIC-81b).
     var onDashboardVisibilityChange: ((Bool) -> Void)?
-    /// Fired once the dashboard's bridge handshake proves the page can receive events, so the
-    /// runtime can replay live widget state emitted while it was still loading.
+    /// Fired once a backdrop's bridge handshake proves the page can receive events, so the runtime
+    /// can replay live widget state emitted while it was still loading.
+    ///
+    /// Fires for the main dashboard **and for every companion backdrop** (NIC-172). A companion is
+    /// built fresh when a display is hot-plugged, long after the producers' events were sent, so it
+    /// needs the same replay — the main dashboard's first handshake is not the only moment a surface
+    /// appears. Replays are served from the producers' caches, so an extra call costs no fetch.
     var onDashboardBridgeReady: (() -> Void)?
 
     /// Ready path: host the dashboard and pre-warm the single command palette against the
@@ -299,6 +304,10 @@ final class WindowCoordinator: @unchecked Sendable {
                 self?.handleShellControl(body, from: secondary)
             }
             secondary.onBridgeReady = { [weak self, weak secondary] in
+                // A companion appears mid-session, so it has missed every event already sent —
+                // including the weather that the bootstrap does not carry (NIC-172). Replay before
+                // the topology so it lands in the same order the main dashboard sees.
+                self?.onDashboardBridgeReady?()
                 guard let json = self?.lastTopologyJSON else { return }
                 secondary?.deliverBridgeEvent(json)
             }

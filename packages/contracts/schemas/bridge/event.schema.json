@@ -39,7 +39,8 @@
         "weather.changed",
         "news.changed",
         "mail.changed",
-        "schedule.changed"
+        "schedule.changed",
+        "apps.changed"
       ]
     },
     "timestamp": {

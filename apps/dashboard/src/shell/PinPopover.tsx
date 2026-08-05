@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -13,14 +14,12 @@ import { useActiveMode } from "./useActiveMode";
 import { useUiPosture } from "../state/useUiPosture";
 import { toModeId } from "../tokens/tokens";
 import type { AppReference, ChromeProfile, DiscoveredApp } from "../bridge/cerebralBridge";
+import { useDiscoveredApps } from "./useDiscoveredApps";
+import { PickerSearchField } from "./PickerSearchField";
+import { filterApps } from "./filterApps";
 import { AppGlyph } from "./AppGlyph";
 
 const MAX_QUICK_APPS = 5;
-
-type PickerState =
-  | { readonly status: "loading" }
-  | { readonly status: "error"; readonly message: string }
-  | { readonly status: "ready"; readonly apps: readonly DiscoveredApp[]; readonly truncated: boolean };
 
 interface PopoverPosition {
   readonly left: number;
@@ -50,7 +49,8 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
   const modeId = toModeId(state.mode);
   const cardRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<PopoverPosition | null>(null);
-  const [picker, setPicker] = useState<PickerState>({ status: "loading" });
+  // Re-reads on `apps.changed`, so an app installed while this surface is open appears (NIC-175).
+  const picker = useDiscoveredApps();
   const [busy, setBusy] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState("");
@@ -58,6 +58,13 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
   const [urlProfile, setUrlProfile] = useState("");
   const [urlError, setUrlError] = useState<string | null>(null);
   const [chromeProfiles, setChromeProfiles] = useState<readonly ChromeProfile[]>([]);
+  const [query, setQuery] = useState("");
+  // Scoped to the Applications list (NIC-167): the Chrome-profile section above is short and fixed,
+  // and hiding it on an app query would surprise.
+  const visibleApps = useMemo(
+    () => (picker.status === "ready" ? filterApps(picker.apps, query) : []),
+    [picker, query]
+  );
   // The user's Chrome-profile references are a GLOBAL catalog (a profile pinned in
   // any mode mints one reference), so "already pinned" must be judged against THIS
   // mode's quickApps — never the mere existence of a reference — otherwise a profile
@@ -91,28 +98,8 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
     return () => window.removeEventListener("resize", place);
   }, [anchor]);
 
-  useEffect(() => {
-    cardRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    bridge
-      .listApps()
-      .then((result) => {
-        if (!cancelled) {
-          setPicker({ status: "ready", apps: result.apps, truncated: result.truncated });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPicker({ status: "error", message: "App discovery is unavailable right now." });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [bridge]);
+  // No mount focus on the card: the search field claims it (NIC-167), the same as the other app
+  // pickers. Escape still closes — the keydown bubbles from the input to the card's handler.
 
   useEffect(() => {
     let cancelled = false;
@@ -379,13 +366,22 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
 
           <section className="pin-pop__section" aria-label="Applications">
             <h3 className="pin-pop__section-title">Applications</h3>
+            <PickerSearchField value={query} onChange={setQuery} label="Search applications" />
             {picker.status === "loading" ? (
               <p className="pin-pop__note">Discovering installed applications…</p>
             ) : null}
             {picker.status === "error" ? <p className="pin-pop__note">{picker.message}</p> : null}
+            {/* Distinguish "your search found nothing" from "this host has no apps". */}
+            {picker.status === "ready" && visibleApps.length === 0 ? (
+              <p className="pin-pop__note">
+                {query.trim().length > 0
+                  ? `No applications match “${query.trim()}”.`
+                  : "No applications found."}
+              </p>
+            ) : null}
             {picker.status === "ready" ? (
               <ul className="pin-pop__list">
-                {picker.apps.map((app) => (
+                {visibleApps.map((app) => (
                   <li key={app.bundleId} className="pin-pop__row" title={app.bundleId}>
                     <span className="pin-pop__avatar" aria-hidden="true">
                       {app.iconPng ? (

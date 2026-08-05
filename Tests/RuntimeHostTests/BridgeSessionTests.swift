@@ -1947,7 +1947,19 @@ func unwiredOperationIsUnavailable() async throws {
 
 /// Polls until `condition` holds or the timeout elapses — the favicon fetch runs in
 /// a detached background task, so tests wait on the cache/emit rather than a return.
-private func waitUntil(timeoutMs: Int = 3000, _ condition: @Sendable () -> Bool) async {
+/// Poll `condition` until it holds or the deadline passes.
+///
+/// The deadline is deliberately generous. These tests wait on fire-and-forget `Task {}` work —
+/// favicon warming, for one — which has no completion handle to await, so the only question is how
+/// long we are willing to wait for the cooperative pool to schedule it. On a 2-core CI runner with
+/// the suite running in parallel, a 3s budget was not enough: the favicon tests failed there while
+/// passing locally and on macOS CI, and the identical commit passed on a rerun. That is scheduling
+/// latency, not a defect, and a tight deadline turns it into a red build at random.
+///
+/// A longer deadline does **not** weaken any assertion — the caller still fails if the condition
+/// never becomes true. It also costs nothing on a green run, because this returns the moment the
+/// condition holds; the deadline only elapses when the test was going to fail anyway.
+private func waitUntil(timeoutMs: Int = 30_000, _ condition: @Sendable () -> Bool) async {
     let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000)
     while Date() < deadline {
         if condition() { return }

@@ -1,14 +1,12 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useBridge } from "../state/BridgeProvider";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useUiPosture } from "../state/useUiPosture";
+import { useDiscoveredApps } from "./useDiscoveredApps";
+import { PickerSearchField } from "./PickerSearchField";
+import { filterApps } from "./filterApps";
 import type { DiscoveredApp } from "../bridge/cerebralBridge";
 import { AppGlyph } from "./AppGlyph";
-
-type PickerState =
-  | { readonly status: "loading" }
-  | { readonly status: "error"; readonly message: string }
-  | { readonly status: "ready"; readonly apps: readonly DiscoveredApp[]; readonly truncated: boolean };
 
 /**
  * The More Apps window (NIC-148): a pure launcher over the read-only `apps.list`
@@ -39,8 +37,10 @@ export function MoreAppsPicker({
   const state = useDashboardState();
   const { readOnly } = useUiPosture();
   const dialogRef = useRef<HTMLDivElement>(null);
-  const [picker, setPicker] = useState<PickerState>({ status: "loading" });
+  // Re-reads on `apps.changed`, so an app installed while this window is open appears (NIC-175).
+  const picker = useDiscoveredApps();
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const appOpen = state.capabilities?.["native.app.open"];
   const openAvailable = appOpen?.available === true && !readOnly;
@@ -48,28 +48,12 @@ export function MoreAppsPicker({
     ? "Unavailable while the app is in read-only recovery"
     : (appOpen?.degradedReason ?? "Launching apps is available on the macOS host");
 
-  useEffect(() => {
-    dialogRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    bridge
-      .listApps()
-      .then((result) => {
-        if (!cancelled) {
-          setPicker({ status: "ready", apps: result.apps, truncated: result.truncated });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPicker({ status: "error", message: "App discovery is unavailable right now." });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [bridge]);
+  // The search field takes mount focus instead of the dialog (NIC-167) — this is a launcher, so the
+  // keyboard belongs in the filter. Escape still closes: keydown bubbles to the dialog's handler.
+  const visibleApps = useMemo(
+    () => (picker.status === "ready" ? filterApps(picker.apps, query) : []),
+    [picker, query]
+  );
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
@@ -142,14 +126,29 @@ export function MoreAppsPicker({
             ×
           </button>
         </header>
+        <PickerSearchField
+          value={query}
+          onChange={setQuery}
+          label="Search applications"
+          className="apps-picker__search"
+        />
         {picker.status === "loading" ? (
           <p className="apps-picker__note">Discovering installed applications…</p>
         ) : null}
         {picker.status === "error" ? <p className="apps-picker__note">{picker.message}</p> : null}
+        {/* Distinguish "your search found nothing" from "this host has no apps" — collapsing them
+            would blame the query for an empty inventory. */}
+        {picker.status === "ready" && visibleApps.length === 0 ? (
+          <p className="apps-picker__note">
+            {query.trim().length > 0
+              ? `No applications match “${query.trim()}”.`
+              : "No applications found."}
+          </p>
+        ) : null}
         {picker.status === "ready" ? (
           <>
             <ul className="apps-picker__grid">
-              {picker.apps.map((app) => (
+              {visibleApps.map((app) => (
                 <li key={app.bundleId} className="apps-picker__item" title={app.bundleId}>
                   <button
                     type="button"

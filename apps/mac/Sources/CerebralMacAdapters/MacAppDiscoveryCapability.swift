@@ -9,6 +9,12 @@ import CerebralTools
 /// moves, or modifies anything. Icons come from `NSWorkspace.icon(forFile:)`,
 /// rendered to a small PNG and size-capped so a pathological icon can never
 /// bloat the tool output past its contract (`iconPng` maxLength).
+///
+/// The scan descends a bounded number of levels (NIC-175): plenty of real apps do not sit at the
+/// top level of a search root — `/System/Applications/Utilities` holds Terminal, Disk Utility, and
+/// Activity Monitor, and installers routinely create a vendor folder under `/Applications`. A
+/// top-level-only scan made every one of those permanently undiscoverable, so they could be neither
+/// opened by id nor pinned.
 public struct MacAppDiscoveryCapability: AppDiscoveryCapability {
     /// Icon raster size: crisp on Retina tiles without heavy payloads.
     private static let iconPixelSize = 64
@@ -16,6 +22,11 @@ public struct MacAppDiscoveryCapability: AppDiscoveryCapability {
     private static let iconBase64Cap = 98304
     /// List cap — honest `truncated: true` beyond this, never a silent cut.
     private static let maxApps = 500
+    /// How many directory levels below a search root to descend (NIC-175). Two covers the shapes
+    /// that occur in practice — `Utilities/Terminal.app` at one, `Vendor/Suite/App.app` at two —
+    /// without turning a picker open into a deep filesystem walk. Discovery runs on every picker
+    /// open, so this bound is a responsiveness guarantee, not just a safety net.
+    private static let maxSearchDepth = 2
 
     private let searchDirectories: [URL]
 
@@ -43,10 +54,7 @@ public struct MacAppDiscoveryCapability: AppDiscoveryCapability {
         var apps: [InstalledApplication] = []
 
         for directory in searchDirectories {
-            guard let entries = try? fileManager.contentsOfDirectory(
-                at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
-            ) else { continue }
-            for entry in entries where entry.pathExtension == "app" {
+            for entry in Self.appBundles(in: directory, depth: 0, fileManager: fileManager) {
                 guard
                     let bundle = Bundle(url: entry),
                     let bundleID = bundle.bundleIdentifier,
@@ -68,6 +76,34 @@ public struct MacAppDiscoveryCapability: AppDiscoveryCapability {
             apps = Array(apps.prefix(Self.maxApps))
         }
         return AppDiscoveryResult(apps: apps, truncated: truncated)
+    }
+
+    /// Every `.app` bundle at or below `directory`, to ``maxSearchDepth`` levels (NIC-175).
+    ///
+    /// An `.app` is itself a directory, so the one rule that matters is **never descend into one**:
+    /// a bundle's `Contents` routinely holds helper and updater apps (Google Chrome ships
+    /// `Google Chrome Helper.app`, Xcode ships dozens) which are implementation details, not things
+    /// a user launches. Listing them would bury the real apps and mint junk references for them.
+    ///
+    /// An unreadable directory contributes nothing rather than aborting the scan — one permission
+    /// error must not cost the user every other app on the machine.
+    private static func appBundles(in directory: URL, depth: Int, fileManager: FileManager) -> [URL] {
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var found: [URL] = []
+        for entry in entries {
+            if entry.pathExtension == "app" {
+                found.append(entry)
+                continue
+            }
+            guard depth < maxSearchDepth,
+                  (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            else { continue }
+            found.append(contentsOf: appBundles(in: entry, depth: depth + 1, fileManager: fileManager))
+        }
+        return found
     }
 
     /// The application's icon as base64 PNG at ``iconPixelSize``; nil when the

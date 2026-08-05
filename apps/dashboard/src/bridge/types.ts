@@ -121,10 +121,18 @@ export interface WeatherChannel extends MetricChannel {
   readonly condition?: string;
 }
 
+/** macOS's own memory-pressure level (NIC-158) — see `memoryPressure` below. */
+export type MemoryPressure = "normal" | "warn" | "critical";
+
 export interface SystemHealthRegion {
   readonly state: RegionState;
   readonly cpuPercent?: number;
   readonly memoryPercent?: number;
+  /** The kernel's memory-pressure verdict, independent of `memoryPercent`. The used/total ratio
+   *  sits near 100% on a healthy Mac (the OS fills RAM with cache), so it cannot say whether
+   *  memory is under strain — this can. Absent off the macOS host or when the level cannot be
+   *  sampled, in which case the bar's colour falls back to thresholding the percentage. */
+  readonly memoryPressure?: MemoryPressure;
   readonly network?: NetworkChannel;
   readonly battery: BatteryChannel;
 }

@@ -187,6 +187,9 @@ public enum BootstrapComposer {
                 battery: DashboardBatteryChannel(charging: nil, label: "Battery", percent: nil, pluggedIn: nil, state: systemHealthState),
                 cpuPercent: nil,
                 memoryPercent: nil,
+                // No pressure level before the first live sample — the bar has no colour to take
+                // yet, which is exactly what the skeleton state represents (NIC-158).
+                memoryPressure: nil,
                 network: nil,
                 state: systemHealthState
             ),

@@ -477,6 +477,14 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(patches[0]).toEqual({
       calendarModeMap: { "cal-work": "developer", "cal-school": "school" }
     });
+
+    // Regression (NIC-176): the dropdown is controlled entirely by the settings snapshot, so it
+    // reverted to its old value the moment React re-rendered — the write persisted but the UI
+    // denied it. The snapshot now follows `settings.changed`, so the selection sticks.
+    await waitFor(() => expect((workSelect as HTMLSelectElement).value).toBe("developer"));
+    // The untouched rows keep their own state rather than being reset by the whole-map write.
+    expect((within(dialog).getByLabelText("Mode for School") as HTMLSelectElement).value).toBe("school");
+    expect((within(dialog).getByLabelText("Mode for Personal") as HTMLSelectElement).value).toBe("");
   });
 
   it("shows the Canvas pairing token + last-scrape status and disconnects (NIC-132)", async () => {

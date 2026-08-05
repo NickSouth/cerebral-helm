@@ -24,12 +24,6 @@ private final class ReleaseEventCollector: @unchecked Sendable {
     var all: [String] { lock.lock(); defer { lock.unlock() }; return events }
 }
 
-private func waitForReleases(_ deadlineMs: Int, _ condition: () -> Bool) async {
-    for _ in 0..<max(1, deadlineMs / 20) {
-        if condition() { return }
-        try? await Task.sleep(nanoseconds: 20_000_000)
-    }
-}
 
 @Test("with a stored key the publisher emits a ready releases widget on cadence")
 func releasesPublisherEmitsReady() async throws {
@@ -41,7 +35,7 @@ func releasesPublisherEmitsReady() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForReleases(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -65,7 +59,7 @@ func releasesPublisherEmitsCredentialsMissing() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForReleases(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -83,7 +77,7 @@ func releasesPublisherEmitsGenericFailure() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForReleases(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -102,7 +96,7 @@ func releasesPublisherPauseResume() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForReleases(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
 
     await publisher.setActive(false)
     try? await Task.sleep(nanoseconds: 60_000_000)
@@ -111,7 +105,7 @@ func releasesPublisherPauseResume() async throws {
     #expect(collector.count == paused, "a paused publisher must not emit")
 
     await publisher.setActive(true)
-    await waitForReleases(1000) { collector.count > paused }
+    await waitUntil { collector.count > paused }
     #expect(collector.count > paused)
     await publisher.stop()
 }

@@ -525,6 +525,25 @@ public enum BridgeEventFactory {
     /// outside the mode snapshot). Unlike weather, news content differs per mode, so the event
     /// carries the profile it is for. Emitted per distinct profile by the ``NewsPublisher``
     /// (Increment 7).
+    /// An `apps.changed` event (NIC-175): the set of installed applications changed on disk, so any
+    /// surface showing an app list should re-read it.
+    ///
+    /// Deliberately carries **no data**. Every consumer already has `listApps`, which re-scans and
+    /// re-mints on each call, and the discovery result is large (names + base64 icons for every app
+    /// on the machine) — putting it in an event would ship that payload to every surface on every
+    /// install, including the ones with no app list open. This is a signal, not a snapshot; the
+    /// `mode.quickapps.changed` → `listUrls()` refresh in Quick Apps is the same pattern.
+    public static func appsChangedEvent(id: String, timestamp: Date) -> CerebralHelmBridgeEvent {
+        struct Payload: Encodable {}
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(Payload()),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .appsChanged
+        )
+    }
+
     public static func newsChangedEvent(
         region: DashboardNewsRegion, profile: String, id: String, timestamp: Date
     ) -> CerebralHelmBridgeEvent {
@@ -1231,6 +1250,25 @@ public enum BridgeEventFactory {
         }
     }
 
+    /// Memory carries the kernel's pressure level alongside the usage percentage (NIC-158).
+    /// `pressure` is `normal` / `warn` / `critical`, or nil when the level could not be sampled —
+    /// independent of `availability`, which describes the percentage only.
+    public struct SystemMetricsMemoryChannel: Encodable, Sendable {
+        public let availability: String
+        public let value: Double?
+        public let pressure: String?
+        public let unit: String?
+        public let sampledAt: Date?
+
+        public init(availability: String, value: Double?, pressure: String?, unit: String?, sampledAt: Date?) {
+            self.availability = availability
+            self.value = value
+            self.pressure = pressure
+            self.unit = unit
+            self.sampledAt = sampledAt
+        }
+    }
+
     /// Battery keeps its charging flag for the dashboard's bolt indicator.
     public struct SystemMetricsBatteryChannel: Encodable, Sendable {
         public let availability: String
@@ -1287,14 +1325,14 @@ public enum BridgeEventFactory {
     public struct SystemMetricsPayload: Encodable, Sendable {
         public let category = "system_metrics"
         public let cpu: SystemMetricsChannel
-        public let memory: SystemMetricsChannel
+        public let memory: SystemMetricsMemoryChannel
         public let network: SystemMetricsNetworkChannel
         public let battery: SystemMetricsBatteryChannel
         public let display: SystemMetricsChannel
 
         public init(
             cpu: SystemMetricsChannel,
-            memory: SystemMetricsChannel,
+            memory: SystemMetricsMemoryChannel,
             network: SystemMetricsNetworkChannel,
             battery: SystemMetricsBatteryChannel,
             display: SystemMetricsChannel

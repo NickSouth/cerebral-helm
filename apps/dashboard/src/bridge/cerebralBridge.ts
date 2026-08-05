@@ -26,7 +26,8 @@ export type BridgeEventType =
   | "news.changed"
   | "mail.changed"
   | "schedule.changed"
-  | "system.checks.changed";
+  | "system.checks.changed"
+  | "apps.changed";
 
 export interface BridgeEvent {
   readonly eventId: string;

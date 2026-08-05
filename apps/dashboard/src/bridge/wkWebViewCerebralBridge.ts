@@ -102,7 +102,8 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "news.changed",
   "mail.changed",
   "system.checks.changed",
-  "schedule.changed"
+  "schedule.changed",
+  "apps.changed"
 ]);
 
 /** True when running inside the native shell (the message handler is registered). */

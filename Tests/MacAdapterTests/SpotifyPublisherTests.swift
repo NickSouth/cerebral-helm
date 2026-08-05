@@ -17,12 +17,6 @@ private final class SpotifyEventCollector: @unchecked Sendable {
     var all: [String] { lock.lock(); defer { lock.unlock() }; return events }
 }
 
-private func waitForSpotify(_ deadlineMs: Int, _ condition: () -> Bool) async {
-    for _ in 0..<max(1, deadlineMs / 20) {
-        if condition() { return }
-        try? await Task.sleep(nanoseconds: 20_000_000)
-    }
-}
 
 /// A refresher that must never run in these tests (the seeded token is valid far into the future).
 private struct SpotifyUnusedRefresher: SpotifyTokenRefreshing {
@@ -57,7 +51,7 @@ func spotifyPublisherEmitsReady() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForSpotify(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -82,7 +76,7 @@ func spotifyPublisherEmitsConnect() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForSpotify(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -101,7 +95,7 @@ func spotifyPublisherEmitsNothingPlaying() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForSpotify(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -126,7 +120,7 @@ func spotifyPublisherNamesStaleScope() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForSpotify(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -150,7 +144,7 @@ func spotifyPublisherFullScopePlainEmpty() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForSpotify(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
     await publisher.stop()
 
     #expect(collector.count >= 1)
@@ -171,7 +165,7 @@ func spotifyPublisherPauseResume() async throws {
         emit: { collector.collect($0) }
     )
     await publisher.start()
-    await waitForSpotify(3000) { collector.count >= 1 }
+    await waitUntil { collector.count >= 1 }
 
     await publisher.setActive(false)
     try? await Task.sleep(nanoseconds: 60_000_000)
@@ -180,7 +174,7 @@ func spotifyPublisherPauseResume() async throws {
     #expect(collector.count == paused, "a paused publisher must not emit")
 
     await publisher.setActive(true)
-    await waitForSpotify(1000) { collector.count > paused }
+    await waitUntil { collector.count > paused }
     #expect(collector.count > paused)
     await publisher.stop()
 }
