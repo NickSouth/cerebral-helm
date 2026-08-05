@@ -331,7 +331,6 @@ func googleSessionInvalidatesItsCache() async throws {
     // Without invalidate the session would keep serving a token the user just revoked.
     await #expect(throws: GoogleAuthError.notConnected) { _ = try await session.accessToken(now: anchor) }
 }
-#endif
 
 // MARK: - The coordinator's callback handling
 
@@ -405,3 +404,4 @@ func googleCoordinatorUsesItsOwnPort() {
     // configured URI exactly. 8890 avoids Spotify's 8888 and the Canvas ingest server's 8899.
     #expect(coordinator.redirectURI == "http://127.0.0.1:8890/callback")
 }
+#endif
