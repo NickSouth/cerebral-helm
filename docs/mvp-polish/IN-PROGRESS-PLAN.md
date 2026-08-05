@@ -39,7 +39,7 @@ not as gospel.
 | 4 | NIC-158 | Smoothed load in the publisher | ☑ |
 | 5 | NIC-158 | Three-tier tones + gliding bars | ☑ |
 | 6 | NIC-172 | Weather replay on new surfaces | ☑ |
-| 7 | NIC-175 | Nested-folder app discovery | ☐ |
+| 7 | NIC-175 | Nested-folder app discovery | ☑ |
 | 8 | NIC-175 | `apps.changed` event + surface refresh | ☐ |
 | 9 | NIC-167 | Shared search field + `ReferencePicker` | ☐ |
 | 10 | NIC-167 | More Apps + pin popover | ☐ |
@@ -533,6 +533,32 @@ subfolder — `/Applications/Utilities`, vendor folders — is invisible **perma
   **not** be listed); the truncation cap.
 - **Watch:** `listApps` scans on every picker open — sanity-check timing with a large vendor tree.
 - **Done when:** an app in `/Applications/Utilities` appears in More Apps.
+
+**BUILT 2026-08-05.** Gates: `swift test` **1398** green · **xcodebuild BUILD SUCCEEDED**. Dashboard
+untouched.
+
+**Measured payoff on this machine: 63 → 81 apps.** `/System/Applications/Utilities` alone holds ~56
+apps — Terminal, Activity Monitor, Console, Disk Utility — every one of which was permanently
+undiscoverable, so it could be neither opened by id nor pinned. The live test now asserts
+`com.apple.Terminal` and `com.apple.ActivityMonitor` are found, which is a real macOS invariant
+rather than a fixture.
+
+**Measured cost: 63 ms cold, 4–5 ms warm** for the full no-icon scan (probed, then the probe was
+deleted). `listApps` runs on every picker open, so this was worth measuring rather than assuming;
+`maxSearchDepth = 2` is a responsiveness guarantee, not just a safety net.
+
+- **Never descend into an `.app`** is the one rule that matters — bundles are directories, and every
+  browser and IDE ships helper apps in `Contents`. Listing them would bury the real apps and mint
+  junk references for things a user never launches. Covered by a test.
+- An unreadable subdirectory contributes nothing rather than aborting the scan; one permission error
+  must not cost the user every other app. Covered by a test that chmods a directory to `0o000`.
+- **The half-copied-bundle behaviour is now pinned by a test** — a `.app` whose `Info.plist` has not
+  landed yet is skipped, because `Bundle(url:)` cannot load it. This is the mechanism behind the
+  Steam report (see this ticket's header); it is correct, and the test stops someone "fixing" it
+  into listing unopenable entries.
+
+The pre-existing tests only exercised the live host, so this added the first fixture-based coverage
+for discovery (`makeApp` writes a minimal real bundle into a temp dir).
 
 ### Increment 2 — `apps.changed` event so open surfaces refresh
 
