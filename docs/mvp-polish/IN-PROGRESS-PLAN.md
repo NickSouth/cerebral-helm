@@ -43,13 +43,11 @@ not as gospel.
 | 8 | NIC-175 | `apps.changed` event + surface refresh | ☑ |
 | 9 | NIC-167 | Shared search field + `ReferencePicker` | ☑ |
 | 10 | NIC-167 | More Apps + pin popover | ☑ |
-| 11 | NIC-115 | GRDB dependency + Linux CI provisioning | ☐ |
-| 12 | NIC-115 | Reimplement `SQLiteDatabase` over GRDB | ☐ |
-| 13 | NIC-115 | Drop `swift-toolchain-sqlite` | ☐ |
-| 14 | NIC-123 | Re-run the 5-slot experiment | ☐ |
-| 15 | NIC-123 | ASan — **only if 14 crashes** | ☐ |
-| 16 | NIC-116 | Yams on the frontmatter read path | ☐ |
-| 17 | NIC-116 | Reconcile the duplicate reader | ☐ |
+| 11 | NIC-115 | **Atomic engine swap** (was 11+12+13 — they cannot be split, see the blocker in the NIC-115 section) | ☐ |
+| 14 | NIC-123 | Re-run the 5-slot experiment — **DONE: 10/10 green, crash gone, close the ticket** | ☑ |
+| 15 | NIC-123 | ASan — **not needed; 14 was green** | ☑ n/a |
+| 16 | NIC-116 | Yams on the frontmatter read path | ☑ |
+| 17 | NIC-116 | Reconcile the duplicate reader | ☑ |
 
 **NIC-177 has no increment** — it is already built and committed; see its section.
 
@@ -742,15 +740,72 @@ Do not re-probe.
 **Owner decision — acceptance trimmed:** strike the "FTS5 search path adopted via GRDB" criterion.
 **No FTS5 exists anywhere in the tree**, so there is nothing to adopt.
 
-### Increment 1 — Add GRDB and provision Linux CI
+### ⚠️ BLOCKER FOUND 2026-08-05 — increments 1–3 below are NOT separable
 
-- **Goal:** GRDB resolves and the full suite stays green on both CI platforms, with no production
-  code using it yet.
+**GRDB and `swift-toolchain-sqlite` cannot coexist in any target that compiles GRDB.** Proven by
+building it, not by reading docs. The tree was reverted; nothing landed.
+
+**Mechanism (exact):** `swift-toolchain-sqlite`'s module map exposes **both** headers in one module:
+
+```
+module SwiftToolchainCSQLite {
+  header "sqlite3.h"
+  header "sqlite3ext.h"
+}
+```
+
+`sqlite3ext.h` is SQLite's *loadable-extension* header: when `SQLITE_CORE` is undefined it redefines
+every SQLite API as a macro routing through a global `sqlite3_api` pointer. GRDB's C shim does
+`#include <sqlite3.h>`, clang resolves that into the vendored module, drags in `sqlite3ext.h`, and
+every call in the shim becomes a macro referencing an undeclared symbol:
+
+```
+GRDBSQLite/shim.h:15:5: error: use of undeclared identifier 'sqlite3_api'
+error: could not build Objective-C module 'GRDBSQLite'
+```
+
+**Scope of the conflict, measured:**
+
+| Situation | Result |
+|---|---|
+| GRDB in the graph, nothing imports it | ✅ builds; suite green (1398) |
+| GRDB linked into `CerebralStorage`, sources don't import it | ✅ builds; suite green |
+| A target imports **both** GRDB and `CerebralStorage` | ❌ shim fails |
+| A target imports **only** GRDB but links `CerebralStorage` | ❌ shim fails |
+
+The last row is the killer: it is not about import statements, it is about the vendored module map
+being visible anywhere GRDB's shim compiles. No include-path ordering fixes it.
+
+**Consequence:** the "add it, then swap it, then remove the old one" sequence is impossible — the
+moment `SQLiteDatabase.swift` imports GRDB while the target still links `SwiftToolchainCSQLite`, the
+build breaks. **Old increments 1–3 must become one atomic commit.** Feasibility of the end state is
+already established: GRDB 7.11.1 was probed standalone on Swift 6.3.3/macOS 26, and
+`DatabaseQueue.unsafeReentrantWrite(_:)` exists, which is what maps this wrapper's re-entrant
+`transaction(_:)` semantics (its body calls back into `run`/`query` on the same instance).
+
+### Increment 1 (REVISED) — Atomic engine swap
+
+- **Goal:** `CerebralStorage` runs on GRDB, with `swift-toolchain-sqlite` gone, in one commit.
+- **Changes, all together because they cannot be split:** add GRDB and remove `swift-toolchain-sqlite`
+  in `Package.swift`; rewrite `SQLiteDatabase`'s internals over `DatabaseQueue` preserving its public
+  API **exactly** (`execute`/`run`/`query`/`transaction`/`lastInsertRowID`/`Location`/`busyTimeoutMs`,
+  `@unchecked Sendable`); map GRDB errors onto the existing `StorageError` cases; use
+  `unsafeReentrantWrite` so `transaction(_:)` keeps its re-entrant contract; add
+  `apt-get install -y libsqlite3-dev` to the `core-swift-linux` job; supersede ADR-005.
+- **Acceptance:** the entire existing `StorageTests` suite passes **unmodified**. That is the whole
+  safety argument for a change this size — the tests are the spec.
+- **Still deferred:** `DatabaseMigrator` (migration bookkeeping is durable user state), GRDB record
+  types, value observation, FTS5.
+
+The three sub-sections below are kept for their detail but are now one commit.
+
+### Original increment 1 — Add GRDB and provision Linux CI *(folded into the atomic swap)*
+
 - **Changes:** dependency in `Package.swift`; `apt-get update && apt-get install -y libsqlite3-dev`
   in the `core-swift-linux` job before `swift test`.
 - **Files:** `Package.swift`, `Package.resolved`, `.github/workflows/ci.yml`.
-- **Done when:** both `core-swift-linux` and `core-swift-macos` green with GRDB in the graph.
-- **Why separate:** a CI-provisioning failure must never get tangled with a storage-behaviour failure.
+- **Note:** a dependency nothing links is only *resolved*, never compiled — so this could never have
+  proven GRDB builds on Linux even without the conflict above.
 
 ### Increment 2 — Reimplement `SQLiteDatabase` over GRDB
 
@@ -794,7 +849,47 @@ So the work is not "reproduce and fix" — it is **"run the experiment and close
 was a real reproducible crash that appears to have been fixed underneath us, and it's worth an hour
 to retire a High-priority unknown properly.
 
-### Increment 1 — Re-run the original experiment
+### ✅ RESOLVED 2026-08-05 — the crash does not reproduce, and the slot should stay off anyway
+
+**Experiment run, per the original bisection protocol.** The `secret: any SecretCapability` slot was
+re-added to `ToolCapabilities` in the exact shape recorded as SIGBUS-ing 5/5 on 2026-07-05 (default
+argument form, plus the honest `KeychainSecretCapability` bound at the Mac composition), then:
+
+| Run | Result |
+|---|---|
+| `swift test` ×10 with the slot present | **10/10 green**, 1398 tests each |
+| `CEREBRAL_KEYCHAIN_TESTS=1 swift test --filter MacAdapterTests` ×3 | 2 pass, 1 fail — **unrelated**, see below |
+
+**Evidence:** Apple Swift 6.3.3 (swiftlang-6.3.3.1.3), arm64-apple-macosx26.0, macOS 26.5.2. The
+struct now carries 23 existential members — 18 past the "5th slot" the ticket blames — so the
+premise was already disproven by the tree before the experiment ran. Most likely a toolchain codegen
+bug fixed upstream between the July Xcode default and 6.3.3.
+
+**The slot was reverted, and should NOT be re-added.** The ticket's last to-do says the struct "may
+regain the `secret` slot if that shape is preferable" — it is not. Grepping the handlers found
+**zero** consumers: no tool handler references `SecretCapability` at all, and every real consumer
+(`SpotifyAuthSession`, `GoogleAuthSession`, `ReleasesPublisher`, `ProjectGitStatusPublisher`,
+`LinearAPIClient`) takes `secretStore` straight off `MacToolCapabilities.Composition`. NIC-82's
+placement is correct on its own merits — the comment there already says so ("carried here rather
+than on `ToolCapabilities` because no tool handler consumes secrets in the MVP"). Re-adding it would
+mean a dead field on the one struct this ticket suspected of memory-corruption sensitivity.
+
+**Bearing on NIC-115:** the vendored `swift-toolchain-sqlite` is **exonerated** — it was the prime
+suspect in every recorded crash trace, and the crash is gone with it still in place. That removes the
+diagnostic argument for the GRDB migration, leaving only "FTS5 someday".
+
+**Separate pre-existing bug found and fixed while running the protocol.** The 1-in-5 keychain
+failure was not a SIGBUS but a clean `.notFound` assertion, and it reproduced identically with the
+slot **reverted** — so it is not the experiment's doing. Cause: `storeIsWriteThrough` seeded
+`SecretValueCache.shared` and then asserted a value survived a Keychain delete, while the
+round-trip test above it calls `SecretValueCache.shared.invalidateAll()` to prove persistence.
+swift-testing runs those in parallel, so the invalidation could land between the store and the read.
+NIC-177's process-wide cache made these two tests race by construction. Fixed by giving
+`storeIsWriteThrough` a private `SecretValueCache()` — the property under test is the cache's
+behaviour, not that one shared instance, which `SecretValueCacheTests` covers separately.
+**8/8 green after the fix, from ~1-in-5 failing before.**
+
+### Original increment 1 — Re-run the original experiment *(done; see above)*
 
 - **Goal:** an evidence-backed answer on whether the crash still exists.
 - **Changes:** add the `secret: any SecretCapability` slot exactly as NIC-82 did — the shape recorded
@@ -890,6 +985,44 @@ colons are mangled the same way.
   by any read.
 - **Deferred — explicitly rejected:** Yams on the emit side. That is the vault-churn path.
 
+**BUILT 2026-08-05.** Gates: `swift test` **1411** green · **xcodebuild BUILD SUCCEEDED** ·
+repository-boundary tests green. Yams 5.4.0. No dashboard change.
+
+**Design change from the plan — `compose`, not `load` + resolver surgery.** The plan said to use
+`Yams.load` with `Resolver.default.removing(.timestamp)`. That only patches one coercion; `load`
+applies YAML's *implicit resolution* to every scalar, so `007` still became the integer `7`, `no`
+became `false`, and `1.50` became `1.5`. All of those lose the author's literal text on the way into
+a `[String: String]` map. `Yams.compose` returns the node tree, where `Node.Scalar.string` is the
+**verbatim source text** — one change that sidesteps the entire family of resolver quirks instead of
+disabling them one at a time. Pinned by a test.
+
+**What the old parser was actually doing** (measured by running the new tests against it, not
+inferred):
+
+| Input | Old result | Now |
+|---|---|---|
+| `tags:` / `  - work` / `  - urgent` | `""` — both values dropped | `"work, urgent"` |
+| `tags: [work, urgent]` | `"[work, urgent]"` raw | `"work, urgent"` |
+| `summary: \|` + indented lines | **`"\|"`** — the block indicator became the value | the block's text |
+| `author:` / `  name: Nick` | key absent | `author.name` |
+| `title: "Meeting: Q3 planning"` | `"Meeting"` — split on the first colon | full string |
+| malformed YAML | **`["title": "[unclosed", "bad": ": :"]`** — fabricated keys | `[:]`, body kept |
+
+That malformed-YAML row is the worst of them: the old parser invented metadata out of unparseable
+text rather than declining to read it.
+
+**Flattening rules** (a flat `[String: String]` has to project richer YAML somehow — documented on
+`flatten`): scalar → literal text; sequence → joined `", "`; mapping → recursive dotted keys
+(`author.name`); null → `""` (matching the old behaviour); **alias (`*anchor`) → omitted**, because
+resolving it wrongly would put text in a note's metadata that the author never wrote.
+
+`unquote` was deleted — Yams owns quoting and escapes now.
+
+**Two halves kept honest by a round-trip guard**: the codec is deliberately asymmetric, so a test
+asserts everything `emit` writes is read back identically, using a title containing quotes, a
+backslash and a colon. A second test covers the realistic lifecycle — CerebralHelm captures a note,
+the user adds a tag list in Obsidian, both halves still read.
+
 ### Increment 2 — Reconcile the duplicate reader
 
 `packages/shared/Sources/CerebralShared/MarkdownFrontmatter.swift` is a second frontmatter reader,
@@ -901,6 +1034,33 @@ repository boundary rule).
   Decide during the increment; the boundary rule constrains the answer.
 - **Tests:** the same fixture set against both entry points.
 - **Depends on:** Increment 1.
+
+**BUILT 2026-08-05 — NIC-116 feature-complete.** Gates: `swift test` **1414** green ·
+**xcodebuild BUILD SUCCEEDED**.
+
+**Decision: keep both readers. Do NOT move Yams into `CerebralShared`.** The plan offered that as
+one of two options; the evidence says it is wrong. *Every* package depends on Shared, so putting a
+C-backed YAML parser there pulls libYAML into Core, Tools, Storage and Contracts — to serve **one
+integer key**. `MarkdownFrontmatter` is read by exactly two files, for exactly `importance`, from a
+`PROJECT.md` whose frontmatter is `importance: <int>` in both `ProjectScaffolder.descriptorContents`
+and the shipped `config/templates/PROJECT.md`. The narrow parser matches its job precisely; the
+duplication is justified rather than accidental.
+
+**The decision is now enforced, not just documented.** Added a `RepositoryBoundaryTests` case —
+*"only CerebralKnowledge imports the YAML parser"* — mirroring the existing SQLite-engine
+confinement, including its non-vacuous guard (it fails loudly if the import disappears rather than
+passing on an empty scan). A future attempt to import Yams elsewhere now fails a test instead of
+silently widening the graph.
+
+**Drift is guarded by a conformance test.** `FrontmatterParserConformanceTests` runs *both* readers
+over the flat-scalar grammar they share — single/multiple scalars, quoted values, empty values, no
+block, unterminated block, empty document, a body containing a `---` rule, multi-paragraph bodies —
+plus the exact bytes the scaffolder writes. They agree on all of it. Cases where they legitimately
+differ (sequences, nested mappings, block scalars, malformed YAML) are deliberately **not** asserted
+there — those belong to `FrontmatterCodec` alone.
+
+Both types now carry doc comments explaining the split, pointing at each other and at the tests, so
+the next reader finds a decision rather than an apparent oversight.
 
 ---
 
