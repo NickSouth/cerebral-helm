@@ -24,18 +24,20 @@ private func livePlanner(phase: ExecutionPhase = .preMac) throws -> WorkflowActi
     )
 }
 
-@Test("open-developer-layout resolves and aggregates to shell (FR-MOD-03)")
-func developerLayoutResolvesToShell() throws {
+@Test("open-developer-layout is synthesized from the layout and aggregates to local_write (NIC-142)")
+func developerLayoutResolvesFromLayout() throws {
     let plan = try livePlanner().plan(actionID: "open-developer-layout")
 
     #expect(plan.subjectID == "open-developer-layout")
-    #expect(plan.actions.contains { $0.kind == "hook.run" })
-    // The hook makes the strictest step `shell` — the governing risk the workflow
-    // must confirm against (FR-MOD-03).
-    #expect(RiskAggregation.highest(plan.actions.map(\.risk)) == .shell)
-    // The read-only snapshot runs pre-Mac; the Mac-only steps plan unavailable.
-    #expect(plan.actions.contains { $0.status == .success })
-    #expect(plan.actions.contains { $0.status == .unavailable })
+    // Windows-only: opening apps/URLs and arranging windows — never the legacy
+    // hook/terminal/system-snapshot steps (those are not part of a layout).
+    #expect(!plan.actions.contains { $0.kind == "hook.run" })
+    #expect(plan.actions.contains { $0.kind == "app.open" })
+    #expect(plan.actions.contains { $0.kind == "window.arrange" })
+    // No shell step, so the governing risk is local_write (FR-MOD-03).
+    #expect(RiskAggregation.highest(plan.actions.map(\.risk)) == .localWrite)
+    // Every layout step is macOS-only, so pre-Mac they all plan unavailable.
+    #expect(plan.actions.allSatisfy { $0.status == .unavailable })
     // Every step carries its serialized input for execution.
     #expect(plan.actions.allSatisfy { $0.input != nil })
 }
@@ -45,7 +47,7 @@ func developerLayoutPlansFullyAvailableOnMac() throws {
     let plan = try livePlanner(phase: .macOS).plan(actionID: "open-developer-layout")
 
     #expect(plan.actions.allSatisfy { $0.status == .success })
-    #expect(RiskAggregation.highest(plan.actions.map(\.risk)) == .shell)
+    #expect(RiskAggregation.highest(plan.actions.map(\.risk)) == .localWrite)
 }
 
 @Test("every shipped layout workflow resolves to a non-empty plan")

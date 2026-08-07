@@ -122,6 +122,10 @@ function schemaForFixture(filePath) {
     return schemaId("tools", "tool-result");
   }
 
+  if (relativePath.startsWith("valid/reports/") || relativePath.startsWith("invalid/reports/")) {
+    return schemaId("reports", "report-document");
+  }
+
   if (relativePath.startsWith("valid/config/settings/") || relativePath.startsWith("invalid/config/settings/")) {
     return schemaId("config", "settings-patch");
   }
@@ -160,6 +164,10 @@ function schemaForFixture(filePath) {
 
   if (relativePath.includes("/bridge/bootstrap/")) {
     return schemaId("bridge", "bootstrap-state");
+  }
+
+  if (relativePath.includes("/bridge/settings/")) {
+    return schemaId("bridge", "settings-snapshot");
   }
 
   if (relativePath.includes("/bridge/operations/") && relativePath.endsWith("-request.json")) {

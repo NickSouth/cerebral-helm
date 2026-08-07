@@ -44,7 +44,8 @@ func macOSDerivationReflectsNativeBindings() {
     #expect(byID["native.hook.run"]?.available == false)
     #expect(byID["system.metrics"]?.available == false)
     #expect(byID["battery"]?.available == false)
-    // No weather provider exists in the MVP regardless of composition.
+    // Weather stays unavailable until a producer is composed (weatherProviderComposed),
+    // which this composition does not declare (NIC-169).
     #expect(byID["weather"]?.available == false)
 }
 
@@ -122,6 +123,41 @@ func permissionStatusMapping() {
     #expect(metricsFlag(.notRequired)?.available == true)
     #expect(metricsFlag(.denied)?.available == false)
     #expect(metricsFlag(.notDetermined)?.available == false)
+}
+
+@Test("weather is available only when composed on macOS with the Location grant (NIC-169)")
+func weatherFlagRidesLocationPermission() {
+    func weatherFlag(composed: Bool, location: PermissionStatus) -> CerebralContracts.Capability? {
+        CompositionCapabilities.bridgeCapabilities(
+            phase: .macOS,
+            nativeCapabilityIDs: [],
+            permissions: FakePermissions(statuses: ["location": location]),
+            weatherProviderComposed: composed
+        ).first { $0.id == "weather" }
+    }
+
+    // Composed + a satisfying grant → available and native.
+    #expect(weatherFlag(composed: true, location: .granted)?.available == true)
+    #expect(weatherFlag(composed: true, location: .granted)?.source == .native)
+    // Composed but the grant is denied/undetermined → unavailable, with Location guidance.
+    let denied = weatherFlag(composed: true, location: .denied)
+    #expect(denied?.available == false)
+    #expect(denied?.degradedReason?.contains("Location") == true)
+    #expect(denied?.degradedReason?.contains("x-apple.systempreferences:") == true)
+    #expect(weatherFlag(composed: true, location: .notDetermined)?.available == false)
+    // No producer composed → unavailable regardless of the grant.
+    #expect(weatherFlag(composed: false, location: .granted)?.available == false)
+}
+
+@Test("weather stays unavailable in the pre-Mac phase even if a producer is declared")
+func weatherFlagGatedByPhase() {
+    let flags = CompositionCapabilities.bridgeCapabilities(
+        phase: .preMac,
+        nativeCapabilityIDs: [],
+        permissions: FakePermissions(statuses: ["location": .granted]),
+        weatherProviderComposed: true
+    )
+    #expect(flags.first { $0.id == "weather" }?.available == false)
 }
 
 @Test("a known TCC permission's guidance carries the System Settings deep link")

@@ -13,8 +13,17 @@ public protocol RunningApplicationSource: Sendable {
     func hide(bundleID: String) -> Bool
     /// Un-hide the application; returns whether the request was accepted.
     func unhide(bundleID: String) -> Bool
-    /// The host app's own bundle id (never hidden or stored).
+    /// Gracefully quit the application (NIC-143 "close all"); returns whether any
+    /// running instance was asked to terminate.
+    func terminate(bundleID: String) -> Bool
+    /// The host app's own bundle id (never hidden, stored, or quit).
     var ownBundleID: String? { get }
+}
+
+public extension RunningApplicationSource {
+    /// Default no-op quit, so a source that only models hide/unhide (e.g. the
+    /// "Windows Stored by Mode" test fakes) is unaffected by the close-all seam.
+    func terminate(bundleID: String) -> Bool { false }
 }
 
 public struct RunningApplicationInfo: Equatable, Sendable {
@@ -53,6 +62,12 @@ public struct SystemRunningApplications: RunningApplicationSource {
 
     public func unhide(bundleID: String) -> Bool {
         applications(bundleID).map { $0.unhide() }.contains(true)
+    }
+
+    public func terminate(bundleID: String) -> Bool {
+        // Graceful terminate (owner decision, 2026-07-15): a normal quit the app can
+        // intercept to save, never `forceTerminate` which discards unsaved work.
+        applications(bundleID).map { $0.terminate() }.contains(true)
     }
 
     private func applications(_ bundleID: String) -> [NSRunningApplication] {

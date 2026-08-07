@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "brevt_000000000000000000000009",
+  "type": "settings.changed",
+  "timestamp": "2026-07-10T16:00:00.030Z",
+  "payload": {
+    "settings": {
+      "schemaVersion": "1.0.0",
+      "defaultModeId": "developer",
+      "confirmAllActions": false,
+      "appearance": { "reducedMotion": false, "assistantName": "Cerebra" },
+      "knowledge": { "rootReference": "knowledge-root" },
+      "workspace": { "windowsStoredByMode": true, "mainDisplayId": "system-primary", "layoutDisplayId": "system-primary" },
+      "modeColors": { "executive.primary": "#ffd166" }
+    }
+  }
+}

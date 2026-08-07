@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "id": "url.open",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "purpose": "Open an allowlisted URL reference through the platform adapter.",
   "inputSchema": {
     "schemaId": "https://cerebralhelm.local/schemas/tools/url-open-input.schema.json",
@@ -9,7 +9,7 @@
   },
   "outputSchema": {
     "schemaId": "https://cerebralhelm.local/schemas/tools/url-open-output.schema.json",
-    "schemaVersion": "1.0.0"
+    "schemaVersion": "1.1.0"
   },
   "risk": "local_write",
   "runtimeRiskPolicy": "descriptor_risk",

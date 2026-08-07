@@ -1,9 +1,11 @@
-import { render, screen, within, fireEvent, act } from "@testing-library/react";
+import { render, screen, within, fireEvent, act, waitFor } from "@testing-library/react";
 import { DashboardShell } from "./DashboardShell";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
-import { ConversationProvider } from "../state/ConversationProvider";
+import { ActionStatusProvider } from "../state/ActionStatusProvider";
 import { SettingsProvider } from "../state/SettingsProvider";
+import { ReportProvider } from "../state/ReportProvider";
+import { InputProvider } from "../state/InputProvider";
 import { AppearanceProvider } from "../state/AppearanceProvider";
 import { ThemeProvider } from "../app/ThemeProvider";
 import { createBridgeStore } from "../state/bridgeStore";
@@ -20,11 +22,15 @@ function renderProviders(
       <DashboardStateProvider store={store}>
         <AppearanceProvider>
           <ThemeProvider>
-            <ConversationProvider>
+            <ActionStatusProvider>
               <SettingsProvider>
-                <DashboardShell />
+                <ReportProvider>
+                  <InputProvider>
+                    <DashboardShell />
+                  </InputProvider>
+                </ReportProvider>
               </SettingsProvider>
-            </ConversationProvider>
+            </ActionStatusProvider>
           </ThemeProvider>
         </AppearanceProvider>
       </DashboardStateProvider>
@@ -78,6 +84,67 @@ describe("DashboardShell structure", () => {
     expect(screen.getByRole("contentinfo", { name: "Status bar" })).toBeInTheDocument();
   });
 
+  it("shows the layout section, swaps the quick-toggle slot, and closes on the X (NIC-142)", async () => {
+    const { bridge } = renderShell();
+    const bar = screen.getByRole("contentinfo", { name: "Status bar" });
+    // No layout section until a layout is opened.
+    expect(within(bar).queryByLabelText("Layout windows")).toBeNull();
+
+    // Entering layout mode surfaces the hotswap (quick-toggle) targets as icon tiles.
+    // Static (non-hotswap) windows are not shown in the pill (NIC-142).
+    await act(async () => {
+      await bridge.openLayout({ modeId: "developer" });
+    });
+    const section = within(bar).getByLabelText("Layout windows");
+    expect(within(section).queryByText("Claude")).toBeNull();
+    const vscode = within(section).getByRole("button", { name: "Visual Studio Code" });
+    const github = within(section).getByRole("button", { name: "GitHub" });
+    // VS Code is the initially-shown target.
+    expect(vscode).toHaveAttribute("aria-pressed", "true");
+    expect(github).toHaveAttribute("aria-pressed", "false");
+
+    // Pressing GitHub swaps the dynamic slot to it.
+    fireEvent.click(github);
+    await waitFor(() => {
+      expect(within(section).getByRole("button", { name: "GitHub" })).toHaveAttribute(
+        "aria-pressed",
+        "true"
+      );
+    });
+    expect(within(section).getByRole("button", { name: "Visual Studio Code" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+
+    // The close control exits layout mode and clears the section.
+    fireEvent.click(within(section).getByRole("button", { name: "Close layout mode" }));
+    await waitFor(() => {
+      expect(within(bar).queryByLabelText("Layout windows")).toBeNull();
+    });
+  });
+
+  it("adds a session-only window via the + control's pin picker (NIC-142)", async () => {
+    const { bridge } = renderShell();
+    const bar = screen.getByRole("contentinfo", { name: "Status bar" });
+    await act(async () => {
+      await bridge.openLayout({ modeId: "developer" });
+    });
+    const section = within(bar).getByLabelText("Layout windows");
+    // Terminal is not a toggle target yet.
+    expect(within(section).queryByRole("button", { name: "Terminal" })).toBeNull();
+
+    // No native channel in jsdom, so the "+" falls back to the in-webview picker
+    // overlay; add Terminal from it (session-only add).
+    fireEvent.click(within(section).getByRole("button", { name: "Pin a window" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a layout window" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Add Terminal" }));
+
+    // Terminal is now a pressable quick-toggle target.
+    await waitFor(() => {
+      expect(within(section).getByRole("button", { name: "Terminal" })).toBeInTheDocument();
+    });
+  });
+
   it("boots Executive (the default mode) with exactly one mode control selected", () => {
     renderShell();
     const options = within(screen.getByRole("group", { name: "Mode" })).getAllByRole("button");
@@ -97,22 +164,81 @@ describe("DashboardShell structure", () => {
     }
   });
 
-  it("renders eight quick-action slots — wired ones enabled, placeholders disabled", () => {
+  it("shows every agent as grey / Not implemented for the MVP (NIC-124)", () => {
+    renderShell();
+    const agents = Array.from(document.querySelectorAll<HTMLElement>(".agent-list__item"));
+    expect(agents).toHaveLength(4);
+    for (const agent of agents) {
+      expect(within(agent).getByText("Not implemented")).toBeInTheDocument();
+      // The status dot is the neutral/grey activity (idle → neutral token).
+      expect(agent.querySelector('.agent-status-dot[data-activity="idle"]')).not.toBeNull();
+    }
+  });
+
+  it("renders eight quick-action slots, all of them built", () => {
     renderShell();
     const slots = within(screen.getByRole("group", { name: "Quick actions" })).getAllByRole(
       "button"
     );
     expect(slots).toHaveLength(8);
-    // D4 wires capture-note; the rest remain greyed placeholders.
-    expect(screen.getByRole("button", { name: "Capture note" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Daily brief" })).toBeDisabled();
-    const disabled = slots.filter((slot) => slot.hasAttribute("disabled"));
-    expect(disabled).toHaveLength(7);
+    // Every slot is built (Gmail integration, 2026-08-04): `email-report` was the last one, and
+    // the owner overrode the PRD's Workspace exclusion to finish it.
+    for (const name of [
+      "Daily brief",
+      "Capture note",
+      "Create event",
+      "Create project",
+      "Send text",
+      "System status",
+      "Email report",
+      "Shut down"
+    ]) {
+      expect(screen.getByRole("button", { name })).toBeEnabled();
+    }
+    // Nothing is greyed any more. A slot that is configured but unbuilt still renders labelled and
+    // disabled — that rule stands; there is simply no such slot left.
+    expect(slots.filter((slot) => slot.hasAttribute("disabled"))).toHaveLength(0);
   });
 
-  it("exposes the persistent global Ask-Heimlich launcher (enabled)", () => {
+  it("paints only shut-down with the danger tone, and only while it is live", () => {
     renderShell();
-    expect(screen.getByLabelText("Ask Heimlich or type a command")).toBeEnabled();
+    const group = screen.getByRole("group", { name: "Quick actions" });
+
+    const danger = within(group)
+      .getAllByRole("button")
+      .filter((slot) => slot.classList.contains("quick-action--danger"));
+    expect(danger).toHaveLength(1);
+    expect(danger[0]).toHaveAccessibleName("Shut down");
+    // Outline, not filled — the weight belongs on the confirmation, not the tile.
+    expect(danger[0]).toHaveClass("quick-action--wired");
+  });
+
+  it("omits unconfigured slots rather than rendering placeholder tiles, keeping the bar/box split", () => {
+    renderShellWithState((base) => ({
+      ...base,
+      modes: base.modes.map((modeView) =>
+        modeView.label === base.mode
+          ? {
+              ...modeView,
+              quickActions: ["daily-brief", null, null, null, "capture-note", null, null, null]
+            }
+          : modeView
+      )
+    }));
+
+    const group = screen.getByRole("group", { name: "Quick actions" });
+    const slots = within(group).getAllByRole("button");
+    expect(slots).toHaveLength(2);
+    // The old "Add action" placeholder tile is gone (docs/quick-actions/PLAN.md).
+    expect(within(group).queryByRole("button", { name: "Add action" })).toBeNull();
+    // The surviving slots stay in their own rows — a bar is not promoted into the box row.
+    expect(slots[0]).toHaveClass("quick-action--bar");
+    expect(slots[1]).toHaveClass("quick-action--box");
+  });
+
+  it("exposes the persistent global command launcher (enabled)", () => {
+    renderShell();
+    expect(screen.getByLabelText("Type a command")).toBeEnabled();
   });
 
   it("shows the CerebralHelm brand (wordmark + helm mark) in the header row", () => {
@@ -130,8 +256,10 @@ describe("DashboardShell config-driven content (one view, four modes, no per-mod
   it("populates Developer mode from its config and region data", () => {
     renderShell("mode.developer.ready");
     expect(screen.getByText("Ready to build.")).toBeInTheDocument();
-    expect(screen.getByText("dev · checks passing")).toBeInTheDocument();
-    expect(screen.getByText("cerebral-helm")).toBeInTheDocument();
+    // The project-git-status widget renders its per-repo report (NIC-130): the open-PR title is
+    // unique to this widget, and the repo name now appears in both it and the Repositories widget.
+    expect(screen.getByText("Repo status widget (GitHub)")).toBeInTheDocument();
+    expect(screen.getAllByText("cerebral-helm").length).toBeGreaterThan(0);
     expect(screen.getByText("Team standup")).toBeInTheDocument();
     expect(screen.getByText(/TypeScript 5.9/)).toBeInTheDocument();
   });
@@ -139,7 +267,7 @@ describe("DashboardShell config-driven content (one view, four modes, no per-mod
   it("renders Executive purely from config — no Developer content leaks", () => {
     renderShell("mode.executive.ready");
     expect(screen.getByText("Good day.")).toBeInTheDocument();
-    expect(screen.getByText("Market Brief")).toBeInTheDocument();
+    expect(screen.getByText("Stocks")).toBeInTheDocument();
     expect(screen.getByText("Markets up modestly")).toBeInTheDocument();
     expect(screen.queryByText("Ready to build.")).toBeNull();
   });
@@ -175,33 +303,68 @@ describe("DashboardShell mode switching (D2)", () => {
   });
 });
 
-describe("DashboardShell command surfaces (D3 / NIC-58)", () => {
-  it("opens a Heimlich conversation from the launcher and continues from the docked input", () => {
-    renderShell();
-    const launcher = screen.getByLabelText("Ask Heimlich or type a command");
+describe("DashboardShell command surfaces (D3 / NIC-58, NIC-124)", () => {
+  /** Render the shell over a bridge whose submitCommand is spied/overridable. */
+  function renderWithSubmit(receipt?: { commandId: string; accepted: boolean }) {
+    const bridge = createMockCerebralBridge();
+    const submissions: string[] = [];
+    const spyBridge = {
+      ...bridge,
+      submitCommand(input: { rawInput: string; source: string }) {
+        submissions.push(input.rawInput);
+        return receipt ? Promise.resolve(receipt) : bridge.submitCommand(input);
+      }
+    };
+    const store = createBridgeStore(spyBridge, loadBootstrapState());
+    renderProviders(spyBridge, store);
+    return { submissions };
+  }
 
-    fireEvent.change(launcher, { target: { value: "what's on today?" } });
+  it("dispatches a command from the launcher and never opens a chat surface", () => {
+    const { submissions } = renderWithSubmit();
+    const launcher = screen.getByLabelText("Type a command");
+
+    fireEvent.change(launcher, { target: { value: "open notes" } });
     fireEvent.keyDown(launcher, { key: "Enter" });
 
-    const dialog = screen.getByRole("dialog", { name: "Heimlich conversation" });
-    expect(within(dialog).getByText("what's on today?")).toBeInTheDocument();
-
-    const docked = within(dialog).getByLabelText("Continue the conversation");
-    fireEvent.change(docked, { target: { value: "and tomorrow?" } });
-    fireEvent.keyDown(docked, { key: "Enter" });
-    expect(within(dialog).getByText("and tomorrow?")).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Minimize" }));
+    expect(submissions).toEqual(["open notes"]);
+    // The Heimlich chat/conversation surface was removed (NIC-124) — nothing opens.
     expect(screen.queryByRole("dialog", { name: "Heimlich conversation" })).toBeNull();
   });
 
-  it("offers capability-aware suggestions — unavailable actions are visibly disabled", () => {
-    renderShell();
-    fireEvent.focus(screen.getByLabelText("Ask Heimlich or type a command"));
+  it("reports the honest not-implemented state when a submission is rejected (NIC-124)", async () => {
+    renderWithSubmit({ commandId: "", accepted: false });
+    const launcher = screen.getByLabelText("Type a command");
 
-    expect(screen.getByRole("button", { name: /Ask Heimlich/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Capture a note/ })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /Open an app/ })).toBeDisabled();
+    fireEvent.change(launcher, { target: { value: "tell me a joke" } });
+    fireEvent.keyDown(launcher, { key: "Enter" });
+
+    expect(await screen.findByText("Heimlich not implemented")).toBeInTheDocument();
+  });
+
+  it("offers bridge-ranked, capability-aware suggestions — unavailable actions are visibly disabled (NIC-168)", async () => {
+    renderShell();
+    const launcher = screen.getByLabelText("Type a command");
+    fireEvent.focus(launcher);
+
+    // An empty query lists the grammar templates; the "Ask Heimlich" row stays gone (NIC-124).
+    expect(await screen.findByRole("option", { name: /Capture a note/ })).toBeEnabled();
+    expect(screen.queryByRole("option", { name: /Ask Heimlich/ })).toBeNull();
+
+    // A typed query ranks the catalogs; app rows are honestly unavailable in the browser
+    // preview — visibly disabled, never fake-successful (NIC-58).
+    fireEvent.change(launcher, { target: { value: "ter" } });
+    expect(await screen.findByRole("option", { name: /Terminal/ })).toBeDisabled();
+  });
+
+  it("executes a clicked suggestion as its exact command string, not its label (NIC-168)", async () => {
+    const { submissions } = renderWithSubmit();
+    const launcher = screen.getByLabelText("Type a command");
+
+    fireEvent.change(launcher, { target: { value: "exec" } });
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /Executive/ }));
+
+    expect(submissions).toEqual(["mode executive"]);
   });
 });
 
@@ -214,7 +377,9 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     const { container } = renderShell(); // Executive ready
     const bar = statusBar();
     expect(bar.getByText("Heimlich")).toBeInTheDocument();
-    expect(bar.getByText("Idle")).toBeInTheDocument();
+    // At rest Heimlich reads grey / "Not implemented" for the MVP (NIC-124).
+    expect(bar.getByText("Not implemented")).toBeInTheDocument();
+    expect(container.querySelector('.bottom-bar__status-dot[data-state="neutral"]')).not.toBeNull();
     expect(bar.getByText("Executive")).toBeInTheDocument();
     // Executive mocks 72°F Partly Cloudy weather (shown as icon + temperature) and an 82% battery.
     expect(bar.getByText("72°F")).toBeInTheDocument();
@@ -231,14 +396,86 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     expect(container.querySelector(".bottom-bar__mode")).toHaveTextContent("Executive");
   });
 
-  it("opens the settings window from the gear and no longer surfaces Emergency (E3 / NIC-63)", () => {
+  it("opens the settings window from the gear and no longer surfaces Emergency (E3 / NIC-63)", async () => {
     renderShell();
     const bar = statusBar();
     const settings = bar.getByRole("button", { name: "Settings" });
     expect(settings).toBeEnabled();
     expect(bar.queryByRole("button", { name: "Emergency" })).toBeNull();
     fireEvent.click(settings);
-    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    // The settings surface reads persisted settings on open (NIC-141); waitFor lets
+    // that async read settle inside act so it doesn't leak past the test.
+    await waitFor(() =>
+      expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument()
+    );
+  });
+
+  // The Wi-Fi indicator (NIC-156). It reports state only — turning the radio on and
+  // off stays with the macOS menu bar — so every case here is about not lying.
+  describe("Wi-Fi indicator", () => {
+    function renderWithNetwork(network: DashboardState["regions"]["systemHealth"]["network"]) {
+      const { container } = renderShellWithState((base) => ({
+        ...base,
+        regions: {
+          ...base.regions,
+          systemHealth: { ...base.regions.systemHealth, network }
+        }
+      }));
+      return container.querySelector(".bottom-bar__wifi") as HTMLElement;
+    }
+
+    it("reports a connected radio with its link rate and signal strength", () => {
+      const wifi = renderWithNetwork({
+        state: "ready",
+        label: "Network",
+        linkMbps: 866,
+        wifiPower: "on",
+        signalRssi: -48
+      });
+      expect(wifi).toHaveAttribute("data-wifi", "on");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi connected · 866 Mbps");
+      // A strong signal lights all three arcs.
+      expect(wifi.querySelector(".health-glyph")).toHaveAttribute("data-signal", "3");
+    });
+
+    it("dims the outer arcs as the signal weakens", () => {
+      const weak = renderWithNetwork({
+        state: "ready",
+        label: "Network",
+        linkMbps: 90,
+        wifiPower: "on",
+        signalRssi: -82
+      });
+      expect(weak.querySelector(".health-glyph")).toHaveAttribute("data-signal", "1");
+    });
+
+    it("says the radio is off rather than showing it as connected", () => {
+      const wifi = renderWithNetwork({ state: "unavailable", label: "Network", wifiPower: "off" });
+      expect(wifi).toHaveAttribute("data-wifi", "off");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi off");
+    });
+
+    it("keeps a machine on Ethernet honest: radio on, but not connected", () => {
+      // No link rate and no signal, yet the radio is genuinely powered. Claiming
+      // "connected" here is the bug this ticket exists to fix.
+      const wifi = renderWithNetwork({ state: "unavailable", label: "Network", wifiPower: "on" });
+      expect(wifi).toHaveAttribute("data-wifi", "idle");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi on · not connected");
+    });
+
+    it("distinguishes a machine with no Wi-Fi hardware from a radio switched off", () => {
+      const wifi = renderWithNetwork({ state: "unavailable", label: "Network", wifiPower: "absent" });
+      expect(wifi).toHaveAttribute("data-wifi", "absent");
+      expect(wifi).toHaveAttribute("aria-label", "No Wi-Fi interface on this machine");
+    });
+
+    it("admits when it has no reading at all instead of implying the radio is off", () => {
+      const wifi = renderWithNetwork(undefined);
+      expect(wifi).toHaveAttribute("data-wifi", "unknown");
+      expect(wifi).toHaveAttribute("aria-label", "Wi-Fi status unavailable");
+      // No measurement means no dimming — an unmeasured signal is not a weak one.
+      expect(wifi.querySelector(".health-glyph")).not.toHaveAttribute("data-signal");
+    });
   });
 
   it("shows honest-unavailable weather and battery when the dashboard is offline", () => {
@@ -246,6 +483,128 @@ describe("DashboardShell persistent bottom bar (D6 / NIC-59)", () => {
     const bar = statusBar();
     expect(bar.getByText("Weather · Unavailable")).toBeInTheDocument();
     expect(bar.getByText("Battery · Unavailable")).toBeInTheDocument();
+  });
+
+  it("renders live weather over the per-mode bootstrap weather (NIC-169)", () => {
+    // Executive bootstrap mocks 72°F; a streamed live sample must win.
+    renderShellWithState((base) => ({
+      ...base,
+      liveWeather: { state: "ready", label: "55°F · Rain", temperatureF: 55, condition: "Rain" }
+    }));
+    const bar = statusBar();
+    expect(bar.getByText("55°F")).toBeInTheDocument();
+    expect(bar.queryByText("72°F")).toBeNull();
+  });
+
+  it("opens the mode menu as a native top-most dropdown when the channel exists (NIC-144)", () => {
+    const posted: Array<Record<string, unknown>> = [];
+    (window as unknown as { webkit?: unknown }).webkit = {
+      messageHandlers: { shellControl: { postMessage: (m: unknown) => posted.push(m as Record<string, unknown>) } }
+    };
+    try {
+      renderShell();
+      // The trigger's accessible name is the active mode it shows (Executive).
+      fireEvent.click(statusBar().getByRole("button", { name: "Executive" }));
+      // The native shell owns the dropdown (layers above windows) — post the open action
+      // with the trigger's anchor, and do NOT render the in-webview menu.
+      expect(posted).toContainEqual(expect.objectContaining({ action: "openModeMenu" }));
+      expect(screen.queryByRole("menu", { name: "Switch mode" })).toBeNull();
+    } finally {
+      delete (window as unknown as { webkit?: unknown }).webkit;
+    }
+  });
+
+  it("falls back to the in-webview mode menu in a plain browser (no native channel)", () => {
+    renderShell();
+    fireEvent.click(statusBar().getByRole("button", { name: "Executive" }));
+    // No shellControl channel → the upward menu renders in-page as before.
+    expect(screen.getByRole("menu", { name: "Switch mode" })).toBeInTheDocument();
+  });
+
+  it("collapses/expands the current mode's windows and flips the icon affordance (NIC-143)", async () => {
+    renderShell(); // Executive
+    const bar = statusBar();
+    // Starts expanded: the control offers to collapse, and is not pressed.
+    const collapse = bar.getByRole("button", { name: "Collapse all windows" });
+    expect(collapse).toHaveAttribute("aria-pressed", "false");
+    // Close-all and the window navigator are both live (NIC-143 inc 2 + inc 5).
+    expect(bar.getByRole("button", { name: "Close all windows" })).toBeEnabled();
+    expect(bar.getByRole("button", { name: "Open window navigator" })).toBeEnabled();
+
+    fireEvent.click(collapse);
+    // The mock flips the mode's collapse state and broadcasts it; the icon becomes an
+    // "expand" affordance and reads as pressed.
+    const expand = await bar.findByRole("button", { name: "Expand all windows" });
+    expect(expand).toHaveAttribute("aria-pressed", "true");
+
+    // Toggling back returns to the collapse affordance.
+    fireEvent.click(expand);
+    await waitFor(() =>
+      expect(bar.getByRole("button", { name: "Collapse all windows" })).toHaveAttribute(
+        "aria-pressed",
+        "false"
+      )
+    );
+  });
+
+  it("raises a destructive confirmation when Close all windows is pressed (NIC-143)", async () => {
+    renderShell();
+    const bar = statusBar();
+    fireEvent.click(bar.getByRole("button", { name: "Close all windows" }));
+    // The command is gated: a policy-owned confirmation appears before anything quits.
+    const dialog = await screen.findByRole("dialog", { name: "Confirm action" });
+    expect(
+      within(dialog).getByText("Quit every open application across all modes.")
+    ).toBeInTheDocument();
+    // Cancelling dismisses it without quitting anything.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Confirm action" })).toBeNull()
+    );
+  });
+
+  it("opens the window navigator overlay in a plain browser (no native channel) (NIC-143)", async () => {
+    renderShell();
+    fireEvent.click(statusBar().getByRole("button", { name: "Open window navigator" }));
+    // With no shellControl channel the navigator renders as an in-dashboard overlay,
+    // listing the mock's open windows.
+    const nav = await screen.findByRole("dialog", { name: "Open windows" });
+    expect(within(nav).getByText("Inbox — Gmail")).toBeInTheDocument();
+    // Closing dismisses it.
+    fireEvent.click(within(nav).getByRole("button", { name: "Close window navigator" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Open windows" })).toBeNull());
+  });
+
+  it("hides the window-management section while layout mode is open (NIC-143/142)", () => {
+    renderShellWithState((base) => ({
+      ...base,
+      layoutSession: { modeId: "developer", windows: [], quickToggle: null }
+    }));
+    const bar = statusBar();
+    // Layout pill and the window-management cluster never co-exist.
+    expect(bar.queryByRole("button", { name: "Collapse all windows" })).toBeNull();
+    expect(bar.queryByRole("button", { name: "Close layout mode" })).toBeInTheDocument();
+  });
+
+  it("reports its on-screen rect to the native shell for window-snap awareness (NIC-144)", () => {
+    const posted: Array<Record<string, unknown>> = [];
+    (window as unknown as { webkit?: unknown }).webkit = {
+      messageHandlers: { shellControl: { postMessage: (m: unknown) => posted.push(m as Record<string, unknown>) } }
+    };
+    try {
+      renderShell();
+      const report = posted.find((m) => m.action === "reportBottomBarRect");
+      // The bar posts a rect payload the coordinator converts to a reserved strip.
+      expect(report).toBeDefined();
+      expect(report?.rect).toMatchObject({
+        x: expect.any(Number),
+        y: expect.any(Number),
+        width: expect.any(Number),
+        height: expect.any(Number)
+      });
+    } finally {
+      delete (window as unknown as { webkit?: unknown }).webkit;
+    }
   });
 });
 
@@ -323,15 +682,15 @@ describe("DashboardShell degraded states (E4 / NIC-64)", () => {
     )) {
       expect(slot).toBeDisabled();
     }
-    expect(screen.getByLabelText("Ask Heimlich or type a command")).toBeDisabled();
+    expect(screen.getByLabelText("Type a command")).toBeDisabled();
   });
 
   it("error shows a specific top-level banner while keeping last-known data visible", () => {
     renderShell("failure.dashboard_error");
     const banner = screen.getByRole("status");
     expect(within(banner).getByText("Something went wrong")).toBeInTheDocument();
-    // Not blank: the last-known stale git widget is still shown.
-    expect(screen.getByText("dev · last known")).toBeInTheDocument();
+    // Not blank: the last-known stale git widget is still shown (NIC-130 per-repo report).
+    expect(screen.getByText("Repo status widget (GitHub)")).toBeInTheDocument();
   });
 
   it("folds a bridge read-only recovery event into a recovery banner and read-only controls", () => {
@@ -360,6 +719,37 @@ describe("DashboardShell degraded states (E4 / NIC-64)", () => {
     expect(
       within(screen.getByRole("group", { name: "Mode" })).getAllByRole("button")[0]
     ).toBeDisabled();
+  });
+
+  it("renders live quick-action progress in the top-left status surface, not under the grid (NIC-124)", () => {
+    const { bridge } = renderShell();
+
+    act(() =>
+      bridge.emit({
+        eventId: "brevt_test_progress",
+        type: "workflow.action.progress",
+        schemaVersion: "1.0.0",
+        timestamp: "2026-07-08T16:29:00.000Z",
+        payload: {
+          commandId: "cmd_1",
+          workflowId: "open-developer-layout",
+          actionId: "app-open",
+          kind: "native.app.open",
+          status: "running",
+          index: 2,
+          total: 5
+        }
+      })
+    );
+
+    const status = document.querySelector(".action-status") as HTMLElement;
+    expect(status).not.toBeNull();
+    expect(status).toHaveTextContent("Open developer layout: step 2 of 5 — App open (running)");
+    // The old under-grid progress line is gone — the quick-actions group carries no status text.
+    expect(document.querySelector(".quick-actions__progress")).toBeNull();
+    expect(screen.getByRole("group", { name: "Quick actions" })).not.toHaveTextContent(
+      "step 2 of 5"
+    );
   });
 
   it("renders a resolved-but-empty region as a calm empty state, distinct from unavailable", () => {
@@ -391,31 +781,73 @@ describe("DashboardShell degraded states (E4 / NIC-64)", () => {
 });
 
 describe("DashboardShell quick actions (D4 / NIC-117 b)", () => {
-  it("dispatches the wired capture-note action and surfaces an honest acknowledgement", async () => {
+  it("opens capture-note's form and captures what was typed, reporting the real result", async () => {
     renderShell();
 
+    // The slot now opens a form rather than capturing a fixed placeholder note. Awaited because
+    // the centre hands over first — the ambient greeting leaves before anything lands in its place.
     fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
+    const form = await screen.findByRole("region", { name: "Capture note form" });
 
-    // The real bridge op runs; the returned note id is reported (never a fabricated outcome).
-    const dialog = await screen.findByRole("dialog", { name: "Heimlich conversation" });
-    expect(within(dialog).getByText(/Captured a quick note \(note_/)).toBeInTheDocument();
+    fireEvent.change(within(form).getByLabelText(/Title/), {
+      target: { value: "Ask about the lease" }
+    });
+    fireEvent.change(within(form).getByLabelText("Note"), {
+      target: { value: "Renewal window closes in March." }
+    });
+    fireEvent.click(within(form).getByRole("button", { name: "Capture" }));
+
+    // The real bridge op runs; the returned note id is reported in the top-left status surface
+    // (never a fabricated outcome, and never a chat surface — NIC-124).
+    const status = document.querySelector(".action-status") as HTMLElement;
+    await waitFor(() => expect(status).toHaveTextContent(/Captured “Ask about the lease” \(note_/));
+    expect(screen.queryByRole("dialog", { name: "Heimlich conversation" })).toBeNull();
+    // A successful capture closes the form.
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Capture note form" })).toBeNull()
+    );
+  });
+
+  it("blocks submission until every required field is filled", async () => {
+    renderShell();
+    fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
+    const form = await screen.findByRole("region", { name: "Capture note form" });
+
+    // Title is required and starts blank, so the submit says why rather than sitting inert.
+    const submit = within(form).getByRole("button", { name: "Capture" });
+    expect(submit).toBeDisabled();
+    expect(submit).toHaveAttribute("title", "Title required");
+
+    fireEvent.change(within(form).getByLabelText(/Title/), { target: { value: "Something" } });
+    expect(within(form).getByRole("button", { name: "Capture" })).toBeEnabled();
   });
 });
 
-describe("DashboardShell native shell-intent hook (NIC-76)", () => {
+describe("DashboardShell native shell-intent hook (NIC-76 / NIC-124)", () => {
   interface ShellIntentWindow {
-    __cerebralShell?: { openConversation?: (text: string) => void };
+    __cerebralShell?: { submitCommand?: (text: string) => void };
   }
 
-  it("exposes __cerebralShell.openConversation, opening the center-panel conversation", () => {
-    renderShell();
+  it("exposes __cerebralShell.submitCommand, dispatching through the command bus", () => {
+    const bridge = createMockCerebralBridge();
+    const submissions: string[] = [];
+    const spyBridge = {
+      ...bridge,
+      submitCommand(input: { rawInput: string; source: string }) {
+        submissions.push(input.rawInput);
+        return bridge.submitCommand(input);
+      }
+    };
+    const store = createBridgeStore(spyBridge, loadBootstrapState());
+    renderProviders(spyBridge, store);
+
     const shell = (window as unknown as ShellIntentWindow).__cerebralShell;
-    expect(typeof shell?.openConversation).toBe("function");
+    expect(typeof shell?.submitCommand).toBe("function");
     act(() => {
-      shell?.openConversation?.("ping from palette");
+      shell?.submitCommand?.("open notes");
     });
-    // Routes to conversation.submit, which appends the user turn and opens the overlay.
-    expect(screen.getByText("ping from palette")).toBeInTheDocument();
+    // Dispatches straight through the shared bridge — no conversation surface (NIC-124).
+    expect(submissions).toEqual(["open notes"]);
   });
 });
 

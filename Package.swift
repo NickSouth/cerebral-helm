@@ -44,6 +44,12 @@ let package = Package(
             url: "https://github.com/swiftlang/swift-toolchain-sqlite.git",
             revision: "24de861aae133231803d89af8a88dc50b5b2e2dd"
         ),
+        // Full YAML parsing for knowledge frontmatter (NIC-116). Read path only — notes are still
+        // WRITTEN by the hand-rolled emitter, because Yams cannot reproduce an existing file
+        // byte-for-byte (it re-indents sequences and re-quotes scalars), and rewriting the user's
+        // vault to satisfy a parser swap is not a trade worth making. See ADR-005's sibling
+        // reasoning: the Windows constraint that kept this dependency out is gone.
+        .package(url: "https://github.com/jpsim/Yams.git", from: "5.4.0"),
     ],
     targets: [
         .target(
@@ -74,7 +80,12 @@ let package = Package(
         ),
         .target(
             name: "CerebralKnowledge",
-            dependencies: ["CerebralCore", "CerebralShared", "CerebralContracts"],
+            dependencies: [
+                "CerebralCore",
+                "CerebralShared",
+                "CerebralContracts",
+                .product(name: "Yams", package: "Yams"),
+            ],
             path: "packages/knowledge/Sources/CerebralKnowledge"
         ),
         // The shared adapter contract suite (FR-TOL-04, MAC-ADAPTER-6): executable
@@ -95,7 +106,16 @@ let package = Package(
         .target(
             name: "CerebralMacAdapters",
             dependencies: ["CerebralTools", "CerebralCore", "CerebralContracts", "CerebralRuntimeHost"],
-            path: "apps/mac/Sources/CerebralMacAdapters"
+            path: "apps/mac/Sources/CerebralMacAdapters",
+            linkerSettings: [
+                // CoreWLAN backs the Wi-Fi link-rate metric (NIC-135); macOS-only,
+                // the target compiles to nothing on Linux CI.
+                .linkedFramework("CoreWLAN", .when(platforms: [.macOS])),
+                // CoreLocation backs the weather widget's location fix (NIC-169); macOS-only.
+                .linkedFramework("CoreLocation", .when(platforms: [.macOS])),
+                // EventKit backs the calendar widget's local event read (NIC-126); macOS-only.
+                .linkedFramework("EventKit", .when(platforms: [.macOS]))
+            ]
         ),
         .target(
             name: "CerebralStorage",

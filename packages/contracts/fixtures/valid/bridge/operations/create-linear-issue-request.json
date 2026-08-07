@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_createLinearIssueReq00001",
+  "type": "bridge.operation.request",
+  "operation": "createLinearIssue",
+  "payload": {
+    "title": "Newly downloaded apps aren't visible",
+    "description": "The More Apps picker misses apps installed after launch.",
+    "teamId": "team-1",
+    "teamName": "CerebralHelm Development",
+    "projectId": "proj-1",
+    "projectName": "CerebralHelm",
+    "labelIds": ["label-1", "label-2"],
+    "labelNames": ["MVP Polish", "Tech Debt"],
+    "priority": 2
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "web.open",
+  "version": "1.0.0",
+  "purpose": "Open an https web address in the browser, preferring a running Google Chrome instance.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/web-open-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/web-open-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "local_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_local_write",
+  "requiredPermissions": ["application_launch"],
+  "secretReferences": [],
+  "timeoutMs": 30000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["web.open"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "denied", "timeout", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

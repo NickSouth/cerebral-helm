@@ -4,6 +4,7 @@
     { "id": "vscode", "label": "Visual Studio Code", "target": "com.microsoft.VSCode" },
     { "id": "terminal", "label": "Terminal", "target": "com.apple.Terminal" },
     { "id": "xcode", "label": "Xcode", "target": "com.apple.dt.Xcode" },
-    { "id": "claude-desktop", "label": "Claude Desktop", "target": "com.anthropic.claudefordesktop" }
+    { "id": "claude-desktop", "label": "Claude Desktop", "target": "com.anthropic.claudefordesktop" },
+    { "id": "calendar", "label": "Calendar", "target": "com.apple.iCal" }
   ]
 }

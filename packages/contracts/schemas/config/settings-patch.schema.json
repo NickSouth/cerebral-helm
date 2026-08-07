@@ -22,6 +22,9 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$"
         },
+        "confirmAllActions": {
+          "type": "boolean"
+        },
         "appearance": {
           "type": "object",
           "additionalProperties": false,
@@ -32,6 +35,11 @@
             },
             "reducedMotion": {
               "type": "boolean"
+            },
+            "assistantName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
             }
           }
         },
@@ -65,8 +73,51 @@
             "mainDisplayId": {
               "type": "string",
               "minLength": 1
+            },
+            "layoutDisplayId": {
+              "type": "string",
+              "minLength": 1
             }
           }
+        },
+        "modeColors": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(executive|developer|school|entertainment)\\.(primary|secondary)$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          }
+        },
+        "stocks": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tickers": {
+              "description": "The user's tracked stock symbols for the Executive Stocks widget (NIC-128). When present, replaces the stored list wholesale — an empty array clears it. Capped so a refresh stays within the provider's rate limit.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9.-]{0,9}$"
+              },
+              "maxItems": 20,
+              "uniqueItems": true
+            }
+          }
+        },
+        "calendarModeMap": {
+          "description": "The user's calendar→mode mapping for the Today panel's per-mode relevance filtering (NIC-126), keyed by the calendar's stable identifier with a mode-id value. When present, replaces the stored map wholesale — an empty object clears it.",
+          "type": "object",
+          "propertyNames": {
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^(executive|developer|school|entertainment)$"
+          },
+          "maxProperties": 200
         },
         "extensions": {
           "type": "object",

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "brevt_000000000000000000000011",
+  "type": "news.changed",
+  "timestamp": "2026-07-27T16:00:00.040Z",
+  "payload": {
+    "profile": "broad",
+    "news": {
+      "state": "ready",
+      "headlines": [
+        { "id": "n1", "title": "Markets steady as earnings season opens", "source": "Reuters", "url": "https://example.com/markets-steady" },
+        { "id": "n2", "title": "Central bank holds rates amid cooling inflation", "source": "Bloomberg", "url": "https://example.com/rates-cooling" },
+        { "id": "n3", "title": "Major cloud provider unveils new AI tooling", "source": "The Verge" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/note-list-output.schema.json",
+  "title": "CerebralHelm Note List Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["root", "notes", "total", "truncated"],
+  "properties": {
+    "root": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The absolute path of the knowledge root the notes were read from, so a caller can cite the source location without a second read."
+    },
+    "notes": {
+      "type": "array",
+      "description": "The notes on disk, most recently changed first, then by path so equal timestamps stay stable.",
+      "items": {
+        "title": "NoteListItem",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "title", "folder"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[^/].*\\.md$",
+            "description": "The note's path relative to the knowledge root, forward-slashed. This is the handle: note.read takes it verbatim.",
+            "examples": ["inbox/ch-idea-001.md", "projects/atlas/kickoff.md"]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The frontmatter title when the note declares one, else its filename."
+          },
+          "noteId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The CerebralHelm note id from frontmatter. Absent for a note authored outside CerebralHelm, which is an ordinary case, not a defect — such a note has no id and is addressed by path. Deliberately unpatterned, unlike note-search-output's noteId: a file may be named anything."
+          },
+          "folder": {
+            "type": "string",
+            "description": "The containing folder relative to the knowledge root (`inbox`, `projects/atlas`), empty at the root — the durable hierarchy, for grouping by project or area.",
+            "examples": ["inbox", "projects/atlas", ""]
+          },
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The project the note belongs to: its frontmatter project, else the folder beneath `projects/` that contains it."
+          },
+          "sensitivity": {
+            "type": "string",
+            "enum": ["public", "private", "sensitive", "secret"]
+          },
+          "updated": {
+            "type": "string",
+            "minLength": 1,
+            "description": "ISO-8601. The frontmatter `updated` when present, else the file's modification date, so a note edited in another editor still reports when it actually changed. Absent only when neither is readable."
+          }
+        }
+      }
+    },
+    "total": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Every note found under the root, before any limit. A caller that asks for the five most recent notes still learns how many there are, so a count is never quietly the size of its own request."
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "Whether the requested limit cut the listing short — equivalently, `total` exceeds the length of `notes`."
+    }
+  }
+}

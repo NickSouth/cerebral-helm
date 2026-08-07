@@ -65,6 +65,7 @@ public final class CommandRuntime: @unchecked Sendable {
         let toolPurpose: String
         let declaredRisk: Risk
         let runtimeRiskPolicy: RuntimeRiskPolicy
+        let honorsUserAuthoredExemption: Bool
         let plannedActionRisks: [Risk]
         let input: Data
         let shellInvocation: HookInvocation?
@@ -100,9 +101,17 @@ public final class CommandRuntime: @unchecked Sendable {
 
     private let lock = NSLock()
     private let parser: DirectCommandParser
+    /// The shared live reference catalog (NIC-146): the parser reads through it and,
+    /// on the macOS shell, so do the app/url capability target maps. Reloading it
+    /// makes a mid-session mint resolvable everywhere at once — no relaunch.
+    private let referenceStore: CommandReferenceStore
     private let registry: ToolRegistry
     private let policy: PolicyEngine
     private let executor: ToolExecutor
+    /// The shared live-overrides holder (NIC-137): both `policy` and `executor` evaluate
+    /// through this box, so writing it re-arms confirmation everywhere at once. `nil` when
+    /// composed with a static policy (tests, non-settings hosts).
+    private let policyOverridesBox: PolicyOverridesBox?
     private let coordinator: ConfirmationCoordinator
     private let factory: CommandFactory
     private let hookCatalog: HookCatalog
@@ -117,10 +126,12 @@ public final class CommandRuntime: @unchecked Sendable {
     public init(
         registry: ToolRegistry,
         policy: PolicyEngine = PolicyEngine(),
+        policyOverridesBox: PolicyOverridesBox? = nil,
         phase: ExecutionPhase = .preMac,
         coordinator: ConfirmationCoordinator,
         factory: CommandFactory,
         references: CommandReferences,
+        referenceStore: CommandReferenceStore? = nil,
         hookCatalog: HookCatalog = HookCatalog(),
         modePlanner: (any ActionPlanner)? = nil,
         clock: any TimeSource = SystemClock(),
@@ -129,9 +140,16 @@ public final class CommandRuntime: @unchecked Sendable {
         toolCallSink: @escaping @Sendable (String, Data) -> Void = { _, _ in },
         actionProgressSink: @escaping @Sendable (WorkflowActionProgress) -> Void = { _ in }
     ) {
-        self.parser = DirectCommandParser(references: references)
+        // A shared store injected (macOS shell) is read by the native capability
+        // maps too, so one reload updates parser + capabilities together; absent one
+        // (CLI, tests) the parser gets its own — still correct, just not externally
+        // reloadable.
+        let store = referenceStore ?? CommandReferenceStore(references)
+        self.referenceStore = store
+        self.parser = DirectCommandParser(referenceStore: store)
         self.registry = registry
         self.policy = policy
+        self.policyOverridesBox = policyOverridesBox
         self.executor = ToolExecutor(registry: registry, policy: policy, phase: phase, clock: clock)
         self.coordinator = coordinator
         self.factory = factory
@@ -143,6 +161,29 @@ public final class CommandRuntime: @unchecked Sendable {
         self.toolCallSink = toolCallSink
         self.actionProgressSink = actionProgressSink
     }
+
+    /// Live-updates the "Ask before all actions" tightening (NIC-137): the policy engine
+    /// and its executor share one overrides box, so this re-arms (or relaxes back to
+    /// descriptor policy) confirmation immediately — no relaunch. Stricter-only: it can
+    /// only raise `local_write`+ actions to require confirmation, never weaken policy. A
+    /// no-op when composed with a static policy (no box).
+    public func updateConfirmAllActions(_ enabled: Bool) {
+        policyOverridesBox?.current = enabled ? .confirmEveryAction : PolicyOverrides()
+    }
+
+    /// Live-reloads the reference catalog (NIC-146): after a mid-session mint (e.g. the
+    /// user adds a URL) the parser resolves the new `open <id>` immediately, and — when
+    /// composed with a shared store (the macOS shell) — the app/url capability target
+    /// maps see it too. Mirrors ``updateConfirmAllActions``: swap the shared box, no
+    /// relaunch.
+    public func updateReferences(_ references: CommandReferences) {
+        referenceStore.reload(references)
+    }
+
+    /// The live reference catalog store the parser resolves against, shared with
+    /// read-only consumers (the suggestion engine, NIC-168) so their view reloads
+    /// together with the parser's after ``updateReferences(_:)``.
+    public var referenceCatalog: CommandReferenceStore { referenceStore }
 
     /// Parses and runs one line of input. An allowed command executes; a
     /// confirmation-required command pauses and returns its disclosure; a denied
@@ -164,6 +205,27 @@ public final class CommandRuntime: @unchecked Sendable {
             )
             return await start(envelope: envelope, intent: intent)
         }
+    }
+
+    /// Submits an intent the parser cannot express, for an action whose input is already typed —
+    /// the Input archetype's path into the bus (docs/quick-actions/PLAN.md phase 3).
+    ///
+    /// This skips **parsing only**. The intent still resolves through the same `resolve` table,
+    /// which owns its disclosure text, and still runs the same policy evaluation, confirmation
+    /// gate, executor and lifecycle events. Provenance is still derived from `source`, so an
+    /// agent submitting this path gets no more trust than one typing at the launcher.
+    ///
+    /// `summary` is the text recorded as the command's raw input. It is never re-parsed — it
+    /// exists so a command row reads meaningfully in history rather than as an opaque blob.
+    public func submit(
+        intent: CommandIntent, source: CommandSource, summary: String
+    ) async -> CommandRuntimeOutcome {
+        let envelope = factory.makeEnvelope(
+            source: source,
+            rawInput: summary,
+            privacy: CommandPrivacy(cloudPolicy: .deny, sensitivity: .sensitivityPrivate)
+        )
+        return await start(envelope: envelope, intent: intent)
     }
 
     /// Resolves a confirmation. Approve runs the pending command; cancel ends it;
@@ -227,7 +289,12 @@ public final class CommandRuntime: @unchecked Sendable {
                 declaredRisk: resolved.declaredRisk,
                 runtimeRiskPolicy: resolved.runtimeRiskPolicy,
                 plannedActionRisks: resolved.plannedActionRisks,
-                shellInvocation: resolved.shellInvocation
+                shellInvocation: resolved.shellInvocation,
+                honorsUserAuthoredExemption: resolved.honorsUserAuthoredExemption,
+                // Derived here, from the envelope the runtime itself stamped — never read
+                // from tool input, so a model choosing arguments cannot claim authorship
+                // of them (FR-SAF-02).
+                provenance: ActionProvenance(source: envelope.source)
             )
         )
 
@@ -303,13 +370,18 @@ public final class CommandRuntime: @unchecked Sendable {
             shellInvocationForPolicy: hookInvocations.count == 1 ? hookInvocations.values.first : nil
         )
 
+        // A workflow is an aggregate of several tools and has no descriptor of its own, so no
+        // user-authored exemption applies to it: a quick action whose plan reaches
+        // external_write still confirms once at aggregate risk, disclosing every step. Provenance
+        // is passed for a uniform policy path, not to relax anything here.
         let evaluation = policy.evaluate(
             PolicyRequest(
                 toolID: actionID,
                 declaredRisk: .readOnly,
                 runtimeRiskPolicy: .highestPlannedAction,
                 plannedActionRisks: plan.actions.map(\.risk),
-                shellInvocation: workflow.shellInvocationForPolicy
+                shellInvocation: workflow.shellInvocationForPolicy,
+                provenance: ActionProvenance(source: envelope.source)
             )
         )
 
@@ -482,6 +554,255 @@ public final class CommandRuntime: @unchecked Sendable {
                 arguments: [ConfirmationArgument(name: "kind", value: "note", sensitive: false)],
                 actionSummary: "Capture a note."
             )
+        case let .openProject(repoPath):
+            // Open a repository directory in the configured editor (NIC-131). The
+            // descriptor's `local_write` risk routes it through a policy-owned
+            // confirmation before the editor launches; the adapter constrains the path
+            // to the projects root. The repo folder name is shown in the disclosure (not
+            // sensitive) so the user sees which repository will open.
+            let repoName = URL(fileURLWithPath: repoPath).lastPathComponent
+            return make(
+                toolID: "project.open",
+                input: try? CerebralHelmProjectOpenInput(repoPath: repoPath).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "repository", value: repoPath, sensitive: false)],
+                actionSummary: "Open \(repoName.isEmpty ? "repository" : repoName) in the editor."
+            )
+        case let .googleSearch(query):
+            // Open a Google search in the browser (NIC-134). The descriptor's `local_write`
+            // risk (like url.open/project.open) means one-click, no confirmation; the adapter
+            // builds the google.com URL host-side, so the query is data, never the destination.
+            return make(
+                toolID: "google.search",
+                input: try? CerebralHelmGoogleSearchInput(query: query).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "query", value: query, sensitive: false)],
+                actionSummary: "Search Google for \(query)."
+            )
+        case let .youtubeSearch(query):
+            // Same shape and same risk as google.search, and for the same reason: the adapter
+            // builds the youtube.com URL host-side, so the query is data, never the destination.
+            return make(
+                toolID: "youtube.search",
+                input: try? CerebralHelmYouTubeSearchInput(youtubeQuery: query).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "query", value: query, sensitive: false)],
+                actionSummary: "Search YouTube for \(query)."
+            )
+        case let .cloneRepository(url, directory):
+            // `local_write`, like project.open: one fixed executable, a typed argument list, no
+            // shell, and a destination the adapter confines to the projects root. A hook wrapper
+            // would have been `shell`-class and confirmed on every clone for no added safety.
+            var arguments = [ConfirmationArgument(name: "repository", value: url, sensitive: false)]
+            if let directory, !directory.isEmpty {
+                arguments.append(ConfirmationArgument(name: "folder", value: directory, sensitive: false))
+            }
+            return make(
+                toolID: "git.clone",
+                input: try? CerebralHelmGitCloneInput(cloneDirectory: directory, repositoryURL: url).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: arguments,
+                actionSummary: "Clone \(url) into your projects folder."
+            )
+        case let .sendMessage(draft):
+            // The one external write with NO user-authored exemption. A calendar event can be
+            // edited and a ticket closed; a message lands on someone else's device and cannot be
+            // unsent, so every send confirms.
+            //
+            // The body is disclosed `sensitive: false` **on purpose**: hiding it would blank the
+            // one thing the reader needs to check before it leaves. Sensitivity here protects the
+            // body from the LOG, which is what the descriptor's `redactionPaths` does — the
+            // confirmation is the user re-reading their own message.
+            var arguments = [
+                ConfirmationArgument(
+                    name: "to",
+                    value: draft.targetName ?? draft.target,
+                    sensitive: false
+                )
+            ]
+            if let groupSize = draft.groupSize, groupSize > 1 {
+                // Sending to nine people is a materially bigger action than sending to one.
+                arguments.append(ConfirmationArgument(
+                    name: "group", value: "\(groupSize) people", sensitive: false
+                ))
+            }
+            arguments.append(ConfirmationArgument(name: "message", value: draft.body, sensitive: false))
+            return make(
+                toolID: "messages.send",
+                input: try? CerebralHelmMessagesSendInput(
+                    messageBody: draft.body,
+                    messageGroupSize: draft.groupSize,
+                    messageTarget: draft.target,
+                    messageTargetKind: MessageTargetKind(rawValue: draft.targetKind) ?? .participant,
+                    messageTargetName: draft.targetName
+                ).jsonData(),
+                destination: draft.targetName ?? draft.target,
+                dataLeavingDevice: .content,
+                // A sent message cannot be recalled. Saying otherwise in the disclosure would be
+                // the single most misleading thing this surface could claim.
+                reversibility: .notReversible,
+                arguments: arguments,
+                actionSummary: "Send a message to \(draft.targetName ?? draft.target)."
+            )
+        case let .scaffoldProject(name, location, summary, importance):
+            // `local_write`, like project.open and git.clone: a folder and a Markdown file inside
+            // the projects root, no process, no network. The adapter owns containment.
+            var arguments = [ConfirmationArgument(name: "project", value: name, sensitive: false)]
+            if let location, !location.isEmpty {
+                arguments.append(ConfirmationArgument(name: "location", value: location, sensitive: false))
+            }
+            return make(
+                toolID: "project.scaffold",
+                input: try? CerebralHelmProjectScaffoldInput(
+                    projectImportance: importance,
+                    projectLocation: location,
+                    projectName: name,
+                    projectSummary: summary
+                ).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: arguments,
+                actionSummary: "Create the project folder \"\(name)\"."
+            )
+        case let .createSpotifyPlaylist(name, description, isPublic):
+            // `external_write` with the user-authored exemption, like the calendar and Linear
+            // writes. Visibility is disclosed in words rather than as a boolean, because "public"
+            // is the part of this a person would want to catch before it happened.
+            var arguments = [ConfirmationArgument(name: "playlist", value: name, sensitive: false)]
+            arguments.append(ConfirmationArgument(
+                name: "visibility", value: isPublic ? "public" : "private", sensitive: false
+            ))
+            return make(
+                toolID: "spotify.createplaylist",
+                input: try? CerebralHelmSpotifyCreatePlaylistInput(
+                    playlistDescription: description,
+                    playlistIsPublic: isPublic,
+                    playlistName: name
+                ).jsonData(),
+                destination: "spotify.com",
+                dataLeavingDevice: .content,
+                reversibility: .reversible,
+                arguments: arguments,
+                actionSummary: "Create the \(isPublic ? "public" : "private") Spotify playlist \"\(name)\"."
+            )
+        case let .createLinearIssue(draft):
+            // `external_write` that opts into the user-authored exemption, like calendar.createevent:
+            // someone who filled in the form and pressed Create already authored exactly what
+            // happens. The same call from an agent still confirms, with these values disclosed —
+            // named in words (team, project, label) rather than as ids nobody can read. The body is
+            // marked sensitive and the descriptor redacts `/issueDescription`, so free-form text
+            // never reaches a disclosure in the clear.
+            var arguments = [ConfirmationArgument(name: "title", value: draft.title, sensitive: false)]
+            if let teamName = draft.teamName, !teamName.isEmpty {
+                arguments.append(ConfirmationArgument(name: "team", value: teamName, sensitive: false))
+            }
+            if let projectName = draft.projectName, !projectName.isEmpty {
+                arguments.append(ConfirmationArgument(name: "project", value: projectName, sensitive: false))
+            }
+            if !draft.labelNames.isEmpty {
+                // Every label is named, not just a count: "2 labels" tells the user nothing about
+                // which ones would be applied.
+                arguments.append(ConfirmationArgument(
+                    name: draft.labelNames.count == 1 ? "label" : "labels",
+                    value: draft.labelNames.joined(separator: ", "),
+                    sensitive: false
+                ))
+            }
+            if let description = draft.description, !description.isEmpty {
+                arguments.append(ConfirmationArgument(name: "description", value: description, sensitive: true))
+            }
+            return make(
+                toolID: "linear.createissue",
+                input: try? CerebralHelmLinearCreateIssueInput(
+                    issueDescription: draft.description,
+                    issuePriority: draft.priority,
+                    issueTitle: draft.title,
+                    linearLabelIDs: draft.labelIDs.isEmpty ? nil : draft.labelIDs,
+                    linearProjectID: draft.projectID,
+                    linearTeamID: draft.teamID
+                ).jsonData(),
+                destination: "linear.app",
+                dataLeavingDevice: .content,
+                reversibility: .reversible,
+                arguments: arguments,
+                actionSummary: "Create the Linear issue \"\(draft.title)\"."
+            )
+        case let .createCalendarEvent(draft):
+            // Everything the user typed is disclosed, so a confirmation (an agent-proposed one,
+            // or any invocation while "ask before all actions" is on) shows the actual event
+            // rather than "create an event". Notes are marked sensitive — the descriptor also
+            // redacts `/notes`, so free-form text never reaches the disclosure in the clear.
+            var arguments = [
+                ConfirmationArgument(name: "title", value: draft.title, sensitive: false),
+                ConfirmationArgument(name: "starts", value: draft.startsAt, sensitive: false),
+                ConfirmationArgument(name: "ends", value: draft.endsAt, sensitive: false),
+            ]
+            if let calendarTitle = draft.calendarTitle {
+                arguments.append(ConfirmationArgument(name: "calendar", value: calendarTitle, sensitive: false))
+            }
+            if let location = draft.location, !location.isEmpty {
+                arguments.append(ConfirmationArgument(name: "location", value: location, sensitive: false))
+            }
+            if let notes = draft.notes, !notes.isEmpty {
+                arguments.append(ConfirmationArgument(name: "notes", value: notes, sensitive: true))
+            }
+            return make(
+                toolID: "calendar.createevent",
+                input: try? CerebralHelmCalendarCreateEventInput(
+                    calendarID: draft.calendarID,
+                    endsAt: draft.endsAt,
+                    location: draft.location,
+                    notes: draft.notes,
+                    startsAt: draft.startsAt,
+                    title: draft.title
+                ).jsonData(),
+                destination: draft.calendarTitle,
+                // The event syncs to whatever accounts back that calendar, so this is honest
+                // about leaving the device — it is not a local-only write.
+                dataLeavingDevice: .metadataOnly,
+                reversibility: .reversible,
+                arguments: arguments,
+                actionSummary: "Create \"\(draft.title)\" from \(draft.startsAt) to \(draft.endsAt)."
+            )
+        case let .spotifyControl(action):
+            // Control Spotify playback (NIC-133). The descriptor's `external_write` risk is honest —
+            // this hits Spotify's API — but its `allow_external_write_when_user_authored` policy key
+            // exempts it when the user drove the control (play/pause/skip is too low-stakes to
+            // prompt), so it runs one-click. An agent proposing the same call still confirms, and
+            // the "Ask before all actions" toggle re-arms a prompt over both.
+            return make(
+                toolID: "spotify.control",
+                // An unrecognised action doesn't match the input enum → nil input → the command is
+                // refused (no tool resolved), never sent as a bogus control.
+                input: SpotifyPlaybackAction(rawValue: action).flatMap { try? CerebralHelmSpotifyControlInput(action: $0).jsonData() },
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "action", value: action, sensitive: false)],
+                actionSummary: "Spotify: \(action)."
+            )
+        case let .webOpen(url):
+            // Open an https web address in the browser (NIC-127). The descriptor's `local_write`
+            // risk (like url.open/google.search) means one-click, no confirmation; the adapter
+            // validates the scheme/host, so a non-https or malformed link is refused, not opened.
+            return make(
+                toolID: "web.open",
+                input: try? CerebralHelmWebOpenInput(url: url).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "url", value: url, sensitive: false)],
+                actionSummary: "Open \(url) in the browser."
+            )
         case let .searchNotes(query):
             return make(
                 toolID: "note.search",
@@ -491,6 +812,86 @@ public final class CommandRuntime: @unchecked Sendable {
                 reversibility: .reversible,
                 arguments: [],
                 actionSummary: "Search notes for \(query)."
+            )
+        case let .listNotes(limit):
+            // Read the durable notes on disk (NIC-162). `read_only`, so it runs
+            // without confirmation; the caller chooses the cap, not this seam.
+            return make(
+                toolID: "note.list",
+                input: try? CerebralHelmNoteListInput(limit: limit).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [],
+                actionSummary: "List the notes in the knowledge root."
+            )
+        case let .readNote(path):
+            // Read one note (NIC-162). The path is data, never a destination: the
+            // adapter resolves it against the knowledge root and refuses anything
+            // that lands outside, so a traversal attempt fails rather than reads.
+            return make(
+                toolID: "note.read",
+                input: try? CerebralHelmNoteReadInput(path: path).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "note", value: path, sensitive: false)],
+                actionSummary: "Read the note \(path)."
+            )
+        case let .openNote(path):
+            // Open one note in the user's editor (quick actions phase 5). `local_write` like every
+            // other open — it launches an application — and the knowledge service resolves the
+            // path against the root, so this can only ever open a note the root contains.
+            return make(
+                toolID: "note.open",
+                input: try? CerebralHelmNoteOpenInput(notePath: path).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [ConfirmationArgument(name: "note", value: path, sensitive: false)],
+                actionSummary: "Open the note \(path)."
+            )
+        case let .openMail(messageID):
+            // Open mail (Gmail integration). `local_write` like every other open — it launches a
+            // browser — and the adapter owns the destination host.
+            return make(
+                toolID: "mail.open",
+                input: try? CerebralHelmMailOpenInput(mailMessageID: messageID).jsonData(),
+                destination: "mail.google.com",
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [],
+                actionSummary: messageID == nil ? "Open your inbox." : "Open an email."
+            )
+        case let .listCourses(limit):
+            // List the course notebooks (quick actions phase 5). Read-only: it reads the folders
+            // under the school root and reports what is there.
+            return make(
+                toolID: "course.list",
+                input: try? CerebralHelmCourseListInput(courseLimit: limit).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [],
+                actionSummary: "List the course notebooks."
+            )
+        case let .createCourseNote(course, title):
+            // Create one course note (quick actions phase 5). The course is data, not a
+            // destination: the adapter derives the folder inside the school root, so this can
+            // only ever write there.
+            return make(
+                toolID: "course.note.create",
+                input: try? CerebralHelmCourseNoteCreateInput(
+                    noteCourse: course, noteTitle: title
+                ).jsonData(),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .reversible,
+                arguments: [
+                    ConfirmationArgument(name: "course", value: course, sensitive: false),
+                    ConfirmationArgument(name: "title", value: title, sensitive: false)
+                ],
+                actionSummary: "Create the note “\(title)” in \(course)."
             )
         case .listApps:
             return make(
@@ -526,6 +927,35 @@ public final class CommandRuntime: @unchecked Sendable {
                 reversibility: .reversible,
                 arguments: [ConfirmationArgument(name: "mode", value: modeID, sensitive: false)],
                 actionSummary: "Switch to mode \(modeID)."
+            )
+        case .runSpeedTest:
+            // A single read-only measurement (NIC-135). It talks to Apple's test
+            // servers, so it is honest about metadata leaving the device — but as a
+            // fixed, non-mutating diagnostic it runs without confirmation
+            // (descriptor risk `read_only`), unlike an arbitrary `hook.run`.
+            return make(
+                toolID: "network.speed.test",
+                input: Data("{}".utf8),
+                destination: nil,
+                dataLeavingDevice: .metadataOnly,
+                reversibility: .reversible,
+                arguments: [],
+                actionSummary: "Measure internet speed."
+            )
+        case .quitAllApps:
+            // Quit every open application across all modes (NIC-143). Destructive
+            // and not reversible — quitting an app can lose unsaved work — so the
+            // descriptor's `destructive` risk routes it through a policy-owned
+            // confirmation before anything terminates. Argument-free: the target set
+            // is the running apps, discovered by the handler at execution time.
+            return make(
+                toolID: "apps.quitall",
+                input: Data("{}".utf8),
+                destination: nil,
+                dataLeavingDevice: .none,
+                reversibility: .notReversible,
+                arguments: [],
+                actionSummary: "Quit every open application across all modes."
             )
         case .runAction:
             // Workflows resolve through startWorkflow, never through the
@@ -576,6 +1006,7 @@ public final class CommandRuntime: @unchecked Sendable {
             toolPurpose: tool.descriptor.purpose,
             declaredRisk: tool.risk,
             runtimeRiskPolicy: tool.descriptor.runtimeRiskPolicy,
+            honorsUserAuthoredExemption: tool.descriptor.confirmationPolicyKey == .allowExternalWriteWhenUserAuthored,
             plannedActionRisks: plannedActionRisks,
             input: input,
             shellInvocation: shellInvocation,

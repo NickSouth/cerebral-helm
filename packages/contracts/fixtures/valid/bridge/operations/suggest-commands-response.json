@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000098",
+  "type": "bridge.operation.response",
+  "operation": "suggestCommands",
+  "status": "ok",
+  "payload": {
+    "suggestions": [
+      {
+        "command": "open chrome",
+        "label": "Google Chrome",
+        "detail": null,
+        "kind": "app",
+        "requiresArgument": false,
+        "available": true,
+        "unavailableReason": null
+      },
+      {
+        "command": "note ",
+        "label": "Capture a note",
+        "detail": "note <text>",
+        "kind": "pattern",
+        "requiresArgument": true,
+        "available": true,
+        "unavailableReason": null
+      }
+    ]
+  },
+  "error": null
+}

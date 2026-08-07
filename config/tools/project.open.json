@@ -1,0 +1,6 @@
+{
+  "id": "project.open",
+  "risk": "local_write",
+  "timeoutMs": 30000,
+  "availableInPreMac": false
+}

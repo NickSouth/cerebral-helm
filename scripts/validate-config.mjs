@@ -132,64 +132,173 @@ export function validateModeQuickApps(document, relativePath, registeredAppIds, 
   }
 }
 
-// The quick-action wiring manifest is the registry of which quick actions are LIVE (wired to
-// a runtime target) versus placeholders. It lives with the UI that dispatches the slots. The
-// gate "follows the wiring": an action id absent from the manifest is an allowed placeholder,
-// but a *wired* action whose target does not resolve — to a config/workflows/*.json workflow
-// id or a declared bridge handler — is a dangling reference and a build failure, the same
-// single reference-resolution gate as theme tokens / widgets / quick apps.
-export function readQuickActionWiring(repositoryRoot) {
-  const manifestPath = path.join(repositoryRoot, "apps", "dashboard", "src", "shell", "quickActions.manifest.json");
-  const manifest = readJson(manifestPath);
-  const relativePath = path.relative(repositoryRoot, manifestPath);
+// A mode that carries an authored `layout` (NIC-142) provides its
+// `open-<modeId>-layout` workflow by synthesis (WorkflowCatalogLoader), not as a
+// static config/workflows/*.json file. Mirror that id-derivation here so the
+// quick-action wiring gate resolves a layout-backed action the same way the Swift
+// runtime does — without duplicating the step synthesis (only the id rule).
+export function readLayoutBackedWorkflowIds(configRoot) {
+  const modesDir = path.join(configRoot, "modes");
+  const ids = new Set();
 
-  if (!Array.isArray(manifest.handlers)) {
+  if (!fs.existsSync(modesDir)) {
+    return ids;
+  }
+
+  for (const file of fs.readdirSync(modesDir).filter((name) => name.endsWith(".json"))) {
+    const mode = readJson(path.join(modesDir, file));
+    if (mode.layout && typeof mode.id === "string") {
+      ids.add(`open-${mode.id}-layout`);
+    }
+  }
+
+  return ids;
+}
+
+// The quick-action dispatch registry is the single catalog of every planned action — its label,
+// icon, archetype, and (only once built) the runtime target the dashboard dispatches it to. It
+// lives with the UI that renders the slots. The gate runs both directions: an entry that declares
+// a target must resolve it (a config/workflows/*.json id, a declared bridge handler, or a mode
+// with a layout), and every id a mode configures must exist here — so a typo in a mode file is a
+// build failure rather than a mystery button. An entry with no target is planned-not-built and
+// renders as a labelled, disabled slot.
+export const QUICK_ACTION_ARCHETYPES = new Set(["report", "input", "picker", "fire-and-forget"]);
+export const QUICK_ACTION_TONES = new Set(["danger"]);
+
+export function readQuickActionRegistry(repositoryRoot) {
+  const registryPath = path.join(repositoryRoot, "apps", "dashboard", "src", "shell", "quickActions.registry.json");
+  const registry = readJson(registryPath);
+  const relativePath = path.relative(repositoryRoot, registryPath);
+
+  if (!Array.isArray(registry.handlers)) {
     fail(`${relativePath}: handlers must be an array.`);
   }
 
-  if (typeof manifest.wiredActions !== "object" || manifest.wiredActions === null || Array.isArray(manifest.wiredActions)) {
-    fail(`${relativePath}: wiredActions must be an object.`);
+  if (typeof registry.actions !== "object" || registry.actions === null || Array.isArray(registry.actions)) {
+    fail(`${relativePath}: actions must be an object.`);
   }
 
   return {
     relativePath,
-    handlerNames: new Set(manifest.handlers),
-    wiredActions: manifest.wiredActions
+    handlerNames: new Set(registry.handlers),
+    actions: registry.actions,
+    actionIds: new Set(Object.keys(registry.actions))
   };
 }
 
-export function validateQuickActionWiring(wiring, registeredWorkflowIds, errors) {
-  for (const [actionId, target] of Object.entries(wiring.wiredActions)) {
-    const ok = target !== null && typeof target === "object" && !Array.isArray(target);
+export function validateQuickActionRegistry(registry, registeredWorkflowIds, registeredModeIds, errors) {
+  for (const [actionId, entry] of Object.entries(registry.actions)) {
+    const ok = entry !== null && typeof entry === "object" && !Array.isArray(entry);
 
     if (!ok) {
-      errors.push(`${wiring.relativePath}: wired action "${actionId}" must map to an object with a workflow or handler target.`);
+      errors.push(`${registry.relativePath}: action "${actionId}" must map to an object.`);
       continue;
     }
 
-    const hasWorkflow = typeof target.workflow === "string";
-    const hasHandler = typeof target.handler === "string";
+    assert(
+      typeof entry.label === "string" && entry.label.length > 0,
+      `${registry.relativePath}: action "${actionId}" must declare a non-empty label.`,
+      errors
+    );
+    assert(
+      typeof entry.icon === "string" && entry.icon.length > 0,
+      `${registry.relativePath}: action "${actionId}" must declare a non-empty icon.`,
+      errors
+    );
+    assert(
+      QUICK_ACTION_ARCHETYPES.has(entry.archetype),
+      `${registry.relativePath}: action "${actionId}" must declare an archetype (${[...QUICK_ACTION_ARCHETYPES].join(", ")}).`,
+      errors
+    );
+    // `tone` is optional and deliberately narrow: the design allows exactly one
+    // differently-coloured slot, so an unrecognised tone is a mistake, not an extension point.
+    assert(
+      entry.tone === undefined || QUICK_ACTION_TONES.has(entry.tone),
+      `${registry.relativePath}: action "${actionId}" declares unknown tone "${entry.tone}" (allowed: ${[...QUICK_ACTION_TONES].join(", ")}).`,
+      errors
+    );
 
-    // Exactly one target — a wired action is either workflow-backed or handler-backed, never
-    // both (ambiguous) nor neither (dangling).
-    if (hasWorkflow === hasHandler) {
-      errors.push(`${wiring.relativePath}: wired action "${actionId}" must declare exactly one of workflow or handler.`);
+    // Planned but not built: nothing to resolve. The slot renders labelled and disabled.
+    if (entry.target === undefined) {
       continue;
     }
 
-    if (hasWorkflow) {
-      assert(
-        registeredWorkflowIds.has(target.workflow),
-        `${wiring.relativePath}: wired action "${actionId}" references unknown workflow "${target.workflow}" (config/workflows/*.json).`,
-        errors
-      );
-    } else {
-      assert(
-        wiring.handlerNames.has(target.handler),
-        `${wiring.relativePath}: wired action "${actionId}" references unknown handler "${target.handler}" (handlers list in the same manifest).`,
-        errors
-      );
+    const target = entry.target;
+
+    if (target === null || typeof target !== "object" || Array.isArray(target)) {
+      errors.push(`${registry.relativePath}: action "${actionId}" target must be an object declaring a kind.`);
+      continue;
     }
+
+    switch (target.kind) {
+      case "handler":
+        assert(
+          registry.handlerNames.has(target.handler),
+          `${registry.relativePath}: action "${actionId}" targets unknown handler "${target.handler}" (handlers list in the same registry).`,
+          errors
+        );
+        break;
+      case "workflow":
+        assert(
+          registeredWorkflowIds.has(target.workflow),
+          `${registry.relativePath}: action "${actionId}" targets unknown workflow "${target.workflow}" (config/workflows/*.json).`,
+          errors
+        );
+        break;
+      // A report or an input renders in the dashboard — from providers already in dashboard
+      // state, or from a form authored in code — so neither has anything in config to resolve.
+      // The archetype must agree, though: a target that renders a surface the slot never claimed
+      // would be a mislabelled action. A picker shares the Input region, so it takes `input` too.
+      case "report":
+        assert(
+          entry.archetype === "report",
+          `${registry.relativePath}: action "${actionId}" has a report target but declares archetype "${entry.archetype}".`,
+          errors
+        );
+        break;
+      case "input":
+        assert(
+          entry.archetype === "input" || entry.archetype === "picker",
+          `${registry.relativePath}: action "${actionId}" has an input target but declares archetype "${entry.archetype}".`,
+          errors
+        );
+        break;
+      case "layout":
+        // A layout action DECLARES its mode rather than having it parsed back out of the id, so
+        // both halves are checkable: the mode exists, and it actually has a layout to open.
+        assert(
+          registeredModeIds.has(target.mode),
+          `${registry.relativePath}: action "${actionId}" targets unknown mode "${target.mode}" (config/modes/*.json).`,
+          errors
+        );
+        assert(
+          registeredWorkflowIds.has(`open-${target.mode}-layout`),
+          `${registry.relativePath}: action "${actionId}" targets mode "${target.mode}", which has no layout to open.`,
+          errors
+        );
+        break;
+      default:
+        errors.push(
+          `${registry.relativePath}: action "${actionId}" target kind must be one of handler, workflow, layout.`
+        );
+    }
+  }
+}
+
+function validateModeQuickActions(document, relativePath, registeredActionIds, errors) {
+  const slots = Array.isArray(document.quickActions) ? document.quickActions : [];
+
+  for (const actionId of slots) {
+    // A null slot is deliberately unconfigured — the renderer omits it (no placeholder tile).
+    if (actionId === null) {
+      continue;
+    }
+
+    assert(
+      registeredActionIds.has(actionId),
+      `${relativePath}: quickActions entry "${actionId}" must reference a registered quick action (apps/dashboard/src/shell/quickActions.registry.json).`,
+      errors
+    );
   }
 }
 
@@ -258,6 +367,7 @@ function validateMode(document, relativePath, errors, registries) {
   validateModeThemeTokens(document, relativePath, registries.tokenNames, errors);
   validateModeWidgets(document, relativePath, registries.widgetIds, errors);
   validateModeQuickApps(document, relativePath, registries.appIds, errors);
+  validateModeQuickActions(document, relativePath, registries.actionIds, errors);
 }
 
 function validateWorkflow(document, relativePath, errors, registeredToolIds) {
@@ -338,10 +448,12 @@ function collectJsonFiles(directoryPath) {
 export function validateRepositoryConfig() {
   const { repositoryRoot, configRoot, fixtureRoot } = resolvePaths();
   const errors = [];
+  const quickActionRegistry = readQuickActionRegistry(repositoryRoot);
   const registries = {
     tokenNames: readRegisteredModeThemeTokens(repositoryRoot),
     widgetIds: readRegisteredWidgetIds(repositoryRoot),
-    appIds: readRegisteredQuickAppIds(repositoryRoot)
+    appIds: readRegisteredQuickAppIds(repositoryRoot),
+    actionIds: quickActionRegistry.actionIds
   };
 
   const defaultsPath = path.join(configRoot, "defaults", "app.json");
@@ -382,13 +494,15 @@ export function validateRepositoryConfig() {
   }
   assert(new Set(workflowIds).size === workflowIds.length, `workflows: workflow ids must be unique across files.`, errors);
 
-  // Every wired quick action must resolve to a real workflow id or a declared handler
-  // (ex-NIC-113). Placeholders (ids not in the manifest) are unaffected.
-  validateQuickActionWiring(readQuickActionWiring(repositoryRoot), new Set(workflowIds), errors);
-
   const modeIds = new Set(modeFiles.map((filePath) => readJson(filePath).id));
   const agentIds = new Set(agentFiles.map((filePath) => readJson(filePath).id));
   const defaults = readJson(defaultsPath);
+
+  // Every built quick action must resolve its declared target (ex-NIC-113). Workflow ids come
+  // from static files OR from a mode's authored layout (synthesized `open-<mode>-layout`);
+  // targetless (planned) entries are unaffected.
+  const resolvableWorkflowIds = new Set([...workflowIds, ...readLayoutBackedWorkflowIds(configRoot)]);
+  validateQuickActionRegistry(quickActionRegistry, resolvableWorkflowIds, modeIds, errors);
 
   assert(modeIds.has(defaults.defaultModeId), `defaults/app.json: defaultModeId "${defaults.defaultModeId}" must reference a mode file.`, errors);
 

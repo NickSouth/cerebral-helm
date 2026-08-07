@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_connectSpotifyResponse001",
+  "type": "bridge.operation.response",
+  "operation": "connectSpotify",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "connected": true,
+    "scope": "user-read-playback-state user-read-currently-playing user-modify-playback-state"
+  }
+}

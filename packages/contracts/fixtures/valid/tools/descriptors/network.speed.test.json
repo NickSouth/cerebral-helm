@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "network.speed.test",
+  "version": "1.0.0",
+  "purpose": "Measure current internet download/upload capacity via Apple's networkQuality, on explicit request.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/network-speed-test-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/network-speed-test-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "read_only",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "allow_read_without_confirmation",
+  "requiredPermissions": ["system_metrics_read"],
+  "secretReferences": [],
+  "timeoutMs": 40000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": true,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["network.speed.test"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "partial_success", "unavailable", "timeout", "failure", "cancelled"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

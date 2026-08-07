@@ -15,6 +15,15 @@ public enum SchemaMigrations {
         SchemaMigration(id: "0004_settings", sql: settingsSQL),
         SchemaMigration(id: "0005_mode_workspace", sql: modeWorkspaceSQL),
         SchemaMigration(id: "0006_main_display", sql: mainDisplaySQL),
+        SchemaMigration(id: "0007_assistant_name", sql: assistantNameSQL),
+        SchemaMigration(id: "0008_mode_colors", sql: modeColorsSQL),
+        SchemaMigration(id: "0009_confirm_all_actions", sql: confirmAllActionsSQL),
+        SchemaMigration(id: "0010_layout_display", sql: layoutDisplaySQL),
+        SchemaMigration(id: "0011_stock_tickers", sql: stockTickersSQL),
+        SchemaMigration(id: "0012_calendar_mode_map", sql: calendarModeMapSQL),
+        SchemaMigration(id: "0013_canvas_scrape", sql: canvasScrapeSQL),
+        SchemaMigration(id: "0014_canvas_hidden", sql: canvasHiddenSQL),
+        SchemaMigration(id: "0015_news_cache", sql: newsCacheSQL),
     ]
 
     /// Operational schema, version 0001. Full note bodies stay authoritative in
@@ -198,5 +207,90 @@ public enum SchemaMigrations {
     /// primary display.
     public static let mainDisplaySQL = """
     ALTER TABLE settings ADD COLUMN main_display_id TEXT;
+    """
+
+    /// Migration 0007: the "Assistant Name" setting (NIC-137). The settings
+    /// singleton gains the assistant's display name shown across the dashboard;
+    /// NULL means the default identity (`Heimlich`) applies.
+    public static let assistantNameSQL = """
+    ALTER TABLE settings ADD COLUMN appearance_assistant_name TEXT;
+    """
+
+    /// Migration 0008: per-mode accent color overrides (NIC-137). The settings
+    /// singleton gains a JSON map of design-token name (e.g. `executive.primary`)
+    /// to a `#rrggbb` hex value; NULL means no overrides, so every mode uses its
+    /// shipped palette.
+    public static let modeColorsSQL = """
+    ALTER TABLE settings ADD COLUMN mode_colors TEXT;
+    """
+
+    /// Migration 0009: the "Ask before all actions" tightening (NIC-137). The
+    /// settings singleton gains a flag that, when set, raises every non-read-only
+    /// action to require confirmation; NULL/0 = descriptor policy governs.
+    public static let confirmAllActionsSQL = """
+    ALTER TABLE settings ADD COLUMN confirm_all_actions INTEGER;
+    """
+
+    /// Migration 0010: the "Layout display" setting (NIC-142). The settings
+    /// singleton gains the stable display id layout mode opens on (and whose bottom
+    /// bar shows the hotswap pill); NULL or a disconnected/unknown id degrades to
+    /// the main display, then the system primary — the shell never errors on it.
+    public static let layoutDisplaySQL = """
+    ALTER TABLE settings ADD COLUMN layout_display_id TEXT;
+    """
+
+    /// Migration 0011: the "Stocks tickers" setting (NIC-128). The settings singleton
+    /// gains a JSON array of the user's tracked stock symbols for the Executive Stocks
+    /// widget; NULL means never set, so the shipped starter list applies, while an
+    /// explicit `[]` is a meaningful "cleared" state.
+    public static let stockTickersSQL = """
+    ALTER TABLE settings ADD COLUMN stock_tickers TEXT;
+    """
+
+    /// Migration 0012: the calendar→mode mapping setting (NIC-126). The settings singleton
+    /// gains a JSON object mapping each of the user's calendars (by identifier) to a mode,
+    /// driving the Today panel's per-mode relevance filtering; NULL/absent means no mappings,
+    /// so every calendar's events fall to the default mode (Executive) at the resolver.
+    public static let calendarModeMapSQL = """
+    ALTER TABLE settings ADD COLUMN calendar_mode_map TEXT;
+    """
+
+    /// Migration 0013: the Canvas scrape snapshot (NIC-132). A single-row table holding the latest
+    /// scrape of the School dashboard's courses/grades and upcoming deadlines as one inspectable
+    /// JSON blob; the newest scrape replaces it wholesale. Scraped grade data is personal and stays
+    /// local (ADR-006 operational state under the state root). Absent row means "no scrape yet", so
+    /// the widgets show their honest unavailable state until the Chrome extension posts one.
+    public static let canvasScrapeSQL = """
+    CREATE TABLE canvas_snapshot (
+        id            INTEGER PRIMARY KEY CHECK (id = 1),
+        snapshot_json TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+    );
+    """
+
+    /// Migration 0014: the Canvas hidden-item list (NIC-132). A single-row table holding the JSON
+    /// array of course/assignment ids the user has manually hidden from the School widgets; it
+    /// persists across scrapes (a hidden item stays hidden after re-syncing) and is kept separate
+    /// from the wholesale-replaced snapshot. Absent/empty means nothing is hidden.
+    public static let canvasHiddenSQL = """
+    CREATE TABLE canvas_hidden (
+        id         INTEGER PRIMARY KEY CHECK (id = 1),
+        ids_json   TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    """
+
+    /// Migration 0015: the news cache (the metered-provider quota fix). A single-row table holding
+    /// every relevance profile's last known headlines plus the last fetch-attempt time, as one
+    /// inspectable JSON blob. It exists so an app relaunch or a dashboard occlusion flap renders
+    /// from disk instead of spending a request against a small daily quota. Rebuildable derived
+    /// state, not user data: an absent or undecodable row means "no cache yet" and costs one extra
+    /// provider request.
+    public static let newsCacheSQL = """
+    CREATE TABLE news_cache (
+        id         INTEGER PRIMARY KEY CHECK (id = 1),
+        cache_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
     """
 }

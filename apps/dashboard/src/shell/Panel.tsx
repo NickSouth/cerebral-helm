@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { BeamOverlay } from "./BeamOverlay";
 
 /**
  * The shared panel primitive (constitution §6): thin-outlined, translucent, small radius,
@@ -32,6 +33,7 @@ export function Panel({
         ) : null}
       </div>
       {children}
+      <BeamOverlay />
     </section>
   );
 }

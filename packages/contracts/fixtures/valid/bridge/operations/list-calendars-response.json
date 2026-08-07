@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_000000000000000000000042",
+  "type": "bridge.operation.response",
+  "operation": "listCalendars",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "authorized": true,
+    "calendars": [
+      { "id": "cal-work-123", "title": "Work", "colorHex": "#3366cc" },
+      { "id": "cal-personal-456", "title": "Personal" }
+    ]
+  }
+}

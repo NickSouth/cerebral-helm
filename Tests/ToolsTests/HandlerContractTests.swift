@@ -36,7 +36,19 @@ private func mockRegistry() throws -> ToolRegistry {
             sensitivity: "private",
             freshness: "fresh"
         ),
-    ])
+    ], entries: [
+        // The same fixture note as a library entry, so note.list/note.read have
+        // something deterministic to answer with (NIC-162).
+        NoteListEntry(
+            path: "inbox/ch-idea-001.md",
+            title: "Fixture note",
+            noteID: "ch-idea-001",
+            folder: "inbox",
+            project: nil,
+            sensitivity: "private",
+            updated: "2026-06-23"
+        ),
+    ], bodies: ["inbox/ch-idea-001.md": "Deterministic body."])
     return try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: descriptorsDirectory(),
         capabilities: MockContractComposition.bundle(),
@@ -51,7 +63,7 @@ func portableHandlersSatisfyContractSuite() async throws {
         registry: try mockRegistry(),
         fixtures: MockContractComposition.fixtures
     )
-    #expect(cases.count == 8)
+    #expect(cases.count == 11)
     await runContractCases(cases)
 }
 
@@ -74,6 +86,45 @@ func readOnlyKnowledgeRootDeniesCapture() async throws {
     #expect(result.error?.category == .permissionDenied)
 }
 
+@Test("note.list and note.read run read-only, without confirmation (NIC-162)")
+func noteLibraryToolsRunWithoutConfirmation() async throws {
+    let descriptors = try ToolDescriptorCatalog.loadDescriptors(directory: descriptorsDirectory())
+    for id in ["note.list", "note.read"] {
+        let descriptor = try #require(descriptors.first { $0.id == id })
+        #expect(descriptor.risk == .readOnly)
+        #expect(descriptor.confirmationPolicyKey == .allowReadWithoutConfirmation)
+        // Reading notes is the user's own files; it needs no macOS permission
+        // beyond reaching the root, and both phases can do it.
+        #expect(descriptor.requiredPermissions == ["knowledge_root_read"])
+        #expect(descriptor.availability.preMAC && descriptor.availability.macOS)
+    }
+}
+
+@Test("an unavailable knowledge root makes the note reads unavailable, never empty (NIC-162)")
+func missingKnowledgeRootIsUnavailableNotEmpty() async throws {
+    let knowledge = MockKnowledgeService(rootState: .missing)
+    let executor = try PreMacToolRuntime.makeExecutor(descriptorsDirectory: descriptorsDirectory(), knowledge: knowledge)
+
+    let listed = await executor.execute(ToolInvocation(toolID: "note.list", input: Data("{}".utf8)))
+    #expect(listed.status == .unavailable)
+    #expect(listed.error?.category == .unavailableCapability)
+
+    let read = await executor.execute(
+        ToolInvocation(toolID: "note.read", input: Data(#"{"path":"inbox/ch-idea-001.md"}"#.utf8))
+    )
+    #expect(read.status == .unavailable)
+}
+
+@Test("note.read rejects input that does not match its contract before touching the service")
+func noteReadRejectsMalformedInput() async throws {
+    let handler = NoteReadHandler(knowledge: MockKnowledgeService())
+    for malformed in [#"{}"#, #"{"path":42}"#] {
+        await #expect(throws: ToolHandlerError.self) {
+            _ = try await handler.execute(input: Data(malformed.utf8))
+        }
+    }
+}
+
 @Test("apps.list maps discovery results into contract-valid output (NIC-119)")
 func appsListHandlerMapsOutput() async throws {
     let handler = AppsListHandler(capability: MockAppDiscoveryCapability())
@@ -87,6 +138,111 @@ func appsListHandlerMapsOutput() async throws {
 @Test("apps.list with the capability unavailable is a structured unavailable, never a mock success")
 func appsListUnavailableIsStructured() async throws {
     let handler = AppsListHandler(capability: MockAppDiscoveryCapability(matrix: .none))
+    await #expect(throws: ToolHandlerError.self) {
+        _ = try await handler.execute(input: Data("{}".utf8))
+    }
+}
+
+@Test("calendar.createevent writes exactly the event it was given and reports where it landed")
+func calendarCreateEventWrites() async throws {
+    let capability = MockCalendarWritingCapability(calendarTitle: "Work")
+    let handler = CalendarCreateEventHandler(capability: capability)
+
+    let input = #"""
+    {"title":"Board prep","startsAt":"2026-08-03T16:00","endsAt":"2026-08-03T17:00",
+     "calendarId":"cal-work","location":"Room 2","notes":"bring the deck"}
+    """#
+    let output = try await handler.execute(input: Data(input.utf8))
+
+    let decoded = try CerebralHelmCalendarCreateEventOutput(data: output)
+    #expect(decoded.eventID == "mock-event-1")
+    #expect(decoded.calendarTitle == "Work")
+    #expect(capability.written == [
+        .init(
+            title: "Board prep", startsAt: "2026-08-03T16:00", endsAt: "2026-08-03T17:00",
+            calendarID: "cal-work", location: "Room 2", notes: "bring the deck"
+        )
+    ])
+}
+
+@Test("calendar.createevent refuses a backwards range instead of silently swapping it")
+func calendarCreateEventRejectsBackwardsRange() async throws {
+    // Swapping the two would create an event the user never described. The schema cannot express
+    // this rule, so the handler owns it.
+    let capability = MockCalendarWritingCapability()
+    let handler = CalendarCreateEventHandler(capability: capability)
+
+    await #expect(throws: ToolHandlerError.self) {
+        _ = try await handler.execute(input: Data(
+            #"{"title":"Backwards","startsAt":"2026-08-03T17:00","endsAt":"2026-08-03T16:00"}"#.utf8
+        ))
+    }
+    #expect(capability.written.isEmpty, "nothing was written")
+}
+
+@Test("calendar.createevent with the capability unavailable is a structured unavailable")
+func calendarCreateEventUnavailableIsStructured() async throws {
+    let handler = CalendarCreateEventHandler(capability: MockCalendarWritingCapability(matrix: .none))
+    await #expect(throws: ToolHandlerError.self) {
+        _ = try await handler.execute(input: Data(
+            #"{"title":"x","startsAt":"2026-08-03T16:00","endsAt":"2026-08-03T17:00"}"#.utf8
+        ))
+    }
+}
+
+@Test("app.quit asks the host to quit and reports 'quitting', not a completed quit")
+func appQuitRequestsHostTermination() async throws {
+    let capability = MockApplicationLifecycleCapability()
+    let handler = AppQuitHandler(capability: capability)
+
+    let output = try await handler.execute(input: Data("{}".utf8))
+
+    #expect(try CerebralHelmAppQuitOutput(data: output).status == .quitting)
+    #expect(capability.hostQuitRequests == 1)
+}
+
+@Test("app.quit never touches other applications — it has no target to point at one")
+func appQuitCannotReachOtherApps() async throws {
+    // The complement of apps.quitall (which always excludes the host): quitting the host and
+    // quitting someone else's app are separate capability methods, so neither tool can be
+    // steered into the other's territory.
+    let capability = MockApplicationLifecycleCapability(runningBundleIDs: ["com.apple.Safari"])
+    _ = try await AppQuitHandler(capability: capability).execute(input: Data("{}".utf8))
+
+    #expect(capability.runningBundleIDs == ["com.apple.Safari"], "no other app was asked to quit")
+}
+
+@Test("app.quit with the capability unavailable is a structured unavailable, never a mock success")
+func appQuitUnavailableIsStructured() async throws {
+    let handler = AppQuitHandler(capability: MockApplicationLifecycleCapability(matrix: .none))
+    await #expect(throws: ToolHandlerError.self) {
+        _ = try await handler.execute(input: Data("{}".utf8))
+    }
+}
+
+@Test("apps.quitall quits the running apps and reports them (NIC-143)")
+func appsQuitAllQuitsRunning() async throws {
+    let handler = AppsQuitAllHandler(capability: MockApplicationLifecycleCapability(
+        runningBundleIDs: ["com.apple.Safari", "com.microsoft.VSCode"]
+    ))
+    let output = try await handler.execute(input: Data("{}".utf8))
+    let decoded = try CerebralHelmAppsQuitAllOutput(data: output)
+    #expect(decoded.status == .quit)
+    #expect(decoded.bundleIDS == ["com.apple.Safari", "com.microsoft.VSCode"])
+}
+
+@Test("apps.quitall on an empty desktop reports 'none' with no ids (NIC-143)")
+func appsQuitAllEmptyIsNone() async throws {
+    let handler = AppsQuitAllHandler(capability: MockApplicationLifecycleCapability(runningBundleIDs: []))
+    let output = try await handler.execute(input: Data("{}".utf8))
+    let decoded = try CerebralHelmAppsQuitAllOutput(data: output)
+    #expect(decoded.status == .none)
+    #expect(decoded.bundleIDS.isEmpty)
+}
+
+@Test("apps.quitall with the capability unavailable is a structured unavailable, never a mock success")
+func appsQuitAllUnavailableIsStructured() async throws {
+    let handler = AppsQuitAllHandler(capability: MockApplicationLifecycleCapability(matrix: .none))
     await #expect(throws: ToolHandlerError.self) {
         _ = try await handler.execute(input: Data("{}".utf8))
     }

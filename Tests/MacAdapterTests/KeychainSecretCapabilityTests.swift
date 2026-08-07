@@ -24,13 +24,17 @@ import CerebralTools
 /// a counter so concurrent suites can never see each other's items.
 private let serviceCounter = NSLock()
 private nonisolated(unsafe) var serviceSequence = 0
-private func isolatedAdapter() -> KeychainSecretCapability {
+private func isolatedService() -> String {
     serviceCounter.lock()
     serviceSequence += 1
     let sequence = serviceSequence
     serviceCounter.unlock()
     let pid = ProcessInfo.processInfo.processIdentifier
-    return KeychainSecretCapability(service: "local.cerebralhelm.test.\(pid).\(sequence)")
+    return "local.cerebralhelm.test.\(pid).\(sequence)"
+}
+
+private func isolatedAdapter() -> KeychainSecretCapability {
+    KeychainSecretCapability(service: isolatedService())
 }
 
 /// `true` when the run opted into real-keychain tests AND the environment has a
@@ -62,10 +66,14 @@ func secretRoundTrip() async throws {
     let resolution = try await adapter.resolve(reference: "openai_api_key")
     #expect(resolution.isResolved)
     #expect(resolution.reference == "openai_api_key")
+    // Invalidated first so the read proves the value was *persisted*, not merely
+    // seeded into the write-through cache (SecretValueCacheTests covers the cache).
+    SecretValueCache.shared.invalidateAll()
     #expect(try await adapter.readValue(reference: "openai_api_key") == "test-value-1")
 
     // Update replaces the value in place.
     try await adapter.store(reference: "openai_api_key", value: "test-value-2")
+    SecretValueCache.shared.invalidateAll()
     #expect(try await adapter.readValue(reference: "openai_api_key") == "test-value-2")
 
     try await adapter.delete(reference: "openai_api_key")
@@ -130,5 +138,35 @@ func serviceNamespacesAreIsolated() async throws {
     try await first.store(reference: "shared_name", value: "first-value")
     #expect(try await first.resolve(reference: "shared_name").isResolved == true)
     #expect(try await second.resolve(reference: "shared_name").isResolved == false)
+}
+
+@Test("store is write-through, so a just-stored secret is read back without touching the Keychain")
+func storeIsWriteThrough() async throws {
+    let service = isolatedService()
+    // A cache instance of its own, NOT `SecretValueCache.shared` (flakiness fix, found while
+    // running NIC-123's acceptance protocol). This test seeds the cache and then asserts a value
+    // still comes back after the Keychain item is deleted — but swift-testing runs tests in
+    // parallel, and the round-trip test above calls `SecretValueCache.shared.invalidateAll()` to
+    // prove *persistence*. When that landed between this test's store and its read, the cached
+    // value vanished and this failed with `.notFound` (reproduced ~1 run in 5, on `main`).
+    //
+    // The property under test is "a store seeds the cache so the read skips the Keychain", which
+    // is about the cache's behaviour, not about that one shared instance — `SecretValueCacheTests`
+    // covers `.shared` separately. Using a private instance keeps the assertion identical and
+    // makes it independent of what any other test does.
+    let adapter = KeychainSecretCapability(service: service, cache: SecretValueCache())
+    guard await keychainUsable(adapter) else { return }
+    defer { try? adapter.deleteAll() }
+
+    try await adapter.store(reference: "spotify_oauth", value: "token-blob")
+
+    // Remove the underlying item through a *separate* adapter with its own cache:
+    // the Keychain item is gone, but the shared cache the first adapter seeded on
+    // store is untouched. A value coming back therefore proves the read was served
+    // from the cache — the property that spares the authorization prompt.
+    let sideDoor = KeychainSecretCapability(service: service, cache: SecretValueCache())
+    try await sideDoor.delete(reference: "spotify_oauth")
+    #expect(try await adapter.resolve(reference: "spotify_oauth").isResolved == false)
+    #expect(try await adapter.readValue(reference: "spotify_oauth") == "token-blob")
 }
 #endif

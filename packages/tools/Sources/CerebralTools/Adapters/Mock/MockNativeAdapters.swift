@@ -1,3 +1,4 @@
+import Foundation
 import CerebralCore
 
 /// Deterministic mock native adapters for the pre-Mac foundation.
@@ -22,6 +23,21 @@ public struct MockAppCapability: AppCapability {
     public func open(appID: String) async throws -> AppOpenResult {
         try CapabilityGate.check(CapabilityMatrix.Capability.appOpen, matrix: matrix, fault: fault, subject: appID)
         return AppOpenResult(appID: appID, launched: true, alreadyRunning: alreadyRunningAppIDs.contains(appID))
+    }
+}
+
+public struct MockProjectCapability: ProjectCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(repoPath: String) async throws -> ProjectOpenResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.projectOpen, matrix: matrix, fault: fault, subject: repoPath)
+        return ProjectOpenResult(repoPath: repoPath, opened: true)
     }
 }
 
@@ -117,6 +133,27 @@ public struct MockSystemStatusCapability: SystemStatusCapability {
     }
 }
 
+public struct MockNetworkSpeedTestCapability: NetworkSpeedTestCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+    public var reading: NetworkSpeedTestReading
+
+    public init(
+        matrix: CapabilityMatrix = .allAvailable,
+        fault: MockFault = .none,
+        reading: NetworkSpeedTestReading = NetworkSpeedTestReading(status: .ok, downloadMbps: 240, uploadMbps: 18)
+    ) {
+        self.matrix = matrix
+        self.fault = fault
+        self.reading = reading
+    }
+
+    public func measure() async throws -> NetworkSpeedTestReading {
+        try CapabilityGate.check(CapabilityMatrix.Capability.networkSpeedTest, matrix: matrix, fault: fault)
+        return reading
+    }
+}
+
 public struct MockSecretCapability: SecretCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault
@@ -134,6 +171,233 @@ public struct MockSecretCapability: SecretCapability {
     }
 }
 
+/// An in-memory ``SecretManaging`` for pre-Mac builds and tests (NIC-134): an actor holding a
+/// dictionary, so the settings provisioning ops (`storeSecret`/`getSecretStatus`) can be
+/// exercised off the real Keychain. `readValue` throws `notFound` for an unbound reference,
+/// matching the Keychain adapter's contract.
+public actor MockSecretStore: SecretManaging {
+    private var values: [String: String]
+
+    public init(values: [String: String] = [:]) {
+        self.values = values
+    }
+
+    public func store(reference: String, value: String) async throws {
+        values[reference] = value
+    }
+
+    public func readValue(reference: String) async throws -> String {
+        guard let value = values[reference] else {
+            throw NativeCapabilityError.notFound("No secret is stored for reference '\(reference)'.")
+        }
+        return value
+    }
+
+    public func delete(reference: String) async throws {
+        guard values.removeValue(forKey: reference) != nil else {
+            throw NativeCapabilityError.notFound("No secret is stored for reference '\(reference)'.")
+        }
+    }
+
+    public func resolve(reference: String) async throws -> SecretResolution {
+        SecretResolution(reference: reference, isResolved: values[reference] != nil)
+    }
+}
+
+public struct MockGoogleSearchCapability: GoogleSearchCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func search(query: String) async throws -> GoogleSearchResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.googleSearch, matrix: matrix, fault: fault, subject: query)
+        return GoogleSearchResult(query: query, opened: true, resolvedURL: "https://www.google.com/search?q=\(query)")
+    }
+}
+
+public struct MockMessagingCapability: MessagingCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func send(body: String, target: String, targetKind: String) async throws -> Bool {
+        try CapabilityGate.check(CapabilityMatrix.Capability.messagesSend, matrix: matrix, fault: fault, subject: target)
+        return true
+    }
+}
+
+public struct MockSpotifyPlaylistCapability: SpotifyPlaylistCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func createPlaylist(name: String, description: String?, isPublic: Bool) async throws -> SpotifyPlaylistResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.spotifyPlaylist, matrix: matrix, fault: fault, subject: name)
+        return SpotifyPlaylistResult(
+            id: "mock-playlist", name: name,
+            url: "https://open.spotify.com/playlist/mock-playlist", opened: true
+        )
+    }
+}
+
+public struct MockLinearIssueCapability: LinearIssueCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func createIssue(
+        title: String,
+        description: String?,
+        teamID: String,
+        projectID: String?,
+        labelIDs: [String],
+        priority: Int?
+    ) async throws -> LinearIssueResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.linearIssue, matrix: matrix, fault: fault, subject: title)
+        return LinearIssueResult(
+            identifier: "MOCK-1",
+            url: "https://linear.app/mock/issue/MOCK-1"
+        )
+    }
+}
+
+public struct MockProjectScaffoldCapability: ProjectScaffoldCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func scaffold(
+        name: String, location: String?, summary: String?, importance: Int?
+    ) async throws -> ProjectScaffoldResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.projectScaffold, matrix: matrix, fault: fault, subject: name)
+        let path = "/mock/Projects/\(location.map { "\($0)/" } ?? "")\(name)"
+        return ProjectScaffoldResult(projectPath: path, descriptorPath: path + "/PROJECT.md")
+    }
+}
+
+public struct MockGitCloneCapability: GitCloneCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func clone(repositoryURL: String, directory: String?) async throws -> GitCloneResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.gitClone, matrix: matrix, fault: fault, subject: repositoryURL)
+        let name = directory ?? "repository"
+        return GitCloneResult(clonedPath: "/mock/Projects/\(name)", repositoryName: name)
+    }
+}
+
+public struct MockYouTubeSearchCapability: YouTubeSearchCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func search(query: String) async throws -> YouTubeSearchResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.youtubeSearch, matrix: matrix, fault: fault, subject: query)
+        return YouTubeSearchResult(
+            query: query,
+            opened: true,
+            resolvedURL: "https://www.youtube.com/results?search_query=\(query)"
+        )
+    }
+}
+
+/// Reports a successful Obsidian hand-off without one, so the pre-Mac runtime and the contract
+/// suite can exercise `note.open` end to end. It never touches the filesystem: containment was
+/// already decided by the knowledge service, and a mock that re-decided it would be testing itself.
+public struct MockNoteOpenCapability: NoteOpenCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(absolutePath: String) async throws -> NoteOpenResult {
+        try CapabilityGate.check(
+            CapabilityMatrix.Capability.noteOpen, matrix: matrix, fault: fault, subject: absolutePath
+        )
+        return NoteOpenResult(opened: true, target: .obsidian)
+    }
+}
+
+public struct MockMailOpenCapability: MailOpenCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(messageID: String?) async throws -> MailOpenResult {
+        try CapabilityGate.check(
+            CapabilityMatrix.Capability.mailOpen, matrix: matrix, fault: fault,
+            subject: messageID ?? "inbox"
+        )
+        return MailOpenResult(opened: true, resolvedURL: "https://mail.google.com/mail/u/0/")
+    }
+}
+
+public struct MockSpotifyControlCapability: SpotifyControlCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func control(action: String) async throws -> SpotifyControlResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.spotifyControl, matrix: matrix, fault: fault, subject: action)
+        return SpotifyControlResult(action: action, applied: true, activeDevice: true)
+    }
+}
+
+public struct MockWebOpenCapability: WebOpenCapability {
+    public var matrix: CapabilityMatrix
+    public var fault: MockFault
+
+    public init(matrix: CapabilityMatrix = .allAvailable, fault: MockFault = .none) {
+        self.matrix = matrix
+        self.fault = fault
+    }
+
+    public func open(url: String) async throws -> WebOpenResult {
+        try CapabilityGate.check(CapabilityMatrix.Capability.webOpen, matrix: matrix, fault: fault, subject: url)
+        return WebOpenResult(url: url, opened: true)
+    }
+}
+
 public struct MockWindowCapability: WindowCapability {
     public var matrix: CapabilityMatrix
     public var fault: MockFault
@@ -142,19 +406,23 @@ public struct MockWindowCapability: WindowCapability {
     public var arrangeOutcomes: [String: WindowArrangeOutcome]
     /// Simulated readable main-window frames by bundle id (geometry capture).
     public var capturedFrames: [String: WindowRect]
+    /// The primary display's simulated visible area (NIC-142 live capture).
+    public var visibleDisplayFrame: WindowRect?
 
     public init(
         matrix: CapabilityMatrix = .allAvailable,
         fault: MockFault = .none,
         windows: [WindowInfo] = [],
         arrangeOutcomes: [String: WindowArrangeOutcome] = [:],
-        capturedFrames: [String: WindowRect] = [:]
+        capturedFrames: [String: WindowRect] = [:],
+        visibleDisplayFrame: WindowRect? = nil
     ) {
         self.matrix = matrix
         self.fault = fault
         self.windows = windows
         self.arrangeOutcomes = arrangeOutcomes
         self.capturedFrames = capturedFrames
+        self.visibleDisplayFrame = visibleDisplayFrame
     }
 
     public func inspect() async throws -> [WindowInfo] {
@@ -162,7 +430,7 @@ public struct MockWindowCapability: WindowCapability {
         return windows
     }
 
-    public func arrange(bundleID: String, frame: WindowFrame) async throws -> WindowArrangeOutcome {
+    public func arrange(bundleID: String, frame: WindowFrame, display: WindowDisplay) async throws -> WindowArrangeOutcome {
         try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault, subject: bundleID)
         return arrangeOutcomes[bundleID] ?? .notRunning
     }
@@ -170,6 +438,11 @@ public struct MockWindowCapability: WindowCapability {
     public func captureFrame(bundleID: String) async throws -> WindowRect? {
         try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault, subject: bundleID)
         return capturedFrames[bundleID]
+    }
+
+    public func visibleFrame() async throws -> WindowRect? {
+        try CapabilityGate.check(CapabilityMatrix.Capability.window, matrix: matrix, fault: fault)
+        return visibleDisplayFrame
     }
 
     public func restoreFrame(bundleID: String, rect: WindowRect) async throws -> WindowArrangeOutcome {
@@ -203,4 +476,37 @@ public struct MockAppDiscoveryCapability: AppDiscoveryCapability {
         try CapabilityGate.check(CapabilityMatrix.Capability.appsList, matrix: matrix, fault: fault)
         return AppDiscoveryResult(apps: apps, truncated: false)
     }
+}
+
+/// Deterministic favicon mock (NIC-147): returns a fixed icon (or nothing). Favicon
+/// fetch is a background UI enrichment, not a gated tool capability, so — unlike the
+/// other mocks — there is no capability matrix to check; the honest non-Mac default
+/// is `nil` (no favicon), which leaves the URL tile on its placeholder glyph.
+public struct MockFaviconCapability: FaviconCapability {
+    public var icon: Data?
+
+    public init(icon: Data? = nil) {
+        self.icon = icon
+    }
+
+    public func fetchFavicon(for url: URL) async -> Data? { icon }
+}
+
+/// Deterministic Chrome-profile-discovery mock (NIC-151): a fixed representative
+/// pair of profiles. Like the favicon mock this is a background UI enrichment, not
+/// a gated tool capability, so there is no capability matrix to check. Icons are
+/// omitted — the honest non-Mac default (the UI falls back to a generic glyph).
+public struct MockChromeProfileDiscoveryCapability: ChromeProfileDiscoveryCapability {
+    public var profiles: [ChromeProfile]
+
+    public init(
+        profiles: [ChromeProfile] = [
+            ChromeProfile(directory: "Default", name: "Personal", iconPNGBase64: nil),
+            ChromeProfile(directory: "Profile 1", name: "Work", iconPNGBase64: nil),
+        ]
+    ) {
+        self.profiles = profiles
+    }
+
+    public func listProfiles() async throws -> [ChromeProfile] { profiles }
 }

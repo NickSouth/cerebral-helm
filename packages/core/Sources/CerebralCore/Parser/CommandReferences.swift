@@ -2,15 +2,22 @@
 ///
 /// `target` is provider-neutral payload data (a bundle id, URL, or hook script
 /// path). The parser resolves references but never executes them.
+///
+/// `profile` is an optional Google Chrome profile directory (`--profile-directory`,
+/// NIC-151): when present on an app or URL reference, the native open adapter
+/// launches the reference in that Chrome profile. It is provider-neutral data
+/// here — the parser never interprets it. Absent = current default open behavior.
 public struct ReferenceEntry: Codable, Equatable, Sendable {
     public let id: String
     public let label: String
     public let target: String
+    public let profile: String?
 
-    public init(id: String, label: String, target: String) {
+    public init(id: String, label: String, target: String, profile: String? = nil) {
         self.id = id
         self.label = label
         self.target = target
+        self.profile = profile
     }
 }
 

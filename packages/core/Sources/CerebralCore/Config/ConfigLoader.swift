@@ -171,7 +171,14 @@ public struct ConfigLoader {
         return modes.map { mode in
             guard let override = overrideByID[mode.id] else { return mode }
             // `with(quickApps:)` keeps the default when the override omits the field.
-            return mode.with(quickApps: override.quickApps)
+            var merged = mode.with(quickApps: override.quickApps)
+            // A layout override (NIC-142) replaces the shipped layout wholesale. It
+            // is carried opaquely, so decode it into the typed `Layout` here; a
+            // malformed one was already rejected upstream by the override validator.
+            if let rawLayout = override.layout, let layout = Layout.from(raw: rawLayout) {
+                merged = merged.with(layout: layout)
+            }
+            return merged
         }
     }
 

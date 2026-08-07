@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0.0",
+  "defaultModeId": "developer",
+  "confirmAllActions": true,
+  "appearance": { "reducedMotion": true, "assistantName": "Aria" },
+  "knowledge": { "rootReference": "knowledge-root" },
+  "workspace": { "windowsStoredByMode": true, "mainDisplayId": "system-primary", "layoutDisplayId": "system-primary" },
+  "modeColors": { "executive.primary": "#ffd166", "executive.secondary": "#5fd2e8" },
+  "stocks": { "tickers": ["SPY", "AAPL", "NVDA", "VTI"] },
+  "calendarModeMap": { "cal-work-123": "executive", "cal-school-456": "school" }
+}

@@ -56,13 +56,13 @@ public enum ConfigValidator {
     ]
     static let modeKeys: Set<String> = [
         "id", "label", "theme", "quickApps", "quickActions", "widgets",
-        "projectHints", "calendarProfile", "newsProfile", "greeting", "layoutId", "extensions"
+        "projectHints", "calendarProfile", "newsProfile", "greeting", "layoutId", "layout", "extensions"
     ]
     static let agentKeys: Set<String> = [
         "id", "label", "status", "summary", "allowedKnowledgeRoots", "allowedToolIds", "extensions"
     ]
     static let overrideKeys: Set<String> = [
-        "schemaVersion", "id", "quickApps", "extensions"
+        "schemaVersion", "id", "quickApps", "layout", "extensions"
     ]
 
     // MARK: - Directory orchestration
@@ -329,6 +329,74 @@ public enum ConfigValidator {
                 ))
             }
         }
+        errors += structuralLayoutErrors(mode.layout, file: file)
+        return errors
+    }
+
+    /// Structural checks for an authored window layout (NIC-142) that Swift
+    /// `Codable` cannot enforce on its own: `Codable` ignores the schema's
+    /// `minItems`/`maxItems`/`uniqueItems`, so a runtime config decoded here (as
+    /// opposed to Ajv-validated fixtures) could still smuggle in an empty,
+    /// oversized, or duplicate-target layout. The `window.arrange` tool caps a
+    /// single arrangement at 8 entries, so both the static window set and the
+    /// dynamic quick-toggle target set are bounded the same way. Enum/pattern
+    /// constraints (frame, kind, display, ref) are already enforced by decoding.
+    private static func structuralLayoutErrors(
+        _ layout: Layout?, file: String
+    ) -> [CerebralHelmConfigValidationError] {
+        guard let layout else { return [] }
+        var errors: [CerebralHelmConfigValidationError] = []
+
+        if layout.windows.isEmpty {
+            errors.append(makeError(
+                file: file,
+                field: "/layout/windows",
+                expected: "1 to 8 windows",
+                message: "Layout defines no windows.",
+                remediation: "Add 1 to 8 window placements, or omit the layout."
+            ))
+        }
+        if layout.windows.count > 8 {
+            errors.append(makeError(
+                file: file,
+                field: "/layout/windows",
+                expected: "at most 8 windows",
+                message: "Layout defines \(layout.windows.count) windows; at most 8 are allowed.",
+                remediation: "Reduce windows to 8 or fewer."
+            ))
+        }
+
+        if let toggle = layout.quickToggle {
+            if toggle.targets.isEmpty {
+                errors.append(makeError(
+                    file: file,
+                    field: "/layout/quickToggle/targets",
+                    expected: "1 to 8 targets",
+                    message: "Quick-toggle slot defines no targets.",
+                    remediation: "Add 1 to 8 toggle targets, or omit the quick-toggle slot."
+                ))
+            }
+            if toggle.targets.count > 8 {
+                errors.append(makeError(
+                    file: file,
+                    field: "/layout/quickToggle/targets",
+                    expected: "at most 8 targets",
+                    message: "Quick-toggle slot defines \(toggle.targets.count) targets; at most 8 are allowed.",
+                    remediation: "Reduce toggle targets to 8 or fewer."
+                ))
+            }
+            let targetKeys = toggle.targets.map { "\($0.ref)#\($0.kind.rawValue)" }
+            if Set(targetKeys).count != targetKeys.count {
+                errors.append(makeError(
+                    file: file,
+                    field: "/layout/quickToggle/targets",
+                    expected: "unique targets",
+                    message: "Quick-toggle targets contain duplicates.",
+                    remediation: "Remove duplicate toggle targets."
+                ))
+            }
+        }
+
         return errors
     }
 
@@ -353,6 +421,22 @@ public enum ConfigValidator {
                     expected: "unique entries",
                     message: "Override quick apps contain duplicates.",
                     remediation: "Remove duplicate quick app ids."
+                ))
+            }
+        }
+        // The override carries its layout opaquely (so the generated override type
+        // stays flat); validate it structurally by decoding into the same typed
+        // `Layout` the mode config uses (NIC-142).
+        if let rawLayout = override.layout {
+            if let layout = Layout.from(raw: rawLayout) {
+                errors += structuralLayoutErrors(layout, file: file)
+            } else {
+                errors.append(makeError(
+                    file: file,
+                    field: "/layout",
+                    expected: "a valid layout",
+                    message: "Layout override does not match the layout schema.",
+                    remediation: "Provide a layout with a display, 1-8 windows, and valid frames."
                 ))
             }
         }

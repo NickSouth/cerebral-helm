@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "shut-down",
+  "label": "Shut Down",
+  "steps": [
+    { "id": "quit-cerebralhelm", "label": "Quit CerebralHelm", "tool": "app.quit" }
+  ]
+}

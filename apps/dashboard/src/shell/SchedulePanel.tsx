@@ -4,7 +4,12 @@ import { StaleMarker } from "../components/StaleMarker";
 import { Unavailable } from "../components/Unavailable";
 import { EmptyState } from "../components/EmptyState";
 import { useDashboardState } from "../state/DashboardStateProvider";
-import { formatClock } from "./format";
+import { useActiveMode } from "./useActiveMode";
+import { useBridge } from "../state/BridgeProvider";
+import { useActionStatus } from "../state/ActionStatusProvider";
+import { useUiPosture } from "../state/useUiPosture";
+import { submitOpenApp } from "./openApp";
+import { formatEventTime } from "./format";
 
 /** The calendar reserves a fixed four-row event area so the widget height never changes. */
 const EVENT_SLOTS = 4;
@@ -25,9 +30,29 @@ function formatNowDate(now: Date): string {
  * always reserves four rows so the widget keeps a constant height regardless of event count.
  */
 export function SchedulePanel({ now = new Date() }: { now?: Date } = {}) {
-  const { schedule } = useDashboardState().regions;
+  const { regions, liveSchedule } = useDashboardState();
+  const profile = useActiveMode().calendarProfile;
+  // Live per-profile schedule (NIC-126) wins over the bootstrap region; the map is keyed by the
+  // active mode's calendarProfile and survives mode switches by construction (it lives outside
+  // `regions`). Falls through to the mode-scoped bootstrap `schedule` until a producer streams.
+  const schedule = (profile ? liveSchedule?.[profile] : undefined) ?? regions.schedule;
   const live = schedule.state === "ready" || schedule.state === "stale";
   const events = live ? schedule.items.slice(0, EVENT_SLOTS) : [];
+
+  const bridge = useBridge();
+  const { announce } = useActionStatus();
+  const { readOnly } = useUiPosture();
+  const openCalendar = () => {
+    void submitOpenApp(bridge, "calendar")
+      .then((receipt) => {
+        if (!receipt.accepted) {
+          announce("I couldn't open Calendar — the command wasn't accepted.", "error");
+        }
+      })
+      .catch(() => {
+        announce("Opening Calendar failed — the bridge did not accept it.", "error");
+      });
+  };
 
   return (
     <Panel label="Today" labelId="region-today" icon={<PanelGlyph name="today" />}>
@@ -59,10 +84,14 @@ export function SchedulePanel({ now = new Date() }: { now?: Date } = {}) {
                 );
               }
               return (
-                <li key={event.id} className="calendar__event">
+                <li
+                  key={event.id}
+                  className="calendar__event"
+                  title={event.location || undefined}
+                >
                   <span className="calendar__dot" data-kind={event.kind} aria-hidden="true" />
                   <span className="calendar__event-title">{event.title}</span>
-                  <span className="calendar__event-time">{formatClock(event.start)}</span>
+                  <span className="calendar__event-time">{formatEventTime(event.start)}</span>
                 </li>
               );
             })}
@@ -72,9 +101,10 @@ export function SchedulePanel({ now = new Date() }: { now?: Date } = {}) {
         <button
           type="button"
           className="calendar__view"
-          disabled
-          aria-disabled="true"
-          title="The full calendar opens on the macOS host"
+          disabled={readOnly}
+          aria-disabled={readOnly || undefined}
+          title={readOnly ? "Opening Calendar is paused while the dashboard is read-only" : "Open the Calendar app"}
+          onClick={openCalendar}
         >
           View full schedule<span aria-hidden="true"> →</span>
         </button>

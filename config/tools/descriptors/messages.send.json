@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "messages.send",
+  "version": "1.0.0",
+  "purpose": "Send one iMessage to a contact or an existing chat.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/messages-send-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/messages-send-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "external_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "allow_external_write_when_user_authored",
+  "requiredPermissions": ["contacts_read", "messages_automation"],
+  "secretReferences": [],
+  "timeoutMs": 20000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "non_idempotent",
+  "adapterRequirements": {
+    "capabilities": ["messages.send"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": ["/messageBody"],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "denied", "timeout", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

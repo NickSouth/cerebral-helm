@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/google-search-output.schema.json",
+  "title": "CerebralHelm Google Search Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query", "opened", "resolvedURL"],
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1
+    },
+    "opened": {
+      "type": "boolean"
+    },
+    "resolvedURL": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The Google search URL that was opened."
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "spotify.control",
+  "version": "1.0.0",
+  "purpose": "Control the user's active Spotify playback: resume, pause, skip forward, or skip back.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/spotify-control-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/spotify-control-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "external_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "allow_external_write_when_user_authored",
+  "requiredPermissions": [],
+  "secretReferences": [],
+  "timeoutMs": 15000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "non_idempotent",
+  "adapterRequirements": {
+    "capabilities": ["spotify.control"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "denied", "timeout", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

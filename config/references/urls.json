@@ -2,6 +2,8 @@
   "schemaVersion": "1.0.0",
   "references": [
     { "id": "github", "label": "GitHub", "target": "https://github.com" },
-    { "id": "docs", "label": "Project Docs", "target": "https://docs.cerebralhelm.local" }
+    { "id": "docs", "label": "Project Docs", "target": "https://docs.cerebralhelm.local" },
+    { "id": "ondraft", "label": "OnDraft (Railway)", "target": "https://railway.com/project/afe0bcec-4a00-4a6c-94e3-0187142163c4" },
+    { "id": "party-ambient", "label": "Ambient video", "target": "https://youtu.be/bTzWQOpxI6k" }
   ]
 }

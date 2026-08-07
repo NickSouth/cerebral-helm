@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "linear.createissue",
+  "version": "1.0.0",
+  "purpose": "Create one issue in the user's Linear workspace from the create-ticket form.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/linear-create-issue-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/linear-create-issue-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "external_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "allow_external_write_when_user_authored",
+  "requiredPermissions": [],
+  "secretReferences": ["linear_api_token"],
+  "timeoutMs": 30000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "non_idempotent",
+  "adapterRequirements": {
+    "capabilities": ["linear.issue"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": ["/issueDescription"],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "denied", "timeout", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

@@ -1,17 +1,59 @@
 import type { DashboardBootstrapState } from "./types";
 import type {
+  AddChromeProfileResult,
+  AddUrlReferenceResult,
   ApplyModeResult,
+  ChromeProfilesResult,
   BridgeEvent,
   BridgeEventListener,
   BridgeEventType,
   CaptureNoteResult,
   CerebralBridge,
+  CloseLayoutResult,
   CommandReceipt,
   DecideConfirmationResult,
+  CaptureLayoutResult,
   ListAppsResult,
+  ListCalendarsResult,
+  ChooseFolderResult,
+  CreateLinearIssueResult,
+  CreateSpotifyPlaylistResult,
+  ListMessageRecipientsResult,
+  ListSportsEventsResult,
+  SendMessageResult,
+  ScaffoldProjectResult,
+  ListLinearOptionsResult,
+  CloneRepositoryResult,
+  CreateCalendarEventResult,
+  CanvasStatus,
+  KnowledgeRebuildResult,
+  ListNotesResult,
+  ListCoursesResult,
+  RunSystemChecksResult,
+  ConnectGmailInput,
+  ConnectGmailResult,
+  UnreadMailResult,
+  CreateCourseNoteInput,
+  CreateCourseNoteResult,
+  ListUrlsResult,
+  OpenLayoutResult,
+  PinLayoutWindowResult,
+  AddLayoutTargetResult,
+  ToggleModeCollapseResult,
+  WindowInventory,
+  WindowActionResult,
+  ToggleLayoutResult,
+  UpdateLayoutResult,
   RecentActivity,
   RecentActivityQuery,
   SearchNotesResult,
+  ConnectSpotifyResult,
+  DeleteSecretResult,
+  SecretStatusResult,
+  SettingsSnapshot,
+  SpeedTestResult,
+  StoreSecretResult,
+  SuggestCommandsResult,
   Unsubscribe,
   UpdateQuickAppsResult,
   UpdateSettingsResult
@@ -48,9 +90,20 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "confirmation.changed",
   "system.status.changed",
   "config.changed",
+  "mode.quickapps.changed",
+  "settings.changed",
   "bridge.capability.changed",
   "workflow.action.progress",
-  "display.topology.changed"
+  "display.topology.changed",
+  "layout.session.changed",
+  "mode.windowcollapse.changed",
+  "widget.data.changed",
+  "weather.changed",
+  "news.changed",
+  "mail.changed",
+  "system.checks.changed",
+  "schedule.changed",
+  "apps.changed"
 ]);
 
 /** True when running inside the native shell (the message handler is registered). */
@@ -227,6 +280,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     submitCommand(input) {
       return operation<CommandReceipt>("submitCommand", { ...input });
     },
+    suggestCommands(input) {
+      return operation<SuggestCommandsResult>("suggestCommands", { ...input });
+    },
     applyMode(input) {
       return operation<ApplyModeResult>("applyMode", { ...input });
     },
@@ -242,11 +298,143 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     updateSettings(input) {
       return operation<UpdateSettingsResult>("updateSettings", { ...input });
     },
+    getSettings() {
+      return operation<SettingsSnapshot>("getSettings", {});
+    },
+    storeSecret(input) {
+      return operation<StoreSecretResult>("storeSecret", { ...input });
+    },
+    getSecretStatus(input) {
+      return operation<SecretStatusResult>("getSecretStatus", { ...input });
+    },
+    deleteSecret(input) {
+      return operation<DeleteSecretResult>("deleteSecret", { ...input });
+    },
+    connectSpotify() {
+      return operation<ConnectSpotifyResult>("connectSpotify", {});
+    },
+    listUnreadMail(limit?: number) {
+      return operation<UnreadMailResult>("listUnreadMail", limit === undefined ? {} : { limit });
+    },
+    connectGmail(input?: ConnectGmailInput) {
+      return operation<ConnectGmailResult>("connectGmail", { ...(input ?? {}) });
+    },
     listApps() {
       return operation<ListAppsResult>("listApps", {});
     },
+    getCanvasStatus() {
+      return operation<CanvasStatus>("getCanvasStatus", {});
+    },
+    resetCanvas() {
+      return operation<CanvasStatus>("resetCanvas", {});
+    },
+    setCanvasItemHidden(id: string, hidden: boolean) {
+      return operation<CanvasStatus>("setCanvasItemHidden", { id, hidden });
+    },
+    rebuildKnowledgeIndex() {
+      return operation<KnowledgeRebuildResult>("rebuildKnowledgeIndex", {});
+    },
+    runSystemChecks() {
+      return operation<RunSystemChecksResult>("runSystemChecks", {});
+    },
+    listCourses(limit?: number) {
+      return operation<ListCoursesResult>("listCourses", limit === undefined ? {} : { limit });
+    },
+    createCourseNote(input: CreateCourseNoteInput) {
+      return operation<CreateCourseNoteResult>("createCourseNote", { ...input });
+    },
+    listNotes(limit?: number) {
+      return operation<ListNotesResult>("listNotes", limit === undefined ? {} : { limit });
+    },
+    listCalendars() {
+      return operation<ListCalendarsResult>("listCalendars", {});
+    },
+    createCalendarEvent(input) {
+      return operation<CreateCalendarEventResult>("createCalendarEvent", { ...input });
+    },
+    cloneRepository(input) {
+      return operation<CloneRepositoryResult>("cloneRepository", { ...input });
+    },
+    chooseFolder() {
+      return operation<ChooseFolderResult>("chooseFolder", {});
+    },
+    listLinearOptions() {
+      return operation<ListLinearOptionsResult>("listLinearOptions", {});
+    },
+    createLinearIssue(input) {
+      return operation<CreateLinearIssueResult>("createLinearIssue", { ...input });
+    },
+    createSpotifyPlaylist(input) {
+      return operation<CreateSpotifyPlaylistResult>("createSpotifyPlaylist", { ...input });
+    },
+    scaffoldProject(input) {
+      return operation<ScaffoldProjectResult>("scaffoldProject", { ...input });
+    },
+    listSportsEvents() {
+      return operation<ListSportsEventsResult>("listSportsEvents", {});
+    },
+    listMessageRecipients() {
+      return operation<ListMessageRecipientsResult>("listMessageRecipients", {});
+    },
+    sendMessage(input) {
+      return operation<SendMessageResult>("sendMessage", { ...input });
+    },
     updateQuickApps(input) {
       return operation<UpdateQuickAppsResult>("updateQuickApps", { ...input });
+    },
+    addUrlReference(input) {
+      return operation<AddUrlReferenceResult>("addUrlReference", { ...input });
+    },
+    listUrls() {
+      return operation<ListUrlsResult>("listUrls", {});
+    },
+    listChromeProfiles() {
+      return operation<ChromeProfilesResult>("listChromeProfiles", {});
+    },
+    addChromeProfileReference(input) {
+      return operation<AddChromeProfileResult>("addChromeProfileReference", { ...input });
+    },
+    runSpeedTest() {
+      return operation<SpeedTestResult>("runSpeedTest", {});
+    },
+    openLayout(input) {
+      return operation<OpenLayoutResult>("openLayout", { ...input });
+    },
+    closeLayout() {
+      return operation<CloseLayoutResult>("closeLayout", {});
+    },
+    toggleLayout(input) {
+      return operation<ToggleLayoutResult>("toggleLayout", { ...input });
+    },
+    pinLayoutWindow(input) {
+      return operation<PinLayoutWindowResult>("pinLayoutWindow", { ...input });
+    },
+    addLayoutTarget(input) {
+      return operation<AddLayoutTargetResult>("addLayoutTarget", { ...input });
+    },
+    updateLayout(input) {
+      return operation<UpdateLayoutResult>("updateLayout", { ...input });
+    },
+    toggleModeCollapse(input) {
+      return operation<ToggleModeCollapseResult>("toggleModeCollapse", { ...input });
+    },
+    closeAllWindows() {
+      return operation<CommandReceipt>("closeAllWindows", {});
+    },
+    listWindows() {
+      return operation<WindowInventory>("listWindows", {});
+    },
+    minimizeWindow(input) {
+      return operation<WindowActionResult>("minimizeWindow", { ...input });
+    },
+    surfaceWindow(input) {
+      return operation<WindowActionResult>("surfaceWindow", { ...input });
+    },
+    closeWindow(input) {
+      return operation<WindowActionResult>("closeWindow", { ...input });
+    },
+    captureLayout() {
+      return operation<CaptureLayoutResult>("captureLayout", {});
     },
     subscribe(listener): Unsubscribe {
       listeners.add(listener);

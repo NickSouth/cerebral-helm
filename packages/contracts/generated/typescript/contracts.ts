@@ -17,8 +17,8 @@ export interface CerebralHelmBridgeBootstrapState {
     expandedAgent: null | string;
     /**
      * The center surface — Heimlich's consciousness — present in every mode; the center is
-     * never replaced (design spec §5.7). `conversation` is the translucent chat overlay over
-     * the still-running field, including its docked bottom input.
+     * never replaced (design spec §5.7). The chat/conversation overlay was removed for the MVP
+     * (NIC-124): conversing with Heimlich is post-MVP, so only the runtime `state` remains.
      */
     heimlich: DashboardHeimlich;
     mode:     Mode;
@@ -83,42 +83,11 @@ export enum DashboardAgentAvailability {
 
 /**
  * The center surface — Heimlich's consciousness — present in every mode; the center is
- * never replaced (design spec §5.7). `conversation` is the translucent chat overlay over
- * the still-running field, including its docked bottom input.
+ * never replaced (design spec §5.7). The chat/conversation overlay was removed for the MVP
+ * (NIC-124): conversing with Heimlich is post-MVP, so only the runtime `state` remains.
  */
 export interface DashboardHeimlich {
-    conversation: DashboardHeimlichConversation;
-    state:        DashboardHeimlichState;
-}
-
-export interface DashboardHeimlichConversation {
-    /**
-     * The in-conversation docked bottom input (distinct from the persistent top-center Ask
-     * Heimlich launcher); shown when the conversation is open, lifts on minimize/close.
-     */
-    input:      DashboardConversationInput;
-    open:       boolean;
-    transcript: DashboardConversationMessage[];
-}
-
-/**
- * The in-conversation docked bottom input (distinct from the persistent top-center Ask
- * Heimlich launcher); shown when the conversation is open, lifts on minimize/close.
- */
-export interface DashboardConversationInput {
-    draft?:      string;
-    placeholder: string;
-}
-
-export interface DashboardConversationMessage {
-    id:   string;
-    role: DashboardConversationRole;
-    text: string;
-}
-
-export enum DashboardConversationRole {
-    Heimlich = "heimlich",
-    User = "user",
+    state: DashboardHeimlichState;
 }
 
 export enum DashboardHeimlichState {
@@ -192,6 +161,12 @@ export interface DashboardNewsHeadline {
     id:     string;
     source: string;
     title:  string;
+    /**
+     * The article's navigable destination (design spec §5.4), opened on click via the web.open
+     * tool. Optional — omitted (never fabricated) when the source has no link, in which case
+     * the headline renders as non-interactive text.
+     */
+    url?: string;
 }
 
 export enum DashboardRegionState {
@@ -208,10 +183,11 @@ export interface DashboardScheduleRegion {
 }
 
 export interface DashboardScheduleItem {
-    id:     string;
-    kind:   DashboardScheduleKind;
-    start?: string;
-    title:  string;
+    id:        string;
+    kind:      DashboardScheduleKind;
+    location?: string;
+    start?:    string;
+    title:     string;
 }
 
 export enum DashboardScheduleKind {
@@ -220,11 +196,37 @@ export enum DashboardScheduleKind {
 }
 
 export interface DashboardSystemHealthRegion {
-    battery:        DashboardBatteryChannel;
-    cpuPercent?:    number;
+    battery: DashboardBatteryChannel;
+    /**
+     * CPU load 0–100 as a fraction of total machine capacity, TIME-AVERAGED over roughly the
+     * last 30 seconds — not an instantaneous reading (NIC-158). What matters for heat, fan,
+     * battery, and responsiveness is sustained load, so the streamed value is smoothed: a brief
+     * spike barely moves it, while genuinely sustained load climbs into it. Consumers should
+     * treat a high value as 'this has been going on for a while'. The one-shot
+     * `system.status.read` tool reports the instantaneous figure instead. Note the value is
+     * normalized across all logical cores, so one saturated core reads far lower on a many-core
+     * machine than on a small one.
+     */
+    cpuPercent?: number;
+    /**
+     * Memory used as a percentage of physical RAM (Activity Monitor's 'Memory Used'), lightly
+     * time-averaged (~10s) so the bar glides rather than jumps. This is NOT a strain signal:
+     * macOS deliberately keeps RAM full of cache, so a healthy machine sits near 100% — read
+     * `memoryPressure` for whether memory is actually under pressure.
+     */
     memoryPercent?: number;
-    network?:       DashboardNetworkChannel;
-    state:          DashboardRegionState;
+    /**
+     * macOS's own memory-pressure level, read from `kern.memorystatus_vm_pressure_level` — the
+     * same signal the public dispatch memory-pressure source reports. Distinct from
+     * `memoryPercent`, and the honest basis for the memory bar's colour: on a modern Mac the
+     * used/total ratio sits near 100% permanently (the OS deliberately fills RAM with cache),
+     * so it says nothing about whether memory is actually under strain. Absent when the level
+     * cannot be sampled (non-macOS host, or an unrecognized value from a future OS), in which
+     * case consumers fall back to thresholding `memoryPercent` rather than guessing a level.
+     */
+    memoryPressure?: DashboardMemoryPressure;
+    network?:        DashboardNetworkChannel;
+    state:           DashboardRegionState;
 }
 
 export interface DashboardBatteryChannel {
@@ -245,17 +247,50 @@ export interface DashboardBatteryChannel {
     state:      DashboardRegionState;
 }
 
+/**
+ * macOS's own memory-pressure level, read from `kern.memorystatus_vm_pressure_level` — the
+ * same signal the public dispatch memory-pressure source reports. Distinct from
+ * `memoryPercent`, and the honest basis for the memory bar's colour: on a modern Mac the
+ * used/total ratio sits near 100% permanently (the OS deliberately fills RAM with cache),
+ * so it says nothing about whether memory is actually under strain. Absent when the level
+ * cannot be sampled (non-macOS host, or an unrecognized value from a future OS), in which
+ * case consumers fall back to thresholding `memoryPercent` rather than guessing a level.
+ */
+export enum DashboardMemoryPressure {
+    Critical = "critical",
+    Normal = "normal",
+    Warn = "warn",
+}
+
 export interface DashboardNetworkChannel {
+    label: string;
     /**
-     * Downlink throughput in Mbps, when known.
+     * Wi-Fi link (transmit) rate in Mbps — the connection's speed, when known.
      */
-    downloadMbps?: number;
-    label:         string;
-    state:         DashboardRegionState;
+    linkMbps?: number;
     /**
-     * Uplink throughput in Mbps, when known.
+     * Wi-Fi signal strength in dBm (a negative number; closer to zero is stronger), when the
+     * radio is on and associated.
      */
-    uploadMbps?: number;
+    signalRssi?: number;
+    state:       DashboardRegionState;
+    /**
+     * Wi-Fi radio state: powered on, switched off by the user, or no Wi-Fi interface on this
+     * machine. Absent and off are distinct — a Mac with no Wi-Fi hardware is not a Mac whose
+     * radio the user turned off.
+     */
+    wifiPower?: DashboardWiFiPower;
+}
+
+/**
+ * Wi-Fi radio state: powered on, switched off by the user, or no Wi-Fi interface on this
+ * machine. Absent and off are distinct — a Mac with no Wi-Fi hardware is not a Mac whose
+ * radio the user turned off.
+ */
+export enum DashboardWiFiPower {
+    Absent = "absent",
+    Off = "off",
+    On = "on",
 }
 
 export interface DashboardRegionWidgets {
@@ -371,12 +406,23 @@ export interface CerebralHelmBridgeEvent {
 }
 
 export enum CerebralHelmBridgeEventType {
+    AppsChanged = "apps.changed",
     BridgeCapabilityChanged = "bridge.capability.changed",
     CommandLifecycleTransition = "command.lifecycle.transition",
     ConfigChanged = "config.changed",
     ConfirmationChanged = "confirmation.changed",
     DisplayTopologyChanged = "display.topology.changed",
+    LayoutSessionChanged = "layout.session.changed",
+    MailChanged = "mail.changed",
+    ModeQuickappsChanged = "mode.quickapps.changed",
+    ModeWindowcollapseChanged = "mode.windowcollapse.changed",
+    NewsChanged = "news.changed",
+    ScheduleChanged = "schedule.changed",
+    SettingsChanged = "settings.changed",
+    SystemChecksChanged = "system.checks.changed",
     SystemStatusChanged = "system.status.changed",
+    WeatherChanged = "weather.changed",
+    WidgetDataChanged = "widget.data.changed",
     WorkflowActionProgress = "workflow.action.progress",
 }
 
@@ -464,15 +510,60 @@ export interface CerebralHelmBridgeOperationRequest {
 }
 
 export enum Operation {
+    AddChromeProfileReference = "addChromeProfileReference",
+    AddLayoutTarget = "addLayoutTarget",
+    AddURLReference = "addUrlReference",
     ApplyMode = "applyMode",
+    CaptureLayout = "captureLayout",
     CaptureNote = "captureNote",
+    ChooseFolder = "chooseFolder",
+    CloneRepository = "cloneRepository",
+    CloseAllWindows = "closeAllWindows",
+    CloseLayout = "closeLayout",
+    CloseWindow = "closeWindow",
+    ConnectGmail = "connectGmail",
+    ConnectSpotify = "connectSpotify",
+    CreateCalendarEvent = "createCalendarEvent",
+    CreateCourseNote = "createCourseNote",
+    CreateLinearIssue = "createLinearIssue",
+    CreateSpotifyPlaylist = "createSpotifyPlaylist",
     DecideConfirmation = "decideConfirmation",
+    DeleteSecret = "deleteSecret",
     GetBootstrapState = "getBootstrapState",
+    GetCanvasStatus = "getCanvasStatus",
     GetRecentActivity = "getRecentActivity",
+    GetSecretStatus = "getSecretStatus",
+    GetSettings = "getSettings",
     ListApps = "listApps",
+    ListCalendars = "listCalendars",
+    ListChromeProfiles = "listChromeProfiles",
+    ListCourses = "listCourses",
+    ListLinearOptions = "listLinearOptions",
+    ListMessageRecipients = "listMessageRecipients",
+    ListNotes = "listNotes",
+    ListSportsEvents = "listSportsEvents",
+    ListUnreadMail = "listUnreadMail",
+    ListUrls = "listUrls",
+    ListWindows = "listWindows",
+    MinimizeWindow = "minimizeWindow",
+    OpenLayout = "openLayout",
+    PinLayoutWindow = "pinLayoutWindow",
+    RebuildKnowledgeIndex = "rebuildKnowledgeIndex",
+    ResetCanvas = "resetCanvas",
+    RunSpeedTest = "runSpeedTest",
+    RunSystemChecks = "runSystemChecks",
+    ScaffoldProject = "scaffoldProject",
     SearchNotes = "searchNotes",
+    SendMessage = "sendMessage",
+    SetCanvasItemHidden = "setCanvasItemHidden",
+    StoreSecret = "storeSecret",
     SubmitCommand = "submitCommand",
     Subscribe = "subscribe",
+    SuggestCommands = "suggestCommands",
+    SurfaceWindow = "surfaceWindow",
+    ToggleLayout = "toggleLayout",
+    ToggleModeCollapse = "toggleModeCollapse",
+    UpdateLayout = "updateLayout",
     UpdateQuickApps = "updateQuickApps",
     UpdateSettings = "updateSettings",
 }
@@ -520,6 +611,104 @@ export enum CerebralHelmBridgeOperationResponseStatus {
 
 export enum CerebralHelmBridgeOperationResponseType {
     BridgeOperationResponse = "bridge.operation.response",
+}
+
+/**
+ * The effective durable settings, read on demand over the bridge (`getSettings`) so the
+ * settings UI initializes its controls from persisted state instead of hardcoded defaults
+ * (NIC-141). Every field is fully resolved: a stored value when set, otherwise the
+ * deterministic default. This is the read side of the write-only settings-patch contract;
+ * it deliberately omits data that already has a delivery channel — quick apps (bootstrap
+ * `modes[].quickApps` + `mode.quickapps.changed`), the login item
+ * (`window.__cerebralLoginItem`), and the live command-palette hotkey
+ * (`window.__cerebralHotkey`) — so no datum has two sources of truth. Appearance density is
+ * not a live setting for now and is intentionally absent.
+ */
+export interface CerebralHelmSettingsSnapshot {
+    appearance: SettingsSnapshotAppearance;
+    /**
+     * The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+     * (NIC-126), keyed by calendar identifier with a mode-id value. Sparse: a calendar is
+     * present only when the user has mapped it — an unmapped calendar's events fall to the
+     * default mode (Executive) at the resolver. Like `modeColors`, this is not fully resolved
+     * but a meaningful-unset map (empty when the user has mapped nothing).
+     */
+    calendarModeMap: { [key: string]: string };
+    /**
+     * When true, policy raises every non-read-only action to require confirmation (the 'Ask
+     * before all actions' tightening; stricter-only, never weakens descriptor policy). Defaults
+     * to false. Enforced when the command runtime is composed.
+     */
+    confirmAllActions: boolean;
+    /**
+     * The mode the app opens in on a fresh launch (the durable setting, resolved as stored
+     * value, else the configured default, else `executive`). This is the default-mode setting,
+     * NOT the currently active mode.
+     */
+    defaultModeId: string;
+    knowledge:     SettingsSnapshotKnowledge;
+    /**
+     * Per-mode accent-color overrides, keyed by design-token name (e.g. `executive.primary`)
+     * with a `#rrggbb` hex value. Sparse: a key is present only when the user has customized
+     * that channel — otherwise the shipped mode palette default applies (resolved on the
+     * client, whose token CSS holds the default hex values). Unlike the other snapshot fields
+     * this is not fully resolved, mirroring the meaningful-unset shape of
+     * `knowledge.rootReference`.
+     */
+    modeColors:    { [key: string]: string };
+    schemaVersion: string;
+    stocks:        SettingsSnapshotStocks;
+    workspace:     SettingsSnapshotWorkspace;
+}
+
+export interface SettingsSnapshotAppearance {
+    /**
+     * The display name of the assistant across the dashboard (bottom bar, center stage).
+     * Resolves to the stored value, else the default `Heimlich`.
+     */
+    assistantName: string;
+    /**
+     * Whether motion is reduced across the dashboard. Defaults to false when unset.
+     */
+    reducedMotion: boolean;
+}
+
+export interface SettingsSnapshotKnowledge {
+    /**
+     * The configured knowledge-root reference id, or null when no root has been chosen (a
+     * meaningful unset state, unlike the other fields).
+     */
+    rootReference: null | string;
+}
+
+export interface SettingsSnapshotStocks {
+    /**
+     * The user's tracked stock symbols for the Executive Stocks widget (NIC-128), in display
+     * order. Fully resolved: the stored list when set, otherwise the shipped starter list. An
+     * empty array is a meaningful state — the user cleared their tickers — and renders the
+     * widget's empty prompt.
+     */
+    tickers: string[];
+}
+
+export interface SettingsSnapshotWorkspace {
+    /**
+     * The stable display id layout mode opens on and whose bottom bar shows the hotswap pill
+     * (NIC-142). Resolves to the `system-primary` sentinel when unset; a stale or disconnected
+     * id degrades to the main display, then system primary, at the shell.
+     */
+    layoutDisplayId: string;
+    /**
+     * The stable display id the main dashboard backdrop is hosted on. Resolves to the
+     * `system-primary` sentinel when unset; a stale or disconnected id also degrades to system
+     * primary at the shell.
+     */
+    mainDisplayId: string;
+    /**
+     * Whether a mode switch hides the outgoing mode's apps and returns the incoming mode's
+     * stored ones (NIC-85). Defaults to false when unset.
+     */
+    windowsStoredByMode: boolean;
 }
 
 export interface CerebralHelmCommandEnvelope {
@@ -678,8 +867,16 @@ export interface CerebralHelmConfigValidationError {
  * state root, never in the shipped config.
  */
 export interface CerebralHelmModeOverride {
-    extensions?:   { [key: string]: any };
-    id:            string;
+    extensions?: { [key: string]: any };
+    id:          string;
+    /**
+     * The mode's authored window layout (NIC-142), replacing the shipped layout. Its structure
+     * matches the mode config's `layout` (mode.schema.json `$defs/layout`); it is carried
+     * opaquely here — validated structurally in the config validator by decoding it into the
+     * same Layout type — so the generated override type stays a flat document and the layout's
+     * named types are defined once, on the mode config.
+     */
+    layout?:       { [key: string]: any };
     quickApps?:    string[];
     schemaVersion: string;
 }
@@ -690,9 +887,16 @@ export interface CerebralHelmModeConfig {
     greeting?:        Greeting;
     id:               string;
     label:            string;
-    layoutId?:        string;
-    newsProfile?:     NewsProfile;
-    projectHints?:    string[];
+    /**
+     * The mode's authored window layout (NIC-142). `windows` are static app/URL placements; the
+     * optional `quickToggle` is the single dynamic slot whose one visible window swaps between
+     * N targets from the bottom bar. Frames reuse the window.arrange named vocabulary — never
+     * arbitrary coordinates. The whole layout opens on the chosen `display`.
+     */
+    layout?:       Layout;
+    layoutId?:     string;
+    newsProfile?:  NewsProfile;
+    projectHints?: string[];
     /**
      * Exactly 8 ordered quick-action slots forming the binding 4+4 ambient grid (slots 0-3
      * render as compact bars, 4-7 as boxes; the shared shell owns that geometry). Each slot is
@@ -716,6 +920,63 @@ export interface Greeting {
     directive?: string;
     fallback:   string;
     persona:    string;
+}
+
+/**
+ * The mode's authored window layout (NIC-142). `windows` are static app/URL placements; the
+ * optional `quickToggle` is the single dynamic slot whose one visible window swaps between
+ * N targets from the bottom bar. Frames reuse the window.arrange named vocabulary — never
+ * arbitrary coordinates. The whole layout opens on the chosen `display`.
+ */
+export interface Layout {
+    display:      Display;
+    quickToggle?: QuickToggle;
+    windows:      Window[];
+}
+
+/**
+ * Which display the whole arrangement targets (NIC-142 layout mode). Absent or 'primary'
+ * targets the primary display; 'secondary' targets the first non-primary display, degrading
+ * to primary when none is attached. Frames resolve against the chosen display's visible
+ * area.
+ */
+export enum Display {
+    Primary = "primary",
+    Secondary = "secondary",
+}
+
+export interface QuickToggle {
+    frame:   Frame;
+    targets: Target[];
+}
+
+export enum Frame {
+    BottomHalf = "bottom-half",
+    Centered = "centered",
+    Full = "full",
+    LeftHalf = "left-half",
+    LeftThird = "left-third",
+    LeftTwoThirds = "left-two-thirds",
+    RightHalf = "right-half",
+    RightThird = "right-third",
+    RightTwoThirds = "right-two-thirds",
+    TopHalf = "top-half",
+}
+
+export interface Target {
+    kind: Kind;
+    ref:  string;
+}
+
+export enum Kind {
+    App = "app",
+    URL = "url",
+}
+
+export interface Window {
+    frame: Frame;
+    kind:  Kind;
+    ref:   string;
 }
 
 export enum NewsProfile {
@@ -742,15 +1003,25 @@ export interface CerebralHelmSettingsPatch {
 }
 
 export interface Changes {
-    appearance?:    Appearance;
-    defaultModeId?: string;
-    extensions?:    { [key: string]: any };
-    hotkeys?:       Hotkeys;
-    knowledge?:     Knowledge;
-    workspace?:     Workspace;
+    appearance?: Appearance;
+    /**
+     * The user's calendar→mode mapping for the Today panel's per-mode relevance filtering
+     * (NIC-126), keyed by the calendar's stable identifier with a mode-id value. When present,
+     * replaces the stored map wholesale — an empty object clears it.
+     */
+    calendarModeMap?:   { [key: string]: string };
+    confirmAllActions?: boolean;
+    defaultModeId?:     string;
+    extensions?:        { [key: string]: any };
+    hotkeys?:           Hotkeys;
+    knowledge?:         Knowledge;
+    modeColors?:        { [key: string]: string };
+    stocks?:            Stocks;
+    workspace?:         Workspace;
 }
 
 export interface Appearance {
+    assistantName?: string;
     density?:       Density;
     reducedMotion?: boolean;
 }
@@ -768,7 +1039,17 @@ export interface Knowledge {
     rootReference?: string;
 }
 
+export interface Stocks {
+    /**
+     * The user's tracked stock symbols for the Executive Stocks widget (NIC-128). When present,
+     * replaces the stored list wholesale — an empty array clears it. Capped so a refresh stays
+     * within the provider's rate limit.
+     */
+    tickers?: string[];
+}
+
 export interface Workspace {
+    layoutDisplayId?:     string;
     mainDisplayId?:       string;
     windowsStoredByMode?: boolean;
 }
@@ -832,9 +1113,240 @@ export interface CerebralHelmReferenceCatalog {
 }
 
 export interface Reference {
-    id:     string;
-    label:  string;
-    target: string;
+    id:       string;
+    label:    string;
+    profile?: string;
+    target:   string;
+}
+
+/**
+ * The rendered form of every Report-archetype quick action (docs/quick-actions/PLAN.md). A
+ * report is NOT a template — it is a typed block document, because the deterministic
+ * composer that writes it today will be replaced by a model later. The pipeline is
+ * providers -> Assembler -> Snapshot -> Composer -> ReportDocument -> Renderer; only the
+ * Composer changes when the model lands, and the Renderer never does. A model streaming
+ * blocks into the renderer is visually identical to the deterministic reveal, which is why
+ * the future conversation surface is not a new surface.
+ *
+ * Blocks are intentionally a FLAT shape keyed by `kind` rather than a discriminated union:
+ * a union would make adding a block kind a breaking contract change, and the renderer
+ * already has to survive a malformed block once a model writes these. The renderer skips
+ * any block whose kind it does not know, or whose fields for that kind are absent — a
+ * report never crashes the dashboard.
+ *
+ * Codegen note: quicktype ignores `$defs` titles and names generated types from PROPERTY
+ * names, so a generic property name here mints (or steals) a generic type name across the
+ * whole shared contracts module. Hence the kind-prefixed field names on a block.
+ */
+export interface CerebralHelmReportDocument {
+    blocks: Block[];
+    /**
+     * Whether this report was composed from a fetch the reader can repeat. The region shows a
+     * refresh control only for a report that says so — offering one on a document composed from
+     * ambient state would promise something it cannot do.
+     */
+    refreshable?: boolean;
+    /**
+     * The quick-action id this document was composed for, so the renderer can key its reveal
+     * and the region can title itself.
+     */
+    reportId:      string;
+    schemaVersion: string;
+}
+
+/**
+ * One block of a report. `blockKind` selects which of the optional fields carry meaning;
+ * the renderer reads only those and ignores the rest. Field names are deliberately
+ * kind-prefixed (`greetingSize`, `lineEmphasis`, `metricTone`, `listItems`,
+ * `reportAction`): they say which kind they belong to, which a flat block needs anyway, AND
+ * they keep codegen from minting single-word type names like `Kind` / `Tone` / `Size` in
+ * the shared namespace. That is not cosmetic — a bare `kind` here renamed the pre-existing
+ * layout `Kind` enum and broke LayoutWorkflowSynthesizer, and a bare `action` did the same
+ * to the mode-apply `Action` type.
+ */
+export interface Block {
+    blockKind:     BlockKind;
+    greetingSize?: GreetingSize;
+    label?:        string;
+    /**
+     * How many rows show before the reader expands. Absent shows all of them.
+     */
+    leaderboardPreview?: number;
+    /**
+     * A `leaderboard` block's ranked field, complete rather than truncated:
+     * `leaderboardPreview` decides how many show, so expanding needs no second fetch.
+     */
+    leaderboardRows?: LeaderboardRow[];
+    /**
+     * `strong` uses weight, never color — inside a report, color means actionable.
+     */
+    lineEmphasis?: LineEmphasis;
+    listItems?:    ListItem[];
+    metricTone?:   MetricTone;
+    /**
+     * A clickable destination inside a report. It is NEVER a URL — it names a registered quick
+     * action, resolved through the dispatch registry. Two reasons this is non-negotiable:
+     * opening a destination in a specific Chrome profile is a profile-scoped reference
+     * (NIC-151), not an href; and once a model composes the document, every clickable thing in
+     * it is a model-chosen destination, so a raw href would let the model — or content it
+     * summarized — point anywhere. Params are untrusted, so the target tool builds its
+     * destination host-side (the `google.search` pattern: the host is fixed, only the query
+     * varies).
+     */
+    reportAction?:  PurpleReportAction;
+    reportActions?: ReportActionElement[];
+    /**
+     * A `scoreboard` block's two sides, away first.
+     */
+    scoreboardSides?: ScoreboardSide[];
+    text?:            string;
+    value?:           string;
+}
+
+export enum BlockKind {
+    Checklist = "checklist",
+    Count = "count",
+    Empty = "empty",
+    Greeting = "greeting",
+    Leaderboard = "leaderboard",
+    Line = "line",
+    List = "list",
+    Metric = "metric",
+    Proposal = "proposal",
+    Scoreboard = "scoreboard",
+}
+
+export enum GreetingSize {
+    Hero = "hero",
+    Standard = "standard",
+}
+
+export interface LeaderboardRow {
+    rowName: string;
+    /**
+     * Displayed position ('T4'). Absent on a finished or unranked field.
+     */
+    rowPosition?: string;
+    rowScore:     string;
+    /**
+     * Holes played, only while a round is in progress.
+     */
+    rowThru?: string;
+}
+
+/**
+ * `strong` uses weight, never color — inside a report, color means actionable.
+ */
+export enum LineEmphasis {
+    Muted = "muted",
+    Normal = "normal",
+    Strong = "strong",
+}
+
+export interface ListItem {
+    color?: string;
+    meta?:  string;
+    /**
+     * A clickable destination inside a report. It is NEVER a URL — it names a registered quick
+     * action, resolved through the dispatch registry. Two reasons this is non-negotiable:
+     * opening a destination in a specific Chrome profile is a profile-scoped reference
+     * (NIC-151), not an href; and once a model composes the document, every clickable thing in
+     * it is a model-chosen destination, so a raw href would let the model — or content it
+     * summarized — point anywhere. Params are untrusted, so the target tool builds its
+     * destination host-side (the `google.search` pattern: the host is fixed, only the query
+     * varies).
+     */
+    reportAction?: ListItemReportAction;
+    /**
+     * Only meaningful on a `checklist` block — the streaming variant of a list. `skipped` is
+     * deliberately NOT a failure: a check the user never configured, or one held back because
+     * probing it would spend a small daily quota, is neither passing nor broken, and rendering
+     * it as either would make the checklist lie in one direction or the other.
+     */
+    status?: ListItemStatus;
+    text:    string;
+}
+
+/**
+ * A clickable destination inside a report. It is NEVER a URL — it names a registered quick
+ * action, resolved through the dispatch registry. Two reasons this is non-negotiable:
+ * opening a destination in a specific Chrome profile is a profile-scoped reference
+ * (NIC-151), not an href; and once a model composes the document, every clickable thing in
+ * it is a model-chosen destination, so a raw href would let the model — or content it
+ * summarized — point anywhere. Params are untrusted, so the target tool builds its
+ * destination host-side (the `google.search` pattern: the host is fixed, only the query
+ * varies).
+ */
+export interface ListItemReportAction {
+    action:  string;
+    params?: { [key: string]: any };
+}
+
+/**
+ * Only meaningful on a `checklist` block — the streaming variant of a list. `skipped` is
+ * deliberately NOT a failure: a check the user never configured, or one held back because
+ * probing it would spend a small daily quota, is neither passing nor broken, and rendering
+ * it as either would make the checklist lie in one direction or the other.
+ */
+export enum ListItemStatus {
+    Failed = "failed",
+    Passed = "passed",
+    Pending = "pending",
+    Running = "running",
+    Skipped = "skipped",
+}
+
+export enum MetricTone {
+    Critical = "critical",
+    Neutral = "neutral",
+    Positive = "positive",
+    Warning = "warning",
+}
+
+/**
+ * A clickable destination inside a report. It is NEVER a URL — it names a registered quick
+ * action, resolved through the dispatch registry. Two reasons this is non-negotiable:
+ * opening a destination in a specific Chrome profile is a profile-scoped reference
+ * (NIC-151), not an href; and once a model composes the document, every clickable thing in
+ * it is a model-chosen destination, so a raw href would let the model — or content it
+ * summarized — point anywhere. Params are untrusted, so the target tool builds its
+ * destination host-side (the `google.search` pattern: the host is fixed, only the query
+ * varies).
+ */
+export interface PurpleReportAction {
+    action:  string;
+    params?: { [key: string]: any };
+}
+
+/**
+ * A clickable destination inside a report. It is NEVER a URL — it names a registered quick
+ * action, resolved through the dispatch registry. Two reasons this is non-negotiable:
+ * opening a destination in a specific Chrome profile is a profile-scoped reference
+ * (NIC-151), not an href; and once a model composes the document, every clickable thing in
+ * it is a model-chosen destination, so a raw href would let the model — or content it
+ * summarized — point anywhere. Params are untrusted, so the target tool builds its
+ * destination host-side (the `google.search` pattern: the host is fixed, only the query
+ * varies).
+ */
+export interface ReportActionElement {
+    action:  string;
+    params?: { [key: string]: any };
+}
+
+/**
+ * One side of a team game. Carries the team's own colour so a scoreboard can look like one
+ * without fetching a logo.
+ */
+export interface ScoreboardSide {
+    sideAbbreviation: string;
+    /**
+     * Bare hex, no leading '#', as the provider supplies it.
+     */
+    sideColor?:  string;
+    sideIsHome?: boolean;
+    sideName?:   string;
+    sideRecord?: string;
+    sideScore:   string;
 }
 
 export interface CerebralHelmAppOpenInput {
@@ -845,6 +1357,26 @@ export interface CerebralHelmAppOpenOutput {
     alreadyRunning: boolean;
     appId:          string;
     launched:       boolean;
+}
+
+/**
+ * No input: this tool quits CerebralHelm itself. It deliberately takes no target, so it can
+ * never be pointed at another application (that is `apps.quitall`, which in turn excludes
+ * the host).
+ */
+export interface CerebralHelmAppQuitInput {
+}
+
+/**
+ * Reports that termination was requested, not that it completed — the process is on its way
+ * out, so nothing downstream can observe a later status.
+ */
+export interface CerebralHelmAppQuitOutput {
+    status: CerebralHelmAppQuitOutputStatus;
+}
+
+export enum CerebralHelmAppQuitOutputStatus {
+    Quitting = "quitting",
 }
 
 export interface CerebralHelmAppsListInput {
@@ -860,6 +1392,50 @@ export interface App {
     bundleId: string;
     iconPng?: string;
     name:     string;
+}
+
+export interface CerebralHelmAppsQuitAllInput {
+}
+
+export interface CerebralHelmAppsQuitAllOutput {
+    bundleIds: string[];
+    status:    CerebralHelmAppsQuitAllOutputStatus;
+}
+
+export enum CerebralHelmAppsQuitAllOutputStatus {
+    None = "none",
+    Quit = "quit",
+}
+
+/**
+ * Creates one event in the user's calendar. `startsAt`/`endsAt` are LOCAL WALL-CLOCK ISO
+ * strings (`2026-08-03T14:00:00`), not UTC instants — the same convention the calendar read
+ * side uses (NIC-126), so a time the user typed into a form means the time they meant. The
+ * adapter resolves them in the host's time zone.
+ */
+export interface CerebralHelmCalendarCreateEventInput {
+    /**
+     * Which calendar to write to. Omitted uses the host's default calendar — never a guess at
+     * which one the user meant.
+     */
+    calendarId?: string;
+    endsAt:      string;
+    location?:   string;
+    notes?:      string;
+    startsAt:    string;
+    title:       string;
+}
+
+export interface CerebralHelmCalendarCreateEventOutput {
+    /**
+     * The calendar it landed in, so the result can say where it went rather than just that it
+     * worked. Omitted when the store does not report one.
+     */
+    calendarTitle?: string;
+    /**
+     * The created event's identifier in the host calendar store.
+     */
+    eventId: string;
 }
 
 export interface CerebralHelmConfirmationDisclosure {
@@ -952,6 +1528,123 @@ export interface Tool {
     version: string;
 }
 
+export interface CerebralHelmCourseListInput {
+    /**
+     * Caps the returned courses, most recently written first. Omit for all of them — a school
+     * year is a handful of folders, so the cap exists for symmetry with note.list rather than
+     * because the list is ever large.
+     */
+    courseLimit?: number;
+}
+
+export interface CerebralHelmCourseListOutput {
+    /**
+     * The root-relative school folder the courses were read from, so a caller can say where
+     * they came from without knowing the convention.
+     */
+    courseRoot: string;
+    courses:    Course[];
+}
+
+export interface Course {
+    /**
+     * Root-relative, forward-slashed, so it can be compared directly to a note listing's folder.
+     */
+    courseFolder: string;
+    /**
+     * The course as displayed and addressed — the derived code (STAT 240) where the source
+     * carried one. Also the folder's last path component.
+     */
+    courseName: string;
+    /**
+     * How many notes the folder holds. Zero is a real answer: a course can exist and be empty.
+     */
+    courseNoteCount: number;
+    /**
+     * ISO-8601 of the most recently changed note in the course, absent when it holds none.
+     */
+    courseUpdated?: string;
+}
+
+export interface CerebralHelmCourseNoteCreateInput {
+    /**
+     * The course to file the note under, as a human course name or code. The adapter DERIVES
+     * the folder from it inside the school root and creates it if this is the course's first
+     * note — the caller never names a folder, so a note can only ever land under the school
+     * root.
+     */
+    noteCourse: string;
+    /**
+     * The note's title. It becomes the H1 and the filename's readable part; the filename is
+     * date-prefixed by the adapter so a course folder sorts chronologically on its own.
+     */
+    noteTitle: string;
+}
+
+export interface CerebralHelmCourseNoteCreateOutput {
+    /**
+     * The course as it was resolved — the derived code, which may differ from what was asked
+     * for.
+     */
+    noteCourse: string;
+    /**
+     * False when a note of that title already existed for that day and was returned instead of
+     * being overwritten. Creating a note never clobbers one.
+     */
+    noteCreated: boolean;
+    /**
+     * The note's root-relative path: the same handle note.open takes, so the caller can open
+     * what it just created without deriving a path of its own.
+     */
+    notePath:  string;
+    noteTitle: string;
+}
+
+export interface CerebralHelmGitCloneInput {
+    /**
+     * Optional folder for the clone, relative to the projects root. Omit it and the folder is
+     * derived from the repository name. Whatever is supplied, the adapter re-checks that the
+     * resolved path stays inside the projects root, so no relative escape can place a clone
+     * elsewhere.
+     */
+    cloneDirectory?: string;
+    /**
+     * The https URL of the repository to clone. The adapter refuses any other scheme, and
+     * refuses a URL carrying embedded credentials (user:token@host) so a secret can never reach
+     * the command log.
+     */
+    repositoryURL: string;
+}
+
+export interface CerebralHelmGitCloneOutput {
+    /**
+     * The absolute path the repository was cloned to, always inside the projects root.
+     */
+    clonedPath: string;
+    /**
+     * The folder name the clone landed in.
+     */
+    clonedRepositoryName: string;
+}
+
+export interface CerebralHelmGoogleSearchInput {
+    /**
+     * The search text. The adapter builds a Google search URL host-side (the host is fixed to
+     * google.com); only this query is variable, so untrusted data can never choose the
+     * destination.
+     */
+    query: string;
+}
+
+export interface CerebralHelmGoogleSearchOutput {
+    opened: boolean;
+    query:  string;
+    /**
+     * The Google search URL that was opened.
+     */
+    resolvedURL: string;
+}
+
 export interface CerebralHelmHookRunInput {
     hookId: string;
 }
@@ -964,6 +1657,114 @@ export interface CerebralHelmHookRunOutput {
     stderr:       string;
     stdout:       string;
     timedOut:     boolean;
+}
+
+/**
+ * Property names are prefixed because the code generator derives type names from property
+ * names: a bare `title`/`description`/`priority` would mint or steal a generic type across
+ * the whole shared module.
+ */
+export interface CerebralHelmLinearCreateIssueInput {
+    /**
+     * Markdown body. Optional.
+     */
+    issueDescription?: string;
+    /**
+     * Linear's priority scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low.
+     */
+    issuePriority?: number;
+    issueTitle:     string;
+    /**
+     * Optional labels. A list because Linear issues carry several, and because that is how the
+     * labels are actually used here — an issue is routinely both a category and a status.
+     */
+    linearLabelIDs?: string[];
+    /**
+     * Optional project. Must belong to the chosen team.
+     */
+    linearProjectID?: string;
+    /**
+     * The Linear team the issue belongs to. Required by the API and never inferred: a workspace
+     * can have several teams, and guessing one would file the ticket somewhere the user did not
+     * choose.
+     */
+    linearTeamID: string;
+}
+
+export interface CerebralHelmLinearCreateIssueOutput {
+    /**
+     * The human-readable identifier Linear assigned, e.g. NIC-176.
+     */
+    issueIdentifier: string;
+    /**
+     * The issue's web URL, as returned by Linear — never constructed here.
+     */
+    issueURL: string;
+}
+
+export interface CerebralHelmMailOpenInput {
+    /**
+     * The RFC 5322 Message-ID of the email to open, without the angle brackets. Omit to open
+     * the inbox itself. The adapter builds the mail.google.com URL host-side with the host as a
+     * literal constant — only this id varies — so untrusted data can never choose the
+     * destination.
+     */
+    mailMessageId?: string;
+}
+
+export interface CerebralHelmMailOpenOutput {
+    mailOpened: boolean;
+    /**
+     * The Gmail URL that was opened.
+     */
+    mailResolvedURL: string;
+}
+
+export interface CerebralHelmMessagesSendInput {
+    /**
+     * The message text. Passed to the adapter as an argument, never interpolated into a script,
+     * so quotes and AppleScript keywords in it are data.
+     */
+    messageBody: string;
+    /**
+     * How many people are in the thread, when it is a group. Disclosed because sending to nine
+     * people is a materially bigger action than sending to one (FR-SAF-04).
+     */
+    messageGroupSize?: number;
+    /**
+     * A participant handle (phone number or Apple ID) or a chat identifier, per
+     * messageTargetKind.
+     */
+    messageTarget: string;
+    /**
+     * Messages can send to one person or to an existing chat. A new group cannot be assembled —
+     * the scripting dictionary's `chat` class is read-only — so a group is always an existing
+     * thread.
+     */
+    messageTargetKind: MessageTargetKind;
+    /**
+     * The recipient's display name, so a confirmation can name who this is going to in words
+     * rather than as a phone number.
+     */
+    messageTargetName?: string;
+}
+
+/**
+ * Messages can send to one person or to an existing chat. A new group cannot be assembled —
+ * the scripting dictionary's `chat` class is read-only — so a group is always an existing
+ * thread.
+ */
+export enum MessageTargetKind {
+    Chat = "chat",
+    Participant = "participant",
+}
+
+export interface CerebralHelmMessagesSendOutput {
+    messageSent: boolean;
+    /**
+     * Who it went to, echoed back so the result names them rather than repeating a handle.
+     */
+    messageTargetName?: string;
 }
 
 export interface CerebralHelmModeApplyInput {
@@ -997,6 +1798,39 @@ export enum CerebralHelmModeApplyOutputStatus {
     Success = "success",
 }
 
+export interface CerebralHelmNetworkSpeedTestInput {
+}
+
+export interface CerebralHelmNetworkSpeedTestOutput {
+    /**
+     * Measured download capacity in Mbps, when known.
+     */
+    downloadMbps?: number;
+    /**
+     * ok = both directions measured; partial = one direction only; unavailable = the test could
+     * not run.
+     */
+    status: CerebralHelmNetworkSpeedTestOutputStatus;
+    /**
+     * ISO-8601 timestamp when the measurement completed.
+     */
+    testedAt: string;
+    /**
+     * Measured upload capacity in Mbps, when known.
+     */
+    uploadMbps?: number;
+}
+
+/**
+ * ok = both directions measured; partial = one direction only; unavailable = the test could
+ * not run.
+ */
+export enum CerebralHelmNetworkSpeedTestOutputStatus {
+    Ok = "ok",
+    Partial = "partial",
+    Unavailable = "unavailable",
+}
+
 export interface CerebralHelmNoteCaptureInput {
     body:         string;
     kind:         string;
@@ -1009,6 +1843,160 @@ export interface CerebralHelmNoteCaptureOutput {
     created: boolean;
     noteId:  string;
     path:    string;
+}
+
+export interface CerebralHelmNoteListInput {
+    /**
+     * Caps the returned notes, most recently changed first. Omitted means every note under the
+     * knowledge root; the output reports whether a cap truncated the listing, so a caller is
+     * never silently shown a partial library.
+     */
+    limit?: number;
+}
+
+export interface CerebralHelmNoteListOutput {
+    /**
+     * The notes on disk, most recently changed first, then by path so equal timestamps stay
+     * stable.
+     */
+    notes: NoteListItem[];
+    /**
+     * The absolute path of the knowledge root the notes were read from, so a caller can cite
+     * the source location without a second read.
+     */
+    root: string;
+    /**
+     * Every note found under the root, before any limit. A caller that asks for the five most
+     * recent notes still learns how many there are, so a count is never quietly the size of its
+     * own request.
+     */
+    total: number;
+    /**
+     * Whether the requested limit cut the listing short — equivalently, `total` exceeds the
+     * length of `notes`.
+     */
+    truncated: boolean;
+}
+
+export interface NoteListItem {
+    /**
+     * The containing folder relative to the knowledge root (`inbox`, `projects/atlas`), empty
+     * at the root — the durable hierarchy, for grouping by project or area.
+     */
+    folder: string;
+    /**
+     * The CerebralHelm note id from frontmatter. Absent for a note authored outside
+     * CerebralHelm, which is an ordinary case, not a defect — such a note has no id and is
+     * addressed by path. Deliberately unpatterned, unlike note-search-output's noteId: a file
+     * may be named anything.
+     */
+    noteId?: string;
+    /**
+     * The note's path relative to the knowledge root, forward-slashed. This is the handle:
+     * note.read takes it verbatim.
+     */
+    path: string;
+    /**
+     * The project the note belongs to: its frontmatter project, else the folder beneath
+     * `projects/` that contains it.
+     */
+    project?:     string;
+    sensitivity?: Sensitivity;
+    /**
+     * The frontmatter title when the note declares one, else its filename.
+     */
+    title: string;
+    /**
+     * ISO-8601. The frontmatter `updated` when present, else the file's modification date, so a
+     * note edited in another editor still reports when it actually changed. Absent only when
+     * neither is readable.
+     */
+    updated?: string;
+}
+
+export interface CerebralHelmNoteOpenInput {
+    /**
+     * The note's path relative to the knowledge root, as reported by note.list and note.search.
+     * Root-relative and Markdown only; the knowledge service additionally resolves the path and
+     * refuses anything landing outside the root, so this pattern is a first gate, not the
+     * boundary. Named `notePath` rather than `path` because the code generator derives type
+     * names from property names, and a schema structurally identical to note-read-input would
+     * otherwise collapse into one shared type.
+     */
+    notePath: string;
+}
+
+export interface CerebralHelmNoteOpenOutput {
+    /**
+     * Which surface received the note. `finder` is the honest fallback when nothing handles
+     * obsidian:// — the note is still revealed, so the action does something real rather than
+     * silently doing nothing. `none` accompanies noteOpened=false.
+     */
+    noteOpenTarget: NoteOpenTarget;
+    /**
+     * Whether the note was actually handed to an application. False is a real answer, not a
+     * failure: it says the note exists and nothing on this machine took it.
+     */
+    noteOpened: boolean;
+    /**
+     * The root-relative path that was opened, echoed so a caller can report what happened
+     * without re-deriving it.
+     */
+    notePath: string;
+}
+
+/**
+ * Which surface received the note. `finder` is the honest fallback when nothing handles
+ * obsidian:// — the note is still revealed, so the action does something real rather than
+ * silently doing nothing. `none` accompanies noteOpened=false.
+ */
+export enum NoteOpenTarget {
+    Finder = "finder",
+    None = "none",
+    Obsidian = "obsidian",
+}
+
+export interface CerebralHelmNoteReadInput {
+    /**
+     * The note's path relative to the knowledge root, as reported by note.list. Root-relative
+     * and Markdown only; the adapter additionally resolves the path and refuses anything that
+     * lands outside the knowledge root, so this pattern is a first gate, not the boundary.
+     */
+    path: string;
+}
+
+export interface CerebralHelmNoteReadOutput {
+    /**
+     * The Markdown body, verbatim, with the frontmatter block removed. Redacted out of the
+     * operational log by the descriptor: a note body never reaches a tool_calls row.
+     */
+    body: string;
+    /**
+     * The note's frontmatter exactly as parsed, including keys CerebralHelm does not write —
+     * the file is the source of truth, so nothing in it is dropped on the way out.
+     */
+    frontmatter: { [key: string]: string };
+    /**
+     * The CerebralHelm note id from frontmatter; absent for a note authored elsewhere.
+     */
+    noteId?: string;
+    /**
+     * The note's path relative to the knowledge root.
+     */
+    path: string;
+    /**
+     * The absolute path of the knowledge root the note was read from; joined with `path` it is
+     * the note's source location.
+     */
+    root: string;
+    /**
+     * The frontmatter title when the note declares one, else its filename.
+     */
+    title: string;
+    /**
+     * ISO-8601. The frontmatter `updated` when present, else the file's modification date.
+     */
+    updated?: string;
 }
 
 export interface CerebralHelmNoteSearchInput {
@@ -1036,6 +2024,118 @@ export enum Freshness {
     Fresh = "fresh",
     Stale = "stale",
     Unknown = "unknown",
+}
+
+export interface CerebralHelmProjectOpenInput {
+    /**
+     * Absolute path of the repository directory to open in the configured editor. The adapter
+     * constrains it to the projects root; a path outside is denied.
+     */
+    repoPath: string;
+}
+
+export interface CerebralHelmProjectOpenOutput {
+    opened:   boolean;
+    repoPath: string;
+}
+
+export interface CerebralHelmProjectScaffoldInput {
+    /**
+     * Ordering weight for the Projects widget (higher first). Absent uses the shipped
+     * template's default.
+     */
+    projectImportance?: number;
+    /**
+     * Optional folder to create it in, relative to the projects root. The adapter joins the
+     * name onto it and re-checks that the result stays inside that root.
+     */
+    projectLocation?: string;
+    /**
+     * The project's display name, which is also its folder name. The adapter refuses a name
+     * containing a path separator rather than silently mangling it into nested folders.
+     */
+    projectName: string;
+    /**
+     * Optional one-line summary, written into the PROJECT.md descriptor.
+     */
+    projectSummary?: string;
+}
+
+export interface CerebralHelmProjectScaffoldOutput {
+    /**
+     * The absolute path of the PROJECT.md written into it.
+     */
+    projectDescriptorPath: string;
+    /**
+     * The absolute path of the created project folder, always inside the projects root.
+     */
+    projectPath: string;
+}
+
+export interface CerebralHelmSpotifyControlInput {
+    /**
+     * The playback command to send to the user's active Spotify device: resume, pause, skip
+     * forward, or skip back.
+     */
+    action: SpotifyPlaybackAction;
+}
+
+/**
+ * The playback command to send to the user's active Spotify device: resume, pause, skip
+ * forward, or skip back.
+ */
+export enum SpotifyPlaybackAction {
+    Next = "next",
+    Pause = "pause",
+    Play = "play",
+    Previous = "previous",
+}
+
+export interface CerebralHelmSpotifyControlOutput {
+    action: SpotifyPlaybackAction;
+    /**
+     * Whether there was an active Spotify device. False → nothing to control; the widget guides
+     * the user to start playback on a device.
+     */
+    activeDevice: boolean;
+    /**
+     * True when Spotify accepted the command. False when there was no active device to act on.
+     */
+    applied: boolean;
+}
+
+/**
+ * Property names are prefixed because the code generator derives type names from property
+ * names: a bare `name`/`description` would mint or steal a generic type across the whole
+ * shared module.
+ */
+export interface CerebralHelmSpotifyCreatePlaylistInput {
+    /**
+     * Optional description, as shown in Spotify clients.
+     */
+    playlistDescription?: string;
+    /**
+     * Whether the playlist appears on the user's public profile. Absent means private:
+     * Spotify's own API defaults this to true, and silently publishing something to someone's
+     * profile is not a default worth inheriting.
+     */
+    playlistIsPublic?: boolean;
+    playlistName:      string;
+}
+
+export interface CerebralHelmSpotifyCreatePlaylistOutput {
+    playlistID:   string;
+    playlistName: string;
+    /**
+     * Whether Spotify was opened at the new playlist. Best-effort: the playlist exists either
+     * way, so a failed open is reported rather than treated as a failed create.
+     */
+    playlistOpened?: boolean;
+    /**
+     * The playlist's Spotify URL as returned by the API — never constructed here. Absent when
+     * Spotify omitted it.
+     */
+    playlistURL?: string;
 }
 
 export interface CerebralHelmSystemStatusReadInput {
@@ -1071,9 +2171,17 @@ export enum AvailabilityEnum {
 }
 
 export interface CerebralHelmToolDescriptor {
-    adapterRequirements:   AdapterRequirements;
-    availability:          AvailabilityClass;
-    cancellable:           boolean;
+    adapterRequirements: AdapterRequirements;
+    availability:        AvailabilityClass;
+    cancellable:         boolean;
+    /**
+     * Which confirmation rule the deterministic policy engine applies to this tool.
+     * `allow_external_write_when_user_authored` is the one provenance-conditioned key: a
+     * low-stakes external write runs one-click when the user authored the arguments, and still
+     * confirms when a model proposed them. It only ever affects the `external_write` class —
+     * destructive, financial, and purchase_or_booking are never exemptible — and the
+     * stricter-only 'ask before all actions' overlay still re-arms confirmation over it.
+     */
     confirmationPolicyKey: ConfirmationPolicyKey;
     id:                    string;
     idempotency:           Idempotency;
@@ -1108,7 +2216,16 @@ export interface AvailabilityClass {
     preMac: boolean;
 }
 
+/**
+ * Which confirmation rule the deterministic policy engine applies to this tool.
+ * `allow_external_write_when_user_authored` is the one provenance-conditioned key: a
+ * low-stakes external write runs one-click when the user authored the arguments, and still
+ * confirms when a model proposed them. It only ever affects the `external_write` class —
+ * destructive, financial, and purchase_or_booking are never exemptible — and the
+ * stricter-only 'ask before all actions' overlay still re-arms confirmation over it.
+ */
 export enum ConfirmationPolicyKey {
+    AllowExternalWriteWhenUserAuthored = "allow_external_write_when_user_authored",
     AllowReadWithoutConfirmation = "allow_read_without_confirmation",
     ConfirmDestructive = "confirm_destructive",
     ConfirmExternalWrite = "confirm_external_write",
@@ -1202,7 +2319,27 @@ export interface CerebralHelmURLOpenInput {
 export interface CerebralHelmURLOpenOutput {
     opened:      boolean;
     resolvedUrl: string;
+    surfaced:    boolean;
     urlId:       string;
+}
+
+export interface CerebralHelmWebOpenInput {
+    /**
+     * The absolute https web address to open in the browser. The adapter validates the scheme
+     * (https only) and a present host host-side, so an unresolvable or non-https link is
+     * refused rather than opened. Unlike url.open (which resolves a configured reference id),
+     * this opens an arbitrary destination — used for news article links — so the constraint
+     * lives in the adapter, not in an allowlist.
+     */
+    url: string;
+}
+
+export interface CerebralHelmWebOpenOutput {
+    opened: boolean;
+    /**
+     * The https web address that was opened.
+     */
+    url: string;
 }
 
 /**
@@ -1213,22 +2350,18 @@ export interface CerebralHelmURLOpenOutput {
  */
 export interface CerebralHelmWindowArrangeInput {
     arrangement: Arrangement[];
+    /**
+     * Which display the whole arrangement targets (NIC-142 layout mode). Absent or 'primary'
+     * targets the primary display; 'secondary' targets the first non-primary display, degrading
+     * to primary when none is attached. Frames resolve against the chosen display's visible
+     * area.
+     */
+    display?: Display;
 }
 
 export interface Arrangement {
     appId: string;
     frame: Frame;
-}
-
-export enum Frame {
-    BottomHalf = "bottom-half",
-    Centered = "centered",
-    Full = "full",
-    LeftHalf = "left-half",
-    LeftTwoThirds = "left-two-thirds",
-    RightHalf = "right-half",
-    RightThird = "right-third",
-    TopHalf = "top-half",
 }
 
 /**
@@ -1258,6 +2391,26 @@ export enum EntryStatus {
 export enum CerebralHelmWindowArrangeOutputStatus {
     Arranged = "arranged",
     Partial = "partial",
+}
+
+export interface CerebralHelmYouTubeSearchInput {
+    /**
+     * The search text. The adapter builds a YouTube results URL host-side (the host is fixed to
+     * youtube.com); only this query is variable, so untrusted data can never choose the
+     * destination. Named distinctly from google.search's `query` because the code generator
+     * derives type names from property names, and two structurally identical schemas would
+     * otherwise collapse into one shared type.
+     */
+    youtubeQuery: string;
+}
+
+export interface CerebralHelmYouTubeSearchOutput {
+    youtubeOpened: boolean;
+    youtubeQuery:  string;
+    /**
+     * The YouTube results URL that was opened.
+     */
+    youtubeResolvedURL: string;
 }
 
 /**

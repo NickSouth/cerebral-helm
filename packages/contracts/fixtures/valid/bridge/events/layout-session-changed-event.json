@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "brevt_000000000000000000000009",
+  "type": "layout.session.changed",
+  "timestamp": "2026-07-14T16:00:00.030Z",
+  "payload": {
+    "session": {
+      "modeId": "developer",
+      "windows": [
+        { "ref": "claude-desktop", "kind": "app", "label": "Claude" }
+      ],
+      "quickToggle": {
+        "activeRef": "vscode",
+        "targets": [
+          { "ref": "vscode", "kind": "app", "label": "Visual Studio Code" },
+          { "ref": "github", "kind": "url", "label": "GitHub" }
+        ]
+      }
+    }
+  }
+}

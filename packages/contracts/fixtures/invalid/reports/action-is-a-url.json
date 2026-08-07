@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportId": "daily-brief",
+  "blocks": [
+    {
+      "blockKind": "count",
+      "value": "3",
+      "label": "unread",
+      "reportAction": {
+        "action": "https://mail.google.com/mail/u/0/#inbox"
+      }
+    }
+  ]
+}

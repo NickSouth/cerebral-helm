@@ -27,7 +27,7 @@ describe("widget registry", () => {
   });
 
   it("recognizes registered ids and rejects unknown ones", () => {
-    expect(isRegisteredWidgetId("market-brief")).toBe(true);
+    expect(isRegisteredWidgetId("stocks")).toBe(true);
     expect(isRegisteredWidgetId("leaderboard")).toBe(false);
   });
 });

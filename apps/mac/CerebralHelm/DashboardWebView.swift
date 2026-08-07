@@ -15,11 +15,23 @@ import os
 /// and still runs against its in-webview mock bridge until NIC-74 wires the native
 /// transport. Navigation failures are logged so a broken bundle is visible.
 /// The backdrop window (NIC-120a): borderless windows refuse key status by
-/// default, but the hosted web input (command bar, conversation, settings)
-/// must accept typing whenever the dashboard is focused.
+/// default, but the hosted web input (command bar, settings) must accept
+/// typing whenever the dashboard is focused.
 private final class DashboardBackdropWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+}
+
+/// A dashboard web view that actuates a click even when the backdrop isn't the active
+/// window (NIC-142). The backdrop never rises above other apps, so while a layout app is
+/// focused a click on the dashboard normally takes two — one to activate CerebralHelm,
+/// one to press the control. Accepting the first mouse delivers that click straight to
+/// the web content, so the whole dashboard (bottom-bar hotswap, quick apps, mode
+/// control) responds on a single click. The click still activates CerebralHelm as a side
+/// effect, but the backdrop stays at its permanent sub-normal level, so the focused
+/// layout windows are not raised over.
+private final class FirstMouseWebView: WKWebView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -122,7 +134,7 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
             forMainFrameOnly: true
         ))
 
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView = FirstMouseWebView(frame: .zero, configuration: configuration)
 
         // The desktop backdrop (NIC-120a): borderless and sized to the primary
         // screen, on all Spaces, stationary through Mission Control transitions.
@@ -130,8 +142,20 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         // *behind* normal windows, so opening an app layers it above CerebralHelm
         // instead of switching Spaces. Multi-display backdrops follow in NIC-120b;
         // until then a secondary display shows the plain desktop.
-        let screenFrame = (screen ?? NSScreen.screens.first ?? NSScreen.main)?.frame
+        let hostScreen = screen ?? NSScreen.screens.first ?? NSScreen.main
+        let screenFrame = hostScreen?.frame
             ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+
+        // Seed the top safe-area inset before first paint (NIC-155). The backdrop fills the whole
+        // screen frame, so on a notched built-in display the top bar would sit under the notch;
+        // the dashboard lowers itself and scales to fit off this value. Injected at documentStart
+        // so there's no first-frame flash, then kept current by `fit(to:)` as displays change.
+        let initialSafeAreaTop = hostScreen?.safeAreaInsets.top ?? 0
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: Self.safeAreaScript(top: initialSafeAreaTop),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
         window = DashboardBackdropWindow(
             contentRect: screenFrame,
             styleMask: [.borderless],
@@ -170,6 +194,32 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         if window.frame != screen.frame {
             window.setFrame(screen.frame, display: true)
         }
+        // Re-publish the notch inset for the (possibly new) host display (NIC-155): a moved or
+        // re-targeted backdrop must lower itself for a notched screen and un-lower for an external
+        // one. Cheap and idempotent — the value only changes the CSS var when it actually differs.
+        webView.evaluateJavaScript(Self.safeAreaScript(top: screen.safeAreaInsets.top))
+    }
+
+    /// JS that publishes the top safe-area inset to the dashboard as the `--ch-safe-area-top`
+    /// custom property (NIC-155). The web layer scales off `(100vh − inset)` and pads the shell
+    /// down by the inset, so the top bar clears the notch and everything still fits `100vh`.
+    private static func safeAreaScript(top: CGFloat) -> String {
+        let px = max(0, top)
+        return "document.documentElement.style.setProperty('--ch-safe-area-top', '\(px)px');"
+    }
+
+    /// Tell this surface whether it is currently acting as backdrop behind the user's real work
+    /// (NIC-152), so it can dim, desaturate, soften and quiet its motion.
+    ///
+    /// **Per surface, not per app** — that is the whole point. Each backdrop is told about its own
+    /// display, so the laptop screen can stay fully present while the external display recedes.
+    /// The same per-surface injection shape as the safe-area inset above; the web side keeps this
+    /// in exactly one file (`surfacePresence.ts`), so if this ever wants to be a bridge event
+    /// instead, nothing that renders the treatment has to know.
+    func setReceded(_ receded: Bool) {
+        webView.evaluateJavaScript(
+            "window.__cerebralPresence && window.__cerebralPresence.set(\(receded));"
+        )
     }
 
     /// Routes a shared-session bridge event (lifecycle/confirmation/config) to the
@@ -178,14 +228,36 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         bridge.deliverBridgeEvent(json)
     }
 
-    /// Opens the Heimlich conversation in the center panel with `text` (NIC-76 / the
-    /// palette's "Ask Heimlich" routing). Calls the dashboard's injected shell-intent hook;
-    /// it is a no-op if the dashboard React tree has not mounted yet.
-    func openConversation(_ text: String) {
+    /// Dispatches a raw command `text` through the dashboard's command bus (NIC-76 / the
+    /// palette's routing; the Heimlich chat was removed in NIC-124). Calls the dashboard's
+    /// injected shell-intent hook; it is a no-op if the dashboard React tree has not mounted yet.
+    func submitCommand(_ text: String) {
         guard let literal = try? JSONEncoder().encode(text),
               let literalString = String(data: literal, encoding: .utf8) else { return }
-        let script = "window.__cerebralShell && window.__cerebralShell.openConversation(\(literalString));"
+        let script = "window.__cerebralShell && window.__cerebralShell.submitCommand(\(literalString));"
         webView.evaluateJavaScript(script)
+    }
+
+    /// Open a Report or Input on the dashboard on behalf of another surface. The edge sidebar
+    /// hands these over rather than rendering them in its own column (owner decision, 2026-08-03):
+    /// both are designed for the centre panel, and a report inside a 340px column read as a
+    /// window-inside-a-window.
+    func openReport(_ reportID: String) {
+        evaluateShellIntent("openReport", argument: reportID)
+    }
+
+    func openInput(_ actionID: String) {
+        evaluateShellIntent("openInput", argument: actionID)
+    }
+
+    /// Call one `window.__cerebralShell` function with a single string argument, JSON-encoded so
+    /// an id containing a quote can never break out of the expression.
+    private func evaluateShellIntent(_ function: String, argument: String) {
+        guard let literal = try? JSONEncoder().encode(argument),
+              let literalString = String(data: literal, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.__cerebralShell && window.__cerebralShell.\(function)(\(literalString));"
+        )
     }
 
     /// Opens the web settings overlay over the dashboard (NIC-76 / FR-UI-06). The native

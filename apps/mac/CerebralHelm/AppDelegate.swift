@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator = WindowCoordinator()
     private var menuBar: MenuBarController?
     private var bridgeRuntime: AppBridgeRuntime?
+    /// Keeps other apps' windows off the persistent bottom bar (NIC-144). Reads the
+    /// coordinator's live reserved strips; inert until Accessibility is trusted.
+    private var windowSnap: WindowSnapObserver?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Single-instance guard (NIC-89): a duplicate launch — e.g. the login
@@ -28,6 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+        // Install the main menu (esp. the Edit menu) so the standard editing
+        // shortcuts — ⌘V paste into the URL pin field / command bar / settings —
+        // reach the hosted WKWebView. Without an Edit menu macOS never routes them.
+        MainMenu.install(appName: "CerebralHelm")
         switch Bootstrap.run() {
         case let .ready(paths):
             enterReady(paths)
@@ -71,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // The single live runtime + bridge session for this app session (NIC-75). Both
-        // the dashboard and the command-palette webview submit through it.
+        // the dashboard and the sidebar webview submit through it.
         guard let bridgeRuntime = AppBridgeRuntime(paths: paths) else {
             coordinator.enterRecovery(Bootstrap.Recovery(
                 reason: "startup_validation_failed",
@@ -83,11 +90,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         self.bridgeRuntime = bridgeRuntime
 
-        // Hand the window roles to the coordinator (dashboard + pre-warmed palette).
+        // Hand the window roles to the coordinator (dashboard + pre-warmed sidebar).
         coordinator.enterReady(dashboardRoot: dashboardRoot, paths: paths, session: bridgeRuntime.session)
 
         // Route the shared session's event stream to the coordinator, which fans it to the
-        // dashboard (and mode changes to the palette).
+        // dashboard and the sidebar.
         bridgeRuntime.setEventSink { [weak self] json in
             self?.coordinator.deliverBridgeEvent(json)
         }
@@ -96,6 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // pause sampling whenever the dashboard window is fully occluded.
         coordinator.onDashboardVisibilityChange = { [weak bridgeRuntime] visible in
             bridgeRuntime?.setStatusPublishingActive(visible)
+        }
+        // Assigned before the publishers start, so a handshake that lands early still replays.
+        coordinator.onDashboardBridgeReady = { [weak bridgeRuntime] in
+            bridgeRuntime?.resendLiveWidgetState()
         }
         bridgeRuntime.startStatusPublishing()
 
@@ -107,14 +118,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.mainDisplayIDProvider = { [weak bridgeRuntime] in
             bridgeRuntime?.storedMainDisplayID()
         }
+        // The persisted "Layout display" choice (NIC-142), read through the runtime
+        // until a settings-read bridge operation exists.
+        coordinator.layoutDisplayIDProvider = { [weak bridgeRuntime] in
+            bridgeRuntime?.storedLayoutDisplayID()
+        }
+        // Feed the reserved bottom-bar strips to the layout arrange so windows land above
+        // the bar the first time, not after the snap observer nudges them (NIC-142).
+        coordinator.onReservedStripsChanged = { [weak bridgeRuntime] strips in
+            bridgeRuntime?.setReservedStrips(strips)
+        }
         bridgeRuntime.startDisplayObservation { [weak self] topology in
             self?.coordinator.handleDisplayTopologyChange(topology)
         }
 
-        // The menu-bar item + global summon hotkey (NIC-75 / FR-SHL-02). Both the menu
-        // item and the hotkey drive the coordinator.
+        // Window-snap awareness of the bottom bar (NIC-144): keep other apps' windows
+        // above the reserved strip the coordinator caches from the bar's live rect.
+        // Inert without Accessibility trust — never a prompt (FR-SAF-07); a later grant
+        // takes effect on the next observation start.
+        let windowSnap = WindowSnapObserver(
+            surface: SystemWindowSnapSurface(),
+            reservedStrips: { [weak self] in self?.coordinator.currentReservedStrips() ?? [] }
+        )
+        windowSnap.start()
+        self.windowSnap = windowSnap
+
+        // The menu-bar item + global summon hotkey (NIC-75 / FR-SHL-02). Both drive the sidebar,
+        // which replaced the command palette as the app's command surface.
         menuBar = MenuBarController(
-            summon: { [weak self] in self?.coordinator.summonPalette() },
+            summonSidebar: { [weak self] in self?.coordinator.toggleSidebar() },
             openSettings: { [weak self] in self?.coordinator.openSettings() }
         )
     }
@@ -124,5 +156,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// capability flags and announce any availability transition.
     func applicationDidBecomeActive(_ notification: Notification) {
         bridgeRuntime?.recheckPermissions()
+        // The same return-from-System-Settings moment may have granted Accessibility —
+        // re-arm window-snap observation (idempotent once armed), so it starts working
+        // without a relaunch (NIC-144).
+        windowSnap?.start()
     }
 }

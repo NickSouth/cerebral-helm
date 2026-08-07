@@ -24,7 +24,7 @@
     "open-news-brief"
   ],
   "widgets": {
-    "left": "market-brief",
+    "left": "stocks",
     "right": "leaderboard"
   },
   "layoutId": "executive.default"

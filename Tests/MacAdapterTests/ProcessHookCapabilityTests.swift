@@ -57,13 +57,6 @@ private func survivorCount(matching marker: String) -> Int {
     return text.isEmpty ? 0 : text.split(separator: "\n").count
 }
 
-private func waitUntil(_ deadlineMs: Int, _ condition: () -> Bool) async {
-    let steps = max(1, deadlineMs / 50)
-    for _ in 0..<steps {
-        if condition() { return }
-        try? await Task.sleep(nanoseconds: 50_000_000)
-    }
-}
 
 // MARK: - Execution shape
 
@@ -165,7 +158,7 @@ func cancellationKillsProcessGroup() async throws {
             invocation("/bin/sh", ["-c", "/bin/sleep \(marker) & wait"])
         )
     }
-    await waitUntil(3000) { survivorCount(matching: marker) > 0 }
+    await waitUntil { survivorCount(matching: marker) > 0 }
     #expect(survivorCount(matching: marker) > 0, "the grandchild sleeper should be running before cancellation")
 
     running.cancel()
@@ -174,7 +167,7 @@ func cancellationKillsProcessGroup() async throws {
         Issue.record("Expected CancellationError, got \(outcome)"); return
     }
 
-    await waitUntil(2000) { survivorCount(matching: marker) == 0 }
+    await waitUntil { survivorCount(matching: marker) == 0 }
     #expect(survivorCount(matching: marker) == 0, "no unmanaged child may survive cancellation")
 }
 
@@ -205,7 +198,7 @@ func executorTimeoutLeavesNoChild() async throws {
     )
 
     #expect(result.status == .timeout)
-    await waitUntil(2000) { survivorCount(matching: marker) == 0 }
+    await waitUntil { survivorCount(matching: marker) == 0 }
     #expect(survivorCount(matching: marker) == 0, "an executor timeout may not leave an unmanaged child")
 }
 

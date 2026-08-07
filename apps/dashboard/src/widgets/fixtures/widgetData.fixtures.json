@@ -2,27 +2,59 @@
   "schemaVersion": "1.0.0",
   "description": "Pre-bridge widget-data fixtures (one ready instance per registered widget plus degraded exemplars) keyed by widget id. Demonstrates the WidgetData envelope shape NIC-52 lifts into the bootstrap-state contract and NIC-54 renders. Clocks are fixed for deterministic snapshots.",
   "ready": {
-    "market-brief": {
-      "widgetId": "market-brief",
+    "stocks": {
+      "widgetId": "stocks",
       "state": "ready",
       "headline": "Markets up modestly",
       "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" },
       "data": {
-        "tickers": [
-          { "symbol": "SPX", "changePct": 0.6 },
-          { "symbol": "AAPL", "changePct": -0.3 },
-          { "symbol": "NVDA", "changePct": 1.4 }
+        "items": [
+          { "symbol": "SPY", "price": 543.21, "change": 3.24, "changePercent": 0.6, "history": [525.1, 527.3, 524.8, 529.0, 531.2, 528.6, 533.4, 535.1, 532.9, 537.8, 539.2, 536.7, 540.1, 541.9, 538.4, 543.21] },
+          { "symbol": "AAPL", "price": 227.15, "change": -0.68, "changePercent": -0.3, "history": [232.4, 231.0, 233.1, 230.2, 229.5, 231.2, 228.9, 227.8, 229.6, 226.4, 228.1, 227.0, 228.7, 226.9, 227.9, 227.15] },
+          { "symbol": "NVDA", "price": 131.4, "change": 1.81, "changePercent": 1.4, "history": [118.2, 120.5, 119.1, 122.8, 124.0, 121.6, 125.9, 127.2, 124.8, 128.6, 129.9, 127.3, 130.1, 132.0, 129.4, 131.4] },
+          { "symbol": "VTI", "price": 268.9, "change": 1.07, "changePercent": 0.4, "history": [262.1, 263.4, 261.8, 264.9, 266.2, 263.7, 267.1, 268.0, 265.6, 269.2, 270.1, 267.4, 268.8, 270.3, 267.9, 268.9] }
         ]
-      },
-      "action": { "id": "open-market-brief", "label": "Open market brief" }
+      }
     },
     "project-git-status": {
       "widgetId": "project-git-status",
       "state": "ready",
-      "headline": "dev · checks passing",
+      "headline": "3 repositories",
       "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "just now" },
-      "data": { "branch": "dev", "ahead": 2, "behind": 0, "checks": "passing", "openPullRequests": 1 },
-      "action": { "id": "git-status", "label": "View status" }
+      "data": {
+        "repositories": [
+          {
+            "id": "cerebral-helm",
+            "name": "cerebral-helm",
+            "branch": "mvp-polish/integrations-and-widgets",
+            "sync": "diverged",
+            "remote": { "owner": "NickSouth", "repo": "cerebral-helm" },
+            "github": {
+              "state": "ready",
+              "openPullRequests": { "count": 2, "titles": ["Repo status widget (GitHub)", "Weather integration"] },
+              "checks": { "state": "passing" },
+              "recentCommits": [
+                { "shortSha": "320ac4c", "message": "fix: news formatting" },
+                { "shortSha": "c1a4f7e", "message": "feat: news widget" }
+              ]
+            }
+          },
+          {
+            "id": "notes",
+            "name": "notes",
+            "branch": "main",
+            "sync": "synced",
+            "remote": { "owner": "NickSouth", "repo": "notes" },
+            "github": {
+              "state": "ready",
+              "openPullRequests": { "count": 0, "titles": [] },
+              "checks": { "state": "none" },
+              "recentCommits": [{ "shortSha": "a1b2c3d", "message": "Add reading list" }]
+            }
+          },
+          { "id": "scratchpad", "name": "scratchpad", "branch": "wip", "sync": "no-upstream" }
+        ]
+      }
     },
     "deadlines": {
       "widgetId": "deadlines",
@@ -40,23 +72,42 @@
     "spotify": {
       "widgetId": "spotify",
       "state": "ready",
-      "headline": "Recently played",
-      "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "8m ago" },
-      "data": { "track": "Weightless", "artist": "Marconi Union", "playing": false },
-      "action": { "id": "resume-playback", "label": "Resume" }
+      "headline": "Now playing",
+      "data": {
+        "track": "Weightless",
+        "artist": "Marconi Union",
+        "album": "Ambient Transmissions Vol. 2",
+        "artworkImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "isPlaying": true,
+        "deviceName": "Nick's MacBook Pro",
+        "progressMs": 83000,
+        "durationMs": 240000,
+        "upNextTrack": "Nightcall",
+        "upNextArtist": "Kavinsky"
+      }
     },
     "projects": {
       "widgetId": "projects",
       "state": "ready",
-      "headline": "2 active",
+      "headline": "2 projects",
       "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" },
       "data": {
         "items": [
-          { "name": "Quarterly planning", "status": "in-progress" },
-          { "name": "Board prep", "status": "review" }
+          {
+            "id": "CerebralHelm",
+            "name": "CerebralHelm",
+            "path": "/Users/example/Projects/CerebralHelm",
+            "descriptorPath": "/Users/example/Projects/CerebralHelm/PROJECT.md",
+            "hasDescriptor": true
+          },
+          {
+            "id": "OnDraft",
+            "name": "OnDraft",
+            "path": "/Users/example/Projects/OnDraft",
+            "hasDescriptor": false
+          }
         ]
-      },
-      "action": { "id": "review-projects", "label": "Review projects" }
+      }
     },
     "repositories": {
       "widgetId": "repositories",
@@ -81,18 +132,19 @@
       },
       "action": { "id": "open-courses", "label": "Open courses" }
     },
-    "media-list": {
-      "widgetId": "media-list",
+    "releases": {
+      "widgetId": "releases",
       "state": "ready",
-      "headline": "Continue watching",
+      "headline": "New & hot",
       "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "10m ago" },
       "data": {
         "items": [
-          { "title": "The Bear", "kind": "continue" },
-          { "title": "Dune", "kind": "queued" }
+          { "id": "movie-1", "title": "Dune: Part Two", "mediaType": "movie", "year": 2024 },
+          { "id": "tv-1", "title": "The Bear", "mediaType": "tv", "year": 2024 },
+          { "id": "movie-2", "title": "Nosferatu", "mediaType": "movie" }
         ]
       },
-      "action": { "id": "browse-library", "label": "Browse library" }
+      "action": { "id": "browse-releases", "label": "Browse releases" }
     }
   },
   "degraded": {
@@ -104,9 +156,25 @@
     "stale": {
       "widgetId": "project-git-status",
       "state": "stale",
-      "headline": "dev · checks passing",
+      "headline": "3 repositories",
       "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "12m ago" },
-      "data": { "branch": "dev", "checks": "passing" }
+      "data": {
+        "repositories": [
+          {
+            "id": "cerebral-helm",
+            "name": "cerebral-helm",
+            "branch": "mvp-polish/integrations-and-widgets",
+            "sync": "diverged",
+            "remote": { "owner": "NickSouth", "repo": "cerebral-helm" },
+            "github": {
+              "state": "ready",
+              "openPullRequests": { "count": 2, "titles": ["Repo status widget (GitHub)", "Weather integration"] },
+              "checks": { "state": "passing" },
+              "recentCommits": [{ "shortSha": "320ac4c", "message": "fix: news formatting" }]
+            }
+          }
+        ]
+      }
     },
     "unavailable": {
       "widgetId": "spotify",

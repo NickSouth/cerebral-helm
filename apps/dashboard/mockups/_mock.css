@@ -1,0 +1,248 @@
+/*
+ * Shared scaffolding for the native-window mockups (NIC-161 direction-setting).
+ *
+ * NOT production code. These pages exist so the look can be judged before any Swift is written;
+ * they touch nothing under src/ and the whole folder deletes in one command.
+ *
+ * They pull in the REAL token layer, so every colour, radius and spacing value is the one the
+ * app actually ships — a mockup that invents its own palette teaches you nothing about how the
+ * result will feel.
+ *
+ * The vibrancy preview is faithful rather than suggested: `backdrop-filter` blurring the mock
+ * desktop below is the same operation `NSVisualEffectView` performs on the real desktop. What you
+ * see here is what the window will do, provided the native side gets its transparency flags.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* The app derives this from viewport height; pinned here so the mockups hold one honest scale. */
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--ch-font-family);
+  color: var(--ch-text-primary);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* --- The mock desktop -------------------------------------------------------------------
+   Deliberately busy: a flat backdrop would make any blur look good. Colour and structure give
+   the vibrancy something to actually chew on, which is the only honest test of legibility. */
+.desk {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(1200px 700px at 18% 22%, #2b4a6b 0%, transparent 60%),
+    radial-gradient(900px 600px at 82% 74%, #4a2f5e 0%, transparent 62%),
+    radial-gradient(700px 500px at 62% 12%, #1f5f63 0%, transparent 58%),
+    linear-gradient(160deg, #0a1220 0%, #131a2b 48%, #090d16 100%);
+}
+
+.desk__glare {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(320px 320px at 30% 62%, rgba(255, 214, 140, 0.16), transparent 70%),
+    radial-gradient(260px 260px at 72% 34%, rgba(120, 220, 255, 0.14), transparent 70%);
+}
+
+/* Faux windows behind the surface, so the blur has hard edges and text-like texture to smear. */
+.desk__win {
+  position: absolute;
+  border-radius: 12px;
+  background: rgba(12, 18, 30, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.desk__win::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 26px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.desk__lines {
+  position: absolute;
+  inset: 38px 16px 16px;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.14) 0 7px,
+    transparent 7px 20px
+  );
+  opacity: 0.5;
+}
+
+/* --- The vibrant window ------------------------------------------------------------------
+   The chrome every mockup shares. `backdrop-filter` IS the NSVisualEffectView preview; the tint
+   above it is the web layer's own translucent fill, which is the pair that has to be tuned
+   together — vibrancy under a 92%-opaque surface shows nothing. */
+.win {
+  position: relative;
+  border-radius: 14px;
+  background: rgba(14, 20, 32, 0.62);
+  backdrop-filter: blur(42px) saturate(170%);
+  -webkit-backdrop-filter: blur(42px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 40px 90px rgba(0, 0, 0, 0.55),
+    0 0 0 0.5px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+  animation: win-in 420ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+/* The appear animation, previewed. Scale from just under 1 plus a fade — small enough to read as
+   "arriving" rather than "zooming", which is the line most app launch animations cross. */
+@keyframes win-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+.win__drag {
+  height: 12px;
+}
+
+/* --- Emerging from the control that opened it ---------------------------------------------
+   A surface anchored to a button should look like it came OUT of that button. Scale from a
+   small fraction with the transform origin pinned to the anchored corner does that in one
+   property — the surface appears to unfold from the corner nearest its trigger rather than
+   sliding in from nowhere. Pair with native placement so the corner really is next to it. */
+@keyframes win-from-anchor {
+  from {
+    opacity: 0;
+    transform: translate(var(--from-x, 0), var(--from-y, 0)) scale(0.72);
+  }
+}
+
+.win--from-br {
+  transform-origin: 100% 100%;
+  --from-x: 1.5rem;
+  --from-y: 2rem;
+  animation: win-from-anchor 380ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+/* --- Tail pointer -------------------------------------------------------------------------
+   The wedge back toward whatever opened the surface. Already the convention on the network
+   callout (`.netspeed::before`); anchored popovers should all carry it, or they read as
+   free-floating panels that happen to be nearby. Colour is inherited from the surface tint so
+   it stays welded to the popover when the fill is retuned. */
+.tail {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 9px solid transparent;
+}
+
+.tail--up {
+  top: -18px;
+  border-bottom-color: rgba(14, 20, 32, 0.62);
+}
+
+.tail--down {
+  bottom: -18px;
+  border-top-color: rgba(14, 20, 32, 0.62);
+}
+
+.tail--left {
+  left: -18px;
+  border-right-color: rgba(14, 20, 32, 0.62);
+}
+
+.stage {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 3rem;
+}
+
+/* --- Variant switcher --------------------------------------------------------------------- */
+.switch {
+  position: fixed;
+  z-index: 50;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(10, 14, 24, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  font-size: var(--ch-font-size-sm);
+}
+
+.switch__label {
+  color: var(--ch-text-faint);
+  padding-left: 0.5rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: var(--ch-font-size-label);
+}
+
+.switch button {
+  font: inherit;
+  cursor: pointer;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ch-text-muted);
+  transition: all 140ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.switch button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--ch-accent-primary) 22%, transparent);
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+  color: var(--ch-text-primary);
+}
+
+.switch a {
+  color: var(--ch-text-faint);
+  text-decoration: none;
+  padding: 0 0.6rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.switch a:hover {
+  color: var(--ch-accent-primary);
+}
+
+/* Only the active variant renders. */
+[data-variant="a"] .v-b,
+[data-variant="b"] .v-a {
+  display: none !important;
+}
+
+.note {
+  position: fixed;
+  left: 1.25rem;
+  bottom: 1.25rem;
+  max-width: 22rem;
+  font-size: var(--ch-font-size-label);
+  line-height: 1.5;
+  color: var(--ch-text-faint);
+  z-index: 50;
+}
+
+.note b {
+  color: var(--ch-text-muted);
+  font-weight: 500;
+}

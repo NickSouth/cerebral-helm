@@ -62,6 +62,10 @@ public struct WorkspacePaths: Sendable {
     /// Timestamped state backups (`<stateRoot>/backups`), created and verified
     /// before a migration (FR-UPD-04).
     public let backupsDirectory: URL
+    /// Disposable, rebuildable favicon cache for URL quick apps
+    /// (`<stateRoot>/cache/favicons`, NIC-147). Kept under `cache/`, apart from the
+    /// durable state files, because deleting it only forces a re-fetch.
+    public let faviconCacheDirectory: URL
     public let eventLogPath: URL
 
     /// Resolves workspace paths. The environment is selected by `CEREBRAL_ENV`
@@ -98,6 +102,9 @@ public struct WorkspacePaths: Sendable {
             .appendingPathComponent("cerebral.sqlite")
         self.knowledgeRoot = stateRoot.appendingPathComponent("knowledge", isDirectory: true)
         self.backupsDirectory = stateRoot.appendingPathComponent("backups", isDirectory: true)
+        self.faviconCacheDirectory = stateRoot
+            .appendingPathComponent("cache", isDirectory: true)
+            .appendingPathComponent("favicons", isDirectory: true)
 
         let eventLogPath: URL
         if let configured = processEnvironment["CEREBRAL_EVENT_LOG_PATH"], !configured.isEmpty {
@@ -143,6 +150,16 @@ public struct WorkspacePaths: Sendable {
             ?? FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support", isDirectory: true)
         return base.appendingPathComponent(appName, isDirectory: true).standardizedFileURL
+    }
+
+    /// The default projects root the active-repos widget scans (NIC-131): `~/Projects`.
+    /// Defined here, in portable tested code, so the app never hardcodes the location; a
+    /// future durable setting may override it with a user-selected root. This is user
+    /// *content*, not app state, so it sits outside the state-root layout above.
+    public static func defaultProjectsRoot() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Projects", isDirectory: true)
+            .standardizedFileURL
     }
 
     /// Builds paths for the packaged macOS app (NIC-72): read-only config and tool

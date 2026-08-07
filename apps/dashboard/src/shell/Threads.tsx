@@ -23,6 +23,22 @@ export interface ThreadsProps {
   distance?: number;
   /** Flow-rate multiplier (1 = upstream default). */
   speed?: number;
+  /**
+   * Minimum milliseconds between rendered frames (NIC-152). 0 renders every animation frame; a
+   * larger value caps the rate so the field stays alive while the surface is backdrop without
+   * paying full GPU cost for motion nobody is watching. The clock keeps accumulating either way,
+   * so the flow never jumps when the cap changes.
+   */
+  frameIntervalMs?: number;
+  /**
+   * When the launch choreography began, on the `performance.now()` clock, or `null` to render the
+   * finished field immediately (NIC-157). Progress is derived here, per frame, from the same
+   * timestamp `requestAnimationFrame` already supplies — so the sequence costs zero React
+   * re-renders rather than one per frame.
+   */
+  introStartAt?: number | null;
+  /** How long the field's part of the sequence runs — through to the end of the panel's pinch. */
+  introDurationMs?: number;
 }
 
 const vertexShader = `
@@ -44,6 +60,10 @@ uniform vec3 uColor;
 uniform vec3 uColor2;
 uniform float uAmplitude;
 uniform float uDistance;
+// Launch choreography progress, 0 → 1 (NIC-157). At 1 every term below collapses to identity, so
+// the steady state is bit-for-bit the pre-intro shader — the sequence adds nothing to the cost of
+// the running field.
+uniform float uIntro;
 
 #define PI 3.1415926538
 
@@ -137,12 +157,43 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float line_strength = 1.0;
     float heroGlow = 0.0;
     float bloom = 0.0;
+    float tipGlow = 0.0;
+
+    // --- Launch choreography (NIC-157) ---
+    float intro = clamp(uIntro, 0.0, 1.0);
+    // Still arriving? Every intro-only term is gated on this, so a finished field pays nothing.
+    float arriving = 1.0 - step(1.0, intro);
+    // The sequence splits at REVEAL_END: threads draw and fly in before it, and the field
+    // contracts after it. That split is not arbitrary — it is exactly where the panel begins its
+    // pinch, so the threads are still actively contracting for as long as the box is closing.
+    // (They used to finish first, which left ~700ms of near-motionless field while the box moved,
+    // and read as a stutter: the flow at rest is slow enough to look frozen over that span.)
+    float rev = clamp(intro / 0.817, 0.0, 1.0);
+    float revealing = 1.0 - step(1.0, rev);
+    // Wider while flying in, contracting into the resting band as the panel closes — the "shrink
+    // in" beat, done as amplitude rather than a canvas scale so nothing is resampled.
+    float introAmp = mix(1.85, 1.0, smoothstep(0.817, 1.0, intro));
 
     for (int i = 0; i < u_line_count; i++) {
         float fi = float(i);
         float p = fi / float(u_line_count);
         float seed = hash1(fi + 3.0);
         float seed2 = hash1(fi + 17.0);
+
+        // Thread 0 is the herald: it draws itself in alone, from the left edge all the way across,
+        // before any other thread starts. The rest follow on staggered, deterministic offsets,
+        // each entering from one side or the other so the bundle thickens from both edges inward.
+        float herald = 1.0 - step(0.5, fi);
+        float order = mix(mix(0.26, 0.63, hash1(fi + 71.0)), 0.0, herald);
+        float span = mix(0.30, 0.36, herald);
+        // Overshoot past 1 so the trailing edge of the reveal clears the far edge completely —
+        // otherwise a sliver at x = 1 would never finish drawing.
+        float tIn = clamp((rev - order) / span, 0.0, 1.0) * 1.14;
+        // The herald always enters from the left; the others alternate sides by hash.
+        float fromRight = mix(step(0.5, hash1(fi + 61.0)), 0.0, herald);
+        // Distance travelled from this thread's own entry edge.
+        float xIn = mix(uv.x, 1.0 - uv.x, fromRight);
+        float revealMask = mix(1.0 - smoothstep(tIn - 0.07, tIn, xIn), 1.0, 1.0 - arriving);
 
         // ~30% loose "splinters": anchored to ONE edge, splintering off past the midpoint.
         float loose = step(0.7, seed2);
@@ -152,7 +203,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         float rightStart = mix(0.12, 0.4, hash1(fi + 29.0));
         float leftWin = 1.0 - smoothstep(leftEnd - fadeW, leftEnd, uv.x);
         float rightWin = smoothstep(rightStart, rightStart + fadeW, uv.x);
-        float window = mix(1.0, mix(leftWin, rightWin, side), loose);
+        // NOTE: no backticks in this shader source — it is a JS template literal.
+        // The window term already gates both the bloom and every fork's coverage, so folding the
+        // reveal in here is the single point that makes an un-arrived thread genuinely absent.
+        float window = mix(1.0, mix(leftWin, rightWin, side), loose) * revealMask;
 
         // distance-from-anchor (0 at the anchored edge, 1 at the free/splinter end)
         float tLeft = clamp(uv.x / max(leftEnd, 0.01), 0.0, 1.0);
@@ -161,10 +215,19 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         float forkCount = mix(1.0, 1.0 + floor(hash1(fi + 53.0) * 4.0), loose); // 1..4 for loose
 
         float phase = seed * 5.0;                       // desync (they cross in the middle)
-        float lineAmp = uAmplitude * mix(1.0, 1.25, loose);
+        float lineAmp = uAmplitude * introAmp * mix(1.0, 1.25, loose);
         float baseWidth = u_line_width * pixel(1.0, iResolution.xy) * (1.0 - p);
 
         float y = threadY(uv, p, iTime, lineAmp, uDistance, phase);
+
+        // A bright point riding the leading edge while a thread draws itself in — the thing that
+        // makes it read as being drawn rather than wiped into view. Gated so it costs nothing
+        // once the sequence is over, and it dies as the tip reaches the far edge.
+        float drawing = revealing * step(0.0001, tIn) * (1.0 - step(1.06, tIn));
+        float dTip = xIn - min(tIn, 1.0);
+        float dTipY = uv.y - y;
+        tipGlow += exp(-(dTip * dTip) / (0.014 * 0.014))
+                 * exp(-(dTipY * dTipY) / (0.022 * 0.022)) * drawing;
 
         // Bloom (soft emitted light) — once per thread, from the base path.
         float dY = abs(uv.y - y);
@@ -212,12 +275,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     emit += mix(tint, vec3(1.0), 0.22) * heroGlow * 0.16; // foreground: mostly colour, little white
     emit += mix(tint, vec3(1.0), 0.3) * sparkV;
 
+    // Drawing tips: whiter than the strand so the leading point reads as the source of the line.
+    float tipV = clamp(tipGlow, 0.0, 1.4) * edgeFade;
+    emit += mix(tint, vec3(1.0), 0.6) * tipV;
+
     // Warm it a touch, then cap brightness in a HUE-PRESERVING way (bright crossings stay coloured).
     emit *= vec3(1.05, 1.0, 0.92);
     float mx = max(emit.r, max(emit.g, emit.b));
     emit = emit / max(mx, 1.0);
 
-    float alpha = clamp(colorVal + bloom * bloomStrength * 0.9 + heroGlow * 0.16 + sparkV, 0.0, 1.0);
+    float alpha = clamp(colorVal + bloom * bloomStrength * 0.9 + heroGlow * 0.16 + sparkV + tipV, 0.0, 1.0);
     // Premultiplied output (NIC-77): colour is pre-scaled by alpha to match the ONE / ONE_MINUS_SRC_ALPHA
     // blend and the premultiplied drawing buffer, so WKWebView composites the aura at the right level.
     fragColor = vec4(emit * alpha, alpha);
@@ -234,13 +301,34 @@ export default function Threads({
   amplitude = 1,
   distance = 0,
   speed = 1,
+  frameIntervalMs = 0,
+  introStartAt = null,
+  introDurationMs = 4920,
   ...rest
 }: ThreadsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameId = useRef<number>(0);
 
-  const propsRef = useRef({ color, color2, amplitude, distance, speed });
-  propsRef.current = { color, color2, amplitude, distance, speed };
+  const propsRef = useRef({
+    color,
+    color2,
+    amplitude,
+    distance,
+    speed,
+    frameIntervalMs,
+    introStartAt,
+    introDurationMs
+  });
+  propsRef.current = {
+    color,
+    color2,
+    amplitude,
+    distance,
+    speed,
+    frameIntervalMs,
+    introStartAt,
+    introDurationMs
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -280,7 +368,10 @@ export default function Threads({
           uColor: { value: new Color(...initColor) },
           uColor2: { value: new Color(...(propsRef.current.color2 ?? initColor)) },
           uAmplitude: { value: propsRef.current.amplitude },
-          uDistance: { value: propsRef.current.distance }
+          uDistance: { value: propsRef.current.distance },
+          // Start finished unless a start time says otherwise, so any surface that mounts after
+          // launch renders the running field rather than replaying the sequence.
+          uIntro: { value: 1 }
         }
       });
       mesh = new Mesh(gl, { geometry, program });
@@ -290,25 +381,92 @@ export default function Threads({
       return;
     }
 
+    let isVisible = true;
+
     const MAX_RENDER_DIM = 1920;
-    function resize() {
-      const { clientWidth, clientHeight } = container;
+    /**
+     * How far the box may drift from the drawing buffer before the buffer is rebuilt, in CSS px.
+     * Reallocating the buffer is the expensive part of a resize — it throws away and re-creates
+     * GPU memory — so during a CONTINUOUS resize (the launch pinch animates the panel's width for
+     * ~900ms, and a window drag does the same) rebuilding it every frame is what makes the field
+     * stutter. Between rebuilds the canvas's CSS box still tracks the container exactly and the
+     * existing buffer is stretched into it, which at this threshold is a sub-3% scale nobody can
+     * see on a soft-edged field. The exact buffer is always restored once the size settles, so
+     * the resting field is never approximate.
+     */
+    const BUFFER_REBUILD_THRESHOLD_PX = 32;
+
+    let bufferW = 0;
+    let bufferH = 0;
+    let desiredW = 0;
+    let desiredH = 0;
+    let prevDesiredW = -1;
+    let prevDesiredH = -1;
+    let resizePending = false;
+
+    /** Rebuild the drawing buffer at the current desired size and re-derive `iResolution`. */
+    function rebuildBuffer() {
       const baseDpr = Math.min(window.devicePixelRatio || 1, 2);
-      const longestSide = Math.max(clientWidth, clientHeight) * baseDpr;
+      const longestSide = Math.max(desiredW, desiredH) * baseDpr;
       const dpr = longestSide > MAX_RENDER_DIM ? (baseDpr * MAX_RENDER_DIM) / longestSide : baseDpr;
       renderer.dpr = dpr;
-      renderer.setSize(clientWidth, clientHeight);
+      renderer.setSize(desiredW, desiredH); // also writes the canvas's CSS size
+      bufferW = desiredW;
+      bufferH = desiredH;
       program.uniforms.iResolution.value.r = gl.canvas.width;
       program.uniforms.iResolution.value.g = gl.canvas.height;
       program.uniforms.iResolution.value.b = gl.canvas.width / gl.canvas.height;
     }
 
+    /**
+     * Apply at most one resize per frame, from inside the animation loop. The observer used to do
+     * this work directly and render on the spot, so an animating width cost a buffer rebuild AND
+     * two draws per frame. Coalescing here guarantees one of each, and the ≤16ms deferral is
+     * imperceptible — well under the "show a correct frame immediately" bar NIC-154 set, which
+     * existed to avoid a stretched frame persisting, not to avoid one frame of latency.
+     */
+    function applyPendingResize() {
+      resizePending = false;
+      if (desiredW <= 0 || desiredH <= 0) return;
+      // Keep the canvas's CSS box exactly on the container every frame — cheap, and it is what
+      // stops a gap opening between the field and its panel while the buffer lags behind.
+      if (bufferW !== desiredW || bufferH !== desiredH) {
+        gl.canvas.style.width = `${desiredW}px`;
+        gl.canvas.style.height = `${desiredH}px`;
+      }
+      const drift = Math.max(Math.abs(desiredW - bufferW), Math.abs(desiredH - bufferH));
+      // Settled = the container reported the same size two frames running, i.e. whatever was
+      // driving the resize has stopped. Rebuild exactly then, however small the remaining drift.
+      const settled = desiredW === prevDesiredW && desiredH === prevDesiredH;
+      if (drift >= BUFFER_REBUILD_THRESHOLD_PX || (settled && drift > 0)) {
+        rebuildBuffer();
+      }
+      prevDesiredW = desiredW;
+      prevDesiredH = desiredH;
+    }
+
+    function resize() {
+      const { clientWidth, clientHeight } = container;
+      // Ignore degenerate/transient sizes — a 0-dimension reflow or the mode-wave view transition
+      // (NIC-154). Feeding renderer.setSize(0, …) makes iResolution NaN and the shader's
+      // pixel()=1/max(res)*count divide by zero, which visibly breaks the stream until the next
+      // good resize. Keep the last valid size instead of drawing a broken frame.
+      if (clientWidth <= 0 || clientHeight <= 0) return;
+      desiredW = clientWidth;
+      desiredH = clientHeight;
+      resizePending = true;
+    }
+
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(container);
     window.addEventListener("resize", resize);
+    // First sizing is immediate and exact — there is no frame to defer to yet.
     resize();
+    if (desiredW > 0 && desiredH > 0) {
+      rebuildBuffer();
+      resizePending = false;
+    }
 
-    let isVisible = true;
     const intersectionObserver = new IntersectionObserver(
       (entries) => {
         isVisible = entries[0].isIntersecting;
@@ -317,16 +475,53 @@ export default function Threads({
     );
     intersectionObserver.observe(container);
 
+    // Accumulate the animation clock incrementally (NIC-125): the old `iTime = t * speed` tied the
+    // phase to absolute time, so any speed change discontinuously teleported the noise field. Adding
+    // `dt * speed` per frame means a speed change only alters the rate going forward — never a jump.
+    // dt is clamped so a paused tab (document.hidden freezes RAF) never lurches on resume.
+    let uTime = 0;
+    let lastT: number | null = null;
+    let lastDrawT = 0;
     function update(t: number) {
       animationFrameId.current = requestAnimationFrame(update);
+      const dt = lastT === null ? 0 : Math.min(t - lastT, 100);
+      lastT = t;
+      // Before the visibility gate: a resize that lands while the field is offscreen must still be
+      // recorded, or it would come back at a stale size.
+      if (resizePending) applyPendingResize();
       if (!isVisible || document.hidden) return;
 
       const p = propsRef.current;
+      // Launch choreography progress (NIC-157). Derived from the frame timestamp rather than
+      // pushed in as state, so the sequence never re-renders React. `null` means startup is over.
+      const intro =
+        p.introStartAt === null
+          ? 1
+          : Math.min(1, Math.max(0, (t - p.introStartAt) / Math.max(p.introDurationMs, 1)));
+      program.uniforms.uIntro.value = intro;
+
+      // Frame-rate cap for the receded posture (NIC-152). Checked before the uniform writes and
+      // the draw, but AFTER dt has been folded above — skipping a frame must not lose time, or
+      // the flow would slow by however many frames were dropped instead of staying continuous.
+      // Never applied mid-sequence: a launch is the one moment the field must be at full rate.
+      if (intro >= 1 && p.frameIntervalMs > 0 && t - lastDrawT < p.frameIntervalMs) {
+        uTime += dt * 0.001 * p.speed;
+        return;
+      }
+      lastDrawT = t;
       program.uniforms.uColor.value.set(...p.color);
       program.uniforms.uColor2.value.set(...(p.color2 ?? p.color));
       program.uniforms.uAmplitude.value = p.amplitude;
       program.uniforms.uDistance.value = p.distance;
-      program.uniforms.iTime.value = t * 0.001 * p.speed;
+      // The field flows faster while it is arriving and eases back to its resting rate (NIC-157).
+      // The resting speed is deliberately very slow, which is right for a calm background but
+      // leaves the launch looking static between its scripted beats. Safe to vary because the
+      // clock ACCUMULATES (NIC-125/154): changing the rate only affects motion from here on, and
+      // never teleports the noise field. Exactly 1.0 at intro = 1, so the resting look is
+      // untouched.
+      const introFlow = 1 + 1.6 * (1 - intro) * (1 - intro);
+      uTime += dt * 0.001 * p.speed * introFlow;
+      program.uniforms.iTime.value = uTime;
 
       renderer.render({ scene: mesh });
     }

@@ -11,14 +11,34 @@ const fixturesRoot = path.join(contractsRoot, "fixtures");
 
 const mvpToolIds = new Set([
   "app.open",
+  "project.open",
+  "project.scaffold",
   "url.open",
   "hook.run",
   "note.capture",
   "note.search",
+  "note.list",
+  "note.read",
+  "note.open",
+  "mail.open",
+  "course.list",
+  "course.note.create",
   "mode.apply",
   "system.status.read",
   "window.arrange",
-  "apps.list"
+  "apps.list",
+  "network.speed.test",
+  "apps.quitall",
+  "app.quit",
+  "calendar.createevent",
+  "google.search",
+  "youtube.search",
+  "git.clone",
+  "linear.createissue",
+  "web.open",
+  "spotify.control",
+  "spotify.createplaylist",
+  "messages.send"
 ]);
 
 const riskClasses = new Set([

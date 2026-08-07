@@ -1,0 +1,6 @@
+{
+  "id": "git.clone",
+  "risk": "local_write",
+  "timeoutMs": 300000,
+  "availableInPreMac": false
+}

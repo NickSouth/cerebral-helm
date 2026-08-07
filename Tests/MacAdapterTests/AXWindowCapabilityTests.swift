@@ -11,14 +11,33 @@ import CerebralTools
 
 private struct FakeAXWindows: AXWindowSurface {
     var isProcessTrusted: Bool = true
-    var primaryVisibleFrame: CGRect? = CGRect(x: 0, y: 25, width: 1200, height: 775)
+    var visibleFrames: [WindowDisplay: CGRect] = [.primary: CGRect(x: 0, y: 25, width: 1200, height: 775)]
     var pidsByBundleID: [String: [pid_t]] = [:]
     var settablePIDs: Set<pid_t> = []
     var framesByPID: [pid_t: CGRect] = [:]
 
+    func visibleFrame(for display: WindowDisplay) -> CGRect? { visibleFrames[display] }
     func runningProcessIDs(bundleID: String) -> [pid_t] { pidsByBundleID[bundleID] ?? [] }
     func setMainWindowFrame(pid: pid_t, frame: CGRect) -> Bool { settablePIDs.contains(pid) }
     func mainWindowFrame(pid: pid_t) -> CGRect? { framesByPID[pid] }
+}
+
+/// Records the frames handed to `setMainWindowFrame` so tests can assert *which*
+/// display's visible area an arrangement resolved against.
+private final class RecordingAXWindows: AXWindowSurface, @unchecked Sendable {
+    var isProcessTrusted = true
+    var visibleFrames: [WindowDisplay: CGRect] = [:]
+    var pidsByBundleID: [String: [pid_t]] = [:]
+    var settablePIDs: Set<pid_t> = []
+    private(set) var recordedFrames: [CGRect] = []
+
+    func visibleFrame(for display: WindowDisplay) -> CGRect? { visibleFrames[display] }
+    func runningProcessIDs(bundleID: String) -> [pid_t] { pidsByBundleID[bundleID] ?? [] }
+    func setMainWindowFrame(pid: pid_t, frame: CGRect) -> Bool {
+        recordedFrames.append(frame)
+        return settablePIDs.contains(pid)
+    }
+    func mainWindowFrame(pid: pid_t) -> CGRect? { nil }
 }
 
 @Test("an untrusted process is a permission-denied capability error, never a prompt")
@@ -86,6 +105,48 @@ func restoreFrameAppliesStoredGeometry() async throws {
     #expect(try await capability.restoreFrame(
         bundleID: "com.quit.App", rect: WindowRect(x: 0, y: 0, width: 1, height: 1)
     ) == .notRunning)
+}
+
+@Test("an arrangement targets the requested display's visible area (NIC-142)")
+func arrangeTargetsChosenDisplay() async throws {
+    let primary = CGRect(x: 0, y: 25, width: 1200, height: 775)
+    let secondary = CGRect(x: 1200, y: 0, width: 1000, height: 1000)
+    let surface = RecordingAXWindows()
+    surface.visibleFrames = [.primary: primary, .secondary: secondary]
+    surface.pidsByBundleID = ["com.microsoft.VSCode": [7]]
+    surface.settablePIDs = [7]
+    let capability = AXWindowCapability(surface: surface)
+
+    // A full frame on the secondary display resolves to the secondary's rect.
+    #expect(try await capability.arrange(bundleID: "com.microsoft.VSCode", frame: .full, display: .secondary) == .arranged)
+    #expect(surface.recordedFrames == [secondary])
+}
+
+@Test("a secondary target degrades to the primary display when only one is attached")
+func secondaryDegradesToPrimary() async throws {
+    let primary = CGRect(x: 0, y: 25, width: 1200, height: 775)
+    let surface = RecordingAXWindows()
+    surface.visibleFrames = [.primary: primary]  // no secondary attached
+    surface.pidsByBundleID = ["com.microsoft.VSCode": [7]]
+    surface.settablePIDs = [7]
+    let capability = AXWindowCapability(surface: surface)
+
+    #expect(try await capability.arrange(bundleID: "com.microsoft.VSCode", frame: .full, display: .secondary) == .arranged)
+    #expect(surface.recordedFrames == [primary])
+}
+
+@Test("no attached display is an honest unsupported outcome, never a guessed frame")
+func noDisplayIsUnsupported() async throws {
+    let surface = RecordingAXWindows()
+    surface.pidsByBundleID = ["com.microsoft.VSCode": [7]]
+    surface.settablePIDs = [7]
+    let capability = AXWindowCapability(surface: surface)
+
+    guard case .unsupported = try await capability.arrange(bundleID: "com.microsoft.VSCode", frame: .full, display: .primary) else {
+        Issue.record("Expected unsupported when no display is attached.")
+        return
+    }
+    #expect(surface.recordedFrames.isEmpty)
 }
 
 @Test("named frames resolve to deterministic geometry within the visible area")

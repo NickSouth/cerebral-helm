@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/youtube-search-input.schema.json",
+  "title": "CerebralHelm YouTube Search Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["youtubeQuery"],
+  "properties": {
+    "youtubeQuery": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The search text. The adapter builds a YouTube results URL host-side (the host is fixed to youtube.com); only this query is variable, so untrusted data can never choose the destination. Named distinctly from google.search's `query` because the code generator derives type names from property names, and two structurally identical schemas would otherwise collapse into one shared type."
+    }
+  }
+}

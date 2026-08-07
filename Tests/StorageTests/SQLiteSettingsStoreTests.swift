@@ -26,22 +26,62 @@ func appliedFieldsRoundTrip() throws {
     let store = try makeStore()
     try store.apply(SettingsChanges(
         defaultModeID: "developer",
+        confirmAllActions: true,
         appearanceDensity: "compact",
         appearanceReducedMotion: true,
+        appearanceAssistantName: "Aria",
         commandPaletteHotkey: "cmd+shift+space",
         knowledgeRootReference: "workspace",
         windowsStoredByMode: true,
-        extensionsJSON: #"{"x-theme-lab":{"glow":2}}"#
+        modeColorsJSON: ##"{"executive.primary":"#ffd166"}"##,
+        extensionsJSON: #"{"x-theme-lab":{"glow":2}}"#,
+        stockTickersJSON: ##"["SPY","AAPL"]"##
     ))
 
     let loaded = try store.load()
     #expect(loaded.defaultModeID == "developer")
+    #expect(loaded.confirmAllActions == true)
     #expect(loaded.appearanceDensity == "compact")
     #expect(loaded.appearanceReducedMotion == true)
+    #expect(loaded.appearanceAssistantName == "Aria")
+    #expect(loaded.modeColorsJSON == ##"{"executive.primary":"#ffd166"}"##)
     #expect(loaded.commandPaletteHotkey == "cmd+shift+space")
     #expect(loaded.knowledgeRootReference == "workspace")
     #expect(loaded.windowsStoredByMode == true)
     #expect(loaded.extensionsJSON == #"{"x-theme-lab":{"glow":2}}"#)
+    #expect(loaded.stockTickersJSON == ##"["SPY","AAPL"]"##)
+}
+
+@Test("the ticker list round-trips and merges like every field; an empty list is a stored value (NIC-128)")
+func stockTickersRoundTrip() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(stockTickersJSON: ##"["SPY","AAPL"]"##))
+    #expect(try store.load().stockTickersJSON == ##"["SPY","AAPL"]"##)
+
+    // An unrelated patch preserves it (COALESCE), then a later patch replaces it — including
+    // with an explicit empty "[]", which is a stored value, not an absence.
+    try store.apply(SettingsChanges(defaultModeID: "school"))
+    #expect(try store.load().stockTickersJSON == ##"["SPY","AAPL"]"##)
+    try store.apply(SettingsChanges(stockTickersJSON: "[]"))
+    let loaded = try store.load()
+    #expect(loaded.stockTickersJSON == "[]")
+    #expect(loaded.defaultModeID == "school")
+}
+
+@Test("the calendar→mode map round-trips and merges like every field; {} is a stored value (NIC-126)")
+func calendarModeMapRoundTrip() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(calendarModeMapJSON: ##"{"cal-work":"executive"}"##))
+    #expect(try store.load().calendarModeMapJSON == ##"{"cal-work":"executive"}"##)
+
+    // An unrelated patch preserves it (COALESCE), then a later patch replaces it — including
+    // with an explicit "{}", which clears the mappings but is a stored value, not an absence.
+    try store.apply(SettingsChanges(defaultModeID: "school"))
+    #expect(try store.load().calendarModeMapJSON == ##"{"cal-work":"executive"}"##)
+    try store.apply(SettingsChanges(calendarModeMapJSON: "{}"))
+    let loaded = try store.load()
+    #expect(loaded.calendarModeMapJSON == "{}")
+    #expect(loaded.defaultModeID == "school")
 }
 
 @Test("the windows-stored-by-mode toggle round-trips and merges like every field")
@@ -73,6 +113,53 @@ func mainDisplayIDRoundTrips() throws {
     #expect(loaded.defaultModeID == "school")
 }
 
+@Test("the layout-display id round-trips and merges like every field (NIC-142)")
+func layoutDisplayIDRoundTrips() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(layoutDisplayID: "37D8832A-2D66-02CA-B9F7-8F30A301B230"))
+    #expect(try store.load().layoutDisplayID == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+
+    // Unrelated patches preserve it; a later patch replaces it; it is independent
+    // of the main-display id (both can hold different displays at once).
+    try store.apply(SettingsChanges(mainDisplayID: "system-primary"))
+    var loaded = try store.load()
+    #expect(loaded.layoutDisplayID == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+    #expect(loaded.mainDisplayID == "system-primary")
+    try store.apply(SettingsChanges(layoutDisplayID: "system-primary"))
+    loaded = try store.load()
+    #expect(loaded.layoutDisplayID == "system-primary")
+}
+
+@Test("the assistant name round-trips and merges like every field (NIC-137)")
+func assistantNameRoundTrips() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(appearanceAssistantName: "Aria"))
+    #expect(try store.load().appearanceAssistantName == "Aria")
+
+    // An unrelated patch preserves it; a later patch replaces it.
+    try store.apply(SettingsChanges(defaultModeID: "school"))
+    #expect(try store.load().appearanceAssistantName == "Aria")
+    try store.apply(SettingsChanges(appearanceAssistantName: "Nova"))
+    let loaded = try store.load()
+    #expect(loaded.appearanceAssistantName == "Nova")
+    #expect(loaded.defaultModeID == "school")
+}
+
+@Test("per-mode color overrides round-trip and merge like every field (NIC-137)")
+func modeColorsRoundTrip() throws {
+    let store = try makeStore()
+    try store.apply(SettingsChanges(modeColorsJSON: ##"{"executive.primary":"#ffd166"}"##))
+    #expect(try store.load().modeColorsJSON == ##"{"executive.primary":"#ffd166"}"##)
+
+    // An unrelated patch preserves it; a later patch replaces the map wholesale.
+    try store.apply(SettingsChanges(defaultModeID: "school"))
+    #expect(try store.load().modeColorsJSON == ##"{"executive.primary":"#ffd166"}"##)
+    try store.apply(SettingsChanges(modeColorsJSON: ##"{"developer.secondary":"#7fc4dc"}"##))
+    let loaded = try store.load()
+    #expect(loaded.modeColorsJSON == ##"{"developer.secondary":"#7fc4dc"}"##)
+    #expect(loaded.defaultModeID == "school")
+}
+
 @Test("a partial patch preserves every unrelated stored field")
 func partialPatchPreservesOtherFields() throws {
     let store = try makeStore()
@@ -100,14 +187,19 @@ func presentFieldOverwrites() throws {
 func settingsChangesLiftsValidatedFields() {
     let changes = SettingsChanges(validatedChanges: [
         "defaultModeId": "entertainment",
-        "appearance": ["density": "compact", "reducedMotion": true],
+        "confirmAllActions": true,
+        "appearance": ["density": "compact", "reducedMotion": true, "assistantName": "Aria"],
         "hotkeys": ["commandPalette": "cmd+space"],
         "knowledge": ["rootReference": "vault"],
+        "modeColors": ["executive.primary": "#ffd166"],
         "extensions": ["x-lab": ["on": true]],
     ])
     #expect(changes.defaultModeID == "entertainment")
+    #expect(changes.confirmAllActions == true)
     #expect(changes.appearanceDensity == "compact")
     #expect(changes.appearanceReducedMotion == true)
+    #expect(changes.appearanceAssistantName == "Aria")
+    #expect(changes.modeColorsJSON?.contains("executive.primary") == true)
     #expect(changes.commandPaletteHotkey == "cmd+space")
     #expect(changes.knowledgeRootReference == "vault")
     #expect(changes.extensionsJSON?.contains("x-lab") == true)

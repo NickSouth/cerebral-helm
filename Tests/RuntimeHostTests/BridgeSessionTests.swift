@@ -5,6 +5,7 @@ import CerebralContracts
 import CerebralCore
 import CerebralRuntimeHost
 import CerebralStorage
+import CerebralTools
 
 /// NIC-74b: `BridgeSession` maps bridge operation requests onto the live
 /// `CommandRuntime`. These are integration tests — they build a real runtime over
@@ -43,7 +44,9 @@ private func decode<T: Decodable>(_ response: CerebralHelmBridgeOperationRespons
 }
 
 private struct Receipt: Decodable { let commandId: String; let accepted: Bool }
+private struct CreatedEvent: Decodable { let eventId: String; let awaitingConfirmation: Bool }
 private struct ApplyModeResult: Decodable { let modeId: String; let status: String }
+private struct ClonedRepository: Decodable { let clonedPath: String; let repositoryName: String; let awaitingConfirmation: Bool }
 
 // MARK: - submitCommand
 
@@ -79,6 +82,205 @@ func submitCommandRequiresInput() async throws {
     let response = await session.execute(operationRequest(.submitCommand, #"{"rawInput":""}"#))
     #expect(response.status == .error)
     #expect(response.error?.category == .invalidInput)
+}
+
+// MARK: - suggestCommands (NIC-168)
+
+private struct Suggestion: Decodable {
+    let command: String
+    let label: String
+    let detail: String?
+    let kind: String
+    let requiresArgument: Bool
+    let available: Bool
+    let unavailableReason: String?
+}
+private struct Suggestions: Decodable { let suggestions: [Suggestion] }
+
+@Test("suggestCommands resolves a typo'd app name, stamped honestly unavailable pre-Mac")
+func suggestCommandsResolvesTypo() async throws {
+    let session = try makeSession() // default capabilities: every native one unavailable
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"vscoed"}"#))
+
+    #expect(response.status == .ok)
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "open vscode")
+    #expect(top.label == "Visual Studio Code")
+    #expect(top.kind == "app")
+    #expect(top.available == false)
+    #expect(top.unavailableReason?.isEmpty == false)
+}
+
+@Test("suggestCommands marks an app runnable when native.app.open is available")
+func suggestCommandsHonorsCapabilities() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        capabilities: [CerebralContracts.Capability(
+            available: true, degradedReason: nil, id: "native.app.open", source: .native
+        )]
+    )
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"vscode"}"#))
+
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "open vscode")
+    #expect(top.available)
+    #expect(top.unavailableReason == nil)
+}
+
+@Test("suggestCommands carries mode display labels, and modes are never capability-gated")
+func suggestCommandsModeLabels() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"developer"}"#))
+
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "mode developer")
+    #expect(top.label == "Developer")
+    #expect(top.kind == "mode")
+    #expect(top.available)
+}
+
+@Test("suggestCommands with an empty query lists the grammar and honors the limit")
+func suggestCommandsEmptyQuery() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"","limit":3}"#))
+
+    let suggestions = try decode(response, as: Suggestions.self).suggestions
+    #expect(suggestions.count == 3)
+    #expect(suggestions.first?.command == "open ")
+    #expect(suggestions.first?.kind == "pattern")
+    #expect(suggestions.first?.requiresArgument == true)
+    #expect(suggestions.first?.available == true)
+}
+
+@Test("suggestCommands without a query string is an invalid-input error")
+func suggestCommandsRequiresQuery() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(.suggestCommands, #"{}"#))
+
+    #expect(response.status == .error)
+    #expect(response.error?.category == .invalidInput)
+}
+
+@Test("empty-query suggestions lead with this session's recent direct commands (PRD §9.4)")
+func suggestCommandsRecentsFirst() async throws {
+    let session = try makeSession()
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"mode developer"}"#))
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"open vscode"}"#))
+    // A rejected input and a free-text capture never enter the recents surface.
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"tell me a joke"}"#))
+    _ = await session.execute(operationRequest(.submitCommand, #"{"rawInput":"note secret plans"}"#))
+
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":""}"#))
+    let suggestions = try decode(response, as: Suggestions.self).suggestions
+
+    // Newest accepted first, with its real label — and capability-stamped like
+    // any other suggestion (apps are honestly unavailable pre-Mac).
+    #expect(suggestions.first?.command == "open vscode")
+    #expect(suggestions.first?.label == "Visual Studio Code")
+    #expect(suggestions.first?.available == false)
+    #expect(suggestions.dropFirst().first?.command == "mode developer")
+    #expect(!suggestions.contains { $0.command == "note secret plans" })
+    #expect(!suggestions.contains { $0.command == "tell me a joke" })
+    // The grammar listing still follows the recents.
+    #expect(suggestions.contains { $0.command == "open " })
+}
+
+// MARK: - suggestCommands app-discovery refresh (NIC-168 installed-app completeness)
+
+/// Counts discovery scans so the suggest-triggered throttle is observable.
+private final class CountingAppDiscovery: AppDiscoveryCapability, @unchecked Sendable {
+    private let inner = MockAppDiscoveryCapability()
+    private let lock = NSLock()
+    private var count = 0
+    var scans: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+    private func recordScan() {
+        lock.lock()
+        count += 1
+        lock.unlock()
+    }
+    func listApplications(includeIcons: Bool) async throws -> AppDiscoveryResult {
+        recordScan()
+        return try await inner.listApplications(includeIcons: includeIcons)
+    }
+}
+
+/// A workspace-bound macOS-phase session whose discovery adapter counts its scans.
+/// `discoveryAvailable` drives the session capability map, not the adapter itself —
+/// exactly the gate the suggest-triggered refresh consults.
+private func makeDiscoverySession(
+    discovery: CountingAppDiscovery, discoveryAvailable: Bool = true
+) throws -> BridgeSession {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let base = ToolCapabilities.mocks()
+    let runtime = try makeCommandRuntime(
+        paths: paths,
+        phase: .macOS,
+        capabilities: ToolCapabilities(
+            app: base.app, url: base.url, process: base.process,
+            systemStatus: base.systemStatus, appDiscovery: discovery
+        )
+    )
+    return BridgeSession(
+        runtime: runtime,
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        capabilities: discoveryAvailable
+            ? [
+                CerebralContracts.Capability(
+                    available: true, degradedReason: nil, id: "native.apps.list", source: .native
+                ),
+                CerebralContracts.Capability(
+                    available: true, degradedReason: nil, id: "native.app.open", source: .native
+                ),
+            ]
+            : []
+    )
+}
+
+@Test("suggestCommands mints discovered apps so any installed app is matchable by name")
+func suggestCommandsDiscoversInstalledApps() async throws {
+    let discovery = CountingAppDiscovery()
+    let session = try makeDiscoverySession(discovery: discovery)
+
+    // Safari has no shipped reference; the first suggest query discovers, mints,
+    // and ranks it in one pass.
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"safari"}"#))
+
+    let top = try #require(try decode(response, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "open safari")
+    #expect(top.kind == "app")
+    #expect(top.available)
+    #expect(discovery.scans == 1)
+}
+
+@Test("suggest-triggered discovery is throttled — repeated queries never rescan")
+func suggestCommandsDiscoveryThrottled() async throws {
+    let discovery = CountingAppDiscovery()
+    let session = try makeDiscoverySession(discovery: discovery)
+
+    _ = await session.execute(operationRequest(.suggestCommands, #"{"query":"saf"}"#))
+    _ = await session.execute(operationRequest(.suggestCommands, #"{"query":"safar"}"#))
+    _ = await session.execute(operationRequest(.suggestCommands, #"{"query":"mail"}"#))
+
+    #expect(discovery.scans == 1)
+}
+
+@Test("suggestCommands skips discovery entirely when the capability is unavailable")
+func suggestCommandsSkipsDiscoveryWhenUnavailable() async throws {
+    let discovery = CountingAppDiscovery()
+    let session = try makeDiscoverySession(discovery: discovery, discoveryAvailable: false)
+
+    let response = await session.execute(operationRequest(.suggestCommands, #"{"query":"vscode"}"#))
+
+    // Reference-catalog suggestions still flow; no doomed scan ran.
+    #expect(response.status == .ok)
+    #expect(discovery.scans == 0)
 }
 
 // MARK: - applyMode
@@ -178,6 +380,41 @@ func applyModeValidatesMode() async throws {
     #expect(try decode(unknown, as: ApplyModeResult.self).status == "error")
 }
 
+@Test("a mode switch fires onModeApplied with the entered mode id — from both switch paths")
+func modeSwitchFiresOnModeApplied() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let applied = EmittedEvents() // reused as a thread-safe string recorder
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        onModeApplied: { applied.emit($0) }
+    )
+
+    // The applyMode operation path…
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"developer"}"#))
+    #expect(applied.all() == ["developer"])
+
+    // …and the raw `mode <id>` command path both notify, so the host can refresh
+    // the entered mode's widget producers regardless of which surface switched.
+    _ = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"mode school","source":"dashboard"}"#)
+    )
+    #expect(applied.all() == ["developer", "school"])
+}
+
+@Test("a rejected mode switch never fires onModeApplied")
+func rejectedModeSwitchDoesNotFireOnModeApplied() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let applied = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        onModeApplied: { applied.emit($0) }
+    )
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"nope"}"#))
+    #expect(applied.all().isEmpty)
+}
+
 // MARK: - getBootstrapState
 
 @Test("getBootstrapState composes the four mode views and agent roster from real config")
@@ -199,6 +436,27 @@ func bootstrapComposesFromConfig() async throws {
     #expect(state.heimlich.state == .idle)
     #expect(state.regions.systemHealth.state == .unavailable)
     #expect(state.weather == nil)
+}
+
+@Test("System Health composes as loading, not unavailable, when live metrics are expected (NIC-136)")
+func bootstrapSystemHealthLoadsWhenMetricsAvailable() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // A composition where the live-metrics provider is bound and permitted.
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        capabilities: [
+            CerebralContracts.Capability(available: true, degradedReason: nil, id: "system.metrics", source: .native)
+        ]
+    )
+    let response = await session.execute(operationRequest(.getBootstrapState, "{}"))
+
+    #expect(response.status == .ok)
+    let state = try decode(response, as: CerebralHelmBridgeBootstrapState.self)
+    // Provider available ⇒ a first sample is inbound ⇒ the region loads (shell renders a
+    // same-shape skeleton) rather than flashing unavailable before the sample lands.
+    #expect(state.regions.systemHealth.state == .empty)
+    #expect(state.regions.systemHealth.battery.state == .empty)
 }
 
 // MARK: - Knowledge operations
@@ -241,6 +499,34 @@ func captureNoteReturnsRealId() async throws {
     #expect(!noteId.hasPrefix("cmd_"))
 }
 
+@Test("a re-pointed knowledge root stores captured notes at the override location (NIC-138)")
+func knowledgeRootRepointStoresNotes() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // An override folder distinct from the env default, persisted BEFORE composition.
+    let overrideRoot = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ch-knowledge-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: overrideRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: overrideRoot) }
+    try makeSettingsStore(paths).apply(SettingsChanges(knowledgeRootReference: overrideRoot.path))
+
+    // Composed after persisting → the runtime points knowledge at the override.
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory
+    )
+    let response = await session.execute(
+        operationRequest(.captureNote, #"{"title":"Plan","body":"Draft the deck."}"#)
+    )
+    #expect(response.status == .ok)
+
+    // The Markdown note lands under the override root, and never under the env default —
+    // a re-point, not a copy.
+    let overrideMd = (try? FileManager.default.subpathsOfDirectory(atPath: overrideRoot.path)) ?? []
+    #expect(overrideMd.contains { $0.hasSuffix(".md") })
+    let defaultMd = (try? FileManager.default.subpathsOfDirectory(atPath: paths.knowledgeRoot.path)) ?? []
+    #expect(!defaultMd.contains { $0.hasSuffix(".md") })
+}
+
 @Test("an empty search query returns no results (not an error)")
 func emptySearchReturnsEmpty() async throws {
     let session = try makeSession()
@@ -260,6 +546,420 @@ func recentActivityEmptyEnvelope() async throws {
 // MARK: - Confirmation flow
 
 /// Thread-safe collector for emitted bridge-event JSON strings.
+// MARK: - Layout session (NIC-142)
+
+private struct CloseLayoutResult: Decodable { let closed: Bool }
+private struct ToggleLayoutResult: Decodable { let accepted: Bool }
+private struct PinLayoutWindowResult: Decodable { let accepted: Bool }
+private struct AddLayoutTargetResult: Decodable { let accepted: Bool }
+private struct UpdateLayoutResult: Decodable { let accepted: Bool }
+private struct CaptureLayoutResult: Decodable {
+    struct Window: Decodable { let ref: String; let kind: String; let frame: String }
+    let windows: [Window]
+}
+
+private func activeToggleTargets(_ emitted: EmittedEvents) -> [String] {
+    let last = layoutSessionEvents(emitted).last?["payload"] as? [String: Any]
+    let toggle = (last?["session"] as? [String: Any])?["quickToggle"] as? [String: Any]
+    let targets = toggle?["targets"] as? [[String: Any]] ?? []
+    return targets.compactMap { $0["ref"] as? String }
+}
+
+/// Records the bundle ids hidden through the workspace-windows capability so a test
+/// can assert which app windows `closeLayout` hid.
+private final class RecordingWorkspaceWindows: WorkspaceWindowsCapability, @unchecked Sendable {
+    private(set) var hidden: [String] = []
+    func visibleApplicationBundleIDs() async throws -> [String] { [] }
+    func hideApplications(bundleIDs: [String]) async throws -> [String] {
+        hidden.append(contentsOf: bundleIDs)
+        return bundleIDs
+    }
+    func unhideApplications(bundleIDs: [String]) async throws -> [String] { bundleIDs }
+}
+
+private func layoutSessionEvents(_ emitted: EmittedEvents) -> [[String: Any]] {
+    emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "layout.session.changed" }
+}
+
+@Test("openLayout starts a session from the mode's authored layout and emits it")
+func openLayoutEmitsSession() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    #expect(response.status == .ok)
+
+    let events = layoutSessionEvents(emitted)
+    #expect(events.count >= 1)
+    let sess = (events.first?["payload"] as? [String: Any])?["session"] as? [String: Any]
+    #expect(sess?["modeId"] as? String == "developer")
+    let windows = sess?["windows"] as? [[String: Any]]
+    #expect(windows?.contains { $0["ref"] as? String == "claude-desktop" } == true)
+    let toggle = sess?["quickToggle"] as? [String: Any]
+    #expect(toggle?["activeRef"] as? String == "vscode")
+}
+
+@Test("a submitted `run open-<mode>-layout` enters the layout session, not the bus workflow (unification)")
+func submittedLayoutOpenEntersSession() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"run open-developer-layout"}"#)
+    )
+
+    let receipt = try decode(response, as: Receipt.self)
+    #expect(receipt.accepted)
+    // The session entry is the executor-bypass path — no bus command exists.
+    #expect(receipt.commandId.isEmpty)
+    let events = layoutSessionEvents(emitted)
+    #expect(events.count >= 1)
+    let sess = (events.first?["payload"] as? [String: Any])?["session"] as? [String: Any]
+    #expect(sess?["modeId"] as? String == "developer")
+
+    // The entry lands in the recent-commands surface like any accepted command.
+    let suggest = await session.execute(operationRequest(.suggestCommands, #"{"query":""}"#))
+    let top = try #require(try decode(suggest, as: Suggestions.self).suggestions.first)
+    #expect(top.command == "run open-developer-layout")
+    #expect(top.label == "Open Developer Layout")
+}
+
+@Test("a layout-open workflow for a mode WITHOUT an authored layout still runs through the bus")
+func submittedLayoutOpenWithoutLayoutStaysOnBus() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // Executive ships no authored layout (NIC-142) but has a static workflow file.
+    let response = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"run open-executive-layout"}"#)
+    )
+
+    let receipt = try decode(response, as: Receipt.self)
+    #expect(receipt.accepted)
+    // The bus path minted a real command id; no layout session was started.
+    #expect(!receipt.commandId.isEmpty)
+    #expect(layoutSessionEvents(emitted).isEmpty)
+}
+
+@Test("openLayout for a mode with no authored layout is an honest error")
+func openLayoutNoLayoutErrors() async throws {
+    let session = try makeSession()
+    // Executive ships no layout (NIC-142 — Executive has no layout mode).
+    let response = await session.execute(operationRequest(.openLayout, #"{"modeId":"executive"}"#))
+    #expect(response.status == .error)
+    #expect(response.error?.code == "no_layout")
+}
+
+@Test("closeLayout hides the session's app windows and ends the session")
+func closeLayoutHidesAndEnds() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = RecordingWorkspaceWindows()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let close = await session.execute(operationRequest(.closeLayout, "{}"))
+    #expect(try decode(close, as: CloseLayoutResult.self).closed)
+
+    // The developer layout's app windows (Claude, VS Code) were hidden.
+    #expect(!windows.hidden.isEmpty)
+    // The final layout event ends the session (session: null).
+    let events = layoutSessionEvents(emitted)
+    #expect((events.last?["payload"] as? [String: Any])?["session"] is NSNull)
+}
+
+@Test("closeLayout with no active session is a no-op that reports not-closed")
+func closeLayoutNoSessionIsNoOp() async throws {
+    let session = try makeSession()
+    let close = await session.execute(operationRequest(.closeLayout, "{}"))
+    #expect(try !decode(close, as: CloseLayoutResult.self).closed)
+}
+
+@Test("a mode switch ends an active layout session (NIC-142)")
+func modeSwitchEndsLayoutSession() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"school"}"#))
+
+    // The switch emitted a session-ending (null) layout event.
+    let events = layoutSessionEvents(emitted)
+    #expect(events.contains { ($0["payload"] as? [String: Any])?["session"] is NSNull })
+}
+
+@Test("toggleLayout swaps the dynamic slot, hides the previous app, and emits the new active")
+func toggleLayoutSwapsSlot() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = RecordingWorkspaceWindows()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        app: MockAppCapability(),
+        url: MockURLCapability(),
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // Developer's slot starts on vscode (app); toggle to github (url).
+    let toggle = await session.execute(operationRequest(.toggleLayout, #"{"ref":"github"}"#))
+    #expect(try decode(toggle, as: ToggleLayoutResult.self).accepted)
+
+    // The previously-shown app (VS Code) was hidden.
+    #expect(!windows.hidden.isEmpty)
+    // The layout event now shows github as the active toggle target.
+    let last = layoutSessionEvents(emitted).last?["payload"] as? [String: Any]
+    let toggleState = (last?["session"] as? [String: Any])?["quickToggle"] as? [String: Any]
+    #expect(toggleState?["activeRef"] as? String == "github")
+}
+
+@Test("toggling to the already-shown target is an accepted no-op (no re-emit)")
+func toggleLayoutSameTargetNoOp() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        app: MockAppCapability(),
+        url: MockURLCapability(),
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let before = layoutSessionEvents(emitted).count
+    // vscode is already the active target.
+    let toggle = await session.execute(operationRequest(.toggleLayout, #"{"ref":"vscode"}"#))
+    #expect(try decode(toggle, as: ToggleLayoutResult.self).accepted)
+    #expect(layoutSessionEvents(emitted).count == before)  // no new layout event
+}
+
+@Test("toggleLayout with no active session is not accepted")
+func toggleLayoutNoSession() async throws {
+    let session = try makeSession()
+    let toggle = await session.execute(operationRequest(.toggleLayout, #"{"ref":"github"}"#))
+    #expect(try !decode(toggle, as: ToggleLayoutResult.self).accepted)
+}
+
+@Test("pinLayoutWindow adds a toggle target, refreshes the session, and persists to the next open (NIC-142)")
+func pinLayoutWindowPersistsAndRefreshes() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // Terminal is a configured app reference; pin it as a new toggle target.
+    let pin = await session.execute(operationRequest(.pinLayoutWindow, #"{"modeId":"developer","ref":"terminal"}"#))
+    #expect(try decode(pin, as: PinLayoutWindowResult.self).accepted)
+    // The active session picked up the new target immediately.
+    #expect(activeToggleTargets(emitted).contains("terminal"))
+
+    // A fresh session's open reads the override-merged layout — the pin persisted.
+    let reopened = EmittedEvents()
+    let session2 = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { reopened.emit($0) }
+    )
+    _ = await session2.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    #expect(activeToggleTargets(reopened).contains("terminal"))
+}
+
+@Test("updateLayout writes a full authored layout and persists it to the next open (NIC-142)")
+func updateLayoutPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let payload = #"""
+    {"modeId":"developer","layout":{"display":"secondary",
+      "windows":[{"ref":"vscode","kind":"app","frame":"left-half"}],
+      "quickToggle":{"frame":"right-half","targets":[{"ref":"claude-desktop","kind":"app"}]}}}
+    """#
+    let response = await session.execute(operationRequest(.updateLayout, payload))
+    #expect(try decode(response, as: UpdateLayoutResult.self).accepted)
+
+    // A fresh open reads the override-merged layout — the authored layout persisted.
+    let reopened = EmittedEvents()
+    let session2 = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { reopened.emit($0) }
+    )
+    _ = await session2.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    #expect(activeToggleTargets(reopened) == ["claude-desktop"])
+}
+
+@Test("updateLayout rejects a layout referencing an unknown app")
+func updateLayoutUnknownRef() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+    let payload = #"{"modeId":"developer","layout":{"display":"primary","windows":[{"ref":"ghost-app","kind":"app","frame":"full"}]}}"#
+    let response = await session.execute(operationRequest(.updateLayout, payload))
+    #expect(try !decode(response, as: UpdateLayoutResult.self).accepted)
+}
+
+@Test("captureLayout proposes named frames snapped from the visible windows (NIC-142)")
+func captureLayoutProposes() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let visible = WindowRect(x: 0, y: 0, width: 1200, height: 800)
+    let windowCap = MockWindowCapability(
+        capturedFrames: ["com.microsoft.VSCode": WindowRect(x: 0, y: 0, width: 800, height: 800)],
+        visibleDisplayFrame: visible
+    )
+    let workspaceWindows = MockWorkspaceWindowsCapability(visibleBundleIDs: ["com.microsoft.VSCode"])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: workspaceWindows,
+        window: windowCap
+    )
+
+    let response = await session.execute(operationRequest(.captureLayout, "{}"))
+    let windows = try decode(response, as: CaptureLayoutResult.self).windows
+    #expect(windows.contains { $0.ref == "vscode" && $0.frame == "left-two-thirds" })
+}
+
+@Test("captureLayout without the AX capability degrades honestly")
+func captureLayoutUnavailable() async throws {
+    let session = try makeSession()  // no window capability
+    let response = await session.execute(operationRequest(.captureLayout, "{}"))
+    #expect(response.status == .error)
+    #expect(response.error?.code == "capture_unavailable")
+}
+
+@Test("pinLayoutWindow rejects an unknown reference")
+func pinLayoutWindowUnknownRef() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let pin = await session.execute(operationRequest(.pinLayoutWindow, #"{"modeId":"developer","ref":"not-a-real-ref"}"#))
+    #expect(try !decode(pin, as: PinLayoutWindowResult.self).accepted)
+}
+
+@Test("pinLayoutWindow preserves a mode's existing quick-apps override")
+func pinLayoutWindowPreservesQuickApps() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+    // First pin a quick app, then a layout window not already in the slot; the
+    // layout write must keep the quick-apps override.
+    _ = await session.execute(operationRequest(.updateQuickApps, #"{"modeId":"developer","quickApps":["vscode"]}"#))
+    _ = await session.execute(operationRequest(.pinLayoutWindow, #"{"modeId":"developer","ref":"terminal"}"#))
+
+    let override = try CerebralHelmModeOverride(
+        data: Data(contentsOf: paths.overridesDirectory.appendingPathComponent("developer.json"))
+    )
+    #expect(override.quickApps == ["vscode"])
+    #expect(override.layout != nil)
+}
+
+@Test("addLayoutTarget adds a session-only toggle target, emits it, and does NOT persist (NIC-142)")
+func addLayoutTargetSessionOnly() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // Terminal is a configured app reference and not already a toggle target.
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"terminal"}"#))
+    #expect(try decode(add, as: AddLayoutTargetResult.self).accepted)
+    #expect(activeToggleTargets(emitted).contains("terminal"))
+
+    // Session-only: nothing was written to the mode override (contrast pinLayoutWindow).
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: paths.overridesDirectory.appendingPathComponent("developer.json").path
+        )
+    )
+}
+
+@Test("addLayoutTarget is idempotent for a ref already in the slot")
+func addLayoutTargetIdempotent() async throws {
+    let session = try makeSession()
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    // vscode is the developer layout's initial toggle target.
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"vscode"}"#))
+    #expect(try decode(add, as: AddLayoutTargetResult.self).accepted)
+}
+
+@Test("addLayoutTarget with no active session is not accepted")
+func addLayoutTargetNoSession() async throws {
+    let session = try makeSession()
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"terminal"}"#))
+    #expect(try !decode(add, as: AddLayoutTargetResult.self).accepted)
+}
+
+@Test("addLayoutTarget rejects an unknown reference")
+func addLayoutTargetUnknownRef() async throws {
+    let session = try makeSession()
+    _ = await session.execute(operationRequest(.openLayout, #"{"modeId":"developer"}"#))
+    let add = await session.execute(operationRequest(.addLayoutTarget, #"{"ref":"not-a-real-ref"}"#))
+    #expect(try !decode(add, as: AddLayoutTargetResult.self).accepted)
+}
+
 private final class EmittedEvents: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [String] = []
@@ -370,6 +1070,32 @@ func listAppsMintsAndPins() async throws {
     #expect(developer?.quickApps == [safariRef])
 }
 
+@Test("listApps live-reloads references so a freshly discovered app opens this session (NIC-150)")
+func listAppsMakesDiscoveredAppOpenableWithoutRestart() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let runtime = try makeCommandRuntime(paths: paths, phase: .macOS, capabilities: .mocks())
+    let session = BridgeSession(
+        runtime: runtime, configDirectory: paths.configDirectory, workspace: paths
+    )
+
+    // Safari has no shipped reference and nothing is minted into the fresh state
+    // root yet, so `open safari` is unrecognized before discovery runs — this is
+    // the just-installed baseline (the reference store composes at startup).
+    let before = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"open safari"}"#)
+    )
+    #expect(try !decode(before, as: Receipt.self).accepted)
+
+    // Discovery mints `safari` and live-reloads the shared catalog…
+    _ = await session.execute(operationRequest(.listApps, "{}"))
+
+    // …so the same command now resolves this session — no relaunch.
+    let after = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"open safari"}"#)
+    )
+    #expect(try decode(after, as: Receipt.self).accepted)
+}
+
 @Test("listApps is a structured unavailable pre-Mac, never a mock success")
 func listAppsUnavailablePreMac() async throws {
     let session = try makeSession()
@@ -427,6 +1153,43 @@ func pinnedQuickAppsSurviveTheReadSide() async throws {
     #expect(restored?.quickApps == ["xcode", "terminal"])
 }
 
+@Test("an accepted pin emits mode.quickapps.changed carrying the new slots (NIC-149)")
+func acceptedPinEmitsQuickAppsChanged() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["xcode","terminal"]}"#
+    ))
+    #expect(try decode(response, as: QuickAppsResult.self).accepted)
+
+    let quickAppsEvents = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.quickapps.changed" }
+    #expect(quickAppsEvents.count == 1)
+    let payload = quickAppsEvents.first?["payload"] as? [String: Any]
+    #expect(payload?["modeId"] as? String == "developer")
+    #expect(payload?["quickApps"] as? [String] == ["xcode", "terminal"])
+
+    // A rejected write emits nothing — the config is unchanged.
+    let rejected = await session.execute(operationRequest(
+        .updateQuickApps,
+        #"{"modeId":"developer","quickApps":["/usr/bin/evil"]}"#
+    ))
+    #expect(try decode(rejected, as: QuickAppsResult.self).accepted == false)
+    let after = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.quickapps.changed" }
+    #expect(after.count == 1)
+}
+
 @Test("a pin naming an unconfigured reference is rejected wholesale (no arbitrary paths)")
 func unknownReferenceIsRejected() async throws {
     let (session, paths) = try makeWorkspaceSession()
@@ -459,6 +1222,166 @@ func pinningWithoutWorkspaceIsUnavailable() async throws {
     let response = await session.execute(operationRequest(
         .updateQuickApps,
         #"{"modeId":"developer","quickApps":["vscode"]}"#
+    ))
+    #expect(response.status == .error)
+    #expect(response.error?.category == .unavailableCapability)
+}
+
+// MARK: - URL references (NIC-146)
+
+private struct UrlRefDTO: Decodable { let id: String; let label: String; let target: String; let iconPng: String?; let profile: String? }
+private struct AddUrlResult: Decodable { let accepted: Bool; let reference: UrlRefDTO?; let errors: [String] }
+private struct ListUrlsResult: Decodable { let urls: [UrlRefDTO] }
+private struct AppRefDTO: Decodable { let id: String; let label: String; let target: String; let profile: String? }
+private struct AddChromeProfileResult: Decodable { let accepted: Bool; let reference: AppRefDTO?; let errors: [String] }
+
+@Test("addChromeProfileReference mints a Chrome-targeted app reference that pins and opens (NIC-151)")
+func addChromeProfileReferenceMintsAndPins() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let added = try decode(await session.execute(operationRequest(
+        .addChromeProfileReference,
+        #"{"directory":"Profile 1","name":"Work"}"#
+    )), as: AddChromeProfileResult.self)
+    #expect(added.accepted)
+    #expect(added.reference?.id == "chrome-work")
+    #expect(added.reference?.target == "com.google.Chrome")
+    #expect(added.reference?.profile == "Profile 1")
+
+    // The minted id pins through the same validated path an app id clears…
+    let refId = try #require(added.reference?.id)
+    let pin = try decode(await session.execute(operationRequest(
+        .updateQuickApps, #"{"modeId":"developer","quickApps":["\#(refId)"]}"#
+    )), as: QuickAppsResult.self)
+    #expect(pin.accepted)
+
+    // …and the parser resolves `open <id>` this same session (catalog reload).
+    let opened = try decode(await session.execute(operationRequest(
+        .submitCommand, #"{"rawInput":"open \#(refId)"}"#
+    )), as: Receipt.self)
+    #expect(opened.accepted)
+}
+
+@Test("addChromeProfileReference refuses an empty directory without minting (NIC-151)")
+func addChromeProfileReferenceRefusesEmpty() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let result = try decode(await session.execute(operationRequest(
+        .addChromeProfileReference, #"{"directory":""}"#
+    )), as: AddChromeProfileResult.self)
+    #expect(!result.accepted)
+    #expect(result.reference == nil)
+    #expect(!result.errors.isEmpty)
+}
+
+@Test("addUrlReference mints an http URL and lists it back alongside shipped ones (NIC-146)")
+func addUrlReferenceMintsAndLists() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let added = try decode(await session.execute(operationRequest(
+        .addURLReference,
+        #"{"url":"https://news.ycombinator.com","label":"Hacker News"}"#
+    )), as: AddUrlResult.self)
+    #expect(added.accepted)
+    #expect(added.reference?.id == "hacker-news")
+    #expect(added.reference?.target == "https://news.ycombinator.com")
+
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(listed.urls.contains { $0.id == "hacker-news" })
+    #expect(listed.urls.contains { $0.id == "github" }) // shipped catalog is included
+}
+
+@Test("addUrlReference carries a Chrome profile through the mint and lists it back (NIC-151)")
+func addUrlReferenceWithProfile() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let added = try decode(await session.execute(operationRequest(
+        .addURLReference,
+        #"{"url":"https://mail.google.com","label":"Work Mail","profile":"Profile 1"}"#
+    )), as: AddUrlResult.self)
+    #expect(added.accepted)
+    #expect(added.reference?.profile == "Profile 1")
+
+    // The profile round-trips through the read feed so the tile/form can show it.
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(listed.urls.first { $0.id == added.reference?.id }?.profile == "Profile 1")
+    // Shipped, profile-less references still omit the field.
+    #expect(listed.urls.first { $0.id == "github" }?.profile == nil)
+}
+
+@Test("addUrlReference rejects a flag-injecting Chrome profile without minting (NIC-151)")
+func addUrlReferenceRejectsInvalidProfile() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let result = try decode(await session.execute(operationRequest(
+        .addURLReference,
+        #"{"url":"https://mail.google.com","label":"Work Mail","profile":"Default --load-extension=/tmp/evil"}"#
+    )), as: AddUrlResult.self)
+    #expect(!result.accepted)
+    #expect(result.reference == nil)
+    #expect(!result.errors.isEmpty)
+
+    // Nothing was minted, so the read feed never carries the rejected profile.
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(!listed.urls.contains { $0.target == "https://mail.google.com" })
+}
+
+@Test("a minted URL reference pins as a quick app through the same validated path (NIC-146)")
+func mintedUrlPinsAsQuickApp() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let minted = try decode(await session.execute(operationRequest(
+        .addURLReference, #"{"url":"https://example.com","label":"Example"}"#
+    )), as: AddUrlResult.self)
+    let refId = try #require(minted.reference?.id)
+
+    // The URL id clears the same updateQuickApps existence check an app id does,
+    // and composes back through the read side mixed with an app reference.
+    let pin = try decode(await session.execute(operationRequest(
+        .updateQuickApps, #"{"modeId":"developer","quickApps":["\#(refId)","vscode"]}"#
+    )), as: QuickAppsResult.self)
+    #expect(pin.accepted)
+    let developer = session.composeBootstrapState().modes.first { $0.id == "developer" }
+    #expect(developer?.quickApps == [refId, "vscode"])
+}
+
+@Test("a minted URL is openable in the same session — the catalog reloads after the mint (NIC-146)")
+func mintedUrlIsImmediatelyOpenable() async throws {
+    let (session, _) = try makeWorkspaceSession()
+
+    // Before the mint the id is unknown to the parser, so `open` is rejected.
+    let before = try decode(await session.execute(operationRequest(
+        .submitCommand, #"{"rawInput":"open example-live"}"#
+    )), as: Receipt.self)
+    #expect(!before.accepted)
+
+    let minted = try decode(await session.execute(operationRequest(
+        .addURLReference, #"{"url":"https://example.live","label":"Example Live"}"#
+    )), as: AddUrlResult.self)
+    #expect(minted.reference?.id == "example-live")
+
+    // After the mint the parser resolves `open <id>` this same session (reference
+    // reload) — the command is accepted onto the bus, no relaunch required.
+    let after = try decode(await session.execute(operationRequest(
+        .submitCommand, #"{"rawInput":"open example-live"}"#
+    )), as: Receipt.self)
+    #expect(after.accepted)
+}
+
+@Test("addUrlReference refuses a non-web scheme without minting (NIC-146)")
+func addUrlReferenceRefusesNonWebScheme() async throws {
+    let (session, _) = try makeWorkspaceSession()
+    let result = try decode(await session.execute(operationRequest(
+        .addURLReference, #"{"url":"file:///etc/passwd"}"#
+    )), as: AddUrlResult.self)
+    #expect(!result.accepted)
+    #expect(result.reference == nil)
+    #expect(!result.errors.isEmpty)
+
+    // It never entered the catalog — listUrls only ever returns web targets.
+    let listed = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(listed.urls.allSatisfy { $0.target.hasPrefix("http") })
+}
+
+@Test("addUrlReference without a workspace is unavailable, never a silent mint (NIC-146)")
+func addUrlReferenceWithoutWorkspaceUnavailable() async throws {
+    let session = try makeSession()
+    let response = await session.execute(operationRequest(
+        .addURLReference, #"{"url":"https://example.com"}"#
     ))
     #expect(response.status == .error)
     #expect(response.error?.category == .unavailableCapability)
@@ -544,6 +1467,161 @@ func mainDisplayPatchPersists() async throws {
     #expect(!(try decode(rejected, as: Accepted.self).accepted))
 }
 
+@Test("the assistant name persists through the same patch path and rejects an over-long value (NIC-137)")
+func assistantNamePatchPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_name0001","changes":{"appearance":{"assistantName":"Aria"}}}}"#
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+    #expect(try makeSettingsStore(paths).load().appearanceAssistantName == "Aria")
+
+    // Over the 40-character contract bound is rejected wholesale.
+    let rejected = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"appearance":{"assistantName":"THIS-ASSISTANT-NAME-IS-DEFINITELY-WAY-TOO-LONG"}}}}"#
+    ))
+    #expect(!(try decode(rejected, as: Accepted.self).accepted))
+}
+
+@Test("per-mode colors persist through the patch path and reject bad keys/values (NIC-137)")
+func modeColorsPatchPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_color001","changes":{"modeColors":{"executive.primary":"#ffd166"}}}}"##
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+    #expect(try makeSettingsStore(paths).load().modeColorsJSON?.contains("executive.primary") == true)
+
+    // A non-hex value is rejected wholesale.
+    let badValue = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"modeColors":{"executive.primary":"not-a-color"}}}}"#
+    ))
+    #expect(!(try decode(badValue, as: Accepted.self).accepted))
+
+    // An unknown accent token key is rejected too.
+    let badKey = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"changes":{"modeColors":{"executive.tertiary":"#ffffff"}}}}"##
+    ))
+    #expect(!(try decode(badKey, as: Accepted.self).accepted))
+}
+
+@Test("the Ask-before-all-actions flag persists through the patch path and rejects a non-boolean (NIC-137)")
+func confirmAllActionsPatchPersists() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_confirm01","changes":{"confirmAllActions":true}}}"#
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+    #expect(try makeSettingsStore(paths).load().confirmAllActions == true)
+
+    // A non-boolean is rejected wholesale.
+    let rejected = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"changes":{"confirmAllActions":"yes"}}}"#
+    ))
+    #expect(!(try decode(rejected, as: Accepted.self).accepted))
+}
+
+@Test("Ask before all actions gates a local_write command that normally runs unconfirmed (NIC-137)")
+func confirmAllActionsGatesLocalWrite() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // Persist the tightening BEFORE composing the runtime — it is read at composition.
+    try makeSettingsStore(paths).apply(SettingsChanges(confirmAllActions: true))
+
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // note.capture is local_write — it runs without confirmation by default (see
+    // captureNoteReturnsRealId), but the tightening raises it, so the command pauses
+    // and a confirmation disclosure is emitted.
+    let submit = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"note buy milk","source":"dashboard"}"#)
+    )
+    #expect(submit.status == .ok)
+    let confirmations = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "confirmation.changed" }
+    #expect(!confirmations.isEmpty)
+}
+
+@Test("updateSettings emits settings.changed carrying the new snapshot for live sync (NIC-137)")
+func updateSettingsEmitsSettingsChanged() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        settingsStore: try makeSettingsStore(paths),
+        emitEventJSON: { emitted.emit($0) }
+    )
+    let response = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_sync0001","changes":{"appearance":{"assistantName":"Cerebra"}}}}"#
+    ))
+    #expect(try decode(response, as: Accepted.self).accepted)
+
+    // The event carries the full resolved snapshot so every surface can re-sync live.
+    let events = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "settings.changed" }
+    #expect(events.count == 1)
+    let settings = (events.first?["payload"] as? [String: Any])?["settings"] as? [String: Any]
+    let appearance = settings?["appearance"] as? [String: Any]
+    #expect(appearance?["assistantName"] as? String == "Cerebra")
+}
+
+@Test("toggling Ask before all actions re-arms confirmation live, without a relaunch (NIC-137)")
+func confirmAllActionsReArmsLive() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        settingsStore: try makeSettingsStore(paths),
+        emitEventJSON: { emitted.emit($0) }
+    )
+    func confirmationCount() -> Int {
+        emitted.all()
+            .compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+            .filter { ($0["type"] as? String) == "confirmation.changed" }
+            .count
+    }
+
+    // Flag off: a local_write note runs without confirmation.
+    let before = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"note first","source":"dashboard"}"#)
+    )
+    #expect(before.status == .ok)
+    #expect(confirmationCount() == 0)
+
+    // Toggle it ON through the SAME live session — no relaunch.
+    let toggle = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_rearm001","changes":{"confirmAllActions":true}}}"#
+    ))
+    #expect(try decode(toggle, as: Accepted.self).accepted)
+
+    // The next identical note now pauses for confirmation — the tightening applied live.
+    let after = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"note second","source":"dashboard"}"#)
+    )
+    #expect(after.status == .ok)
+    #expect(confirmationCount() >= 1)
+}
+
 @Test("a rejected patch persists nothing")
 func rejectedPatchPersistsNothing() async throws {
     let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
@@ -600,6 +1678,260 @@ func updateSettingsRequiresPatch() async throws {
     #expect(response.error?.category == .invalidInput)
 }
 
+/// Records the changes handed to `onSettingsChanged` from a `@Sendable` closure (NIC-128).
+private final class SettingsChangeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last: SettingsChanges?
+    func record(_ changes: SettingsChanges) { lock.lock(); last = changes; lock.unlock() }
+    var tickersChanged: Bool { lock.lock(); defer { lock.unlock() }; return last?.stockTickersJSON != nil }
+    var fired: Bool { lock.lock(); defer { lock.unlock() }; return last != nil }
+}
+
+@Test("updateSettings fires onSettingsChanged with the applied changes so a producer can refresh (NIC-128)")
+func updateSettingsFiresOnSettingsChanged() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let box = SettingsChangeBox()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        settingsStore: try makeSettingsStore(paths),
+        onSettingsChanged: { box.record($0) }
+    )
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_stocks03","changes":{"stocks":{"tickers":["SPY","QQQ"]}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+    #expect(box.tickersChanged) // the hook saw the ticker change, so the producer can re-sample
+}
+
+// MARK: - getSettings (NIC-141)
+
+/// A settings snapshot decoded from the getSettings response payload.
+private struct SettingsSnapshot: Decodable {
+    struct Appearance: Decodable { let reducedMotion: Bool; let assistantName: String }
+    struct Knowledge: Decodable { let rootReference: String? }
+    struct Workspace: Decodable { let windowsStoredByMode: Bool; let mainDisplayId: String }
+    struct Stocks: Decodable { let tickers: [String] }
+    let schemaVersion: String
+    let defaultModeId: String
+    let confirmAllActions: Bool
+    let appearance: Appearance
+    let knowledge: Knowledge
+    let workspace: Workspace
+    let modeColors: [String: String]
+    let stocks: Stocks
+    let calendarModeMap: [String: String]
+}
+
+private struct CalendarsListResult: Decodable {
+    struct Calendar: Decodable { let id: String; let title: String; let colorHex: String? }
+    let authorized: Bool
+    let calendars: [Calendar]
+}
+
+@Test("getSettings reflects the persisted values written through updateSettings")
+func getSettingsReflectsPersistedValues() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_read0001","changes":{"defaultModeId":"developer","confirmAllActions":true,"appearance":{"reducedMotion":true,"assistantName":"Aria"},"knowledge":{"rootReference":"primary-vault"},"workspace":{"windowsStoredByMode":true,"mainDisplayId":"37D8832A-2D66-02CA-B9F7-8F30A301B230"},"modeColors":{"executive.primary":"#ffd166"}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    // A fresh session over the same workspace (a restart) reads them back on open.
+    let reopened = try makeSessionWithSettings(paths)
+    let response = await reopened.execute(operationRequest(.getSettings, "{}"))
+    #expect(response.status == .ok)
+    #expect(response.error == nil)
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.defaultModeId == "developer")
+    #expect(snapshot.confirmAllActions == true)
+    #expect(snapshot.appearance.reducedMotion == true)
+    #expect(snapshot.appearance.assistantName == "Aria")
+    #expect(snapshot.modeColors["executive.primary"] == "#ffd166")
+    #expect(snapshot.knowledge.rootReference == "primary-vault")
+    #expect(snapshot.workspace.windowsStoredByMode == true)
+    #expect(snapshot.workspace.mainDisplayId == "37D8832A-2D66-02CA-B9F7-8F30A301B230")
+}
+
+@Test("getSettings resolves effective defaults when nothing is stored")
+func getSettingsResolvesDefaults() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let response = await session.execute(operationRequest(.getSettings, "{}"))
+    #expect(response.status == .ok)
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.defaultModeId == "executive")           // the configured default
+    #expect(snapshot.confirmAllActions == false)             // descriptor policy governs
+    #expect(snapshot.appearance.reducedMotion == false)
+    #expect(snapshot.appearance.assistantName == "Heimlich")  // the default identity
+    #expect(snapshot.modeColors.isEmpty)                      // no overrides stored
+    #expect(snapshot.knowledge.rootReference == nil)
+    #expect(snapshot.workspace.windowsStoredByMode == false)
+    #expect(snapshot.workspace.mainDisplayId == "system-primary")
+    #expect(snapshot.stocks.tickers == ["SPY", "AAPL", "NVDA", "VTI"]) // the shipped starter list
+}
+
+@Test("a stocks-tickers patch round-trips through getSettings, normalized to uppercase and deduped")
+func stocksTickersPatchRoundTrips() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    // Mixed case + a duplicate + surrounding whitespace: the store normalizes on write.
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_stocks01","changes":{"stocks":{"tickers":["tsla","AAPL","tsla","brk.b"]}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    let reopened = try makeSessionWithSettings(paths)
+    let response = await reopened.execute(operationRequest(.getSettings, "{}"))
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.stocks.tickers == ["TSLA", "AAPL", "BRK.B"]) // uppercased, order-preserving, deduped
+}
+
+@Test("a calendar→mode-map patch round-trips through getSettings; an invalid mode value is rejected (NIC-126)")
+func calendarModeMapPatchRoundTrips() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_calmap01","changes":{"calendarModeMap":{"cal-work":"executive","cal-dev":"developer"}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    let reopened = try makeSessionWithSettings(paths)
+    let response = await reopened.execute(operationRequest(.getSettings, "{}"))
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.calendarModeMap == ["cal-work": "executive", "cal-dev": "developer"])
+
+    // A value that is not a known mode id is rejected — settings can never invent a mode.
+    let rejected = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_calmap02","changes":{"calendarModeMap":{"cal-x":"cosmic"}}}}"##
+    ))
+    #expect(try decode(rejected, as: Accepted.self).accepted == false)
+}
+
+@Test("listCalendars returns the host's calendars as authorized; a denied provider is unauthorized+empty (NIC-126)")
+func listCalendarsReportsAuthorization() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        calendarProvider: MockCalendarProvider(events: [], calendars: [
+            CalendarInfo(id: "cal-work", title: "Work", colorHex: "#3366cc"),
+            CalendarInfo(id: "cal-personal", title: "Personal"),
+        ])
+    )
+    let response = await session.execute(operationRequest(.listCalendars, "{}"))
+    let result = try decode(response, as: CalendarsListResult.self)
+    #expect(result.authorized)
+    #expect(result.calendars.map(\.id) == ["cal-work", "cal-personal"])
+    #expect(result.calendars.first?.colorHex == "#3366cc")
+
+    // A denied grant → unauthorized + empty; the Settings UI shows a grant-access prompt.
+    let denied = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        calendarProvider: MockCalendarProvider(error: .permissionDenied)
+    )
+    let deniedResponse = await denied.execute(operationRequest(.listCalendars, "{}"))
+    let deniedResult = try decode(deniedResponse, as: CalendarsListResult.self)
+    #expect(deniedResult.authorized == false)
+    #expect(deniedResult.calendars.isEmpty)
+}
+
+@Test("an explicitly cleared ticker list stays empty rather than reverting to the starter list")
+func stocksTickersClearedStaysEmpty() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    let saved = await session.execute(operationRequest(
+        .updateSettings,
+        ##"{"patch":{"schemaVersion":"1.0.0","patchId":"set_stocks02","changes":{"stocks":{"tickers":[]}}}}"##
+    ))
+    #expect(try decode(saved, as: Accepted.self).accepted)
+
+    let reopened = try makeSessionWithSettings(paths)
+    let response = await reopened.execute(operationRequest(.getSettings, "{}"))
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.stocks.tickers.isEmpty) // cleared is a real state, not "unset"
+}
+
+@Test("getSettings is the default-mode setting, not the currently active mode")
+func getSettingsReturnsSettingNotActiveMode() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = try makeSessionWithSettings(paths)
+    // Persist developer as the default; then switch the ACTIVE mode to school.
+    _ = await session.execute(operationRequest(
+        .updateSettings,
+        #"{"patch":{"schemaVersion":"1.0.0","patchId":"set_read0002","changes":{"defaultModeId":"developer"}}}"#
+    ))
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"school"}"#))
+
+    let response = await session.execute(operationRequest(.getSettings, "{}"))
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    // The "Default mode" setting is unchanged by an active-mode switch.
+    #expect(snapshot.defaultModeId == "developer")
+}
+
+@Test("getSettings degrades to defaults (never errors) with no settings store bound")
+func getSettingsWithoutStoreDegrades() async throws {
+    let session = try makeSession() // no settingsStore
+    let response = await session.execute(operationRequest(.getSettings, "{}"))
+    #expect(response.status == .ok)
+    #expect(response.error == nil)
+    let snapshot = try decode(response, as: SettingsSnapshot.self)
+    #expect(snapshot.defaultModeId == "executive")
+    #expect(snapshot.workspace.mainDisplayId == "system-primary")
+}
+
+// MARK: - runSpeedTest (NIC-135)
+
+/// Builds a session at a chosen execution phase; the network.speed.test tool is
+/// `macos_native`, so only a macOS-phase runtime executes it.
+private func makeSession(phase: ExecutionPhase) throws -> BridgeSession {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    return BridgeSession(runtime: try makeCommandRuntime(paths: paths, phase: phase), configDirectory: paths.configDirectory)
+}
+
+private struct SpeedTestResult: Decodable {
+    let status: String
+    let downloadMbps: Double?
+    let uploadMbps: Double?
+    let testedAt: String?
+}
+
+@Test("runSpeedTest returns the measured capacity from the tool (macOS phase)")
+func runSpeedTestReturnsMeasurement() async throws {
+    // The .mocks() bundle backs network.speed.test with a deterministic reading.
+    let session = try makeSession(phase: .macOS)
+    let response = await session.execute(operationRequest(.runSpeedTest, "{}"))
+
+    #expect(response.status == .ok)
+    #expect(response.error == nil)
+    let result = try decode(response, as: SpeedTestResult.self)
+    #expect(result.status == "ok")
+    #expect(result.downloadMbps == 240)
+    #expect(result.uploadMbps == 18)
+    #expect(!(result.testedAt ?? "").isEmpty)
+}
+
+@Test("runSpeedTest degrades to unavailable when the native tool is absent (pre-Mac)")
+func runSpeedTestUnavailablePreMac() async throws {
+    // network.speed.test is macOS-only; a pre-Mac runtime cannot run it, so the
+    // operation reports an honest unavailable rather than hanging or crashing.
+    let session = try makeSession(phase: .preMac)
+    let response = await session.execute(operationRequest(.runSpeedTest, "{}"))
+
+    #expect(response.status == .ok)
+    let result = try decode(response, as: SpeedTestResult.self)
+    #expect(result.status == "unavailable")
+    #expect(result.downloadMbps == nil)
+    #expect(result.uploadMbps == nil)
+}
+
 // MARK: - Unwired operations
 
 @Test("an operation not yet wired returns a structured unavailable error, never a hang")
@@ -609,4 +1941,787 @@ func unwiredOperationIsUnavailable() async throws {
     #expect(response.status == .error)
     #expect(response.error?.category == .unavailableCapability)
     #expect(response.error?.code == "bridge_operation_unimplemented")
+}
+
+// MARK: - listUrls / addUrlReference favicons (NIC-147)
+
+/// Polls until `condition` holds or the timeout elapses — the favicon fetch runs in
+/// a detached background task, so tests wait on the cache/emit rather than a return.
+/// Poll `condition` until it holds or the deadline passes.
+///
+/// The deadline is deliberately generous. These tests wait on fire-and-forget `Task {}` work —
+/// favicon warming, for one — which has no completion handle to await, so the only question is how
+/// long we are willing to wait for the cooperative pool to schedule it. On a 2-core CI runner with
+/// the suite running in parallel, a 3s budget was not enough: the favicon tests failed there while
+/// passing locally and on macOS CI, and the identical commit passed on a rerun. That is scheduling
+/// latency, not a defect, and a tight deadline turns it into a red build at random.
+///
+/// A longer deadline does **not** weaken any assertion — the caller still fails if the condition
+/// never becomes true. It also costs nothing on a green run, because this returns the moment the
+/// condition holds; the deadline only elapses when the test was going to fail anyway.
+private func waitUntil(timeoutMs: Int = 30_000, _ condition: @Sendable () -> Bool) async {
+    let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000)
+    while Date() < deadline {
+        if condition() { return }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+    }
+}
+
+private func quickAppsChangedCount(_ emitted: EmittedEvents) -> Int {
+    emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.quickapps.changed" }.count
+}
+
+@Test("listUrls returns a cached favicon as base64 iconPng; uncached urls omit it")
+func listUrlsReturnsCachedFavicon() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    // Warm the cache for the shipped github URL; leave docs cold. No capability, so
+    // no background fetch runs — this isolates the read path.
+    let seed = Data([0x89, 0x50, 0x4E, 0x47, 0x01, 0x02])
+    FaviconCache(directory: paths.faviconCacheDirectory).store(png: seed, forTarget: "https://github.com")
+
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths
+    )
+    let response = await session.execute(operationRequest(.listUrls, "{}"))
+    let urls = try decode(response, as: ListUrlsResult.self).urls
+
+    let github = try #require(urls.first { $0.id == "github" })
+    #expect(github.iconPng == seed.base64EncodedString())
+    let docs = try #require(urls.first { $0.id == "docs" })
+    #expect(docs.iconPng == nil)
+}
+
+@Test("listUrls warms cold favicons in the background, caches them, and emits a refresh")
+func listUrlsWarmsFaviconsAndEmits() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let iconBytes = Data([0x89, 0x50, 0x4E, 0x47, 0xAA, 0xBB, 0xCC])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths,
+        faviconCapability: MockFaviconCapability(icon: iconBytes),
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // First read: cache is cold, so every url omits its icon and a warm pass starts.
+    let first = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(first.urls.allSatisfy { $0.iconPng == nil })
+
+    // The background fetch lands: the cache warms and a refresh event fires.
+    let cache = FaviconCache(directory: paths.faviconCacheDirectory)
+    await waitUntil { cache.icon(forTarget: "https://github.com") != nil }
+    #expect(cache.icon(forTarget: "https://github.com") == iconBytes)
+    await waitUntil { quickAppsChangedCount(emitted) >= 1 }
+    #expect(quickAppsChangedCount(emitted) >= 1)
+
+    // A subsequent read now carries the cached icon.
+    let second = try decode(await session.execute(operationRequest(.listUrls, "{}")), as: ListUrlsResult.self)
+    #expect(second.urls.first { $0.id == "github" }?.iconPng == iconBytes.base64EncodedString())
+}
+
+@Test("a failed favicon fetch records a miss and emits no refresh")
+func failedFaviconRecordsMissNoEmit() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths,
+        faviconCapability: MockFaviconCapability(icon: nil), // every fetch fails
+        emitEventJSON: { emitted.emit($0) }
+    )
+    _ = await session.execute(operationRequest(.listUrls, "{}"))
+
+    let cache = FaviconCache(directory: paths.faviconCacheDirectory)
+    // The miss is recorded (needsFetch becomes false), and no refresh event fires.
+    await waitUntil { !cache.needsFetch(forTarget: "https://github.com") }
+    #expect(!cache.needsFetch(forTarget: "https://github.com"))
+    #expect(cache.icon(forTarget: "https://github.com") == nil)
+    #expect(quickAppsChangedCount(emitted) == 0)
+}
+
+@Test("addUrlReference mints without an icon and warms the new url's favicon")
+func addUrlReferenceWarmsFavicon() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let iconBytes = Data([0x89, 0x50, 0x4E, 0x47, 0x10, 0x20])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory, workspace: paths,
+        faviconCapability: MockFaviconCapability(icon: iconBytes)
+    )
+    let response = await session.execute(
+        operationRequest(.addURLReference, #"{"url":"https://news.ycombinator.com","label":"Hacker News"}"#)
+    )
+    let payload = try decode(response, as: AddUrlResult.self)
+    #expect(payload.accepted)
+    // Minted cold: the tile shows its placeholder until the fetch lands.
+    #expect(payload.reference?.iconPng == nil)
+
+    let cache = FaviconCache(directory: paths.faviconCacheDirectory)
+    await waitUntil { cache.icon(forTarget: "https://news.ycombinator.com") != nil }
+    #expect(cache.icon(forTarget: "https://news.ycombinator.com") == iconBytes)
+}
+
+// MARK: - Collapse / expand all (NIC-143)
+
+/// Records hide/unhide and serves a mutable visible-app set, so a test can exercise
+/// the collapse-all bucket end to end (hiding removes from visible, un-hiding adds
+/// back — mirroring `NSRunningApplication` app-level hide).
+private final class CollapseWorkspaceWindows: WorkspaceWindowsCapability, @unchecked Sendable {
+    private var visible: [String]
+    private(set) var hidden: [String] = []
+    private(set) var unhidden: [String] = []
+
+    init(visible: [String]) { self.visible = visible }
+
+    func visibleApplicationBundleIDs() async throws -> [String] { visible }
+    func hideApplications(bundleIDs: [String]) async throws -> [String] {
+        hidden.append(contentsOf: bundleIDs)
+        visible.removeAll { bundleIDs.contains($0) }
+        return bundleIDs
+    }
+    func unhideApplications(bundleIDs: [String]) async throws -> [String] {
+        unhidden.append(contentsOf: bundleIDs)
+        visible.append(contentsOf: bundleIDs)
+        return bundleIDs
+    }
+}
+
+private struct ToggleModeCollapseResult: Decodable { let collapsed: Bool }
+
+private func windowCollapseEvents(_ emitted: EmittedEvents) -> [[String: Any]] {
+    emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "mode.windowcollapse.changed" }
+}
+
+@Test("toggleModeCollapse hides the visible apps into the mode bucket, then un-hides exactly them")
+func toggleModeCollapseRoundTrips() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = CollapseWorkspaceWindows(visible: ["com.apple.Safari", "com.microsoft.VSCode"])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    // Collapse: the two visible apps are hidden and the state flips to collapsed.
+    let first = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    #expect(try decode(first, as: ToggleModeCollapseResult.self).collapsed)
+    #expect(windows.hidden == ["com.apple.Safari", "com.microsoft.VSCode"])
+    let firstEvent = windowCollapseEvents(emitted).last?["payload"] as? [String: Any]
+    #expect(firstEvent?["modeId"] as? String == "executive")
+    #expect(firstEvent?["collapsed"] as? Bool == true)
+
+    // Expand: exactly the bucket is un-hidden and the state flips back.
+    let second = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    #expect(try !decode(second, as: ToggleModeCollapseResult.self).collapsed)
+    #expect(windows.unhidden == ["com.apple.Safari", "com.microsoft.VSCode"])
+    #expect((windowCollapseEvents(emitted).last?["payload"] as? [String: Any])?["collapsed"] as? Bool == false)
+}
+
+@Test("collapsing with nothing visible is a no-op that stays expanded and emits nothing")
+func toggleModeCollapseEmptyIsNoOp() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = CollapseWorkspaceWindows(visible: [])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+    let response = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    #expect(try !decode(response, as: ToggleModeCollapseResult.self).collapsed)
+    #expect(windows.hidden.isEmpty)
+    #expect(windowCollapseEvents(emitted).isEmpty)
+}
+
+@Test("a mode switch re-applies the entered mode's collapse bucket (bucket wins over restore)")
+func modeSwitchReappliesCollapseBucket() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let windows = CollapseWorkspaceWindows(visible: ["com.apple.Safari"])
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        workspaceWindows: windows,
+        emitEventJSON: { emitted.emit($0) }
+    )
+    // Collapse executive: Safari is now hidden and bucketed.
+    _ = await session.execute(operationRequest(.toggleModeCollapse, #"{"modeId":"executive"}"#))
+    // Simulate "Windows Stored by Mode" restore un-hiding Safari, then switch into
+    // executive: the collapse bucket must re-hide it.
+    _ = try await windows.unhideApplications(bundleIDs: ["com.apple.Safari"])
+    let hiddenBefore = windows.hidden.count
+    _ = await session.execute(operationRequest(.applyMode, #"{"modeId":"executive"}"#))
+
+    #expect(windows.hidden.count > hiddenBefore)
+    #expect((windowCollapseEvents(emitted).last?["payload"] as? [String: Any])?["collapsed"] as? Bool == true)
+}
+
+// MARK: - Close all windows (NIC-143)
+
+@Test("closeAllWindows routes through the command bus and gates on a destructive confirmation")
+func closeAllWindowsGatesOnConfirmation() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    // apps.quitall is macOS-only, so the runtime must be composed in the macOS phase
+    // for the tool to resolve; `.mocks()` gives the (empty) lifecycle capability.
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+    let response = await session.execute(operationRequest(.closeAllWindows, "{}"))
+    #expect(response.status == .ok)
+
+    // A destructive tool never runs on the first call: the policy engine raises a
+    // confirmation disclosure naming the quit tool, which the user must approve.
+    let confirmations = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "confirmation.changed" }
+    let disclosure = (confirmations.last?["payload"] as? [String: Any])?["confirmation"] as? [String: Any]
+    #expect((disclosure?["tool"] as? [String: Any])?["id"] as? String == "apps.quitall")
+    #expect(disclosure?["risk"] as? String == "destructive")
+}
+
+// MARK: - Create event (quick actions phase 3)
+
+@Test("a user-authored createCalendarEvent writes one-click; an agent-proposed one confirms")
+func createCalendarEventHonorsProvenance() async throws {
+    // The provenance tier's motivating case, end to end: a person who filled in the form and
+    // pressed Create has already authored exactly what will happen, so re-confirming would
+    // restate what they just typed. The same call from an agent still gates.
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let payload = #"""
+    {"title":"Board prep","startsAt":"2026-08-03T16:00","endsAt":"2026-08-03T17:00"}
+    """#
+    let response = await session.execute(operationRequest(.createCalendarEvent, payload))
+    #expect(response.status == .ok)
+
+    // It reached the executor instead of stopping at a confirmation: the descriptor's
+    // `allow_external_write_when_user_authored` key plus `.dashboard` provenance exempts it.
+    let created = try decode(response, as: CreatedEvent.self)
+    #expect(created.awaitingConfirmation == false, "a user-authored write must not gate")
+    #expect(!created.eventId.isEmpty)
+}
+
+@Test("createCalendarEvent refuses a backwards range and a blank title before reaching the bus")
+func createCalendarEventValidatesInput() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let backwards = await session.execute(operationRequest(
+        .createCalendarEvent,
+        #"{"title":"x","startsAt":"2026-08-03T17:00","endsAt":"2026-08-03T16:00"}"#
+    ))
+    #expect(backwards.status == .error)
+
+    let blank = await session.execute(operationRequest(
+        .createCalendarEvent,
+        #"{"title":"   ","startsAt":"2026-08-03T16:00","endsAt":"2026-08-03T17:00"}"#
+    ))
+    #expect(blank.status == .error)
+}
+
+// MARK: - Clone repository (quick actions phase 4)
+
+@Test("cloneRepository reaches git.clone without a confirmation, and refuses a blank URL")
+func cloneRepositoryRunsWithoutConfirmation() async throws {
+    // The whole point of a narrow typed tool instead of a hook wrapper: a hook is shell-class and
+    // confirms every run, while git.clone is local_write and runs one-click. The clone itself
+    // fails here — the temporary workspace has no honest adapter bound — which is exactly what
+    // proves it reached the executor rather than stopping at a confirmation.
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths
+    )
+
+    let response = await session.execute(operationRequest(
+        .cloneRepository,
+        #"{"repositoryUrl":"https://github.com/owner/repo.git","directory":"repo"}"#
+    ))
+    // Either it cloned or it honestly reported that it did not — never a pending confirmation.
+    if response.status == .ok {
+        let cloned = try decode(response, as: ClonedRepository.self)
+        #expect(cloned.awaitingConfirmation == false, "a local_write clone must not gate")
+        #expect(!cloned.repositoryName.isEmpty)
+    } else {
+        #expect(response.error?.code == "repository_not_cloned")
+    }
+
+    let blank = await session.execute(operationRequest(.cloneRepository, #"{"repositoryUrl":"   "}"#))
+    #expect(blank.status == .error)
+}
+
+// MARK: - Shut down (quick actions phase 1)
+
+@Test("the shut-down quick action gates on a destructive confirmation before quitting")
+func shutDownGatesOnConfirmation() async throws {
+    // Both the Executive `shut-down` slot and the Settings quit button submit `run shut-down`,
+    // so this covers the single path either one takes. app.quit is macOS-only, hence the
+    // macOS-phase composition.
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let emitted = EmittedEvents()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths, phase: .macOS),
+        configDirectory: paths.configDirectory,
+        workspace: paths,
+        emitEventJSON: { emitted.emit($0) }
+    )
+
+    let response = await session.execute(
+        operationRequest(.submitCommand, #"{"rawInput":"run shut-down","source":"dashboard"}"#)
+    )
+    #expect(response.status == .ok)
+
+    // The app must never quit on the first press: the plan's aggregate risk is the
+    // strictest step (app.quit → destructive), which is never exemptible at any provenance,
+    // so a confirmation disclosure is raised instead.
+    let confirmations = emitted.all().compactMap { json -> [String: Any]? in
+        try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    }.filter { ($0["type"] as? String) == "confirmation.changed" }
+    let disclosure = (confirmations.last?["payload"] as? [String: Any])?["confirmation"] as? [String: Any]
+    #expect(disclosure?["risk"] as? String == "destructive")
+}
+
+// MARK: - Window navigator (NIC-143)
+
+private struct WindowInventoryResult: Decodable {
+    struct Group: Decodable { let bundleId: String; let appName: String; let windows: [Window] }
+    struct Window: Decodable { let id: String; let title: String; let minimized: Bool }
+    let apps: [Group]
+}
+private struct WindowActionResult: Decodable { let ok: Bool }
+
+@Test("listWindows returns the app-grouped inventory from the capability (NIC-143)")
+func listWindowsReturnsInventory() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        appWindows: MockAppWindowsCapability()
+    )
+    let response = await session.execute(operationRequest(.listWindows, "{}"))
+    let inventory = try decode(response, as: WindowInventoryResult.self)
+    #expect(inventory.apps.map(\.bundleId) == ["com.google.Chrome", "com.microsoft.VSCode"])
+    #expect(inventory.apps.first?.windows.map(\.id) == ["1001", "1002"])
+    #expect(inventory.apps.first?.windows.last?.minimized == true)
+}
+
+@Test("window actions report whether they took effect, and no-op honestly without the capability")
+func windowActionsReportEffect() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let windows = MockAppWindowsCapability()
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        appWindows: windows
+    )
+    // A known id is acted on.
+    let minimize = await session.execute(operationRequest(.minimizeWindow, #"{"windowId":"1001"}"#))
+    #expect(try decode(minimize, as: WindowActionResult.self).ok)
+    #expect(windows.minimized == ["1001"])
+    // Close routes to the capability too.
+    _ = await session.execute(operationRequest(.closeWindow, #"{"windowId":"2001"}"#))
+    #expect(windows.closed == ["2001"])
+    // An unknown id is a false result, never an error.
+    let surface = await session.execute(operationRequest(.surfaceWindow, #"{"windowId":"9999"}"#))
+    #expect(try !decode(surface, as: WindowActionResult.self).ok)
+
+    // Without the capability (pre-Mac), the list is empty and actions no-op with ok:false.
+    let bare = BridgeSession(runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory)
+    #expect(try decode(await bare.execute(operationRequest(.listWindows, "{}")), as: WindowInventoryResult.self).apps.isEmpty)
+    #expect(try !decode(
+        await bare.execute(operationRequest(.minimizeWindow, #"{"windowId":"1001"}"#)),
+        as: WindowActionResult.self
+    ).ok)
+}
+
+// MARK: - Canvas connect/status (NIC-132)
+
+private struct CanvasStatusDecode: Decodable {
+    struct Item: Decodable {
+        let id: String
+        let label: String
+        let hidden: Bool
+    }
+    let available: Bool
+    let endpoint: String
+    let token: String?
+    let lastScrapedAt: String?
+    let courseCount: Int
+    let deadlineCount: Int
+    let courses: [Item]
+    let deadlines: [Item]
+}
+
+@Test("getCanvasStatus reports the pairing endpoint/token and last-scrape summary")
+func getCanvasStatusReportsPairing() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        canvasStatus: {
+            CanvasStatusInfo(
+                endpoint: "http://127.0.0.1:8899/canvas/ingest",
+                token: "tok-123", lastScrapedAt: "2026-07-29T12:00:00Z",
+                courseCount: 4, deadlineCount: 7
+            )
+        }
+    )
+    let response = await session.execute(operationRequest(.getCanvasStatus, "{}"))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.available)
+    #expect(status.endpoint == "http://127.0.0.1:8899/canvas/ingest")
+    #expect(status.token == "tok-123")
+    #expect(status.lastScrapedAt == "2026-07-29T12:00:00Z")
+    #expect(status.courseCount == 4)
+    #expect(status.deadlineCount == 7)
+}
+
+@Test("getCanvasStatus reports unavailable off the macOS host (no ingest store)")
+func getCanvasStatusUnavailableWithoutHost() async throws {
+    let session = try makeSession() // no canvasStatus closure injected
+    let response = await session.execute(operationRequest(.getCanvasStatus, "{}"))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.available == false)
+    #expect(status.token == nil)
+}
+
+@Test("setCanvasItemHidden hides an item and returns the fresh status carrying the flag")
+func setCanvasItemHiddenReturnsStatus() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        canvasSetHidden: { id, hidden in
+            CanvasStatusInfo(
+                endpoint: "http://127.0.0.1:8899/canvas/ingest", token: "t",
+                lastScrapedAt: "2026-07-29T12:00:00Z", courseCount: 0, deadlineCount: 0,
+                courses: [CanvasStatusItem(id: id, label: "Theory of Computation", hidden: hidden)],
+                deadlines: []
+            )
+        }
+    )
+    let response = await session.execute(operationRequest(.setCanvasItemHidden, #"{"id":"37331","hidden":true}"#))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.courses.first?.id == "37331")
+    #expect(status.courses.first?.hidden == true)
+}
+
+@Test("setCanvasItemHidden reports unavailable off the macOS host")
+func setCanvasItemHiddenUnavailableWithoutHost() async throws {
+    let session = try makeSession() // no canvasSetHidden closure
+    let response = await session.execute(operationRequest(.setCanvasItemHidden, #"{"id":"1","hidden":true}"#))
+    #expect(response.status == .ok)
+    #expect(try decode(response, as: CanvasStatusDecode.self).available == false)
+}
+
+@Test("resetCanvas rotates the token and returns the fresh, empty state")
+func resetCanvasReturnsFreshState() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        canvasReset: {
+            CanvasStatusInfo(
+                endpoint: "http://127.0.0.1:8899/canvas/ingest",
+                token: "rotated-456", lastScrapedAt: nil, courseCount: 0, deadlineCount: 0
+            )
+        }
+    )
+    let response = await session.execute(operationRequest(.resetCanvas, "{}"))
+    #expect(response.status == .ok)
+    let status = try decode(response, as: CanvasStatusDecode.self)
+    #expect(status.token == "rotated-456")
+    #expect(status.lastScrapedAt == nil)
+    #expect(status.courseCount == 0)
+    #expect(status.deadlineCount == 0)
+}
+
+// MARK: - Rebuild knowledge index (NIC-163)
+
+private struct KnowledgeRebuildDecode: Decodable {
+    let rebuilt: Bool
+    let root: String
+    let noteCount: Int
+}
+
+@Test("rebuildKnowledgeIndex reports the root it read and how many notes it indexed (NIC-163)")
+func rebuildKnowledgeIndexReportsCoverage() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        knowledgeRebuild: { KnowledgeRebuildInfo(root: "/Users/fixture/knowledge", noteCount: 42) }
+    )
+
+    let response = await session.execute(operationRequest(.rebuildKnowledgeIndex, "{}"))
+
+    #expect(response.status == .ok)
+    let result = try decode(response, as: KnowledgeRebuildDecode.self)
+    #expect(result.rebuilt)
+    #expect(result.root == "/Users/fixture/knowledge")
+    #expect(result.noteCount == 42)
+}
+
+@Test("rebuildKnowledgeIndex reports unavailable without a knowledge composition, never a fake rebuild")
+func rebuildKnowledgeIndexUnavailableWithoutHost() async throws {
+    let session = try makeSession() // no knowledgeRebuild closure injected
+
+    let response = await session.execute(operationRequest(.rebuildKnowledgeIndex, "{}"))
+
+    #expect(response.status == .ok)
+    let result = try decode(response, as: KnowledgeRebuildDecode.self)
+    // The distinction that matters: nothing was rebuilt, and the response says so
+    // rather than reporting a successful rebuild of zero notes.
+    #expect(result.rebuilt == false)
+    #expect(result.noteCount == 0)
+}
+
+@Test("a failed rebuild is reported as a failure that left the notes alone")
+func rebuildKnowledgeIndexFailureIsStructured() async throws {
+    struct RebuildFailure: Error {}
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths),
+        configDirectory: paths.configDirectory,
+        knowledgeRebuild: { throw RebuildFailure() }
+    )
+
+    let response = await session.execute(operationRequest(.rebuildKnowledgeIndex, "{}"))
+
+    #expect(response.status == .error)
+    #expect(response.error?.code == "knowledge_rebuild_failed")
+    // The user's Markdown is the source of truth, so a failed rebuild costs search
+    // results and nothing else — the message must say so.
+    #expect(response.error?.message.contains("notes are unchanged") == true)
+}
+
+// MARK: - List notes (NIC-162)
+
+private struct ListNotesDecode: Decodable {
+    struct Item: Decodable {
+        let path: String
+        let title: String
+        let folder: String
+        let updated: String?
+    }
+    let available: Bool
+    let root: String
+    let total: Int
+    let notes: [Item]
+}
+
+@Test("listNotes reads the durable Markdown through the bus, including notes CerebralHelm never wrote")
+func listNotesReadsTheKnowledgeRoot() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+
+    // One captured through the runtime, one written by hand — the Obsidian case.
+    _ = await session.execute(operationRequest(.captureNote, #"{"title":"Quarterly plan","body":"targets"}"#))
+    let external = paths.knowledgeRoot.appendingPathComponent("inbox/Hull Plating.md")
+    try FileManager.default.createDirectory(
+        at: external.deletingLastPathComponent(), withIntermediateDirectories: true
+    )
+    try Data("rivets\n".utf8).write(to: external)
+
+    let response = await session.execute(operationRequest(.listNotes, "{}"))
+
+    #expect(response.status == .ok)
+    let library = try decode(response, as: ListNotesDecode.self)
+    #expect(library.available)
+    #expect(library.root == paths.knowledgeRoot.path)
+    #expect(library.total == 2)
+    let handWritten = try #require(library.notes.first { $0.path == "inbox/Hull Plating.md" })
+    #expect(handWritten.title == "Hull Plating")   // no frontmatter: the filename is the title
+    #expect(handWritten.folder == "inbox")
+}
+
+@Test("a limit trims the notes but never the reported total (NIC-162)")
+func listNotesTotalIgnoresTheLimit() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+    for index in 0..<3 {
+        _ = await session.execute(
+            operationRequest(.captureNote, #"{"title":"Note \#(index)","body":"b"}"#)
+        )
+    }
+
+    let response = await session.execute(operationRequest(.listNotes, #"{"limit":1}"#))
+
+    let library = try decode(response, as: ListNotesDecode.self)
+    #expect(library.notes.count == 1)
+    // The card shows one note but must still say how many there are.
+    #expect(library.total == 3)
+}
+
+@Test("an unreadable knowledge root is unavailable, never an empty library (NIC-162)")
+func listNotesUnavailableRootIsNotEmpty() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+    // The root has never been created: nothing to read, and "no notes yet" would be a lie.
+    try? FileManager.default.removeItem(at: paths.knowledgeRoot)
+
+    let response = await session.execute(operationRequest(.listNotes, "{}"))
+
+    #expect(response.status == .ok)
+    let library = try decode(response, as: ListNotesDecode.self)
+    #expect(library.available == false)
+    #expect(library.total == 0)
+}
+
+// MARK: - course notebooks (quick actions phase 5)
+
+private struct CourseDecode: Decodable {
+    struct Item: Decodable {
+        let course: String
+        let folder: String
+        let noteCount: Int
+        let updated: String?
+    }
+    let available: Bool
+    let root: String
+    let courses: [Item]
+}
+private struct CreatedCourseNote: Decodable {
+    let course: String
+    let path: String
+    let title: String
+    let created: Bool
+    let awaitingConfirmation: Bool
+}
+
+@Test("an existing vault with no courses lists none; a missing root is unavailable, not empty")
+func listCoursesDistinguishesEmptyFromMissing() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+
+    // A knowledge root that has never been created is NOT an empty library — the same distinction
+    // `listNotes` draws, so "no courses yet" and "your vault is gone" never look the same.
+    let missing = try decode(
+        await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self
+    )
+    #expect(!missing.available)
+
+    // A real vault with nothing school-related in it: available, and empty.
+    try FileManager.default.createDirectory(at: paths.knowledgeRoot, withIntermediateDirectories: true)
+    let empty = try decode(
+        await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self
+    )
+    #expect(empty.available)
+    #expect(empty.courses.isEmpty)
+    #expect(empty.root == "areas/school-umass")
+}
+
+@Test("taking a note mints its course, and the note lists as an ordinary note (phase 5)")
+func createCourseNoteMintsAndIsAnOrdinaryNote() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+
+    let response = await session.execute(operationRequest(
+        .createCourseNote, #"{"course":"STAT 240 - Probability (Fall 2026)","title":"Lecture 3"}"#
+    ))
+    let created = try decode(response, as: CreatedCourseNote.self)
+    #expect(created.created)
+    #expect(!created.awaitingConfirmation)
+    // The course as RESOLVED — the derived code, not the long Canvas title that was submitted.
+    #expect(created.course == "STAT 240")
+    #expect(created.path.hasPrefix("areas/school-umass/STAT 240/"))
+
+    // The course exists because its FOLDER does; nothing wrote a stored mapping.
+    let courses = try decode(await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self)
+    #expect(courses.courses.count == 1)
+    #expect(courses.courses.first?.course == "STAT 240")
+    #expect(courses.courses.first?.noteCount == 1)
+    #expect(courses.courses.first?.folder == "areas/school-umass/STAT 240")
+
+    // And it is an ordinary note: `listNotes`, which knows nothing about courses, lists it — which
+    // is the whole reason a course is just a folder.
+    let library = try decode(await session.execute(operationRequest(.listNotes, "{}")), as: ListNotesDecode.self)
+    let entry = try #require(library.notes.first { $0.path == created.path })
+    #expect(entry.title == "Lecture 3")
+    #expect(entry.folder == "areas/school-umass/STAT 240")
+
+    // Really on disk under the workspace's knowledge root, not merely reported.
+    let fileURL = paths.knowledgeRoot.appendingPathComponent(created.path)
+    let content = try String(contentsOf: fileURL, encoding: .utf8)
+    #expect(content.contains("# Lecture 3"))
+    #expect(content.contains("## Notes"))
+    #expect(content.contains("course: STAT 240"))
+}
+
+@Test("a repeat create returns the existing note rather than overwriting what was typed into it")
+func createCourseNoteNeverOverwritesThroughTheBus() async throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: repositoryRoot())
+    let session = BridgeSession(
+        runtime: try makeCommandRuntime(paths: paths), configDirectory: paths.configDirectory
+    )
+    let payload = #"{"course":"STAT 240","title":"Lecture 3"}"#
+
+    let first = try decode(
+        await session.execute(operationRequest(.createCourseNote, payload)), as: CreatedCourseNote.self
+    )
+    let fileURL = paths.knowledgeRoot.appendingPathComponent(first.path)
+    try Data("# Lecture 3\n\nwhat I actually wrote\n".utf8).write(to: fileURL)
+
+    let second = try decode(
+        await session.execute(operationRequest(.createCourseNote, payload)), as: CreatedCourseNote.self
+    )
+
+    // Reported as NOT created, so the surface never claims a new note it did not make.
+    #expect(!second.created)
+    #expect(second.path == first.path)
+    #expect(try String(contentsOf: fileURL, encoding: .utf8).contains("what I actually wrote"))
+}
+
+@Test("a create with nothing to write is rejected, and mints nothing on the way")
+func createCourseNoteRejectsEmptyInput() async throws {
+    let session = try makeSession()
+
+    for payload in [
+        #"{"course":"STAT 240","title":"   "}"#,
+        #"{"course":"  ","title":"Lecture"}"#,
+        #"{"title":"Lecture"}"#
+    ] {
+        let response = await session.execute(operationRequest(.createCourseNote, payload))
+        #expect(response.status == .error, "\(payload) must be rejected")
+    }
+    let courses = try decode(await session.execute(operationRequest(.listCourses, "{}")), as: CourseDecode.self)
+    #expect(courses.courses.isEmpty)
 }

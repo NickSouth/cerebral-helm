@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "course.note.create",
+  "version": "1.0.0",
+  "purpose": "Create one templated Markdown note in a course notebook, minting the course folder on first use and never overwriting an existing note.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/course-note-create-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/course-note-create-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "local_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "confirm_local_write",
+  "requiredPermissions": ["knowledge_root_write"],
+  "secretReferences": [],
+  "timeoutMs": 5000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "idempotent",
+  "adapterRequirements": {
+    "capabilities": ["course.note.create"],
+    "platforms": ["pre_mac_mock", "macos_native"]
+  },
+  "logging": {
+    "redactionPaths": ["/noteTitle", "/notePath"],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "denied", "timeout", "failure"],
+  "availability": {
+    "preMac": true,
+    "macOS": true
+  }
+}

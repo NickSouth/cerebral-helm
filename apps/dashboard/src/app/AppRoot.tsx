@@ -3,12 +3,16 @@ import "../app.css";
 import "../styles/responsive.css";
 import "../shell/shell.css";
 import "../shell/settings/settings.css";
+import "../reports/reports.css";
+import "../inputs/inputs.css";
 import { DashboardShell } from "../shell/DashboardShell";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
-import { ConversationProvider } from "../state/ConversationProvider";
+import { ActionStatusProvider } from "../state/ActionStatusProvider";
 import { SettingsProvider } from "../state/SettingsProvider";
 import { AppearanceProvider } from "../state/AppearanceProvider";
+import { ReportProvider } from "../state/ReportProvider";
+import { InputProvider } from "../state/InputProvider";
 import { ThemeProvider } from "./ThemeProvider";
 import { createDashboardRuntime, readStateNameFromLocation } from "../state/bootstrapStore";
 import { withModeWave } from "../shell/modeWave";
@@ -21,9 +25,9 @@ const bridge = runtime.bridge;
 const store = withModeWave(runtime.store);
 
 /**
- * The application container: owns the bridge + state store (the read/write seam), the Heimlich
- * conversation session, theme application, and the accessibility baseline (skip link), and
- * renders the three-zone shell.
+ * The application container: owns the bridge + state store (the read/write seam), the action-status
+ * channel, theme application, and the accessibility baseline (skip link), and renders the
+ * three-zone shell.
  */
 export function AppRoot() {
   return (
@@ -31,14 +35,18 @@ export function AppRoot() {
       <DashboardStateProvider store={store}>
         <AppearanceProvider>
           <ThemeProvider>
-            <ConversationProvider>
+            <ActionStatusProvider>
               <SettingsProvider>
-                <a className="skip-link" href="#main">
-                  Skip to main content
-                </a>
-                <DashboardShell />
+                <ReportProvider>
+                  <InputProvider>
+                    <a className="skip-link" href="#main">
+                      Skip to main content
+                    </a>
+                    <DashboardShell />
+                  </InputProvider>
+                </ReportProvider>
               </SettingsProvider>
-            </ConversationProvider>
+            </ActionStatusProvider>
           </ThemeProvider>
         </AppearanceProvider>
       </DashboardStateProvider>

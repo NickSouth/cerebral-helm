@@ -67,6 +67,19 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
             forMainFrameOnly: true
         ))
 
+        // Seed the Sidebar panel with the persisted edge-reveal preference. Same reasoning as the
+        // hotkey above: a Mac-only shell behavior, stored in UserDefaults and surfaced through an
+        // injected global rather than the portable settings snapshot.
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: """
+            window.__cerebralSidebar = { \
+            edgeReveal: \(SidebarEdgePreference.isEnabled ? "true" : "false"), \
+            dwell: "\(SidebarEdgePreference.dwell.rawValue)" };
+            """,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+
         // Seed the Startup panel with the LIVE login-item status (NIC-89): the OS
         // is the source of truth — the settings store never carries this flag.
         configuration.userContentController.addUserScript(WKUserScript(
@@ -75,22 +88,72 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
             forMainFrameOnly: true
         ))
 
+        // Seed the Library panel with whether Obsidian can take a browse request
+        // (NIC-162), so the button says up front where it will send you rather than
+        // finding out only after a click.
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "window.__cerebralNotesBrowser = { obsidian: \(WindowCoordinator.obsidianInstalled) };",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+
         webView = WKWebView(frame: .zero, configuration: configuration)
+        VibrantWindowChrome.makeTransparent(webView)
 
         // Sized to the web surface's design dimensions (design spec §10); resizable
         // so long panels are usable, min-bounded so the two-pane layout never crushes.
+        // Slightly shorter than the old 620 (NIC-140) now that the macOS title bar is gone.
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 880, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 880, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "CerebralHelm Settings"
-        window.minSize = NSSize(width: 640, height: 480)
+        window.minSize = NSSize(width: 640, height: 440)
+        // Frameless chrome (NIC-140): the web surface draws its own × (shellControl
+        // `closeSettings`) and section titles, so the macOS title bar and traffic
+        // lights are redundant. Hide them and let the content fill edge-to-edge —
+        // the same frameless treatment as the command palette. The window stays
+        // draggable from any non-interactive background via movableByWindowBackground;
+        // the web layer reserves a top drag strip so nothing interactive sits under it.
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
         // Closing hides the reusable window; the controller keeps owning it.
         window.isReleasedWhenClosed = false
         window.center()
-        window.contentView = webView
+
+        // A frameless window only drags from the ~28px transparent title bar, and the
+        // WKWebView (which returns false for mouseDownCanMoveWindow) sits under it — so the
+        // draggable area is tiny/absent (NIC-140 follow-up). Overlay a taller transparent
+        // band across the whole top that moves the window on drag; it sits above the webview
+        // so drags never reach web content, and the web layer keeps its top controls (× and
+        // first category) below it via `--ch-standalone-titlebar`, so nothing is covered.
+        let container = NSView()
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(webView)
+        let dragBand = WindowDragBand()
+        dragBand.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(dragBand)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: container.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            dragBand.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            dragBand.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            dragBand.topAnchor.constraint(equalTo: container.topAnchor),
+            dragBand.heightAnchor.constraint(equalToConstant: 40)
+        ])
+        // Vibrancy behind the whole window. The web layer keeps its right-hand reading pane
+        // near-opaque — dense settings text has a contrast requirement that translucency cannot
+        // guarantee over an arbitrary desktop — and lets it through on the chrome, which is the
+        // deliberate split recorded in the overhaul notes rather than blanket translucency.
+        VibrantWindowChrome.apply(to: window, hosting: container)
 
         super.init()
         window.delegate = self
@@ -102,12 +165,30 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         webView.load(URLRequest(url: Self.settingsURL))
     }
 
+    /// Where the window flies out of, in screen coordinates.
+    ///
+    /// Settings is summoned from the bottom bar's settings control, which lives at the bottom-right
+    /// of the screen — and the in-page overlay variant of this exact surface already animates from
+    /// that corner (`ch-settings-in` in settings.css). Deriving the corner rather than threading
+    /// the button's rect through `SettingsProvider` keeps the two presentations agreeing without a
+    /// second control-channel argument; if the control ever moves, that CSS animation and this
+    /// point are the two places to change together.
+    ///
+    /// Recomputed per open, not cached: this window is warm-reused and the user can move it, change
+    /// the main display, or unplug a screen between one open and the next.
+    private var emergencePoint: NSPoint? {
+        guard let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return nil }
+        return NSPoint(x: visible.maxX, y: visible.minY)
+    }
+
     func show() {
-        window.makeKeyAndOrderFront(nil)
+        WindowAppearance.present(window, emergingFrom: emergencePoint)
     }
 
     func close() {
-        window.orderOut(nil)
+        WindowAppearance.dismiss(window, receding: emergencePoint) { [window] in
+            window.orderOut(nil)
+        }
     }
 
     /// Route a shared-session bridge event (config/capability changes re-theme and
@@ -123,6 +204,28 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
     func pushLoginItemStatus(_ status: String) {
         webView.evaluateJavaScript(
             "window.__cerebralLoginItemUpdate && window.__cerebralLoginItemUpdate(\"\(status)\");"
+        )
+    }
+
+    /// Report where a "Browse notes" request actually went (NIC-162): `obsidian`,
+    /// `finder` (Obsidian is not installed), `missing-root`, or `unavailable`. The
+    /// panel states the outcome rather than assuming the click worked — especially
+    /// for Obsidian, which silently ignores a folder it has not registered as a vault.
+    func pushNotesBrowserOutcome(_ outcome: String) {
+        webView.evaluateJavaScript(
+            "window.__cerebralNotesBrowserUpdate && window.__cerebralNotesBrowserUpdate(\"\(outcome)\");"
+        )
+    }
+
+    /// Push the folder chosen in the native NSOpenPanel picker into the Setup panel
+    /// (NIC-138); the panel persists it through the validated settings patch. The path
+    /// is escaped for the JS string literal so spaces, quotes, and backslashes survive.
+    func pushKnowledgeRoot(_ path: String) {
+        let escaped = path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        webView.evaluateJavaScript(
+            "window.__cerebralKnowledgeRootUpdate && window.__cerebralKnowledgeRootUpdate(\"\(escaped)\");"
         )
     }
 
@@ -148,4 +251,11 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         log.error("Settings web content process terminated; reloading.")
         webView.load(URLRequest(url: Self.settingsURL))
     }
+}
+
+/// A transparent top band that makes the frameless settings window draggable from its
+/// whole top edge (NIC-140 follow-up). `mouseDownCanMoveWindow` moves the window on drag,
+/// and the band sits above the webview so those drags never reach web content.
+private final class WindowDragBand: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
 }

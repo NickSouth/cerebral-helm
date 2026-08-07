@@ -5,26 +5,37 @@ import { PersistentBottomBar } from "./PersistentBottomBar";
 import { ConfirmationOverlay } from "./ConfirmationOverlay";
 import { SettingsOverlay } from "./settings/SettingsOverlay";
 import { CommandSurface } from "./CommandSurface";
+import { ActionStatusIndicator } from "./ActionStatusIndicator";
 import { SystemStatusBanner } from "./SystemStatusBanner";
 import { BrandMark, BrandWordmark } from "./BrandMark";
 import { DashboardSkeleton } from "./DashboardSkeleton";
-import { useConversation } from "../state/ConversationProvider";
+import { useBridge } from "../state/BridgeProvider";
+import { useReports } from "../state/ReportProvider";
+import { useInputs } from "../state/InputProvider";
+import { useActionStatus } from "../state/ActionStatusProvider";
 import { useSettings } from "../state/SettingsProvider";
 import { useUiPosture } from "../state/useUiPosture";
+import { useSurfaceReceded } from "../state/surfacePresence";
+import { useStartupIntro } from "./useStartupIntro";
 import { useAmbientBeam } from "./useAmbientBeam";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 /** The native shell's intent channel into the dashboard (NIC-76 window-role choreography). */
 interface ShellIntentWindow extends Window {
   __cerebralShell?: {
-    openConversation?: (text: string) => void;
+    submitCommand?: (text: string) => void;
     openSettings?: () => void;
+    /** Open a Report / Input here rather than in the surface that asked. The edge sidebar uses
+     *  these: its column is too narrow to read a brief or fill in a form, so it reveals the
+     *  dashboard and hands the surface over (owner decision, 2026-08-03). */
+    openReport?: (reportId: string) => void;
+    openInput?: (actionId: string) => void;
   };
 }
 
 /**
  * The shared three-zone shell (design spec §10 composition, constitution §6): one layout
- * grammar for every mode — a top-row global Ask-Heimlich launcher over the center, a left
+ * grammar for every mode — a top-row global command launcher over the center, a left
  * information rail, the calm dominant Heimlich center, a right operational rail, and a
  * persistent bottom bar on its own track. The launcher (C0) lives on its own header row so
  * the rails begin at the Quick Apps line and run to the bottom (visual reference, Plate 01).
@@ -37,25 +48,102 @@ interface ShellIntentWindow extends Window {
  * layer + the viewport-height root font-size).
  */
 export function DashboardShell() {
-  const conversation = useConversation();
+  const bridge = useBridge();
+  const { announce } = useActionStatus();
   const settings = useSettings();
+  const reports = useReports();
+  const inputs = useInputs();
   const posture = useUiPosture();
   const shellRef = useRef<HTMLDivElement>(null);
-  useAmbientBeam(shellRef);
+  // While receded the sweep is confined to the bottom bar (NIC-152) — the bar is exempt from the
+  // whole treatment, and travelling light across every panel outline is the loudest thing here.
+  useAmbientBeam(shellRef, useSurfaceReceded());
+  // The launch sequence starts once real data has replaced the skeleton, so it introduces the
+  // dashboard itself rather than playing over a loading state (NIC-157).
+  const intro = useStartupIntro(!posture.loading);
+
+  // Measure how far the Heimlich panel sits from each edge of the SCREEN, so the launch sequence
+  // can start the field at full viewport width and close it in to the panel (NIC-157). CSS cannot
+  // derive this: the distance depends on the rail widths, the canvas max-width cap and the
+  // centring margin, none of which are expressible as a constant. Measured rather than guessed,
+  // re-measured on resize, and cleared when the sequence ends so nothing lingers in the DOM.
+  // Layout effect, not effect: the crop animation's `from` state applies on the very frame
+  // `data-intro` lands, so the measurement has to be in place before that frame paints or the
+  // field would start at panel width and jump outward.
+  useLayoutEffect(() => {
+    const shell = shellRef.current;
+    const panel = shell?.querySelector<HTMLElement>(".heimlich");
+    if (!intro || !shell || !panel) {
+      return;
+    }
+    const measure = () => {
+      const rect = panel.getBoundingClientRect();
+      shell.style.setProperty("--ch-intro-bleed-left", `${Math.max(0, rect.left)}px`);
+      shell.style.setProperty(
+        "--ch-intro-bleed-right",
+        `${Math.max(0, window.innerWidth - rect.right)}px`
+      );
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      shell.style.removeProperty("--ch-intro-bleed-left");
+      shell.style.removeProperty("--ch-intro-bleed-right");
+    };
+  }, [intro]);
+
+  // Dispatch a raw command through the shared bridge (FR-CMD-01), from the top launcher or the
+  // native shell-intent hook. An accepted command surfaces its result through the event stream /
+  // the top-left status line. A rejected command has no wired capability yet (the Heimlich chat
+  // was removed — NIC-124), so we report the honest MVP state rather than opening a conversation.
+  const runCommand = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        return;
+      }
+      void bridge
+        .submitCommand({ rawInput: trimmed, source: "dashboard" })
+        .then((receipt) => {
+          if (!receipt.accepted) {
+            announce("Heimlich not implemented");
+          }
+        })
+        .catch(() => {
+          announce("The command could not be sent.", "error");
+        });
+    },
+    [bridge, announce]
+  );
+
+  // Ranked, capability-aware suggestions for the launcher (NIC-168): the bridge engine
+  // resolves typos and inexact input over the live catalogs; a failure inside the surface
+  // degrades to the bare input, so the command locus never depends on this call.
+  const fetchSuggestions = useCallback(
+    (query: string) => bridge.suggestCommands({ query }).then((result) => result.suggestions),
+    [bridge]
+  );
 
   // Register the native shell's intent hook so the menu bar / command palette can drive the
-  // dashboard: "Ask Heimlich" opens the center-panel conversation, and "Settings…" opens the
+  // dashboard: a command submission dispatches through the bridge, and "Settings…" opens the
   // web settings overlay (NIC-76). Registered once; it calls the latest handlers via refs so
   // the callbacks never go stale.
-  const submitRef = useRef(conversation.submit);
-  submitRef.current = conversation.submit;
+  const runCommandRef = useRef(runCommand);
+  runCommandRef.current = runCommand;
   const openSettingsRef = useRef(settings.openSettings);
   openSettingsRef.current = settings.openSettings;
+  const openReportRef = useRef(reports.openReport);
+  openReportRef.current = reports.openReport;
+  const openInputRef = useRef(inputs.openInput);
+  openInputRef.current = inputs.openInput;
   useEffect(() => {
     const shellWindow = window as ShellIntentWindow;
     shellWindow.__cerebralShell = {
-      openConversation: (text: string) => submitRef.current(text),
-      openSettings: () => openSettingsRef.current()
+      submitCommand: (text: string) => runCommandRef.current(text),
+      openSettings: () => openSettingsRef.current(),
+      openReport: (reportId: string) => openReportRef.current(reportId),
+      openInput: (actionId: string) => openInputRef.current(actionId)
     };
     return () => {
       delete shellWindow.__cerebralShell;
@@ -63,21 +151,29 @@ export function DashboardShell() {
   }, []);
 
   return (
-    <div className="dashboard-shell" ref={shellRef} data-read-only={posture.readOnly || undefined}>
+    <div
+      className="dashboard-shell"
+      ref={shellRef}
+      data-read-only={posture.readOnly || undefined}
+      data-intro={intro || undefined}
+    >
       {/* Full-width degraded ribbon (sibling of the capped canvas), never replacing the shell. */}
       <SystemStatusBanner />
       {posture.loading ? (
-        <div className="dashboard-canvas dashboard-canvas--loading">
+        <div className="dashboard-canvas dashboard-canvas--loading recede-target">
           <DashboardSkeleton />
         </div>
       ) : (
-        <div className="dashboard-canvas">
+        <div className="dashboard-canvas recede-target">
+          {/* Top-left header cell: the single execution-feedback surface (NIC-124). */}
+          <ActionStatusIndicator />
           <div className="shell-search">
             <CommandSurface
               variant="launcher"
-              placeholder="Ask Heimlich or type a command…"
-              ariaLabel="Ask Heimlich or type a command"
-              onSubmit={conversation.submit}
+              placeholder="Type a command…"
+              ariaLabel="Type a command"
+              onSubmit={runCommand}
+              fetchSuggestions={fetchSuggestions}
               disabled={posture.readOnly}
             />
           </div>

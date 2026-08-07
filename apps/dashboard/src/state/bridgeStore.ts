@@ -1,17 +1,29 @@
-import type { BridgeEvent, CerebralBridge } from "../bridge/cerebralBridge";
+import type {
+  BridgeEvent,
+  CerebralBridge,
+  MailChannel,
+  SystemChecksPayload
+} from "../bridge/cerebralBridge";
 import type {
   ConfirmationDisclosure,
+  DashboardRegions,
   DashboardStateSnapshot,
-  HeimlichState,
+  MemoryPressure,
+  NewsRegion,
   RegionState,
-  SystemHealthRegion
+  ScheduleRegion,
+  SystemHealthRegion,
+  WeatherChannel,
+  WiFiPower
 } from "../bridge/types";
 import type {
   DashboardState,
   DashboardStore,
   DisplayTopology,
+  LayoutSession,
   WorkflowRunProgress
 } from "./dashboardState";
+import type { WidgetData } from "../widgets/widgetData";
 
 /** One channel of the native status publisher's `system_metrics` payload (NIC-81b). */
 interface MetricsChannelPayload {
@@ -22,8 +34,9 @@ interface MetricsChannelPayload {
 
 interface MetricsNetworkPayload {
   readonly availability?: string;
-  readonly uploadMbps?: number | null;
-  readonly downloadMbps?: number | null;
+  readonly linkMbps?: number | null;
+  readonly wifiPower?: string | null;
+  readonly signalRssi?: number | null;
   readonly sampledAt?: string | null;
 }
 
@@ -32,9 +45,13 @@ interface MetricsBatteryPayload extends MetricsChannelPayload {
   readonly pluggedIn?: boolean | null;
 }
 
+interface MetricsMemoryPayload extends MetricsChannelPayload {
+  readonly pressure?: string | null;
+}
+
 interface SystemMetricsPayload {
   readonly cpu?: MetricsChannelPayload;
-  readonly memory?: MetricsChannelPayload;
+  readonly memory?: MetricsMemoryPayload;
   readonly network?: MetricsNetworkPayload;
   readonly battery?: MetricsBatteryPayload;
   readonly display?: MetricsChannelPayload;
@@ -59,6 +76,24 @@ function channelState(availability: string | undefined): RegionState {
   }
 }
 
+/**
+ * Narrow the payload's Wi-Fi power to the contract's union, dropping anything a
+ * future or malformed producer sends rather than passing an unknown string to the
+ * indicator (which would render as an unexplained blank).
+ */
+function wifiPowerFrom(value: string | null | undefined): WiFiPower | undefined {
+  return value === "on" || value === "off" || value === "absent" ? value : undefined;
+}
+
+/**
+ * Narrow the payload's memory-pressure level to the contract's union (NIC-158). Anything else —
+ * absent, or a level a future OS invents — becomes undefined, so the bar falls back to
+ * thresholding the usage percentage instead of being coloured by a value nothing understands.
+ */
+function memoryPressureFrom(value: string | null | undefined): MemoryPressure | undefined {
+  return value === "normal" || value === "warn" || value === "critical" ? value : undefined;
+}
+
 /** Fold one live metrics snapshot into the system-health region shape. */
 function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthRegion {
   const cpuLive = payload.cpu?.availability === "available";
@@ -69,11 +104,17 @@ function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthReg
     state: "ready",
     cpuPercent: cpuLive ? (payload.cpu?.value ?? undefined) : undefined,
     memoryPercent: memoryLive ? (payload.memory?.value ?? undefined) : undefined,
+    // Not gated on `memoryLive`: pressure is an independent fact about the machine, useful
+    // exactly when the usage percentage is missing (the same reasoning as `wifiPower` below).
+    memoryPressure: memoryPressureFrom(payload.memory?.pressure),
     network: {
       state: networkState,
       label: "Network",
-      uploadMbps: payload.network?.uploadMbps ?? undefined,
-      downloadMbps: payload.network?.downloadMbps ?? undefined
+      linkMbps: payload.network?.linkMbps ?? undefined,
+      // Not gated on `networkState`: the radio's power is exactly what the indicator
+      // needs when the link-rate metric is unavailable (Wi-Fi off, or on Ethernet).
+      wifiPower: wifiPowerFrom(payload.network?.wifiPower),
+      signalRssi: payload.network?.signalRssi ?? undefined
     },
     battery: {
       state: batteryState,
@@ -85,16 +126,34 @@ function systemHealthFromMetrics(payload: SystemMetricsPayload): SystemHealthReg
   };
 }
 
-/** How a command-lifecycle status maps onto Heimlich's consciousness state (design spec §5.8). */
-const LIFECYCLE_TO_HEIMLICH: Readonly<Record<string, HeimlichState>> = {
-  received: "thinking",
-  planned: "thinking",
-  requires_confirmation: "awaiting_confirmation",
-  running: "acting",
-  succeeded: "success",
-  failed: "error",
-  cancelled: "idle"
-};
+/** Same slots in the same order — the no-op guard for quick-app updates. */
+function sameQuickApps(current: readonly string[], next: readonly string[]): boolean {
+  return current.length === next.length && current.every((id, index) => id === next[index]);
+}
+
+/**
+ * Regions a mode-switch snapshot must NOT author: they are runtime-owned — fed by a
+ * live stream (System Health ← `system.status.changed`) that is machine-global, not
+ * mode-scoped. `config.changed` swaps the mode's region data wholesale, so folding its
+ * honest pre-adapter placeholder over these would blank the live values until the next
+ * stream tick — the "unavailable" flash (NIC-136). Add a live-stream region's key here
+ * and it stops flashing on mode switch by construction.
+ */
+const RUNTIME_OWNED_REGIONS = ["systemHealth"] as const;
+
+/** Carry the runtime-owned regions from the current state over a mode-switch snapshot. */
+function preserveRuntimeRegions(
+  snapshotRegions: DashboardRegions,
+  current: DashboardRegions
+): DashboardRegions {
+  const merged: { -readonly [K in keyof DashboardRegions]: DashboardRegions[K] } = {
+    ...snapshotRegions
+  };
+  for (const key of RUNTIME_OWNED_REGIONS) {
+    merged[key] = current[key];
+  }
+  return merged;
+}
 
 /**
  * Pure reducer: fold one bridge event into dashboard state. Returns the SAME reference when
@@ -121,22 +180,150 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
       if (!snapshot || snapshot.mode === state.mode) {
         return state;
       }
-      return { ...state, ...snapshot };
+      // Swap the mode-scoped slice, but keep the runtime-owned regions (live-stream fed,
+      // mode-independent) so System Health and future live widgets don't revert to their
+      // unavailable state until the next stream tick (NIC-136).
+      return {
+        ...state,
+        ...snapshot,
+        regions: preserveRuntimeRegions(snapshot.regions, state.regions)
+      };
     }
-    case "command.lifecycle.transition": {
-      const status = String((event.payload as { currentStatus?: unknown }).currentStatus ?? "");
-      // A terminal command ends any live workflow-run progress (NIC-85).
-      const terminal = status === "succeeded" || status === "failed" || status === "cancelled";
-      const clearedRun = terminal && state.activeWorkflowRun ? null : state.activeWorkflowRun;
-      const next = LIFECYCLE_TO_HEIMLICH[status];
-      if ((!next || next === state.heimlich.state) && clearedRun === state.activeWorkflowRun) {
+    case "mode.quickapps.changed": {
+      // One mode's quick-app slots were rewritten through the validated override
+      // path (NIC-149). A dedicated per-widget event: `config.changed` is a mode
+      // *switch* whose snapshot omits `modes`, so it can never carry this.
+      const payload = event.payload as { modeId?: string; quickApps?: readonly string[] };
+      if (!payload.modeId || !Array.isArray(payload.quickApps)) {
+        return state;
+      }
+      const target = state.modes.find((mode) => mode.id === payload.modeId);
+      if (!target || sameQuickApps(target.quickApps, payload.quickApps)) {
         return state;
       }
       return {
         ...state,
-        heimlich: next ? { ...state.heimlich, state: next } : state.heimlich,
-        activeWorkflowRun: clearedRun
+        modes: state.modes.map((mode) =>
+          mode.id === payload.modeId ? { ...mode, quickApps: payload.quickApps ?? [] } : mode
+        )
       };
+    }
+    case "widget.data.changed": {
+      // One widget's producer streamed fresh data (NIC-131, the widget-liveness blueprint).
+      // Keyed into a runtime `liveWidgets` map by widget id; a rail resolves its slot as this
+      // value over the bootstrap `regions.widgets.{side}` (resolveWidgetData). Runtime-only
+      // state that lives OUTSIDE `regions`, so it survives `config.changed` mode switches by
+      // construction — no per-region preservation needed. A malformed payload, or an envelope
+      // whose own widgetId disagrees with the event key, is ignored (no fabricated update).
+      const payload = event.payload as { widgetId?: string; widget?: WidgetData };
+      const widget = payload.widget;
+      if (!payload.widgetId || !widget || widget.widgetId !== payload.widgetId) {
+        return state;
+      }
+      if (state.liveWidgets?.[payload.widgetId] === widget) {
+        return state;
+      }
+      return {
+        ...state,
+        liveWidgets: { ...state.liveWidgets, [payload.widgetId]: widget }
+      };
+    }
+    case "weather.changed": {
+      // The native weather producer streamed a fresh sample (NIC-169). Folded into the
+      // runtime-only `liveWeather` field — kept OUTSIDE the bootstrap `weather` channel so it
+      // survives `config.changed` mode switches by construction (same reasoning as `liveWidgets`)
+      // and never disturbs the per-mode mock `weather` fixtures. The bottom bar resolves
+      // `liveWeather` over the bootstrap `weather` (live wins). A payload missing a well-formed
+      // channel (`state` string) is ignored — no fabricated update.
+      const weather = (event.payload as { weather?: WeatherChannel }).weather;
+      if (!weather || typeof weather.state !== "string") {
+        return state;
+      }
+      if (state.liveWeather === weather) {
+        return state;
+      }
+      return { ...state, liveWeather: weather };
+    }
+    case "news.changed": {
+      // A news producer streamed fresh headlines for one relevance profile (NIC-127). News
+      // content differs per mode, so — unlike the single machine-global `liveWeather` — it folds
+      // into a runtime-only `liveNews` map keyed by `newsProfile`. The News panel resolves
+      // `liveNews[activeMode.newsProfile]` over the bootstrap `regions.news` (live wins). The map
+      // lives OUTSIDE `regions`, so it survives `config.changed` mode switches by construction
+      // (same reasoning as `liveWidgets`). A payload missing a non-empty profile or a well-formed
+      // region (`state` string) is ignored — no fabricated update.
+      const payload = event.payload as { profile?: string; news?: NewsRegion };
+      const news = payload.news;
+      if (!payload.profile || !news || typeof news.state !== "string") {
+        return state;
+      }
+      if (state.liveNews?.[payload.profile] === news) {
+        return state;
+      }
+      return { ...state, liveNews: { ...state.liveNews, [payload.profile]: news } };
+    }
+    case "mail.changed": {
+      // The unread-mail producer spoke (Gmail integration). Machine-global, so a single value
+      // rather than a per-mode map. A payload without a well-formed `state` is ignored rather than
+      // clearing a count that is still good.
+      const payload = event.payload as { state?: unknown };
+      if (typeof payload.state !== "string") {
+        return state;
+      }
+      return { ...state, mail: event.payload as unknown as MailChannel };
+    }
+    case "system.checks.changed": {
+      // A health run streamed its current state (quick actions phase 5). Every emission carries
+      // the WHOLE set, so this replaces rather than merges — there is no per-row reconciliation
+      // to drift out of step with the run. Machine-global, not per-mode: whether Accessibility is
+      // granted is a fact about the Mac. A payload without a checks array is ignored rather than
+      // clearing a run that is still going.
+      const payload = event.payload as { checks?: unknown; complete?: unknown };
+      if (!Array.isArray(payload.checks)) {
+        return state;
+      }
+      return { ...state, systemChecks: event.payload as unknown as SystemChecksPayload };
+    }
+    case "schedule.changed": {
+      // A calendar producer streamed a fresh schedule for one relevance profile (NIC-126). Calendar
+      // relevance differs per mode, so — like `liveNews`, and unlike the single machine-global
+      // `liveWeather` — it folds into a runtime-only `liveSchedule` map keyed by `calendarProfile`.
+      // The Today panel resolves `liveSchedule[activeMode.calendarProfile]` over the bootstrap
+      // `regions.schedule` (live wins). The map lives OUTSIDE `regions`, so it survives
+      // `config.changed` mode switches by construction (same reasoning as `liveWidgets`). A payload
+      // missing a non-empty profile or a well-formed region (`state` string) is ignored — no
+      // fabricated update.
+      const payload = event.payload as { profile?: string; schedule?: ScheduleRegion };
+      const schedule = payload.schedule;
+      if (!payload.profile || !schedule || typeof schedule.state !== "string") {
+        return state;
+      }
+      if (state.liveSchedule?.[payload.profile] === schedule) {
+        return state;
+      }
+      return {
+        ...state,
+        liveSchedule: { ...state.liveSchedule, [payload.profile]: schedule }
+      };
+    }
+    case "command.lifecycle.transition": {
+      // The command lifecycle deliberately does NOT drive Heimlich's state (NIC-171). It used to
+      // map onto Working/Done/Error, which was wrong twice over: `succeeded` and `failed` were
+      // terminal with nothing to return them to rest, so the indicator sat on "Done" until the
+      // next mode switch happened to swap the bootstrap `heimlich` — and, more fundamentally,
+      // animating an assistant lifecycle implies an assistant runtime that does not exist yet.
+      // Heimlich holds the bootstrap resting state ("Not implemented", NIC-124) until there is a
+      // real assistant to report on. `DashboardHeimlichState` keeps every case for that day.
+      //
+      // The workflow-run clearing below is separate and stays: it is quick-action progress
+      // (NIC-85), not assistant state.
+      const status = String((event.payload as { currentStatus?: unknown }).currentStatus ?? "");
+      // A terminal command ends any live workflow-run progress (NIC-85).
+      const terminal = status === "succeeded" || status === "failed" || status === "cancelled";
+      if (!terminal || !state.activeWorkflowRun) {
+        return state;
+      }
+      return { ...state, activeWorkflowRun: null };
     }
     case "workflow.action.progress": {
       // One step of an executing quick action started or finished (NIC-85).
@@ -209,6 +396,32 @@ export function reduceDashboardState(state: DashboardState, event: BridgeEvent):
           displays: payload.displays,
           primaryDisplayId: payload.primaryDisplayId ?? null
         }
+      };
+    }
+    case "layout.session.changed": {
+      // A layout was opened, changed, or ended (NIC-142). Runtime-only state — the
+      // bottom-bar layout section renders from it. A null payload ends the session.
+      const session = (event.payload as { session?: LayoutSession | null }).session ?? null;
+      const current = state.layoutSession ?? null;
+      if (session === current) {
+        return state;
+      }
+      return { ...state, layoutSession: session };
+    }
+    case "mode.windowcollapse.changed": {
+      // A mode's collapse-all state flipped (NIC-143), or the entered mode's state was
+      // re-announced on a switch. Runtime-only, session-only, per-mode state — the
+      // bottom-bar collapse/expand icon reads the current mode's entry.
+      const payload = event.payload as { modeId?: string; collapsed?: boolean };
+      if (!payload.modeId || typeof payload.collapsed !== "boolean") {
+        return state;
+      }
+      if ((state.windowCollapse?.[payload.modeId] ?? false) === payload.collapsed) {
+        return state;
+      }
+      return {
+        ...state,
+        windowCollapse: { ...state.windowCollapse, [payload.modeId]: payload.collapsed }
       };
     }
     case "system.status.changed": {

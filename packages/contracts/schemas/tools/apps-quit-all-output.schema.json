@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/apps-quit-all-output.schema.json",
+  "title": "CerebralHelm Apps Quit All Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "bundleIds"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["quit", "none"]
+    },
+    "bundleIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

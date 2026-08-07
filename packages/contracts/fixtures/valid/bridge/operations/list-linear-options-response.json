@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_listLinearOptionsRes00001",
+  "type": "bridge.operation.response",
+  "operation": "listLinearOptions",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "teams": [
+      {
+        "id": "team-1",
+        "key": "NIC",
+        "name": "CerebralHelm Development",
+        "projects": [{ "id": "proj-1", "name": "CerebralHelm" }],
+        "labels": [{ "id": "label-1", "name": "MVP Polish" }]
+      }
+    ],
+    "available": true,
+    "reason": null
+  }
+}

@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/reports/report-document.schema.json",
+  "title": "CerebralHelm Report Document",
+  "description": "The rendered form of every Report-archetype quick action (docs/quick-actions/PLAN.md). A report is NOT a template \u2014 it is a typed block document, because the deterministic composer that writes it today will be replaced by a model later. The pipeline is providers -> Assembler -> Snapshot -> Composer -> ReportDocument -> Renderer; only the Composer changes when the model lands, and the Renderer never does. A model streaming blocks into the renderer is visually identical to the deterministic reveal, which is why the future conversation surface is not a new surface.\n\nBlocks are intentionally a FLAT shape keyed by `kind` rather than a discriminated union: a union would make adding a block kind a breaking contract change, and the renderer already has to survive a malformed block once a model writes these. The renderer skips any block whose kind it does not know, or whose fields for that kind are absent \u2014 a report never crashes the dashboard.\n\nCodegen note: quicktype ignores `$defs` titles and names generated types from PROPERTY names, so a generic property name here mints (or steals) a generic type name across the whole shared contracts module. Hence the kind-prefixed field names on a block.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "reportId",
+    "blocks"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "reportId": {
+      "description": "The quick-action id this document was composed for, so the renderer can key its reveal and the region can title itself.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reportBlock"
+      }
+    },
+    "refreshable": {
+      "description": "Whether this report was composed from a fetch the reader can repeat. The region shows a refresh control only for a report that says so \u2014 offering one on a document composed from ambient state would promise something it cannot do.",
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "reportActionReference": {
+      "title": "CerebralHelmReportActionReference",
+      "description": "A clickable destination inside a report. It is NEVER a URL \u2014 it names a registered quick action, resolved through the dispatch registry. Two reasons this is non-negotiable: opening a destination in a specific Chrome profile is a profile-scoped reference (NIC-151), not an href; and once a model composes the document, every clickable thing in it is a model-chosen destination, so a raw href would let the model \u2014 or content it summarized \u2014 point anywhere. Params are untrusted, so the target tool builds its destination host-side (the `google.search` pattern: the host is fixed, only the query varies).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "reportBlockKind": {
+      "title": "CerebralHelmReportBlockKind",
+      "type": "string",
+      "enum": [
+        "greeting",
+        "line",
+        "metric",
+        "list",
+        "checklist",
+        "empty",
+        "count",
+        "proposal",
+        "scoreboard",
+        "leaderboard"
+      ]
+    },
+    "reportGreetingSize": {
+      "title": "CerebralHelmReportGreetingSize",
+      "type": "string",
+      "enum": [
+        "hero",
+        "standard"
+      ]
+    },
+    "reportLineEmphasis": {
+      "title": "CerebralHelmReportLineEmphasis",
+      "description": "`strong` uses weight, never color \u2014 inside a report, color means actionable.",
+      "type": "string",
+      "enum": [
+        "normal",
+        "strong",
+        "muted"
+      ]
+    },
+    "reportMetricTone": {
+      "title": "CerebralHelmReportMetricTone",
+      "type": "string",
+      "enum": [
+        "neutral",
+        "positive",
+        "warning",
+        "critical"
+      ]
+    },
+    "reportItemStatus": {
+      "title": "CerebralHelmReportItemStatus",
+      "description": "Only meaningful on a `checklist` block \u2014 the streaming variant of a list. `skipped` is deliberately NOT a failure: a check the user never configured, or one held back because probing it would spend a small daily quota, is neither passing nor broken, and rendering it as either would make the checklist lie in one direction or the other.",
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "passed",
+        "failed",
+        "skipped"
+      ]
+    },
+    "reportListItem": {
+      "title": "CerebralHelmReportListItem",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "meta": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/reportItemStatus"
+        },
+        "reportAction": {
+          "$ref": "#/$defs/reportActionReference"
+        }
+      }
+    },
+    "reportBlock": {
+      "title": "CerebralHelmReportBlock",
+      "description": "One block of a report. `blockKind` selects which of the optional fields carry meaning; the renderer reads only those and ignores the rest. Field names are deliberately kind-prefixed (`greetingSize`, `lineEmphasis`, `metricTone`, `listItems`, `reportAction`): they say which kind they belong to, which a flat block needs anyway, AND they keep codegen from minting single-word type names like `Kind` / `Tone` / `Size` in the shared namespace. That is not cosmetic \u2014 a bare `kind` here renamed the pre-existing layout `Kind` enum and broke LayoutWorkflowSynthesizer, and a bare `action` did the same to the mode-apply `Action` type.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "blockKind"
+      ],
+      "properties": {
+        "blockKind": {
+          "$ref": "#/$defs/reportBlockKind"
+        },
+        "text": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "greetingSize": {
+          "$ref": "#/$defs/reportGreetingSize"
+        },
+        "lineEmphasis": {
+          "$ref": "#/$defs/reportLineEmphasis"
+        },
+        "metricTone": {
+          "$ref": "#/$defs/reportMetricTone"
+        },
+        "listItems": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reportListItem"
+          }
+        },
+        "reportAction": {
+          "$ref": "#/$defs/reportActionReference"
+        },
+        "reportActions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reportActionReference"
+          }
+        },
+        "scoreboardSides": {
+          "description": "A `scoreboard` block's two sides, away first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reportScoreboardSide"
+          }
+        },
+        "leaderboardRows": {
+          "description": "A `leaderboard` block's ranked field, complete rather than truncated: `leaderboardPreview` decides how many show, so expanding needs no second fetch.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reportLeaderboardRow"
+          }
+        },
+        "leaderboardPreview": {
+          "description": "How many rows show before the reader expands. Absent shows all of them.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "reportScoreboardSide": {
+      "title": "Report Scoreboard Side",
+      "description": "One side of a team game. Carries the team's own colour so a scoreboard can look like one without fetching a logo.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sideAbbreviation",
+        "sideScore"
+      ],
+      "properties": {
+        "sideAbbreviation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sideName": {
+          "type": "string"
+        },
+        "sideScore": {
+          "type": "string"
+        },
+        "sideColor": {
+          "type": "string",
+          "description": "Bare hex, no leading '#', as the provider supplies it."
+        },
+        "sideIsHome": {
+          "type": "boolean"
+        },
+        "sideRecord": {
+          "type": "string"
+        }
+      }
+    },
+    "reportLeaderboardRow": {
+      "title": "Report Leaderboard Row",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rowName",
+        "rowScore"
+      ],
+      "properties": {
+        "rowPosition": {
+          "type": "string",
+          "description": "Displayed position ('T4'). Absent on a finished or unranked field."
+        },
+        "rowName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rowScore": {
+          "type": "string"
+        },
+        "rowThru": {
+          "type": "string",
+          "description": "Holes played, only while a round is in progress."
+        }
+      }
+    }
+  }
+}

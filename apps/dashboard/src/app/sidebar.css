@@ -1,0 +1,343 @@
+/* The edge sidebar (`index.html?surface=sidebar`): the dashboard's own controls re-laid as one
+   narrow, full-height column that reveals from the left screen edge over whatever is fullscreen.
+
+   This file is LAYOUT ONLY. Every color, radius, space and font here resolves through the same
+   `--ch-*` tokens the dashboard uses, and the panels/controls are the dashboard's own components —
+   the sidebar must never look like a second product (constitution §2: tokens, never literals).
+
+   The rules below are density overrides: the rail components assume a rail's width, and a slot
+   sized to a quarter of a 1440px canvas is unreadable at 340px. They narrow the *grid counts*,
+   never the visual grammar. */
+
+/* A border-box reset scoped to this surface. The app has no global one, so components that size
+   themselves `width: 100%` and then add padding (the Input region, the quick-action slots) spill
+   past a hard-width column. On the dashboard they never do — their hosts are percentage-capped
+   inside a much wider canvas — so this is corrected here rather than by changing shared rules. */
+.sidebar-root,
+.sidebar-root *,
+.sidebar-root *::before,
+.sidebar-root *::after {
+  box-sizing: border-box;
+}
+
+.sidebar-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  /* Full height of the panel the native shell sizes; the root font-size already scales off
+     viewport height, so the column's proportions match the dashboard's at the same screen. */
+  height: 100vh;
+  padding: var(--ch-space-4);
+  padding-top: calc(var(--ch-space-4) + var(--ch-safe-area-top));
+  overflow: hidden;
+  /* The whole column is glass (owner, 2026-08-07): a wash you can read straight through, with the
+     panes a tinge less translucent so they read as things rather than smudges. The mode menu is the
+     reference for the *kind* of look; the amount goes far past it.
+     The reveal animation is native (the window slides); the web layer only paints. */
+  position: relative;
+  background: var(--ch-glass-surface);
+  /* Inherited by every label in the column. At this translucency the fill carries no contrast, so
+     the text carries its own. */
+  text-shadow: var(--ch-glass-text-shadow);
+}
+
+/* ---- No unifier ------------------------------------------------------------------------
+   There is deliberately no column-wide backdrop any more (owner, 2026-08-07). A blurred film
+   spanning the full height of the screen is an enormous region of treatment for a handful of
+   controls, and it read as a dark slab rather than as anything floating. Everything that is not a
+   pane is now *completely transparent* — the panes are the only substance, and the gaps between
+   them show the user's actual work.
+
+   The blur went with it, and not reluctantly: it could never have worked here. Inside a transparent
+   WKWebView `backdrop-filter` samples the page's own backdrop, which is empty, and the native
+   alternative (`NSVisualEffectView`) blurs the entire window rect — the very thing being removed.
+   Blur behind the panes *only* would need one native effect view per pane, driven by geometry the
+   web layer reports; that is a real feature, not a CSS property. */
+
+/* ---- The panes --------------------------------------------------------------------------
+   Each pane floats on its own: a hairline lit from above and a specular sheen over the top third.
+   The mode accent tints both, so the column re-themes with the dashboard instead of staying grey. */
+.sidebar-glass {
+  position: relative;
+  border-radius: 20px;
+  /* One step up from the surface — enough to read as a box, not enough to stop being glass. The
+     border and the sheen do most of the work of defining it; the fill only has to hint. */
+  background: var(--ch-glass-pane);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 16%, rgba(255, 255, 255, 0.14));
+  /* A soft lift rather than the old heavy drop: at this translucency a strong shadow reads as a
+     dark halo smudged onto the desktop instead of as depth. */
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.sidebar-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 55%;
+  pointer-events: none;
+  /* Clips itself to the pane's corners, so the sheen does not depend on the pane clipping its
+     children — which `.sidebar-search` below cannot afford to do. */
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ch-accent-primary) 9%, rgba(255, 255, 255, 0.07)),
+    transparent
+  );
+}
+
+.sidebar-glass > * {
+  position: relative;
+}
+
+/* The search pane is the one that must NOT clip. `.command-suggestions` is absolutely positioned
+   below the field and therefore lands outside this box entirely — under `overflow: hidden` the
+   suggestion list is invisible, and the command surface silently loses the feature that makes it
+   a launcher rather than a text box. It gets its own inset instead, so the field floats inside the
+   glass the way every other pane's content does rather than running to the pane's edges. */
+.sidebar-search {
+  overflow: visible;
+  padding: var(--ch-space-2);
+}
+
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+  padding: var(--ch-space-3) var(--ch-space-4);
+  gap: var(--ch-space-4);
+}
+
+/* The hairline between sections is what does the grouping a per-region border used to do. */
+.sidebar-section + .sidebar-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: var(--ch-space-4);
+}
+
+.sidebar-cap {
+  margin: 0 0 var(--ch-space-2);
+  font-size: var(--ch-font-size-label);
+  letter-spacing: var(--ch-font-label-tracking);
+  text-transform: uppercase;
+  color: var(--ch-text-faint);
+}
+
+/* A pane already IS the surface, so the panels inside it stop being surfaces — glass inside glass
+   reads as a rendering mistake rather than as depth.
+
+   `padding: 0` is load-bearing, not tidying: `.sidebar-group` above now supplies the inset, and a
+   panel that keeps its own adds a second one inside it. The density overrides at the foot of this
+   file were measured against ~282px of usable width; a second inset drops that to ~252px and every
+   one of them — the 2-up quick actions, the 3-across app grid, the mode pills — is suddenly sized
+   for a column that no longer exists. Do not "restore" a panel padding here. */
+.sidebar-section .shell-panel {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+.sidebar-section .beam-overlay {
+  display: none;
+}
+
+/* ---- Foot: three controls that float separately, not a bar --------------------------------
+   Dashboard earns width and a label because it is the one actually aimed for; three identical
+   orbs would make the primary action the hardest to find. */
+.sidebar-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.sidebar-orb {
+  width: 2.6rem;
+  height: 2.6rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 16%, rgba(255, 255, 255, 0.14));
+  background: var(--ch-glass-box);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  color: var(--ch-text-muted);
+  font: inherit;
+  transition: all var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.sidebar-orb--wide {
+  width: auto;
+  flex: 1 1 auto;
+  grid-auto-flow: column;
+  gap: var(--ch-space-2);
+  padding: 0 var(--ch-space-4);
+  border-radius: var(--ch-radius-pill);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-primary);
+}
+
+.sidebar-orb svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.sidebar-orb:hover:not(:disabled),
+.sidebar-orb[aria-pressed="true"] {
+  color: var(--ch-text-primary);
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.38),
+    0 0 18px color-mix(in srgb, var(--ch-accent-primary) 25%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.sidebar-orb[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--ch-accent-primary) 20%, transparent);
+}
+
+.sidebar-orb:disabled {
+  opacity: 0.5;
+}
+
+/* ---- Scrolling body -------------------------------------------------------------------- */
+
+.sidebar-scroll {
+  /* `0 1 auto`, not `1 1 auto` (owner, 2026-08-07): the column stops stretching to fill the screen,
+     so the foot sits directly under the last pane instead of being pushed to the bottom edge — where
+     it collided with whatever was behind it and read as belonging to nothing. It still SHRINKS when
+     the content is taller than the window, which is what keeps the foot reachable. */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  /* Hairline scrollbar: the column is dense and a platform scrollbar eats real width. The
+     gutter keeps the overlay scrollbar off the panel edges rather than sitting on top of them. */
+  scrollbar-width: none;
+  /* Room for the panes' shadows to fall inside the clip rather than being cut at it. */
+  padding: 0.5rem;
+  margin: -0.5rem;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- Density overrides ----------------------------------------------------------------- */
+
+/* Quick actions: 4-up quarter rows become 2-up wrapped rows. The bars/boxes distinction (thin
+   row over wider row) is preserved — only the count per row changes. */
+.sidebar-root .quick-actions__bars,
+.sidebar-root .quick-actions__boxes {
+  flex-wrap: wrap;
+}
+
+.sidebar-root .quick-actions__bars {
+  width: 100%;
+}
+
+.sidebar-root .quick-action {
+  flex-basis: calc((100% - var(--ch-space-2)) / 2);
+}
+
+.sidebar-root .quick-action--bar {
+  flex-basis: calc((100% - var(--ch-space-3)) / 2);
+}
+
+/* --- Compression -------------------------------------------------------------------------
+   The whole column must fit without an internal scroll (owner requirement, 2026-08-03). The rail
+   components are sized for a tall dashboard rail; here every control collapses to a single-line
+   pill. Nothing is hidden and no control is dropped — they just stop reserving vertical space
+   they do not need at this width. */
+
+/* Mode controls: the rail stacks a large icon over its label in an aspect-ratio-locked box, tuned
+   for a ~240px rail. Here each becomes a short horizontal pill — icon beside label — which is
+   roughly a third of the height.
+
+   Kept 2×2 rather than the design sample's single row of four: the sample used short placeholder
+   names ("Dev", "Fun") while the real labels are Executive / Developer / School / Entertainment,
+   and four of those across 340px truncates every one of them. */
+.sidebar-root .mode-switcher {
+  gap: var(--ch-space-1);
+}
+
+.sidebar-root .mode-switcher__option {
+  aspect-ratio: auto;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-1) var(--ch-space-2);
+  font-size: var(--ch-font-size-label);
+}
+
+.sidebar-root .mode-switcher__icon svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.sidebar-root .mode-switcher__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Quick actions: the boxes' 3.5rem floor is what made the grid dominate the column. Both rows
+   become single-line pills, keeping the bar/box distinction as a weight difference only. */
+.sidebar-root .quick-action {
+  padding: var(--ch-space-1) var(--ch-space-2);
+  font-size: var(--ch-font-size-label);
+}
+
+.sidebar-root .quick-action--box {
+  min-height: 0;
+}
+
+.sidebar-root .quick-action--bar {
+  padding-block: var(--ch-space-1);
+}
+
+/* Today: the dashboard leads with a large clock and date, then reserves four event rows so the
+   widget's height never changes. In the column both are wasted height — the clock duplicates the
+   menu bar, and the reserved rows hold space for events that are not there. Drop the clock and let
+   the list size to its actual contents (owner decision: a concise list of calendar items). */
+.sidebar-root .calendar__time,
+.sidebar-root .calendar__date,
+.sidebar-root .calendar__event--empty {
+  display: none;
+}
+
+.sidebar-root .calendar__events {
+  grid-template-rows: none;
+  grid-auto-rows: auto;
+  margin-top: 0;
+}
+
+/* Agents: the rail gives each one a card with generous padding and spreads them down a tall
+   panel. In the column they are a compact status list — same card treatment, one line each. */
+.sidebar-root .agent-list {
+  gap: var(--ch-space-1);
+}
+
+.sidebar-root .agent-list__item {
+  padding: var(--ch-space-1) var(--ch-space-2);
+  font-size: var(--ch-font-size-label);
+}
+
+/* Quick apps: shorter tiles. The glyph stays legible; only the padding around it goes. */
+.sidebar-root .quick-app {
+  padding: var(--ch-space-1);
+  gap: 0.15rem;
+  font-size: var(--ch-font-size-label);
+}
+
+/* Quick apps: six across is unreadable at this width. */
+.sidebar-root .quick-apps {
+  grid-template-columns: repeat(3, 1fr);
+}
+

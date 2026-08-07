@@ -1,5 +1,6 @@
 {
   "urlId": "github",
   "opened": true,
-  "resolvedUrl": "https://github.com"
+  "resolvedUrl": "https://github.com",
+  "surfaced": false
 }

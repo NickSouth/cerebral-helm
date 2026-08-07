@@ -19,12 +19,14 @@ public enum PreMacToolRuntime {
         descriptorsDirectory: URL,
         capabilities: ToolCapabilities = .mocks(),
         knowledge: any KnowledgeService = MockKnowledgeService(),
+        courseNotebook: any CourseNotebook = MockCourseNotebook(),
         hookCatalog: HookCatalog = HookCatalog(),
         modePlanner: any ActionPlanner = StubModePlanner(),
         modeIDs: Set<String> = [],
         modeStateStore: any ModeStateStore = InMemoryModeStateStore(),
         modeSessionLog: any ModeSessionLog = InMemoryModeSessionLog(),
         modeWorkspaceStore: any ModeWorkspaceStore = InMemoryModeWorkspaceStore(),
+        modeWindowStateStore: any ModeWindowStateStore = InMemoryModeWindowStateStore(),
         settingsStore: (any SettingsStore)? = nil,
         appTargets: [String: String] = [:]
     ) throws -> ToolRegistry {
@@ -32,11 +34,31 @@ public enum PreMacToolRuntime {
 
         let handlers: [String: any ToolHandler] = [
             "app.open": AppOpenHandler(capability: capabilities.app),
+            "project.open": ProjectOpenHandler(capability: capabilities.project),
             "url.open": URLOpenHandler(capability: capabilities.url),
             "system.status.read": SystemStatusReadHandler(capability: capabilities.systemStatus),
+            "network.speed.test": NetworkSpeedTestHandler(capability: capabilities.networkSpeedTest),
             "apps.list": AppsListHandler(capability: capabilities.appDiscovery),
+            "app.quit": AppQuitHandler(capability: capabilities.applicationLifecycle),
+            "calendar.createevent": CalendarCreateEventHandler(capability: capabilities.calendarWrite),
+            "apps.quitall": AppsQuitAllHandler(capability: capabilities.applicationLifecycle),
+            "google.search": GoogleSearchHandler(capability: capabilities.googleSearch),
+            "youtube.search": YouTubeSearchHandler(capability: capabilities.youtubeSearch),
+            "git.clone": GitCloneHandler(capability: capabilities.gitClone),
+            "project.scaffold": ProjectScaffoldHandler(capability: capabilities.projectScaffold),
+            "linear.createissue": LinearCreateIssueHandler(capability: capabilities.linearIssue),
+            "spotify.createplaylist": SpotifyCreatePlaylistHandler(capability: capabilities.spotifyPlaylist),
+            "messages.send": MessagesSendHandler(capability: capabilities.messaging),
+            "spotify.control": SpotifyControlHandler(capability: capabilities.spotifyControl),
+            "web.open": WebOpenHandler(capability: capabilities.webOpen),
             "note.capture": NoteCaptureHandler(knowledge: knowledge),
             "note.search": NoteSearchHandler(knowledge: knowledge),
+            "note.list": NoteListHandler(knowledge: knowledge),
+            "note.read": NoteReadHandler(knowledge: knowledge),
+            "note.open": NoteOpenHandler(knowledge: knowledge, capability: capabilities.noteOpen),
+            "mail.open": MailOpenHandler(capability: capabilities.mailOpen),
+            "course.list": CourseListHandler(notebook: courseNotebook),
+            "course.note.create": CourseNoteCreateHandler(notebook: courseNotebook),
             "hook.run": HookRunHandler(catalog: hookCatalog, capability: capabilities.process),
             "window.arrange": WindowArrangeHandler(capability: capabilities.window, appTargets: appTargets),
             "mode.apply": ModeApplyHandler(
@@ -46,7 +68,9 @@ public enum PreMacToolRuntime {
                 settings: settingsStore,
                 workspaceStore: modeWorkspaceStore,
                 windows: capabilities.workspaceWindows,
-                windowFrames: capabilities.window
+                windowFrames: capabilities.window,
+                appWindows: capabilities.appWindows,
+                windowStates: modeWindowStateStore
             ),
         ]
 
@@ -102,14 +126,34 @@ public enum PreMacToolRuntime {
         let data = input ?? Data("{}".utf8)
         switch toolID {
         case "app.open": _ = try CerebralHelmAppOpenInput(data: data)
+        case "project.open": _ = try CerebralHelmProjectOpenInput(data: data)
         case "url.open": _ = try CerebralHelmURLOpenInput(data: data)
         case "hook.run": _ = try CerebralHelmHookRunInput(data: data)
         case "note.capture": _ = try CerebralHelmNoteCaptureInput(data: data)
         case "note.search": _ = try CerebralHelmNoteSearchInput(data: data)
+        case "note.list": _ = try CerebralHelmNoteListInput(data: data)
+        case "note.read": _ = try CerebralHelmNoteReadInput(data: data)
+        case "note.open": _ = try CerebralHelmNoteOpenInput(data: data)
+        case "mail.open": _ = try CerebralHelmMailOpenInput(data: data)
+        case "course.list": _ = try CerebralHelmCourseListInput(data: data)
+        case "course.note.create": _ = try CerebralHelmCourseNoteCreateInput(data: data)
         case "mode.apply": _ = try CerebralHelmModeApplyInput(data: data)
         case "window.arrange": _ = try CerebralHelmWindowArrangeInput(data: data)
         case "system.status.read": _ = try CerebralHelmSystemStatusReadInput(data: data)
+        case "network.speed.test": _ = try CerebralHelmNetworkSpeedTestInput(data: data)
         case "apps.list": _ = try CerebralHelmAppsListInput(data: data)
+        case "app.quit": _ = try CerebralHelmAppQuitInput(data: data)
+        case "calendar.createevent": _ = try CerebralHelmCalendarCreateEventInput(data: data)
+        case "apps.quitall": _ = try CerebralHelmAppsQuitAllInput(data: data)
+        case "google.search": _ = try CerebralHelmGoogleSearchInput(data: data)
+        case "youtube.search": _ = try CerebralHelmYouTubeSearchInput(data: data)
+        case "git.clone": _ = try CerebralHelmGitCloneInput(data: data)
+        case "project.scaffold": _ = try CerebralHelmProjectScaffoldInput(data: data)
+        case "linear.createissue": _ = try CerebralHelmLinearCreateIssueInput(data: data)
+        case "spotify.createplaylist": _ = try CerebralHelmSpotifyCreatePlaylistInput(data: data)
+        case "messages.send": _ = try CerebralHelmMessagesSendInput(data: data)
+        case "spotify.control": _ = try CerebralHelmSpotifyControlInput(data: data)
+        case "web.open": _ = try CerebralHelmWebOpenInput(data: data)
         default: break
         }
     }
@@ -118,6 +162,7 @@ public enum PreMacToolRuntime {
         descriptorsDirectory: URL,
         capabilities: ToolCapabilities = .mocks(),
         knowledge: any KnowledgeService = MockKnowledgeService(),
+        courseNotebook: any CourseNotebook = MockCourseNotebook(),
         hookCatalog: HookCatalog = HookCatalog(),
         modePlanner: any ActionPlanner = StubModePlanner(),
         policy: PolicyEngine = PolicyEngine(),
@@ -128,6 +173,7 @@ public enum PreMacToolRuntime {
             descriptorsDirectory: descriptorsDirectory,
             capabilities: capabilities,
             knowledge: knowledge,
+            courseNotebook: courseNotebook,
             hookCatalog: hookCatalog,
             modePlanner: modePlanner
         )

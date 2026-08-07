@@ -15,13 +15,13 @@
   "quickApps": [],
   "quickActions": [
     "open-developer-layout",
-    "open-workspace",
-    "run-tests",
-    "search-notes",
-    "git-status",
+    "git-clone",
+    "create-event",
+    "create-ticket",
+    "check-ondraft",
     "open-terminal",
-    "review-pull-requests",
-    "capture-note"
+    null,
+    null
   ],
   "widgets": {
     "left": "project-git-status",
@@ -31,5 +31,18 @@
     "cerebralhelm",
     "active-pull-request"
   ],
-  "layoutId": "developer.default"
+  "layoutId": "developer.default",
+  "layout": {
+    "display": "primary",
+    "windows": [
+      { "ref": "claude-desktop", "kind": "app", "frame": "right-third" }
+    ],
+    "quickToggle": {
+      "frame": "left-two-thirds",
+      "targets": [
+        { "ref": "vscode", "kind": "app" },
+        { "ref": "github", "kind": "url" }
+      ]
+    }
+  }
 }

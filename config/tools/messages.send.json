@@ -1,0 +1,6 @@
+{
+  "id": "messages.send",
+  "risk": "external_write",
+  "timeoutMs": 20000,
+  "availableInPreMac": false
+}

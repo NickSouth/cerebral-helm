@@ -84,6 +84,9 @@
   background: var(--ch-surface-raised);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
   overflow: hidden;
+  /* Slightly larger, more legible settings type (NIC-140): the surface reads at the
+     base size and the secondary text below steps up from sm to base to match. */
+  font-size: var(--ch-font-size-base);
   /* Open motion: the window emerges from the bottom-right corner — where the bottom bar's
      settings control lives — sliding up the diagonal while it expands and sharpens from a
      blur. Closing reverses back into the corner, faster (motion-base); SettingsOverlay
@@ -109,6 +112,40 @@
   border-radius: 0;
   box-shadow: none;
   animation: none;
+  /* The native window is transparent over an `NSVisualEffectView` (`VibrantWindowChrome`), so the
+     window-level fill has to go or the vibrancy is behind an opaque page and shows nothing. The
+     two panes below take over, each with the opacity its content earns — this is where the split
+     lives, deliberately: translucency on the chrome, near-opacity behind reading text. */
+  background: transparent;
+  /* Frameless native window (NIC-140): the macOS title bar is hidden and a native
+     40px transparent drag band overlays the top edge so the window drags from its whole
+     top (the WKWebView otherwise swallows movableByWindowBackground). Push the top-row
+     controls (first category tab, close ×, panel header) below that band so nothing
+     interactive is covered — the × is the only close affordance. */
+  --ch-standalone-titlebar: 2.5rem;
+}
+
+.settings-window[data-standalone="true"] .settings-sidebar {
+  padding-top: calc(var(--ch-space-4) + var(--ch-standalone-titlebar));
+  /* Chrome: a category list of short labels and coloured marks, which stays legible over a blur.
+     This is the pane the vibrancy is for. */
+  background: color-mix(in srgb, rgb(var(--ch-surface-panel-rgb)) 34%, transparent);
+}
+
+/* Reading pane: settings text is dense, small, and the one thing here a user has to be able to
+   parse without effort. The design spec already made this call once for the Report region — it
+   chose opacity because that meets the contrast requirement *by construction*, rather than hoping
+   the desktop behind the window is quiet. Same reasoning, same answer. */
+.settings-window[data-standalone="true"] .settings-content {
+  background: color-mix(in srgb, rgb(var(--ch-surface-panel-rgb)) 94%, transparent);
+}
+
+.settings-window[data-standalone="true"] .settings-content__header {
+  padding-top: calc(var(--ch-space-5) + var(--ch-standalone-titlebar));
+}
+
+.settings-window[data-standalone="true"] .settings-content__close {
+  top: calc(var(--ch-space-4) + var(--ch-standalone-titlebar));
 }
 
 /* Left rail: category list on top, shutdown pinned to the bottom. */
@@ -131,18 +168,43 @@
   min-height: 0;
 }
 
+/* Icon-first, the way macOS System Settings is: the mark is what you actually navigate by once
+   the list is familiar, and the label confirms it. Replaces a column of bare text rows. */
 .settings-category {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-3);
   font: inherit;
   text-align: left;
   padding: var(--ch-space-2) var(--ch-space-3);
   border-radius: var(--ch-radius-md);
   border: 1px solid transparent;
   background: transparent;
-  color: var(--ch-text-muted);
+  color: var(--ch-text-primary);
   cursor: pointer;
   transition:
     background var(--ch-motion-fast) var(--ch-ease-standard),
     color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+/* Filled rounded square in the category's OWN fixed colour — identity, so it does not follow the
+   mode accent. The glyph is punched out in the page's base colour rather than white, so the mark
+   sits in the palette instead of glaring out of it. */
+.settings-category__mark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 7px;
+  background: var(--cat);
+  color: var(--ch-bg-base);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.settings-category__mark svg {
+  width: 62%;
+  height: 62%;
 }
 
 .settings-category:hover {
@@ -204,7 +266,7 @@
 .settings-content__description {
   margin: var(--ch-space-1) 0 0;
   color: var(--ch-text-muted);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
 }
 
 .settings-content__close {
@@ -275,7 +337,7 @@
 
 .settings-field__hint {
   color: var(--ch-text-faint);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
 }
 
 .settings-field__control {
@@ -284,13 +346,13 @@
 
 .settings-readonly {
   color: var(--ch-text-muted);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
 }
 
 .settings-note {
   margin: 0;
   color: var(--ch-text-muted);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
   line-height: 1.5;
 }
 
@@ -328,7 +390,7 @@
 
 .settings-list__sub {
   color: var(--ch-text-muted);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
 }
 
 .settings-list__meta {
@@ -340,7 +402,7 @@
 
 .settings-list__policy {
   color: var(--ch-text-muted);
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
 }
 
 .settings-badge {
@@ -370,7 +432,7 @@
 .settings-select,
 .settings-input {
   font: inherit;
-  font-size: var(--ch-font-size-sm);
+  font-size: var(--ch-font-size-base);
   padding: var(--ch-space-2) var(--ch-space-3);
   border-radius: var(--ch-radius-md);
   border: 1px solid var(--ch-panel-border);
@@ -382,8 +444,659 @@
   min-width: 14rem;
 }
 
+/* Calendar → mode mapping (NIC-126): one row per calendar — colour swatch, title, mode select. */
+.settings-calendars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+.settings-calendars__row {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+.settings-calendars__swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex: 0 0 auto;
+  border-radius: var(--ch-radius-sm);
+  background: var(--ch-panel-border);
+}
+.settings-calendars__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-calendars__empty {
+  color: var(--ch-text-secondary);
+}
+
+/* Canvas connect card (NIC-132): the pairing endpoint + token to paste into the Chrome extension,
+   the last-scrape status line, and a Disconnect button. */
+/* Library summary (NIC-162): the note count, the source root, and the most recent notes. */
+.settings-library {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  align-items: flex-end;
+  text-align: right;
+}
+
+.settings-library__root {
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  word-break: break-all;
+}
+
+.settings-library__recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.settings-library__note {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.settings-library__note-title {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-primary);
+}
+
+.settings-library__note-meta {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* Rebuild-index action (NIC-163): the button plus its outcome line. */
+.settings-rebuild {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  flex-wrap: wrap;
+}
+
+.settings-rebuild__error {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-status-error);
+}
+
+.settings-canvas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  align-items: flex-start;
+}
+.settings-canvas__pair {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  width: 100%;
+  min-width: 0;
+}
+.settings-canvas__label {
+  flex: 0 0 auto;
+  width: 4.5rem;
+  color: var(--ch-text-secondary);
+  font-size: var(--ch-font-size-label);
+}
+.settings-canvas__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-primary);
+  padding: 2px var(--ch-space-2);
+  background: color-mix(in srgb, var(--ch-accent-primary) 8%, transparent);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+}
+.settings-canvas__token {
+  /* The token is long — let it scroll rather than stretch the row. */
+  overflow-x: auto;
+}
+.settings-canvas__status {
+  margin: 0;
+  color: var(--ch-text-secondary);
+  font-size: var(--ch-font-size-label);
+}
+
+/* The manage-list: hide/unhide individual scraped courses + assignments (NIC-132). */
+.settings-canvas__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  width: 100%;
+}
+.settings-canvas__group-title {
+  color: var(--ch-text-secondary);
+  font-size: var(--ch-font-size-label);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.settings-canvas__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+.settings-canvas__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+}
+.settings-canvas__item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+}
+.settings-canvas__item--hidden .settings-canvas__item-label {
+  color: var(--ch-text-faint);
+  text-decoration: line-through;
+}
+
+/* Knowledge-root picker: text field + native Finder "Browse…" button. */
+.settings-root-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  flex: none;
+}
+
+/* Secret-provisioning row (NIC-134): a presence chip + masked input + Save. */
+.settings-secret {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  flex: none;
+}
+
+.settings-secret__status {
+  flex: none;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  white-space: nowrap;
+}
+
+.settings-secret__status[data-bound="true"] {
+  color: var(--ch-accent-primary);
+}
+
+/* Stocks widget ticker editor (NIC-128): add/remove chips + an add row. */
+.settings-tickers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+}
+
+.settings-tickers__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-tickers__empty {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.settings-tickers__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-1);
+  padding: 2px var(--ch-space-1) 2px var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-sm);
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-primary);
+}
+
+.settings-tickers__remove {
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.settings-tickers__remove:hover {
+  color: var(--ch-status-error);
+}
+
+.settings-tickers__add {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.settings-tickers__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+}
+
+/* Per-mode layout authoring editor (NIC-142). */
+.settings-layout-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-3) 0;
+  border-top: 1px solid var(--ch-panel-border);
+}
+
+.settings-layout-editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-3);
+}
+
+.settings-layout-editor__windows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.settings-layout-editor__window {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  color: var(--ch-text-primary);
+}
+
+/* The layout authoring canvas (NIC-142 increment 5): a proportional view of the
+   display; each window is a draggable/resizable rectangle that snaps to a named frame. */
+.layout-canvas {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background:
+    linear-gradient(color-mix(in srgb, var(--ch-accent-primary) 6%, transparent), transparent),
+    var(--ch-surface-sunken, rgb(0 0 0 / 0.18));
+  overflow: hidden;
+  touch-action: none;
+}
+
+.layout-canvas__win {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ch-space-2);
+  box-sizing: border-box;
+  border: 1.5px solid color-mix(in srgb, var(--ch-accent-secondary) 55%, transparent);
+  border-radius: var(--ch-radius-sm);
+  background: color-mix(in srgb, var(--ch-accent-secondary) 16%, var(--ch-surface-raised));
+  color: var(--ch-text-primary);
+  cursor: grab;
+  user-select: none;
+  overflow: hidden;
+}
+
+.layout-canvas__win[data-dragging="true"] {
+  cursor: grabbing;
+  z-index: 3;
+  opacity: 0.92;
+}
+
+.layout-canvas__win[data-hotswap="true"] {
+  border-color: var(--ch-accent-primary);
+  background: color-mix(in srgb, var(--ch-accent-primary) 20%, var(--ch-surface-raised));
+  z-index: 2;
+}
+
+.layout-canvas__win-label {
+  font-size: var(--ch-font-size-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layout-canvas__win-frame {
+  font-size: var(--ch-font-size-xs);
+  color: var(--ch-text-muted);
+}
+
+.layout-canvas__remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 1.35rem;
+  height: 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--ch-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.layout-canvas__remove:hover,
+.layout-canvas__remove:focus-visible {
+  color: var(--ch-status-error);
+  background: color-mix(in srgb, var(--ch-text-primary) 12%, transparent);
+}
+
+/* Four corner resize handles (NIC-142): a larger grab target so any edge is easy to
+   move; the free rect then snaps to the nearest named frame. */
+.layout-canvas__handle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--ch-accent-primary);
+  background: var(--ch-surface-raised);
+  border-radius: 50%;
+  z-index: 4;
+}
+
+.layout-canvas__handle[data-corner="nw"] {
+  top: -8px;
+  left: -8px;
+  cursor: nwse-resize;
+}
+.layout-canvas__handle[data-corner="ne"] {
+  top: -8px;
+  right: -8px;
+  cursor: nesw-resize;
+}
+.layout-canvas__handle[data-corner="sw"] {
+  bottom: -8px;
+  left: -8px;
+  cursor: nesw-resize;
+}
+.layout-canvas__handle[data-corner="se"] {
+  bottom: -8px;
+  right: -8px;
+  cursor: nwse-resize;
+}
+
+/* Editor add controls + the hotswap targets section (NIC-142 increment 6). */
+.layout-editor__adders {
+  display: flex;
+  gap: var(--ch-space-2);
+}
+
+.layout-editor__hotswap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.layout-editor__hotswap-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.layout-editor__hotswap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-1);
+  padding: var(--ch-space-1) var(--ch-space-2);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 32%, var(--ch-panel-border));
+  border-radius: var(--ch-radius-pill);
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
+  color: var(--ch-text-primary);
+  font-size: var(--ch-font-size-sm);
+}
+
+/* Icon-first chip: the target's app icon / URL favicon (Chrome-profile aware),
+   matching the bottom-bar hotswap pill (NIC-142). */
+.layout-editor__hotswap-chip-icon {
+  position: relative;
+  display: inline-flex;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--ch-accent-secondary);
+}
+
+.layout-editor__hotswap-chip-icon img {
+  width: 100%;
+  height: 100%;
+  border-radius: 22%;
+  object-fit: cover;
+}
+
+.layout-editor__hotswap-chip-icon .app-glyph {
+  width: 100%;
+  height: 100%;
+}
+
+.layout-editor__hotswap-chip-badge {
+  position: absolute;
+  bottom: -2px;
+  left: -3px;
+  width: 0.6rem !important;
+  height: 0.6rem !important;
+  border-radius: 50% !important;
+  box-shadow: 0 0 0 1.5px var(--ch-surface-base);
+}
+
+.layout-editor__hotswap-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--ch-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.layout-editor__hotswap-remove:hover,
+.layout-editor__hotswap-remove:focus-visible {
+  color: var(--ch-status-error);
+}
+
+/* The standalone layout editor window (NIC-142, `?surface=layouteditor`): a themed
+   frameless window (the same "own window" treatment as More Apps / Settings), with a
+   themed header + × instead of native chrome. */
+.layout-editor-window {
+  width: 100%;
+  min-height: 100vh;
+  background: linear-gradient(var(--ch-bg-gradient-top), var(--ch-bg-base));
+}
+
+.layout-editor--standalone {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+}
+
+.layout-editor__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ch-space-3) var(--ch-space-4);
+  border-bottom: 1px solid var(--ch-panel-border);
+  background: linear-gradient(
+    color-mix(in srgb, var(--ch-accent-primary) 8%, transparent),
+    transparent
+  );
+}
+
+.layout-editor__title {
+  margin: 0;
+  font-size: var(--ch-font-size-md);
+  color: var(--ch-text-primary);
+}
+
+.layout-editor__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--ch-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--ch-radius-sm);
+  cursor: pointer;
+}
+
+.layout-editor__close:hover,
+.layout-editor__close:focus-visible {
+  color: var(--ch-text-primary);
+  background: color-mix(in srgb, var(--ch-text-primary) 12%, transparent);
+}
+
+.layout-editor__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-4);
+  overflow-y: auto;
+}
+
+.settings-button {
+  font: inherit;
+  font-size: var(--ch-font-size-base);
+  white-space: nowrap;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: color-mix(in srgb, var(--ch-accent-primary) 12%, transparent);
+  color: var(--ch-text-primary);
+  cursor: pointer;
+  transition: background var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.settings-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ch-accent-primary) 22%, transparent);
+}
+
+.settings-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-button:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
+/* Per-section Save/Cancel/Restore footer. */
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  margin-top: var(--ch-space-4);
+  padding-top: var(--ch-space-4);
+  border-top: 1px solid color-mix(in srgb, var(--ch-panel-border) 60%, transparent);
+}
+
+.settings-actions__spacer {
+  flex: 1 1 auto;
+}
+
+.settings-button--ghost {
+  background: transparent;
+}
+
+.settings-button--ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
+}
+
+.settings-button--primary {
+  background: color-mix(in srgb, var(--ch-accent-primary) 85%, transparent);
+  border-color: var(--ch-accent-primary);
+  color: var(--ch-text-primary);
+  font-weight: var(--ch-font-weight-medium);
+}
+
+.settings-button--primary:hover:not(:disabled) {
+  background: var(--ch-accent-primary);
+}
+
+/* Matches the `shut-down` quick action: outline red, never filled. */
+.settings-shutdown:hover:not(:disabled) {
+  border-color: var(--ch-status-error);
+  background: color-mix(in srgb, var(--ch-status-error) 12%, transparent);
+}
+
 .settings-select:focus-visible,
 .settings-input:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
+/* Per-mode accent color pickers (native color wheel popup). */
+.settings-color-pair {
+  display: flex;
+  gap: var(--ch-space-2);
+  flex: none;
+}
+
+.settings-color {
+  width: 2.5rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-color::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.settings-color::-webkit-color-swatch {
+  border: none;
+  border-radius: calc(var(--ch-radius-md) - 2px);
+}
+
+.settings-color:focus-visible {
   outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
   outline-offset: var(--ch-focus-ring-offset);
 }

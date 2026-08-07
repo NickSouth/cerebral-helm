@@ -1,0 +1,29 @@
+{
+  "id": "developer",
+  "label": "Developer",
+  "theme": {
+    "accentPrimary": "developer.primary",
+    "accentSecondary": "developer.secondary"
+  },
+  "quickApps": ["vscode", "terminal"],
+  "quickActions": [
+    "open-developer-layout",
+    "open-workspace",
+    "run-tests",
+    "search-notes",
+    "git-status",
+    "open-terminal",
+    "review-pull-requests",
+    "capture-note"
+  ],
+  "widgets": {
+    "left": "project-git-status",
+    "right": "repositories"
+  },
+  "layout": {
+    "display": "primary",
+    "windows": [
+      { "ref": "vscode", "kind": "app", "frame": "left-quarter" }
+    ]
+  }
+}

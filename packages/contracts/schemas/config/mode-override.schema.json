@@ -23,6 +23,10 @@
       "maxItems": 5,
       "uniqueItems": true
     },
+    "layout": {
+      "description": "The mode's authored window layout (NIC-142), replacing the shipped layout. Its structure matches the mode config's `layout` (mode.schema.json `$defs/layout`); it is carried opaquely here — validated structurally in the config validator by decoding it into the same Layout type — so the generated override type stays a flat document and the layout's named types are defined once, on the mode config.",
+      "type": "object"
+    },
     "extensions": {
       "$ref": "#/$defs/extensions"
     }

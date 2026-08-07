@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_scaffoldProjectReq000001",
+  "type": "bridge.operation.request",
+  "operation": "scaffoldProject",
+  "payload": {
+    "name": "Helm Companion",
+    "location": "CerebralHelm",
+    "summary": "A companion surface for secondary displays.",
+    "importance": 7
+  }
+}

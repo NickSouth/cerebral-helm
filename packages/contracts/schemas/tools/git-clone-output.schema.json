@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/git-clone-output.schema.json",
+  "title": "CerebralHelm Git Clone Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["clonedPath", "clonedRepositoryName"],
+  "properties": {
+    "clonedPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The absolute path the repository was cloned to, always inside the projects root."
+    },
+    "clonedRepositoryName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The folder name the clone landed in."
+    }
+  }
+}

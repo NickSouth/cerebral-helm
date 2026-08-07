@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/mail-open-input.schema.json",
+  "title": "CerebralHelm Mail Open Input",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "mailMessageId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The RFC 5322 Message-ID of the email to open, without the angle brackets. Omit to open the inbox itself. The adapter builds the mail.google.com URL host-side with the host as a literal constant — only this id varies — so untrusted data can never choose the destination."
+    }
+  }
+}

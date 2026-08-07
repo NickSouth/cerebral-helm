@@ -1,0 +1,6 @@
+{
+  "id": "project.scaffold",
+  "risk": "local_write",
+  "timeoutMs": 15000,
+  "availableInPreMac": false
+}

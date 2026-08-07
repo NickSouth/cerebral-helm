@@ -53,6 +53,11 @@ public enum PermissionCatalog {
                 explanation: "CerebralHelm needs the Accessibility permission to arrange application windows.",
                 settingsDeepLink: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
             )
+        case "location":
+            return PermissionGuidance(
+                explanation: "CerebralHelm needs Location access to show the weather for where you are.",
+                settingsDeepLink: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices"
+            )
         case "application_launch":
             return PermissionGuidance(explanation: "Opening configured applications requires no additional macOS permission.")
         case "url_open":
@@ -63,6 +68,18 @@ public enum PermissionCatalog {
             return PermissionGuidance(explanation: "Reading and writing your knowledge notes uses your own files; no additional macOS permission is required.")
         case "system_metrics_read":
             return PermissionGuidance(explanation: "Reading CPU, memory, network, and battery metrics requires no additional macOS permission.")
+        case "contacts_read":
+            return PermissionGuidance(
+                explanation: "CerebralHelm reads your contacts so you can pick who a message goes to. It is asked for the first time you open the Send text form.",
+                settingsDeepLink: "x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts"
+            )
+        case "messages_automation":
+            return PermissionGuidance(
+                explanation: "CerebralHelm needs permission to control Messages to send a text. Every send is confirmed first, with the recipient and the message shown.",
+                settingsDeepLink: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
+            )
+        case "projects_root_write":
+            return PermissionGuidance(explanation: "Cloning into your projects folder uses your own files; no additional macOS permission is required.")
         case "mode_plan_execute":
             return PermissionGuidance(explanation: "Applying a mode executes only its planned, policy-gated actions; no additional macOS permission is required.")
         default:

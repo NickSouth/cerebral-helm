@@ -56,11 +56,13 @@
       "enum": ["descriptor_risk", "highest_planned_action"]
     },
     "confirmationPolicyKey": {
+      "description": "Which confirmation rule the deterministic policy engine applies to this tool. `allow_external_write_when_user_authored` is the one provenance-conditioned key: a low-stakes external write runs one-click when the user authored the arguments, and still confirms when a model proposed them. It only ever affects the `external_write` class — destructive, financial, and purchase_or_booking are never exemptible — and the stricter-only 'ask before all actions' overlay still re-arms confirmation over it.",
       "type": "string",
       "enum": [
         "allow_read_without_confirmation",
         "confirm_local_write",
         "confirm_external_write",
+        "allow_external_write_when_user_authored",
         "confirm_destructive",
         "confirm_shell",
         "confirm_financial",

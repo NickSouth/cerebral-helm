@@ -17,7 +17,8 @@ const expectedSchemaNames = new Set([
   "handshake-request.schema.json",
   "handshake-response.schema.json",
   "operation-request.schema.json",
-  "operation-response.schema.json"
+  "operation-response.schema.json",
+  "settings-snapshot.schema.json"
 ]);
 
 const bridgeOperations = new Set([
@@ -31,7 +32,52 @@ const bridgeOperations = new Set([
   "subscribe",
   "getRecentActivity",
   "listApps",
-  "updateQuickApps"
+  "updateQuickApps",
+  "runSpeedTest",
+  "getSettings",
+  "storeSecret",
+  "getSecretStatus",
+  "deleteSecret",
+  "connectSpotify",
+  "addUrlReference",
+  "listUrls",
+  "listChromeProfiles",
+  "addChromeProfileReference",
+  "openLayout",
+  "closeLayout",
+  "toggleLayout",
+  "pinLayoutWindow",
+  "updateLayout",
+  "captureLayout",
+  "addLayoutTarget",
+  "toggleModeCollapse",
+  "closeAllWindows",
+  "listWindows",
+  "listCalendars",
+  "createCalendarEvent",
+  "cloneRepository",
+  "chooseFolder",
+  "listLinearOptions",
+  "listSportsEvents",
+  "listMessageRecipients",
+  "sendMessage",
+  "createLinearIssue",
+  "createSpotifyPlaylist",
+  "scaffoldProject",
+  "minimizeWindow",
+  "surfaceWindow",
+  "closeWindow",
+  "getCanvasStatus",
+  "resetCanvas",
+  "setCanvasItemHidden",
+  "suggestCommands",
+  "rebuildKnowledgeIndex",
+  "listNotes",
+  "listCourses",
+  "createCourseNote",
+  "runSystemChecks",
+  "connectGmail",
+  "listUnreadMail"
 ]);
 
 function readJson(filePath) {

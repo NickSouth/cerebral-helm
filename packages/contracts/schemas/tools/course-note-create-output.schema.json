@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/course-note-create-output.schema.json",
+  "title": "CerebralHelm Course Note Create Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["noteCourse", "noteTitle", "notePath", "noteCreated"],
+  "properties": {
+    "noteCourse": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The course as it was resolved — the derived code, which may differ from what was asked for."
+    },
+    "noteTitle": {
+      "type": "string",
+      "minLength": 1
+    },
+    "notePath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The note's root-relative path: the same handle note.open takes, so the caller can open what it just created without deriving a path of its own.",
+      "examples": ["areas/school-umass/STAT 240/2026-08-04 Lecture 3.md"]
+    },
+    "noteCreated": {
+      "type": "boolean",
+      "description": "False when a note of that title already existed for that day and was returned instead of being overwritten. Creating a note never clobbers one."
+    }
+  }
+}

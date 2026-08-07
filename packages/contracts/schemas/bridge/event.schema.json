@@ -4,7 +4,13 @@
   "title": "CerebralHelm Bridge Event",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "eventId", "type", "timestamp", "payload"],
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "type",
+    "timestamp",
+    "payload"
+  ],
   "properties": {
     "schemaVersion": {
       "type": "string",
@@ -19,11 +25,22 @@
       "enum": [
         "command.lifecycle.transition",
         "config.changed",
+        "mode.quickapps.changed",
+        "settings.changed",
         "confirmation.changed",
         "bridge.capability.changed",
         "system.status.changed",
+        "system.checks.changed",
         "workflow.action.progress",
-        "display.topology.changed"
+        "display.topology.changed",
+        "layout.session.changed",
+        "mode.windowcollapse.changed",
+        "widget.data.changed",
+        "weather.changed",
+        "news.changed",
+        "mail.changed",
+        "schedule.changed",
+        "apps.changed"
       ]
     },
     "timestamp": {

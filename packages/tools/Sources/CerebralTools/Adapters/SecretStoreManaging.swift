@@ -17,3 +17,12 @@ public protocol SecretStoreManaging: Sendable {
     /// reference is unbound (a delete never silently no-ops, FR-CFG-03).
     func delete(reference: String) async throws
 }
+
+/// The full secret surface a provisioning consumer needs: manage the *value*
+/// (``SecretStoreManaging``) and answer presence without exposing it
+/// (``SecretCapability/resolve(reference:)``). The Keychain adapter conforms to
+/// both, so the settings provisioning flow (NIC-134: `storeSecret` writes a
+/// value, `getSecretStatus` reads presence) can take a single dependency. The
+/// value still never crosses the presence port — only `readValue` returns it,
+/// and only for internal provisioning use.
+public protocol SecretManaging: SecretStoreManaging, SecretCapability {}

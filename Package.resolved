@@ -1,5 +1,5 @@
 {
-  "originHash" : "7b2fae79cb46f9487131e230d2db15bbdc0808a1acc8e7a8b01c44569cfe20c6",
+  "originHash" : "b910d4c2ef807b9baa6f143655a9f20a5d370477ba7393c8ace09efd7098e786",
   "pins" : [
     {
       "identity" : "swift-argument-parser",
@@ -16,6 +16,15 @@
       "location" : "https://github.com/swiftlang/swift-toolchain-sqlite.git",
       "state" : {
         "revision" : "24de861aae133231803d89af8a88dc50b5b2e2dd"
+      }
+    },
+    {
+      "identity" : "yams",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jpsim/Yams.git",
+      "state" : {
+        "revision" : "3d6871d5b4a5cd519adf233fbb576e0a2af71c17",
+        "version" : "5.4.0"
       }
     }
   ],

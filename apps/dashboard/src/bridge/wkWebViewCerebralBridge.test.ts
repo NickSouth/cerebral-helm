@@ -5,6 +5,9 @@ import {
   readInjectedBootstrap
 } from "./wkWebViewCerebralBridge";
 import type { BridgeEvent } from "./cerebralBridge";
+// The authoritative event-type set, generated from the bridge event schema — imported so the gate
+// test cannot drift out of step with the contract (NIC-175).
+import { CerebralHelmBridgeEventType } from "../../../../packages/contracts/generated/typescript/contracts";
 
 interface TestWindow {
   webkit?: { messageHandlers?: { cerebral?: { postMessage: (m: string) => void } } };
@@ -107,6 +110,34 @@ describe("wkWebViewCerebralBridge", () => {
     });
   });
 
+  it("getSettings posts an empty request and resolves the snapshot payload directly", async () => {
+    const { sent } = installChannel();
+    const bridge = createWKWebViewCerebralBridge();
+
+    const promise = bridge.getSettings();
+    const op = sent.find((m) => m.operation === "getSettings");
+    expect(op?.type).toBe("bridge.operation.request");
+    expect(op?.payload).toEqual({});
+
+    const snapshot = {
+      schemaVersion: "1.0.0",
+      defaultModeId: "developer",
+      confirmAllActions: true,
+      appearance: { reducedMotion: true, assistantName: "Aria" },
+      knowledge: { rootReference: null },
+      workspace: { windowsStoredByMode: true, mainDisplayId: "system-primary", layoutDisplayId: "system-primary" },
+      modeColors: { "executive.primary": "#ffd166" }
+    };
+    reply({
+      type: "bridge.operation.response",
+      messageId: op?.messageId,
+      operation: "getSettings",
+      status: "ok",
+      payload: snapshot
+    });
+    await expect(promise).resolves.toEqual(snapshot);
+  });
+
   it("dispatches events to subscribers and stops after unsubscribe", () => {
     installChannel();
     const bridge = createWKWebViewCerebralBridge();
@@ -154,10 +185,92 @@ describe("wkWebViewCerebralBridge", () => {
       timestamp: "2026-07-06T00:00:01.000Z",
       payload: { displays: [], primaryDisplayId: null }
     });
+    // Regression: settings.changed must pass the gate so the dashboard re-syncs the
+    // assistant name / mode colors live after a save in the separate settings window.
+    reply({
+      type: "settings.changed",
+      eventId: "brevt_00000005",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-10T00:00:00.000Z",
+      payload: { settings: {} }
+    });
 
     expect(events.map((e) => e.type)).toEqual([
       "workflow.action.progress",
-      "display.topology.changed"
+      "display.topology.changed",
+      "settings.changed"
+    ]);
+  });
+
+  it("admits every event type the contract defines — no silent drops (NIC-126/175)", () => {
+    // The trap this guards: an event type missing from EVENT_TYPES is silently dropped by the
+    // WKWebView transport, so the reducer never runs and the panel sits at its bootstrap state.
+    // It passes every other test, because the mock bridge has no such gate — the bug only appears
+    // on the real host.
+    //
+    // Derived from the generated contract enum rather than a hand-written list (NIC-175): the
+    // previous version enumerated four events by hand, so adding a fifth to the schema and
+    // forgetting the allowlist still went green. Now the schema IS the test.
+    installChannel();
+    const bridge = createWKWebViewCerebralBridge();
+    const seen: string[] = [];
+    bridge.subscribe((e) => seen.push(e.type));
+
+    const contractTypes = Object.values(CerebralHelmBridgeEventType);
+    contractTypes.forEach((type, index) => {
+      reply({
+        type,
+        eventId: `brevt_gate${String(index).padStart(4, "0")}`,
+        schemaVersion: "1.0.0",
+        timestamp: "2026-08-05T00:00:00.000Z",
+        payload: {}
+      });
+    });
+
+    expect(seen).toEqual(contractTypes);
+  });
+
+  it("passes the live-data events (widget/weather/news/schedule) through the type gate", () => {
+    // Keeps the realistic payload shapes covered alongside the exhaustive gate check above.
+    installChannel();
+    const bridge = createWKWebViewCerebralBridge();
+    const events: BridgeEvent[] = [];
+    bridge.subscribe((e) => events.push(e));
+
+    reply({
+      type: "widget.data.changed",
+      eventId: "brevt_00000010",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T00:00:00.000Z",
+      payload: { widgetId: "stocks" }
+    });
+    reply({
+      type: "weather.changed",
+      eventId: "brevt_00000011",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T00:00:01.000Z",
+      payload: { weather: { state: "ready" } }
+    });
+    reply({
+      type: "news.changed",
+      eventId: "brevt_00000012",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T00:00:02.000Z",
+      payload: { profile: "broad", news: { state: "ready" } }
+    });
+    reply({
+      type: "schedule.changed",
+      eventId: "brevt_00000013",
+      schemaVersion: "1.0.0",
+      timestamp: "2026-07-27T00:00:03.000Z",
+      payload: { profile: "all", schedule: { state: "ready", items: [] } }
+    });
+
+    expect(events.map((e) => e.type)).toEqual([
+      "widget.data.changed",
+      "weather.changed",
+      "news.changed",
+      "schedule.changed"
     ]);
   });
 

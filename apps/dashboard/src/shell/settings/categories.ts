@@ -1,6 +1,10 @@
 /**
  * The settings categories (NIC-63 / design spec §10 SettingsWindow). One ordered registry drives
- * the sidebar and the content router — no per-category conditionals in the window. Each panel is
+ * the sidebar and the content router — no per-category conditionals in the window.
+ *
+ * There is deliberately NO per-category description (owner, 2026-08-07): a category explains
+ * itself through its mark, its name, and the rows inside it, and a paragraph restating that was
+ * the bulk of what made this window feel heavy. Each panel is
  * one of three honest states throughout: editable (validated via `updateSettings`), read-only
  * contract inspection, or unavailable-future (FR-UI-06, FR-CFG-04).
  */
@@ -9,39 +13,36 @@ export type SettingsCategoryId =
   | "permissions"
   | "modes"
   | "actions"
-  | "hotkeys"
   | "customization"
-  | "setup"
-  | "knowledge";
+  | "setup";
 
 export interface SettingsCategory {
   readonly id: SettingsCategoryId;
   readonly label: string;
-  /** One-line orientation shown at the top of the panel. */
-  readonly description: string;
 }
 
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
-  { id: "general", label: "General", description: "Default mode and application information." },
+  {
+    id: "general",
+    label: "General"
+  },
   {
     id: "permissions",
-    label: "Permissions",
-    description: "Enabled tools and their deterministic risk & confirmation policy."
+    label: "Permissions"
   },
-  { id: "modes", label: "Modes", description: "The four modes and their configured surfaces." },
-  { id: "actions", label: "Actions", description: "Quick actions and the workflows behind them." },
   {
-    id: "hotkeys",
-    label: "Hotkeys",
-    description: "The global shortcut that summons the command palette."
+    id: "modes",
+    label: "Modes"
   },
+  { id: "actions", label: "Actions" },
   {
     id: "customization",
-    label: "Customization",
-    description: "Appearance and motion preferences."
+    label: "Customization"
   },
-  { id: "setup", label: "Setup", description: "Integrations, onboarding, and data location." },
-  { id: "knowledge", label: "Knowledge", description: "Where durable knowledge lives." }
+  {
+    id: "setup",
+    label: "Setup"
+  }
 ];
 
 export const DEFAULT_SETTINGS_CATEGORY: SettingsCategoryId = SETTINGS_CATEGORIES[0].id;

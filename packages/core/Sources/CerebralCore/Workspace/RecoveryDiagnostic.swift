@@ -55,6 +55,13 @@ public extension RecoveryDiagnostic {
                 summary: message,
                 guidance: "Check available disk space and permissions, then retry."
             )
+        case let .noteNotFound(message):
+            return RecoveryDiagnostic(
+                store: "knowledge",
+                code: "knowledge_note_missing",
+                summary: message,
+                guidance: "The note may have been renamed, moved, or deleted outside CerebralHelm. Re-list the notes to see the current paths. Nothing was changed."
+            )
         }
     }
 }

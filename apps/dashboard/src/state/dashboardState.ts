@@ -1,8 +1,15 @@
 import type {
   ConfirmationDisclosure,
   DashboardBootstrapState,
-  DashboardMode
+  DashboardMode,
+  NewsRegion,
+  ScheduleRegion,
+  WeatherChannel
 } from "../bridge/types";
+import type { WidgetData } from "../widgets/widgetData";
+import type { LayoutSession, MailChannel, SystemChecksPayload } from "../bridge/cerebralBridge";
+
+export type { LayoutSession };
 
 export type { DashboardMode };
 
@@ -87,6 +94,55 @@ export type DashboardState = DashboardBootstrapState & {
   readonly activeWorkflowRun?: WorkflowRunProgress | null;
   readonly capabilities?: Readonly<Record<string, CapabilityAvailability>>;
   readonly displayTopology?: DisplayTopology | null;
+  /** The active layout session (NIC-142), folded from `layout.session.changed`.
+   *  Drives the bottom-bar layout section; null/absent when no layout is open. */
+  readonly layoutSession?: LayoutSession | null;
+  /** Per-mode collapse-all state (NIC-143), keyed by mode id → collapsed, folded from
+   *  `mode.windowcollapse.changed`. Session-only and sparse: a mode is absent until its
+   *  first toggle, and every mode starts expanded. Drives the bottom-bar
+   *  collapse/expand icon for the current mode. */
+  readonly windowCollapse?: Readonly<Record<string, boolean>>;
+  /** Live widget data keyed by widget id (NIC-131, the widget-liveness blueprint), folded
+   *  from `widget.data.changed`. Runtime-only and sparse: a widget id is absent until its
+   *  producer streams data; a rail resolves its slot as this value over the bootstrap
+   *  `regions.widgets.{side}` (see resolveWidgetData). Lives outside `regions` so it
+   *  survives `config.changed` mode switches without per-region preservation. */
+  readonly liveWidgets?: Readonly<Record<string, WidgetData>>;
+  /** Live ambient weather (NIC-169), folded from `weather.changed`. Runtime-only and, like
+   *  `liveWidgets`, lives OUTSIDE the bootstrap `weather` channel so it survives `config.changed`
+   *  mode switches by construction. The bottom bar resolves this over the per-mode bootstrap
+   *  `weather` (live wins); absent until the native producer streams its first sample. Real
+   *  weather is machine-global, so a single live value is correct across every mode — keeping it
+   *  here (rather than clobbering the mode-scoped bootstrap `weather`) leaves the per-mode mock
+   *  fixtures untouched. */
+  readonly liveWeather?: WeatherChannel | null;
+  /** Live per-mode news (NIC-127), folded from `news.changed` and keyed by the mode's
+   *  `newsProfile`. Runtime-only and sparse: a profile is absent until its producer streams
+   *  headlines. Unlike `liveWeather` (one machine-global value), news content differs per mode,
+   *  so it is a map — the News panel resolves `liveNews[activeMode.newsProfile]` over the
+   *  bootstrap `regions.news` (live wins). Lives OUTSIDE `regions`, so it survives
+   *  `config.changed` mode switches by construction (same reasoning as `liveWidgets`) and never
+   *  disturbs the per-mode mock `news` fixtures. */
+  readonly liveNews?: Readonly<Record<string, NewsRegion>>;
+  /** Live per-mode schedule (NIC-126), folded from `schedule.changed` and keyed by the mode's
+   *  `calendarProfile`. Runtime-only and sparse: a profile is absent until its producer streams
+   *  events. Like `liveNews`, calendar relevance differs per mode, so it is a map — the Today
+   *  panel resolves `liveSchedule[activeMode.calendarProfile]` over the bootstrap `regions.schedule`
+   *  (live wins). Lives OUTSIDE `regions`, so it survives `config.changed` mode switches by
+   *  construction (same reasoning as `liveWidgets`) and never disturbs the per-mode mock `schedule`
+   *  fixtures. */
+  readonly liveSchedule?: Readonly<Record<string, ScheduleRegion>>;
+  /** The current system-health run (quick actions phase 5), folded from `system.checks.changed`.
+   *  Runtime-only and machine-global — health is a property of this Mac, not of a mode — and
+   *  absent until a run is started, which is what lets the report distinguish "never run" from
+   *  "run found nothing". Each event carries the WHOLE set, so this is replaced rather than
+   *  merged: there is no per-row reconciliation to get wrong. */
+  readonly systemChecks?: SystemChecksPayload | null;
+  /** The unread-mail channel (Gmail integration), folded from `mail.changed`. Runtime-only and
+   *  machine-global — how much mail is waiting is a fact about the account, not the mode — and
+   *  absent until the producer has spoken, which is how "never sampled" stays distinct from
+   *  "sampled and found nothing". */
+  readonly mail?: MailChannel | null;
 };
 
 /**

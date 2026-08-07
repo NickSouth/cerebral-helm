@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/project-scaffold-input.schema.json",
+  "title": "CerebralHelm Project Scaffold Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["projectName"],
+  "properties": {
+    "projectName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The project's display name, which is also its folder name. The adapter refuses a name containing a path separator rather than silently mangling it into nested folders."
+    },
+    "projectLocation": {
+      "type": "string",
+      "description": "Optional folder to create it in, relative to the projects root. The adapter joins the name onto it and re-checks that the result stays inside that root."
+    },
+    "projectSummary": {
+      "type": "string",
+      "description": "Optional one-line summary, written into the PROJECT.md descriptor."
+    },
+    "projectImportance": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10,
+      "description": "Ordering weight for the Projects widget (higher first). Absent uses the shipped template's default."
+    }
+  }
+}

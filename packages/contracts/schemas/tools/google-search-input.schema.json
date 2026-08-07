@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/google-search-input.schema.json",
+  "title": "CerebralHelm Google Search Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query"],
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The search text. The adapter builds a Google search URL host-side (the host is fixed to google.com); only this query is variable, so untrusted data can never choose the destination."
+    }
+  }
+}

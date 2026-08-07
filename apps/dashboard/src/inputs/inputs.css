@@ -1,0 +1,478 @@
+/* --- The Input region (docs/quick-actions/PLAN.md) ------------------------------------------
+
+   The centre panel's lower right: below the consciousness stream, above the quick-action grid.
+   Unlike the Report region this one is a BORDERED panel — it is interactive and needs a hit
+   target, where a report is something you read. It sits in the panel's foot column, so the
+   quick-action grid stays exactly where it was and the form grows upward into the empty middle. */
+
+/* BOXLESS, like the report. The design spec bordered this region because it is interactive and
+   needs a hit target — that requirement does not disappear, it moves down to each field, which is
+   where a hit target is actually pressed. The fields keep their boxes; the panel around them goes,
+   and the surface sits in the mirrored wash painted by `CenterShade` instead (approved 2026-08-07).
+
+   The halo travels with the text here too, so nothing on this element may clip. */
+.input-region {
+  align-self: flex-end;
+  width: 50%;
+  max-width: 28rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  /* The tallest form (create-ticket, six fields) can outgrow a short panel and push the
+     quick-action grid off the bottom. Bounding the region makes that impossible: it scrolls
+     inside itself instead. On a tall display the cap never binds, so nothing changes there. */
+  max-height: 60vh;
+  overflow: visible;
+  text-shadow: var(--ch-text-halo);
+}
+
+/* Scrolling moved off the region so the halos are not sheared square at its edges (`overflow-y`
+   clips BOTH axes). Room is added on the TOP and LEFT only — the sides whose halos reach out into
+   open stream — with equal negative margins, so the clip boundary moves out of sight while the
+   fields stay exactly where they were laid out.
+
+   Never on the right: this surface is right-anchored, so a negative right margin widens the
+   scroll box past the panel edge and takes the controls with it — which is how the date picker
+   ended up hanging off the screen. The right side needs no escape room anyway, because the panel
+   border is already a boundary the halo is allowed to meet. */
+.input-region__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding: 2.5rem 0 var(--ch-space-2) 3rem;
+  margin: -2.5rem 0 calc(var(--ch-space-2) * -1) -3rem;
+}
+
+.input-region__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.input-region__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+}
+
+/* Header and footer stay put while the fields scroll — the submit button must never be the thing
+   that scrolls out of reach. */
+.input-region__head,
+.input-region__footer {
+  flex: 0 0 auto;
+}
+
+.input-region__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+}
+
+.input-region__title {
+  margin: 0;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  font-weight: var(--ch-font-weight-light);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ch-text-muted);
+}
+
+.input-region__close {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  line-height: 1;
+  padding: 0 var(--ch-space-1);
+  border: 0;
+  background: transparent;
+  color: var(--ch-text-muted);
+  cursor: pointer;
+}
+
+.input-region__close:hover {
+  color: var(--ch-text-primary);
+}
+
+.input-region__pending {
+  margin: 0;
+  color: var(--ch-text-muted);
+  font-size: var(--ch-font-size-sm);
+}
+
+.input-region__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+}
+
+/* --- Fields --- */
+
+.input-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+}
+
+.input-field__label {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+.input-field__required {
+  color: var(--ch-accent-primary);
+}
+
+.input-field__control {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  width: 100%;
+  /* This repo has no global border-box reset, so `width: 100%` plus padding and a border made
+     every control wider than its own field — invisible until the region became a scroll container,
+     which then showed it as a horizontal scrollbar. */
+  box-sizing: border-box;
+  padding: var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-panel);
+  color: var(--ch-text-primary);
+}
+
+.input-field__control--area {
+  resize: vertical;
+  min-height: 4rem;
+}
+
+.input-field__control:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: 1px;
+}
+
+.input-field__control:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.input-field__hint {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* --- Footer --- */
+
+.input-region__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ch-space-2);
+}
+
+.input-region__cancel,
+.input-region__submit {
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-2) var(--ch-space-4);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.input-region__submit {
+  border-color: var(--ch-accent-primary);
+  background: color-mix(in srgb, var(--ch-accent-primary) 16%, transparent);
+}
+
+.input-region__submit:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ch-accent-primary) 26%, transparent);
+}
+
+.input-region__cancel:hover:not(:disabled) {
+  border-color: var(--ch-accent-primary);
+}
+
+.input-region__cancel:disabled,
+.input-region__submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input-region__cancel:focus-visible,
+.input-region__submit:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* A datetime range is one idea, so it reads as one row: start · "to" · end. */
+.input-field__range {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.input-field__range-to {
+  flex: 0 0 auto;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* A folder picker is one row: the typed path, then the panel button. The input keeps the
+   remaining width so a long nested path stays readable. */
+.input-field__picker {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.input-field__picker .input-field__control {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.input-field__picker-button {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: var(--ch-font-size-label);
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  border: 1px solid var(--ch-panel-border);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.input-field__picker-button:hover:not(:disabled) {
+  border-color: var(--ch-accent-primary);
+}
+
+.input-field__picker-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input-field__picker-button:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* A refused selection is a warning, not neutral guidance — the user did pick something. */
+.input-field__hint--warning {
+  color: var(--ch-status-warning);
+}
+
+/* A multi-select is a checkbox list, not a native <select multiple>: cmd-click to add a second
+   value is a capability the control never advertises. Bounded and scrollable so a workspace with
+   many labels cannot take over the form. */
+.input-field__multi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-1);
+  max-height: 9rem;
+  overflow-y: auto;
+  padding: var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-panel);
+}
+
+.input-field__check {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.input-field__check input {
+  flex: 0 0 auto;
+  accent-color: var(--ch-accent-primary);
+  cursor: pointer;
+}
+
+.input-field__check input:disabled,
+.input-field__check input:disabled + span {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* An option source that resolved to nothing says so, rather than rendering an empty box. */
+.input-field__empty {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-muted);
+}
+
+/* --- Combobox (send-text) -------------------------------------------------------------------
+   Typeahead over a list too long to scan. Nothing is chosen until a result is clicked: typing
+   only filters, so a half-typed name can never become a recipient. */
+.input-field__combobox {
+  position: relative;
+}
+
+.input-field__matches {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  margin: var(--ch-space-1) 0 0;
+  padding: var(--ch-space-1);
+  list-style: none;
+  max-height: 11rem;
+  overflow-y: auto;
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+
+.input-field__match {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  font: inherit;
+  font-size: var(--ch-font-size-sm);
+  padding: var(--ch-space-2);
+  border: 0;
+  border-radius: var(--ch-radius-sm);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.input-field__match:hover,
+.input-field__match:focus-visible {
+  background: color-mix(in srgb, var(--ch-accent-primary) 16%, transparent);
+}
+
+/* A chosen recipient reads as settled — the search box is gone, and changing it is deliberate. */
+.input-field__chosen {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-2);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  background: var(--ch-surface-panel);
+}
+
+.input-field__chosen-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- The Picker (docs/quick-actions/PLAN.md, phase 5) ----------------------------------------
+
+   A picker shares the Input region rather than owning a surface: a filter field, a list of
+   results, and the same footer. What differs is that a ROW is the submit, so there is no
+   trailing action button and the list is the thing that scrolls. */
+
+.input-region__picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+  /* The region already scrolls; without this the flex child refuses to shrink and the list
+     pushes the footer out instead of scrolling inside it. */
+  min-height: 0;
+}
+
+.picker__results {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  /* The list is what scrolls, not the region, so the filter field stays under the cursor while
+     results move. Capped in rem rather than a viewport unit: it sits inside a region that is
+     already bounded, and two competing viewport caps would fight. */
+  max-height: 18rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.picker__result {
+  display: grid;
+  /* Label and detail share the flexible column; the date takes only what it needs, so a long
+     title truncates rather than pushing the date out of the panel. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 var(--ch-space-2);
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  font: inherit;
+  padding: var(--ch-space-2);
+  border: 0;
+  border-radius: var(--ch-radius-sm);
+  background: transparent;
+  color: var(--ch-text-primary);
+  cursor: pointer;
+}
+
+.picker__result:hover,
+.picker__result:focus-visible {
+  background: color-mix(in srgb, var(--ch-accent-primary) 16%, transparent);
+}
+
+.picker__result:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.picker__result-label {
+  grid-column: 1;
+  font-size: var(--ch-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One line only: an excerpt is a hint about why a row matched, not the note. */
+.picker__result-detail {
+  grid-column: 1;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__result-meta {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: baseline;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  white-space: nowrap;
+}
+
+/* What the picker cannot see, said in place — with the one step that would fix it. */
+.picker__notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2);
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+}
+
+/* Which stage of a multi-stage picker you are in — the course, once one is chosen. Only rendered
+   past the first stage: the region header already names the action. */
+.picker__stage {
+  margin: 0;
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ch-accent-primary);
+}

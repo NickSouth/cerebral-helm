@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "spotify.createplaylist",
+  "version": "1.0.0",
+  "purpose": "Create an empty playlist in the user's connected Spotify account.",
+  "inputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/spotify-create-playlist-input.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "outputSchema": {
+    "schemaId": "https://cerebralhelm.local/schemas/tools/spotify-create-playlist-output.schema.json",
+    "schemaVersion": "1.0.0"
+  },
+  "risk": "external_write",
+  "runtimeRiskPolicy": "descriptor_risk",
+  "confirmationPolicyKey": "allow_external_write_when_user_authored",
+  "requiredPermissions": [],
+  "secretReferences": [],
+  "timeoutMs": 30000,
+  "retry": {
+    "maxAttempts": 0,
+    "strategy": "none"
+  },
+  "cancellable": false,
+  "idempotency": "non_idempotent",
+  "adapterRequirements": {
+    "capabilities": ["spotify.playlist"],
+    "platforms": ["macos_native"]
+  },
+  "logging": {
+    "redactionPaths": [],
+    "retention": "standard"
+  },
+  "results": ["success", "unavailable", "denied", "timeout", "failure"],
+  "availability": {
+    "preMac": false,
+    "macOS": true
+  }
+}

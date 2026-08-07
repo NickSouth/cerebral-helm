@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/note-open-output.schema.json",
+  "title": "CerebralHelm Note Open Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["notePath", "noteOpened", "noteOpenTarget"],
+  "properties": {
+    "notePath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The root-relative path that was opened, echoed so a caller can report what happened without re-deriving it."
+    },
+    "noteOpened": {
+      "type": "boolean",
+      "description": "Whether the note was actually handed to an application. False is a real answer, not a failure: it says the note exists and nothing on this machine took it."
+    },
+    "noteOpenTarget": {
+      "type": "string",
+      "enum": ["obsidian", "finder", "none"],
+      "description": "Which surface received the note. `finder` is the honest fallback when nothing handles obsidian:// — the note is still revealed, so the action does something real rather than silently doing nothing. `none` accompanies noteOpened=false."
+    }
+  }
+}

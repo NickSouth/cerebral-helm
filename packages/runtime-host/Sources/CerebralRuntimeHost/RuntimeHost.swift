@@ -32,7 +32,8 @@ public func makeCommandRuntime(
     phase: ExecutionPhase = .preMac,
     capabilities: ToolCapabilities = .mocks(),
     onEvent: (@Sendable (CommandLifecycleEvent) -> Void)? = nil,
-    onActionProgress: (@Sendable (WorkflowActionProgress) -> Void)? = nil
+    onActionProgress: (@Sendable (WorkflowActionProgress) -> Void)? = nil,
+    referenceStore: CommandReferenceStore? = nil
 ) throws -> CommandRuntime {
     let references = try ReferenceCatalogLoader.load(configDirectory: paths.configDirectory, stateRoot: paths.stateRoot)
     let hookCatalog = makeHookCatalog(references: references, repositoryRoot: paths.repositoryRoot)
@@ -48,18 +49,31 @@ public func makeCommandRuntime(
     let commands = CommandRepository(database: database)
     let toolCalls = ToolCallRepository(database: database)
 
-    // Durable knowledge: notes are Markdown under the env-aware knowledge root,
-    // with rebuildable metadata in SQLite. Composed here so CerebralTools never
-    // depends on the knowledge package (the service is injected).
+    // Durable settings are loaded once here and reused below for the knowledge root
+    // (NIC-138) and the policy tightening (NIC-137).
+    let settingsStore = SQLiteSettingsStore(database: database)
+    let storedSettings = try? settingsStore.load()
+
+    // Durable knowledge: notes are Markdown under the EFFECTIVE knowledge root — the
+    // user's `knowledgeRootReference` when set (a re-point), else the env-aware default.
+    // Re-point only: no consumer moves or deletes anything at either location (NIC-138).
+    // Composed here so CerebralTools never depends on the knowledge package (injected).
+    let knowledgeRoot = EffectiveSettings.knowledgeRootURL(
+        reference: storedSettings?.knowledgeRootReference, default: paths.knowledgeRoot
+    )
     let knowledge = MarkdownKnowledgeService(
-        rootURL: paths.knowledgeRoot,
+        rootURL: knowledgeRoot,
         metadataStore: SQLiteNoteMetadataStore(database: database),
         searchIndex: SQLiteNoteSearchIndex(database: database)
     )
+    // Course notebooks are folders under the SAME root (quick actions phase 5): a course note is
+    // an ordinary note, so it lists, searches, reads and opens through the note port unchanged.
+    let courseNotebook = MarkdownCourseNotebook(rootURL: knowledgeRoot)
     let registry = try PreMacToolRuntime.makeRegistry(
         descriptorsDirectory: paths.toolDescriptorsDirectory,
         capabilities: capabilities,
         knowledge: knowledge,
+        courseNotebook: courseNotebook,
         hookCatalog: hookCatalog,
         modePlanner: modePlanner,
         modeIDs: references.modeIds,
@@ -69,18 +83,33 @@ public func makeCommandRuntime(
         modeStateStore: SQLiteModeStateStore(database: database),
         modeSessionLog: SQLiteModeSessionLog(database: database),
         modeWorkspaceStore: SQLiteModeWorkspaceStore(database: database),
-        settingsStore: SQLiteSettingsStore(database: database),
+        settingsStore: settingsStore,
         // window.arrange resolves apps through the same reference catalog as
         // app.open — configured bundle-id references only, never arbitrary targets.
         appTargets: references.apps.mapValues(\.target)
     )
 
+    // "Ask before all actions" (NIC-137): when the durable flag is set, the policy
+    // engine raises every non-read-only action to require confirmation — a
+    // stricter-only overlay that can never weaken descriptor policy. Read once here,
+    // so toggling it takes effect the next time the runtime is composed.
+    // The tightening lives in a shared box so a later `updateSettings` toggle re-arms
+    // confirmation live (NIC-137), not just on next launch. Seeded from the stored flag.
+    let confirmAllActions = storedSettings?.confirmAllActions == true
+    let policyOverridesBox = PolicyOverridesBox(
+        confirmAllActions ? .confirmEveryAction : PolicyOverrides()
+    )
+    let policy = PolicyEngine(overridesBox: policyOverridesBox)
+
     return CommandRuntime(
         registry: registry,
+        policy: policy,
+        policyOverridesBox: policyOverridesBox,
         phase: phase,
         coordinator: ConfirmationCoordinator(store: SQLiteConfirmationStore(database: database)),
         factory: CommandFactory(clock: SystemClock(), identifiers: UUIDIdentifierGenerator()),
         references: references,
+        referenceStore: referenceStore,
         hookCatalog: hookCatalog,
         modePlanner: modePlanner,
         commandSink: { persistCommand($0, into: commands) },
@@ -102,6 +131,26 @@ public func operationalDatabase(_ paths: WorkspacePaths) throws -> SQLiteDatabas
     return database
 }
 
+/// The durable knowledge service over the effective knowledge root and the
+/// operational database — the same composition ``makeCommandRuntime`` builds
+/// internally, exposed for the surfaces that need the concrete service rather
+/// than the port: the `knowledge rebuild` CLI and the settings rebuild action
+/// (NIC-163), both of which reconstruct the derived index.
+///
+/// Resolves the user's `knowledgeRootReference` when set (NIC-138), so a rebuild
+/// always reads the same root the runtime writes to.
+public func makeKnowledgeService(_ paths: WorkspacePaths) throws -> MarkdownKnowledgeService {
+    let database = try operationalDatabase(paths)
+    let stored = try? SQLiteSettingsStore(database: database).load()
+    return MarkdownKnowledgeService(
+        rootURL: EffectiveSettings.knowledgeRootURL(
+            reference: stored?.knowledgeRootReference, default: paths.knowledgeRoot
+        ),
+        metadataStore: SQLiteNoteMetadataStore(database: database),
+        searchIndex: SQLiteNoteSearchIndex(database: database)
+    )
+}
+
 /// The durable settings store over the operational database (FR-CFG-04), for hosts
 /// that bind a ``BridgeSession``.
 public func makeSettingsStore(_ paths: WorkspacePaths) throws -> any SettingsStore {
@@ -112,6 +161,25 @@ public func makeSettingsStore(_ paths: WorkspacePaths) throws -> any SettingsSto
 /// hosts that restore the last active mode at bootstrap.
 public func makeModeStateStore(_ paths: WorkspacePaths) throws -> any ModeStateStore {
     SQLiteModeStateStore(database: try operationalDatabase(paths))
+}
+
+/// The durable Canvas scrape store over the operational database (NIC-132), for
+/// hosts that run the Canvas ingest endpoint + School widgets.
+public func makeCanvasSnapshotStore(_ paths: WorkspacePaths) throws -> any CanvasSnapshotStore {
+    SQLiteCanvasSnapshotStore(database: try operationalDatabase(paths))
+}
+
+/// The durable Canvas hidden-item store over the operational database (NIC-132), for hosts that let
+/// the user hide stray School courses/assignments.
+public func makeCanvasHiddenStore(_ paths: WorkspacePaths) throws -> any CanvasHiddenStore {
+    SQLiteCanvasHiddenStore(database: try operationalDatabase(paths))
+}
+
+/// The durable news cache over the operational database, for hosts that stream the News panel.
+/// It survives relaunch so a cold start renders the last headlines from disk rather than spending
+/// a request against the provider's small daily quota.
+public func makeNewsCacheStore(_ paths: WorkspacePaths) throws -> any NewsCacheStore {
+    SQLiteNewsCacheStore(database: try operationalDatabase(paths))
 }
 
 /// Writes the command row from its envelope before any event references it (FK

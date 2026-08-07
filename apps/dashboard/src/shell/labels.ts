@@ -1,7 +1,13 @@
 import type { AgentSummary, HeimlichState } from "../bridge/types";
 
+// `idle` is the MVP resting state for Heimlich and every agent: there is no assistant or agent
+// runtime yet, so the indicators read "Not implemented" rather than a live status (NIC-124).
+// As of NIC-171 that state is also the ONLY one Heimlich reaches — the command lifecycle no
+// longer drives it (see the `command.lifecycle.transition` case in bridgeStore), because a
+// lifecycle-animated indicator implies an assistant that does not exist. The remaining labels are
+// retained, unreferenced at runtime, for when a real assistant lands and starts reporting.
 const HEIMLICH_STATE_LABELS: Readonly<Record<HeimlichState, string>> = {
-  idle: "Idle",
+  idle: "Not implemented",
   listening: "Listening",
   thinking: "Thinking",
   acting: "Working",
@@ -12,7 +18,7 @@ const HEIMLICH_STATE_LABELS: Readonly<Record<HeimlichState, string>> = {
 };
 
 const AGENT_ACTIVITY_LABELS: Readonly<Record<AgentSummary["activity"], string>> = {
-  idle: "Idle",
+  idle: "Not implemented",
   waiting: "Waiting",
   thinking: "Thinking",
   ready: "Ready"

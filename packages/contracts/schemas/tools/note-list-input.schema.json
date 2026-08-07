@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/note-list-input.schema.json",
+  "title": "CerebralHelm Note List Input",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Caps the returned notes, most recently changed first. Omitted means every note under the knowledge root; the output reports whether a cap truncated the listing, so a caller is never silently shown a partial library."
+    }
+  }
+}

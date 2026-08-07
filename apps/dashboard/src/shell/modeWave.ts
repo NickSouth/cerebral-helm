@@ -1,19 +1,20 @@
-import { flushSync } from "react-dom";
 import type { DashboardStore } from "../state/dashboardState";
 
 /**
- * The mode wave (course-correction D.1, animated mode switch): when the user clicks a mode
- * control, the theme change PROPAGATES outward from that control instead of flipping in place.
- * Implemented as a View Transition — the old render is held while the new render (already
- * wearing the target palette via data-mode) is revealed by a circle expanding from the clicked
- * control, with an accent ring riding the reveal edge (`.mode-wave-ring`, app.css).
+ * The mode wave (course-correction D.1, animated mode switch): clicking a mode control pulses a
+ * glowing ring outward from that control while the dashboard re-themes. The theme change is a
+ * LIVE commit — the per-property token cross-fade (shell.css) eases every accent over
+ * `--ch-motion-slow` — so the Heimlich consciousness stream and the rest of the UI keep rendering
+ * throughout.
  *
- * This is the precedent-setter for spatial transitions: animate the REVEAL of the final state
- * from the control that caused it; never animate intermediate theme states.
+ * It is deliberately NOT a View Transition: a VT snapshots the whole page, which froze the WebGL
+ * stream for the transition's duration (NIC-125). The reveal is now the ring + the token
+ * cross-fade, never a held snapshot. This is still the precedent-setter for spatial transitions:
+ * emanate from the control that caused the change; never animate intermediate theme states.
  *
- * Honest fallbacks, in order: no armed origin (the mode changed without a click), no
- * `document.startViewTransition`, no Web Animations, or stilled motion (OS preference or the
- * NIC-63 override) → plain notify, which keeps the existing token cross-fade (shell.css).
+ * Honest fallbacks: no armed origin (the mode changed without a click) or stilled motion (OS
+ * preference or the NIC-63 override) → plain notify, which still cross-fades the tokens (or snaps
+ * them instantly under reduced motion, where `--ch-motion-*` is 0ms).
  */
 
 /** A click origin is only good for the switch it triggered — expire it if no event follows. */
@@ -23,22 +24,7 @@ const WAVE_DURATION_MS = 600;
 /** --ch-ease-standard; the Web Animations API cannot resolve CSS custom properties. */
 const WAVE_EASING = "cubic-bezier(0.2, 0, 0, 1)";
 
-interface ViewTransitionLike {
-  readonly ready: Promise<void>;
-  readonly finished: Promise<void>;
-  /** Finish the transition immediately (jump to the end) — used to interrupt on a rapid re-switch. */
-  skipTransition?: () => void;
-}
-
-type DocumentWithViewTransition = Document & {
-  startViewTransition?: (update: () => void) => ViewTransitionLike;
-};
-
 let pendingOrigin: { x: number; y: number; armedAt: number } | null = null;
-/** Concurrent-wave guard (rapid re-clicks): only the LAST wave to finish removes the class. */
-let activeWaves = 0;
-/** The in-flight transition, if any — a new switch skips it so the reveal is interruptible. */
-let activeTransition: ViewTransitionLike | null = null;
 
 /** Arm the next mode switch to wave out from this viewport point (the clicked control's center). */
 export function armModeWave(x: number, y: number): void {
@@ -51,6 +37,19 @@ function consumeOrigin(): { x: number; y: number } | null {
   return origin && Date.now() - origin.armedAt <= ORIGIN_TTL_MS ? origin : null;
 }
 
+/**
+ * Where the ring emanates from when no click origin was armed — bottom-center, the home
+ * of the bottom-bar mode control. On macOS the bottom-bar mode switch opens a *separate*
+ * native dropdown window, so its selection can't arm the wave in this (main dashboard)
+ * context; falling back here keeps that switch animated instead of a silent re-theme.
+ */
+function fallbackOrigin(): { x: number; y: number } | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return { x: window.innerWidth / 2, y: window.innerHeight };
+}
+
 /** Either the OS preference or the app-level override (NIC-63) stills the wave entirely. */
 function motionStilled(): boolean {
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
@@ -59,13 +58,9 @@ function motionStilled(): boolean {
   return document.querySelector(".app-root")?.getAttribute("data-reduced-motion") === "true";
 }
 
-function waveCapable(): boolean {
-  return (
-    typeof document !== "undefined" &&
-    typeof (document as DocumentWithViewTransition).startViewTransition === "function" &&
-    typeof document.documentElement.animate === "function" &&
-    !motionStilled()
-  );
+/** The Web Animations API drives the ring; absent it (jsdom), we skip the flourish, not the switch. */
+function canAnimate(): boolean {
+  return typeof document !== "undefined" && typeof document.documentElement.animate === "function";
 }
 
 /** The glowing leading edge: appended under `.app-root` so it inherits the TARGET mode accent. */
@@ -92,99 +87,26 @@ function spawnWaveRing(x: number, y: number, radius: number): void {
 }
 
 function runModeWave(notify: () => void): void {
-  const origin = consumeOrigin();
-  if (!origin || !waveCapable()) {
-    notify();
-    return;
+  // A click-armed origin (rail / in-webview bottom bar) wins; otherwise emanate from the
+  // bottom-bar mode control's home, so a native-dropdown switch still waves (NIC-143 follow-up).
+  const origin = consumeOrigin() ?? fallbackOrigin();
+  // Commit the mode change live so the whole UI — the WebGL stream included — keeps rendering and
+  // the tokens cross-fade to the new palette. The ring is the only added flourish, spawned after
+  // the commit so it already wears the target mode's accent.
+  notify();
+  if (origin && !motionStilled() && canAnimate()) {
+    const radius = Math.hypot(
+      Math.max(origin.x, window.innerWidth - origin.x),
+      Math.max(origin.y, window.innerHeight - origin.y)
+    );
+    spawnWaveRing(origin.x, origin.y, radius);
   }
-
-  // Interruptible reveal (NIC-77): if a wave is still running, finish it instantly so this new
-  // switch takes over immediately instead of the click being ignored until the first completes.
-  activeTransition?.skipTransition?.();
-
-  const root = document.documentElement;
-  // While the wave runs, revealed pixels must already wear the final palette — this class
-  // suspends the per-property cross-fades (app.css) so the wavefront carries the change.
-  activeWaves += 1;
-  root.classList.add("mode-wave");
-  let cleaned = false;
-  const cleanup = () => {
-    if (cleaned) {
-      return;
-    }
-    cleaned = true;
-    activeWaves -= 1;
-    if (activeWaves === 0) {
-      root.classList.remove("mode-wave");
-    }
-  };
-
-  let committed = false;
-  const commit = () => {
-    if (!committed) {
-      committed = true;
-      // The DOM must change inside the transition callback for the browser to capture it.
-      flushSync(notify);
-    }
-  };
-
-  let transition: ViewTransitionLike;
-  try {
-    transition = (document as DocumentWithViewTransition).startViewTransition!(commit);
-  } catch {
-    cleanup();
-    if (!committed) {
-      notify();
-    }
-    return;
-  }
-  activeTransition = transition;
-
-  transition.ready
-    .then(() => {
-      const radius = Math.hypot(
-        Math.max(origin.x, window.innerWidth - origin.x),
-        Math.max(origin.y, window.innerHeight - origin.y)
-      );
-      root.animate(
-        {
-          clipPath: [
-            `circle(0px at ${origin.x}px ${origin.y}px)`,
-            `circle(${radius}px at ${origin.x}px ${origin.y}px)`
-          ]
-        },
-        {
-          duration: WAVE_DURATION_MS,
-          easing: WAVE_EASING,
-          pseudoElement: "::view-transition-new(root)"
-        }
-      );
-      spawnWaveRing(origin.x, origin.y, radius);
-    })
-    .catch(() => {
-      // The browser skipped the transition (e.g. another one superseded it); state already
-      // committed via the callback — nothing visual to recover.
-    });
-  transition.finished.then(cleanup, cleanup);
-  transition.finished.then(
-    () => {
-      if (activeTransition === transition) {
-        activeTransition = null;
-      }
-    },
-    () => {
-      if (activeTransition === transition) {
-        activeTransition = null;
-      }
-    }
-  );
 }
 
 /**
  * Store decorator (app-layer composition, AppRoot): re-notifies subscribers unchanged, except
- * when a notification carries a mode change — then the React commit runs inside the wave's
- * view transition. The store seam (getState + subscribe) is untouched for consumers, and the
- * reducer/bridge stay DOM-free.
+ * when a notification carries a mode change — then the ring rides the live commit. The store seam
+ * (getState + subscribe) is untouched for consumers, and the reducer/bridge stay DOM-free.
  */
 export function withModeWave(store: DashboardStore): DashboardStore {
   let lastMode = store.getState().mode;

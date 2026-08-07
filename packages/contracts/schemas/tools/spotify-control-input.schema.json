@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/tools/spotify-control-input.schema.json",
+  "title": "CerebralHelm Spotify Control Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action"],
+  "properties": {
+    "action": {
+      "title": "SpotifyPlaybackAction",
+      "type": "string",
+      "enum": ["play", "pause", "next", "previous"],
+      "description": "The playback command to send to the user's active Spotify device: resume, pause, skip forward, or skip back."
+    }
+  }
+}

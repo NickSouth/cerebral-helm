@@ -10,7 +10,7 @@
     "test": "vitest",
     "test:visual": "vite build && playwright test",
     "visual:available": "node scripts/visual-available.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{mjs,ts,json}\" \"tests/**/*.ts\"",

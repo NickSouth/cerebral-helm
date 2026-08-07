@@ -28,28 +28,12 @@ export type HeimlichState =
   | "error"
   | "offline";
 
-export interface ConversationMessage {
-  readonly id: string;
-  readonly role: "user" | "heimlich";
-  readonly text: string;
-}
-
-/** The in-conversation docked bottom input — distinct from the persistent top Ask Heimlich launcher. */
-export interface ConversationInput {
-  readonly draft?: string;
-  readonly placeholder: string;
-}
-
-export interface HeimlichConversation {
-  readonly open: boolean;
-  readonly transcript: readonly ConversationMessage[];
-  readonly input: ConversationInput;
-}
-
-/** The center surface; always present — chat is a translucent overlay, never a replacement (§5.7). */
+/**
+ * The center surface; always present. The chat/conversation overlay was removed for the MVP
+ * (NIC-124) — conversing with Heimlich is post-MVP — so only the runtime `state` remains.
+ */
 export interface HeimlichSurface {
   readonly state: HeimlichState;
-  readonly conversation: HeimlichConversation;
 }
 
 /**
@@ -89,6 +73,9 @@ export interface ScheduleItem {
   readonly id: string;
   readonly title: string;
   readonly start?: string;
+  /** The event's location, shown as a hover tooltip on the row (NIC-126); omitted when the event
+   *  has no location. */
+  readonly location?: string;
   readonly kind: "today" | "tonight";
 }
 
@@ -103,10 +90,20 @@ export interface MetricChannel {
   readonly label: string;
 }
 
-/** Network channel with optional up/down throughput split (mirrors DashboardNetworkChannel). */
+/** Wi-Fi radio state: on, switched off by the user, or no Wi-Fi interface on this machine. */
+export type WiFiPower = "on" | "off" | "absent";
+
+/**
+ * Network channel carrying the Wi-Fi link (transmit) rate — the connection's speed
+ * (mirrors DashboardNetworkChannel). `wifiPower` and `signalRssi` (NIC-156) describe the
+ * radio itself and are independent of `state`/`linkMbps`, which describe the link-rate
+ * metric: a machine on Ethernet has no link rate while its radio is legitimately on.
+ */
 export interface NetworkChannel extends MetricChannel {
-  readonly uploadMbps?: number;
-  readonly downloadMbps?: number;
+  readonly linkMbps?: number;
+  readonly wifiPower?: WiFiPower;
+  /** Signal strength in dBm (negative; closer to zero is stronger), when associated. */
+  readonly signalRssi?: number;
 }
 
 /** Battery channel with an optional charge percentage (Mac-only capability; mocked pre-Mac). */
@@ -124,10 +121,18 @@ export interface WeatherChannel extends MetricChannel {
   readonly condition?: string;
 }
 
+/** macOS's own memory-pressure level (NIC-158) — see `memoryPressure` below. */
+export type MemoryPressure = "normal" | "warn" | "critical";
+
 export interface SystemHealthRegion {
   readonly state: RegionState;
   readonly cpuPercent?: number;
   readonly memoryPercent?: number;
+  /** The kernel's memory-pressure verdict, independent of `memoryPercent`. The used/total ratio
+   *  sits near 100% on a healthy Mac (the OS fills RAM with cache), so it cannot say whether
+   *  memory is under strain — this can. Absent off the macOS host or when the level cannot be
+   *  sampled, in which case the bar's colour falls back to thresholding the percentage. */
+  readonly memoryPressure?: MemoryPressure;
   readonly network?: NetworkChannel;
   readonly battery: BatteryChannel;
 }
@@ -136,6 +141,9 @@ export interface NewsHeadline {
   readonly id: string;
   readonly title: string;
   readonly source: string;
+  /** The article's navigable destination (design spec §5.4), opened on click via the `web.open`
+   *  tool. Omitted when the source has no link — the headline then renders as non-interactive text. */
+  readonly url?: string;
 }
 
 export interface NewsRegion {

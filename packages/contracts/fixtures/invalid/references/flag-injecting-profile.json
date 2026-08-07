@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0.0",
+  "references": [
+    { "id": "work-mail", "label": "Work Mail", "target": "https://mail.google.com", "profile": "Default --load-extension=/tmp/evil" }
+  ]
+}
