@@ -1,4 +1,8 @@
+import { useRef } from "react";
+import { useTypewriter } from "./useTypewriter";
+import { useLeaveTransition } from "./useLeaveTransition";
 import { BeamOverlay } from "./BeamOverlay";
+import { CenterShade } from "./CenterShade";
 import { QuickApps } from "./QuickApps";
 import { QuickActions } from "./QuickActions";
 import { HeimlichConsciousness } from "./HeimlichConsciousness";
@@ -7,6 +11,7 @@ import { InputRegion } from "../inputs/InputRegion";
 import { useActiveMode } from "./useActiveMode";
 import { useAppearance } from "../state/AppearanceProvider";
 import { useReports } from "../state/ReportProvider";
+import { useInputs } from "../state/InputProvider";
 
 /**
  * The calm, dominant center (constitution §6): Quick Apps and the Heimlich consciousness
@@ -21,10 +26,38 @@ import { useReports } from "../state/ReportProvider";
  * the report carries its own greeting block and the two would otherwise stack.
  */
 export function CenterStage() {
-  const { greeting } = useActiveMode();
-  const { assistantName } = useAppearance();
+  const { greeting, id: mode } = useActiveMode();
+  const { assistantName, reducedMotion } = useAppearance();
   const { openReportId } = useReports();
+  const { openInputId } = useInputs();
   const reportOpen = openReportId !== null;
+  // The shade lives here rather than inside the report, so it can be a child of `.heimlich` and
+  // reach the panel's edges. The ref is the seam between them: the report attaches it to its text,
+  // the shade measures it.
+  const reportContentRef = useRef<HTMLDivElement>(null);
+  const inputContentRef = useRef<HTMLDivElement>(null);
+  const inputOpen = openInputId !== null;
+  const greetingRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * The ambient greeting steps aside for EITHER surface, not just a report.
+   *
+   * It used to coexist with an input, which made the centre jump: the input sits above the
+   * greeting in the foot, so opening a report afterwards removed the greeting and dropped the form
+   * on top of the quick actions. Making the greeting exclusive with both removes the jump at its
+   * source rather than pinning the form to the bar to hide it — and it is the rule the choreography
+   * already followed everywhere else: the two surfaces coexist with each other, the greeting with
+   * neither.
+   *
+   * Routed through the leave transition so it recedes rather than vanishing, at the same rate as
+   * everything else in the centre.
+   */
+  const surfaceOpen = reportOpen || inputOpen;
+  const { shown: centerBusy, leaving: greetingLeaving } = useLeaveTransition(surfaceOpen);
+  const showGreeting = Boolean(greeting) && !centerBusy;
+
+  // Keyed on the mode, so entering a mode writes its greeting and nothing else retypes it.
+  useTypewriter(greetingRef, showGreeting ? mode : null, { enabled: !reducedMotion });
 
   return (
     <main id="main" tabIndex={-1} className="shell-center">
@@ -36,12 +69,21 @@ export function CenterStage() {
         data-report-open={reportOpen || undefined}
       >
         <HeimlichConsciousness />
+        <CenterShade side="report" open={reportOpen} contentRef={reportContentRef} />
         <p className="heimlich__state">{assistantName}</p>
-        <ReportRegion />
+        <ReportRegion contentRef={reportContentRef} />
+        <CenterShade side="input" open={inputOpen} contentRef={inputContentRef} />
         <div className="heimlich__foot">
-          <InputRegion />
-          {greeting && !reportOpen ? (
-            <div className="heimlich__greeting-block">
+          <InputRegion contentRef={inputContentRef} />
+          {greeting && showGreeting ? (
+            /* Typed on every mode switch, the same way a report is. Today the line is hard-baked
+               per mode; when a model writes it, only the source of the string changes — the
+               choreography is already the shape a stream wants. */
+            <div
+              className="heimlich__greeting-block"
+              ref={greetingRef}
+              data-leaving={greetingLeaving || undefined}
+            >
               <p className="heimlich__greeting">{greeting.fallback}</p>
               {greeting.subtitle ? (
                 <p className="heimlich__subgreeting">{greeting.subtitle}</p>

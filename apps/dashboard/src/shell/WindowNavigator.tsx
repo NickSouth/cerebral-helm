@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useBridge } from "../state/BridgeProvider";
 import type {
   NavigatorWindow,
@@ -169,6 +169,99 @@ function AppGroup({
   );
 }
 
+
+/**
+ * Reduced motion, read from the environment rather than from context.
+ *
+ * The navigator is a standalone native window; requiring `AppearanceProvider` just to learn about
+ * motion would couple it to a tree it does not otherwise need. Both signals are checked because
+ * they are separate: the OS preference, and the in-app setting, which is published as an attribute
+ * on the themed root and normally only reaches CSS.
+ */
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const os = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+  const inApp = Boolean(document.querySelector('[data-reduced-motion="true"]'));
+  return os || inApp;
+}
+
+/**
+ * Poses the list as a wheel: each row is scaled, faded and tilted by its distance from the
+ * scroller's centre line, so the column reads as a cylinder turning rather than a list sliding.
+ *
+ * Driven from a scroll handler rather than CSS scroll-driven animations for certainty —
+ * `animation-timeline` may well be available in this WebKit, and if it is this becomes a few
+ * declarative lines. Worth confirming on the Mac host before relying on it.
+ *
+ * Skipped entirely under reduced motion: the rows keep their natural flat layout, which is the
+ * honest equivalent and avoids animating a surface someone asked to hold still.
+ */
+function useWheelPose(
+  scrollRef: RefObject<HTMLDivElement | null>,
+  { enabled, deps }: { enabled: boolean; deps: unknown }
+): void {
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) {
+      return;
+    }
+    const rows = () => [...scroller.children] as HTMLElement[];
+    if (!enabled) {
+      // Clear anything a previous run left behind, so turning motion off restores a flat list.
+      for (const row of rows()) {
+        row.style.transform = "";
+        row.style.opacity = "";
+      }
+      return;
+    }
+
+    let frame = 0;
+    const pose = () => {
+      frame = 0;
+      const box = scroller.getBoundingClientRect();
+      if (!box.height) {
+        return;
+      }
+      const mid = box.top + box.height / 2;
+      const reach = box.height / 2;
+      for (const row of rows()) {
+        const rect = row.getBoundingClientRect();
+        const t = Math.max(-1.6, Math.min(1.6, (rect.top + rect.height / 2 - mid) / reach));
+        const away = Math.abs(t);
+        row.style.opacity = Math.max(0, 1 - away * 0.85).toFixed(3);
+        row.style.transform =
+          `perspective(760px) rotateX(${(-t * 34).toFixed(2)}deg)` +
+          ` translateZ(${(-away * 44).toFixed(1)}px) scale(${(1 - away * 0.18).toFixed(3)})`;
+      }
+    };
+    const schedule = () => {
+      if (!frame) {
+        frame = requestAnimationFrame(pose);
+      }
+    };
+
+    pose();
+    scroller.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    // Expanding a stack changes every row's position, so the pose has to follow the layout, not
+    // only the scroll.
+    const observer =
+      typeof ResizeObserver === "function" ? new ResizeObserver(schedule) : null;
+    observer?.observe(scroller);
+
+    return () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+      }
+      scroller.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      observer?.disconnect();
+    };
+  }, [scrollRef, enabled, deps]);
+}
+
 /**
  * The window navigator (NIC-143): an app-grouped, iPhone-switcher-style list of every
  * open window, with per-window minimize/close and click-to-surface. It layers above open
@@ -225,6 +318,10 @@ export function WindowNavigator({
 
   const apps = inventory?.apps ?? [];
   const total = apps.reduce((sum, group) => sum + group.windows.length, 0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const reducedMotion = prefersReducedMotion();
+  // Re-poses when the inventory or an expansion changes the row layout, not only on scroll.
+  useWheelPose(scrollRef, { enabled: !reducedMotion, deps: `${total}:${expanded ?? ""}` });
 
   const body = (
     <section className="win-nav" role="dialog" aria-modal={variant === "overlay"} aria-label="Open windows">
@@ -234,7 +331,7 @@ export function WindowNavigator({
           <CloseGlyph />
         </button>
       </header>
-      <div className="win-nav__scroll">
+      <div className="win-nav__scroll" ref={scrollRef}>
         {apps.length === 0 ? (
           <p className="win-nav__empty">No open windows to show.</p>
         ) : (

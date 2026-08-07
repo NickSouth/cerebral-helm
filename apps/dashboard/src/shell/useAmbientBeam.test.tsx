@@ -99,20 +99,30 @@ describe("useAmbientBeam", () => {
     for (const light of lights) expect(light.style.transform).toBe(PARKED);
   });
 
-  it("stops writing after unmount", () => {
+  // REVERSED for NIC-152. This used to assert the transform stayed frozen at its last value after
+  // unmount. That is no longer correct: teardown now CLEARS the inline transform, so every tile
+  // falls back to its CSS resting position (parked off-screen). The reason is the receded posture
+  // — the hook restarts with a narrower scope when presence changes, and a tile abandoned
+  // mid-sweep would otherwise keep its last transform and sit on a panel as a stationary glow.
+  // The test's real intent — that the loop writes nothing more once torn down — is preserved, and
+  // is now the second half of the assertion.
+  it("parks its tiles on unmount and writes nothing further", () => {
     const { container, unmount } = render(<Host />);
     const light = container.querySelector<HTMLElement>('.beam-overlay__light[data-beam="a"]')!;
 
     vi.advanceTimersByTime(0);
     const t0 = performance.now();
     runFrame(t0);
-    const atUnmount = light.style.transform;
+    expect(light.style.transform).not.toBe("");
 
     unmount();
+    // Teardown resets it to the CSS resting position rather than leaving it mid-sweep.
+    expect(light.style.transform).toBe("");
+
     runFrame(t0 + 1000);
     vi.advanceTimersByTime(10_000);
     runFrame(t0 + 2000);
 
-    expect(light.style.transform).toBe(atUnmount);
+    expect(light.style.transform).toBe("");
   });
 });

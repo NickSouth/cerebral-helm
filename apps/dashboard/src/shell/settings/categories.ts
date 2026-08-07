@@ -1,6 +1,10 @@
 /**
  * The settings categories (NIC-63 / design spec §10 SettingsWindow). One ordered registry drives
- * the sidebar and the content router — no per-category conditionals in the window. Each panel is
+ * the sidebar and the content router — no per-category conditionals in the window.
+ *
+ * There is deliberately NO per-category description (owner, 2026-08-07): a category explains
+ * itself through its mark, its name, and the rows inside it, and a paragraph restating that was
+ * the bulk of what made this window feel heavy. Each panel is
  * one of three honest states throughout: editable (validated via `updateSettings`), read-only
  * contract inspection, or unavailable-future (FR-UI-06, FR-CFG-04).
  */
@@ -15,36 +19,29 @@ export type SettingsCategoryId =
 export interface SettingsCategory {
   readonly id: SettingsCategoryId;
   readonly label: string;
-  /** One-line orientation shown at the top of the panel. */
-  readonly description: string;
 }
 
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
     id: "general",
-    label: "General",
-    description: "Launch, display, motion, and the command-palette shortcut."
+    label: "General"
   },
   {
     id: "permissions",
-    label: "Permissions",
-    description: "Enabled tools and their deterministic risk & confirmation policy."
+    label: "Permissions"
   },
   {
     id: "modes",
-    label: "Modes",
-    description: "The modes, the default, and window behavior."
+    label: "Modes"
   },
-  { id: "actions", label: "Actions", description: "Quick actions and the workflows behind them." },
+  { id: "actions", label: "Actions" },
   {
     id: "customization",
-    label: "Customization",
-    description: "Mode colors and the assistant name."
+    label: "Customization"
   },
   {
     id: "setup",
-    label: "Setup",
-    description: "Knowledge location, integrations, and onboarding."
+    label: "Setup"
   }
 ];
 

@@ -5,6 +5,12 @@
    target, where a report is something you read. It sits in the panel's foot column, so the
    quick-action grid stays exactly where it was and the form grows upward into the empty middle. */
 
+/* BOXLESS, like the report. The design spec bordered this region because it is interactive and
+   needs a hit target — that requirement does not disappear, it moves down to each field, which is
+   where a hit target is actually pressed. The fields keep their boxes; the panel around them goes,
+   and the surface sits in the mirrored wash painted by `CenterShade` instead (approved 2026-08-07).
+
+   The halo travels with the text here too, so nothing on this element may clip. */
 .input-region {
   align-self: flex-end;
   width: 50%;
@@ -13,15 +19,41 @@
   display: flex;
   flex-direction: column;
   gap: var(--ch-space-3);
-  padding: var(--ch-space-4);
-  border: 1px solid var(--ch-panel-border);
-  border-radius: var(--ch-radius-lg);
-  background: var(--ch-surface-raised);
   /* The tallest form (create-ticket, six fields) can outgrow a short panel and push the
      quick-action grid off the bottom. Bounding the region makes that impossible: it scrolls
      inside itself instead. On a tall display the cap never binds, so nothing changes there. */
   max-height: 60vh;
+  overflow: visible;
+  text-shadow: var(--ch-text-halo);
+}
+
+/* Scrolling moved off the region so the halos are not sheared square at its edges (`overflow-y`
+   clips BOTH axes). Room is added on the TOP and LEFT only — the sides whose halos reach out into
+   open stream — with equal negative margins, so the clip boundary moves out of sight while the
+   fields stay exactly where they were laid out.
+
+   Never on the right: this surface is right-anchored, so a negative right margin widens the
+   scroll box past the panel edge and takes the controls with it — which is how the date picker
+   ended up hanging off the screen. The right side needs no escape room anyway, because the panel
+   border is already a boundary the halo is allowed to meet. */
+.input-region__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding: 2.5rem 0 var(--ch-space-2) 3rem;
+  margin: -2.5rem 0 calc(var(--ch-space-2) * -1) -3rem;
+}
+
+.input-region__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.input-region__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
 }
 
 /* Header and footer stay put while the fields scroll — the submit button must never be the thing

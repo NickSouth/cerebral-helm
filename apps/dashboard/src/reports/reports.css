@@ -1,9 +1,10 @@
 /* --- The Report region (docs/quick-actions/PLAN.md) -----------------------------------------
 
    The centre panel's left third, from below the Heimlich wordmark down to above the greeting.
-   Opaque and BORDERLESS with a right-edge mask: the consciousness stream dissolves into the
-   report rather than being boxed away from it, which is also what makes the same geometry work
-   as the future conversation surface.
+   BORDERLESS and boxless: the text carries its own halo and sits in a wash painted by
+   `CenterShade` (a child of `.heimlich`, so it reaches the panel edges). The consciousness stream
+   is pushed back around the words rather than the words being placed on a panel — design
+   reference Plate 02, approved 2026-08-07. Nothing here draws a background.
 
    It is a normal flex child of `.heimlich`'s column, sitting between the wordmark and the foot
    group, so it claims exactly the space that column already left empty — no magic inset numbers.
@@ -25,25 +26,62 @@
   display: flex;
   flex-direction: column;
   gap: var(--ch-space-3);
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: var(--ch-space-4);
   background: transparent;
+  /* The halo paints outside the text's box; nothing here may clip it. Scrolling lives on the
+     child below for exactly that reason. */
+  overflow: visible;
+  /* Shade made BY the text, so it hugs whatever the words happen to be — a long line carries its
+     shade with it, a short one stops short. No shape, therefore no seam to see the end of. */
+  text-shadow: var(--ch-text-halo);
 }
 
-/* The fade lives on a BACKGROUND layer, not on the region itself.
-   Masking the region masks its text too — the first version faded the event times into
-   unreadability. The surface is what should dissolve into the consciousness stream; the content
-   stays crisp and simply stops before the fade begins. The layer extends past the content box to
-   the right so the gradient runs through empty space. */
-.report-region::before {
-  content: "";
+/* The scrolling content. `overflow-y: auto` clips on BOTH axes, so the padding here (with an equal
+   negative margin) moves the clip boundary out of sight rather than letting it shear the halos of
+   the first characters on every line. Scrollbar hidden: the wheel still works, and a visible bar
+   would put a hard vertical edge through a surface whose whole point is not having one. */
+.report-region__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding: var(--ch-space-2) var(--ch-space-4) var(--ch-space-4) 3rem;
+  margin-left: -3rem;
+}
+
+.report-region__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.report-region__content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+}
+
+/* The writing caret. Absolutely positioned inside the content box and moved by the typewriter from
+   a collapsed range, so it sits at the real wrap position on every line. Hidden unless a run is in
+   progress, so a finished report shows no cursor. */
+.report-caret {
   position: absolute;
-  inset: 0 calc(var(--ch-space-6) * -1) 0 0;
-  z-index: -1;
-  background: var(--ch-surface-panel);
-  mask-image: linear-gradient(to right, black 70%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to right, black 70%, transparent 100%);
+  top: 0;
+  left: 0;
+  width: 0.5ch;
+  display: none;
+  background: var(--ch-accent-primary);
+  pointer-events: none;
+  animation: ch-caret-blink 1s steps(1) infinite;
+}
+
+.report-caret[data-on] {
+  display: block;
+}
+
+@keyframes ch-caret-blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .report-region__head {
@@ -90,29 +128,10 @@
   gap: var(--ch-space-3);
 }
 
-/* Block-level top-down stagger rather than character-level: it reads better at this density and
-   maps directly onto a model streaming blocks in later — the renderer does not change. */
-.report-region__block {
-  animation: ch-report-block-in var(--ch-motion-slow) var(--ch-ease-standard) both;
-  animation-delay: calc(var(--ch-report-block-index, 0) * 70ms);
-}
-
-@keyframes ch-report-block-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.4rem);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .report-region__block {
-    animation: none;
-  }
-}
+/* The block-level stagger is GONE — `useTypewriter` reveals the document character by character
+   instead (owner decision, 2026-08-07). The two could not coexist: a block fading up while its own
+   text was still being written read as two animations disagreeing about the same content. Reduced
+   motion is handled at the source — the typewriter does not run, so the text is simply there. */
 
 /* --- Blocks --- */
 

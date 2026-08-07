@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en" data-mode="executive">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mockups — native windows</title>
+    <link rel="stylesheet" href="/src/tokens/tokens.css" />
+    <link rel="stylesheet" href="/mockups/_mock.css" />
+    <style>
+      body {
+        overflow: auto;
+      }
+      .idx {
+        position: relative;
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 4rem 2rem;
+      }
+      .idx h1 {
+        font-weight: 300;
+        font-size: var(--ch-font-size-xl);
+        margin: 0 0 0.5rem;
+      }
+      .idx p.lede {
+        color: var(--ch-text-muted);
+        line-height: 1.6;
+        margin: 0 0 2rem;
+        font-size: var(--ch-font-size-base);
+      }
+      .idx a.card {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+        padding: 1.1rem 1.25rem;
+        margin-bottom: 0.75rem;
+        border-radius: 12px;
+        background: rgba(14, 20, 32, 0.6);
+        backdrop-filter: blur(30px) saturate(160%);
+        -webkit-backdrop-filter: blur(30px) saturate(160%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        transition: all 160ms var(--ch-ease-standard);
+      }
+      .idx a.card:hover {
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+        transform: translateY(-2px);
+      }
+      .idx a.card b {
+        font-weight: 500;
+        font-size: var(--ch-font-size-base);
+      }
+      .idx a.card span {
+        display: block;
+        color: var(--ch-text-faint);
+        font-size: var(--ch-font-size-sm);
+        margin-top: 0.3rem;
+        line-height: 1.5;
+      }
+      .idx .foot {
+        margin-top: 2rem;
+        font-size: var(--ch-font-size-sm);
+        color: var(--ch-text-faint);
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="desk"><div class="desk__glare"></div></div>
+    <div class="idx">
+      <h1>Native window mockups</h1>
+      <p class="lede">
+        Six directions, two per surface. Each page has an A / B switch at the bottom. Everything
+        floats over a mock desktop, and the blur you see is the same operation
+        <code>NSVisualEffectView</code> will perform on the real one — so this is a truthful
+        preview of the vibrancy, not an impression of it.
+      </p>
+
+      <a class="card" href="/mockups/settings.html">
+        <b>Settings</b>
+        <span>A · macOS System Settings shape — searchable sidebar, grouped rows.<br />
+          B · Icon-grid landing you drill into, frequent toggles surfaced.</span>
+      </a>
+      <a class="card" href="/mockups/window-manager.html">
+        <b>Window manager</b>
+        <span>A · True 3D wheel — cards tilt away from the centre line.<br />
+          B · Same cards, scale and opacity falloff only. Both fade into the desktop at each end.</span>
+      </a>
+      <a class="card" href="/mockups/more-apps.html">
+        <b>More Apps</b>
+        <span>A · Generous grid, big icon over label, whole tile lifts.<br />
+          B · Denser and sectioned, with a dock-style swell.</span>
+      </a>
+
+      <p class="foot">
+        Not production code — nothing under <code>src/</code> is touched and the folder deletes in
+        one command. They do pull in the real token layer, so the colours, radii and type are the
+        ones the app actually ships.
+      </p>
+    </div>
+  </body>
+</html>

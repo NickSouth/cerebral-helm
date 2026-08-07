@@ -25,7 +25,7 @@ import { useEffect, useSyncExternalStore } from "react";
  * attribute is dropped, so finishing early would make the final regions snap.
  */
 export const FIELD_DURATION_MS = 4920;
-const TOTAL_MS = 6200;
+export const TOTAL_MS = 6200;
 
 /**
  * Once per page load, not once per mount. A mode switch re-renders the shell and StrictMode

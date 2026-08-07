@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState, type RefObject } from "react";
 import { useReportDocument } from "./useReportDocument";
 import { renderableBlocks, type ReportActionReference, type ReportBlock } from "./reportDocument";
 import { quickActionLabel } from "../shell/quickActionRegistry";
@@ -8,6 +8,9 @@ import { useActionStatus } from "../state/ActionStatusProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { useReports } from "../state/ReportProvider";
 import { useInputs } from "../state/InputProvider";
+import { useAppearance } from "../state/AppearanceProvider";
+import { useTypewriter } from "../shell/useTypewriter";
+import { useLeaveTransition } from "../shell/useLeaveTransition";
 
 /**
  * The Report region (docs/quick-actions/PLAN.md): the centre panel's left third, from below the
@@ -18,31 +21,55 @@ import { useInputs } from "../state/InputProvider";
  * a docked input. That is why blocks reveal top-down on a stagger: it reads well at this density
  * and maps directly onto a model streaming blocks in later, with no second surface to build.
  */
-export function ReportRegion() {
+export function ReportRegion({
+  contentRef
+}: {
+  /** Attached to the block list so `CenterShade` can measure the text it has to hug. */
+  contentRef?: RefObject<HTMLDivElement | null>;
+} = {}) {
   const { openReportId, openReportParams, closeReport } = useReports();
-  const { document, refresh } = useReportDocument(openReportId ?? "", undefined, openReportParams);
+  // The outgoing report stays mounted until it has finished receding, so a swap is a handover
+  // rather than a blink. Everything below renders `shown`, not the live id.
+  const { shown: shownReportId, leaving } = useLeaveTransition(openReportId);
+  const { document, refresh } = useReportDocument(shownReportId ?? "", undefined, openReportParams);
+  const { reducedMotion } = useAppearance();
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const caretRef = useRef<HTMLSpanElement>(null);
 
-  if (!openReportId) {
+  // Keyed on the document's identity, so a refresh or a different report retypes and a re-render
+  // for any other reason does not. Suppressed while leaving — a surface on its way out must not
+  // start rewriting itself.
+  useTypewriter(bodyRef, document && !leaving ? `${shownReportId}:${document.title ?? ""}` : null, {
+    enabled: !reducedMotion,
+    caretRef
+  });
+
+  if (!shownReportId) {
     return null;
   }
+  const openReportIdShown = shownReportId;
 
   const blocks = document ? renderableBlocks(document) : [];
 
   return (
     <section
       className="report-region"
-      aria-label={`${quickActionLabel(openReportId)} report`}
-      data-report={openReportId}
+      aria-label={`${quickActionLabel(openReportIdShown)} report`}
+      data-report={openReportIdShown}
+      data-leaving={leaving || undefined}
     >
+      {/* OUTSIDE the scroller. A halo paints beyond its element's box and `overflow-y: auto` clips
+          on both axes, so anything haloed inside a scroll container gets its shade sheared off
+          square at that container's edges. The header does not need to scroll anyway. */}
       <header className="report-region__head">
-        <h2 className="report-region__title">{quickActionLabel(openReportId)}</h2>
+        <h2 className="report-region__title">{quickActionLabel(openReportIdShown)}</h2>
         {/* Only for a report composed from a fetch: offering a refresh on a document built from
             ambient state would promise something it cannot do. */}
         {document?.refreshable ? (
           <button
             type="button"
             className="report-region__refresh"
-            aria-label={`Refresh the ${quickActionLabel(openReportId)} report`}
+            aria-label={`Refresh the ${quickActionLabel(openReportIdShown)} report`}
             onClick={refresh}
           >
             Refresh
@@ -51,20 +78,36 @@ export function ReportRegion() {
         <button
           type="button"
           className="report-region__close"
-          aria-label={`Close the ${quickActionLabel(openReportId)} report`}
+          aria-label={`Close the ${quickActionLabel(openReportIdShown)} report`}
           onClick={closeReport}
         >
           ×
         </button>
       </header>
 
-      {document === null ? (
-        // Registered as a Report with no composer yet. Honest-unavailable beats an empty
-        // document, which would read as "your brief is genuinely empty".
-        <p className="report-region__pending">This report isn’t built yet.</p>
-      ) : (
-        <ReportBlocks blocks={blocks} />
-      )}
+      <div className="report-region__scroll">
+        {/* One element, two readers: the shade measures it, the typewriter walks it. */}
+        <div
+          className="report-region__content"
+          ref={(node) => {
+            bodyRef.current = node;
+            if (contentRef) {
+              contentRef.current = node;
+            }
+          }}
+        >
+          {document === null ? (
+            // Registered as a Report with no composer yet. Honest-unavailable beats an empty
+            // document, which would read as "your brief is genuinely empty".
+            <p className="report-region__pending">This report isn’t built yet.</p>
+          ) : (
+            <ReportBlocks blocks={blocks} />
+          )}
+          {/* Positioned by the typewriter from a collapsed range, so it lands wherever the text
+              actually wrapped to rather than at a guessed offset. */}
+          <span className="report-caret" ref={caretRef} aria-hidden="true" />
+        </div>
+      </div>
     </section>
   );
 }
@@ -78,13 +121,7 @@ export function ReportBlocks({ blocks }: { blocks: readonly ReportBlock[] }) {
   return (
     <div className="report-region__blocks">
       {blocks.map((block, index) => (
-        <div
-          key={`${block.blockKind}-${index}`}
-          className="report-region__block"
-          /* Per-block delay drives the top-down stagger; the same mechanism carries a model's
-             streamed blocks later. */
-          style={{ "--ch-report-block-index": index } as React.CSSProperties}
-        >
+        <div key={`${block.blockKind}-${index}`} className="report-region__block">
           <BlockView block={block} />
         </div>
       ))}

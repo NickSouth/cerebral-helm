@@ -65,11 +65,18 @@ describe("Input region", () => {
     expect(screen.queryByRole("region", { name: "Capture note form" })).toBeNull();
   });
 
-  it("toggles closed when its own slot is pressed again", () => {
+  it("toggles closed when its own slot is pressed again", async () => {
     renderShell();
     openCaptureNote();
     fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
-    expect(screen.queryByRole("region", { name: "Capture note form" })).toBeNull();
+    // Closing is a LEAVE, not a removal (increment 4): the form stays mounted and marked
+    // `data-leaving` while it recedes, so a swap is a handover rather than a blink.
+    expect(screen.getByRole("region", { name: "Capture note form" })).toHaveAttribute(
+      "data-leaving"
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Capture note form" })).toBeNull()
+    );
   });
 
   it("keeps the quick-action grid and the running field in place — it is a panel, not a takeover", () => {
@@ -108,7 +115,7 @@ describe("Input region", () => {
     expect(within(form).getByLabelText(/Title/)).toHaveValue("Keep me");
   });
 
-  it("cancels without writing anything", () => {
+  it("cancels without writing anything", async () => {
     const submissions: string[] = [];
     renderShell({
       captureNote: (input: { title: string }) => {
@@ -120,7 +127,11 @@ describe("Input region", () => {
     fireEvent.change(within(form).getByLabelText(/Title/), { target: { value: "Never sent" } });
     fireEvent.click(within(form).getByRole("button", { name: "Cancel" }));
 
-    expect(screen.queryByRole("region", { name: "Capture note form" })).toBeNull();
+    // Cancelling leaves rather than vanishing (increment 4); what matters here is that nothing was
+    // written, which is asserted below and is true from the moment Cancel is pressed.
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Capture note form" })).toBeNull()
+    );
     expect(submissions).toEqual([]);
   });
 });

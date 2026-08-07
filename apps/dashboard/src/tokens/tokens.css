@@ -35,7 +35,11 @@
   --ch-bg-base: #05080f;
   --ch-bg-gradient-top: #0a1422;
   --ch-glow-radial: rgba(95, 210, 232, 0.14);
-  --ch-surface-panel: rgba(15, 23, 38, 0.66);
+  /* Split so the shade can rebuild the panel's OPAQUE equivalent from the same source (below).
+     `--ch-surface-panel` itself is unchanged — `rgb(… / 0.66)` is the same colour as the old
+     `rgba(…, 0.66)`. */
+  --ch-surface-panel-rgb: 15 23 38;
+  --ch-surface-panel: rgb(var(--ch-surface-panel-rgb) / 0.66);
   --ch-surface-raised: rgba(18, 26, 42, 0.92);
   --ch-panel-border: rgba(255, 255, 255, 0.08);
   --ch-text-primary: #eaf2fb;
@@ -152,6 +156,48 @@
   --ch-intro-delay-rails: 5180ms;
   --ch-intro-delay-header: 5420ms;
   --ch-intro-delay-bottombar: 5620ms;
+
+  /* --- Centre shade: how a report or a form sits over the running consciousness field.
+     NOT a panel. Two layers that together mean the text never acquires an edge:
+
+     `--ch-text-halo` is shade made BY the text — stacked wide shadows in the panel's own colour,
+     so it follows the glyphs and a long line carries its shade with it. It is a text-shadow value
+     held in a token so every centre surface halos identically.
+
+     `--ch-shade-fill` is the wash beneath it, which runs fully into two panel edges and dissolves
+     on the other two, so there is no outside to see. `--ch-shade-fade` is the dissolve distance —
+     ONE value for both axes, because unequal fades read as two different treatments on one shape.
+     `--ch-shade-pad` is how far past the text the solid region runs before the fade starts.
+     Owner-tunable; these four are the whole look. */
+  /* The tone both layers are built from: the OPAQUE EQUIVALENT OF THE PANEL — exactly the navy you
+     see under the Heimlich wordmark when nothing is open. That is the target by construction
+     (owner's test, 2026-08-07: the darkest part of the halo should match that colour), and it is
+     why the shade is built from the panel's own fill over the mode background rather than from
+     `--ch-bg-base` alone, which is markedly darker and read as black.
+
+     Rebuilt from `--ch-surface-panel-rgb` so there is still one source for the panel colour, and
+     it re-tints per mode for free because `--ch-bg-base` does. */
+  --ch-shade-tone: color-mix(in srgb, rgb(var(--ch-surface-panel-rgb)) 66%, var(--ch-bg-base));
+  --ch-shade-fill: color-mix(in srgb, var(--ch-shade-tone) 95%, transparent);
+  /* Dither. A 13rem fade across a near-black colour is a very shallow ramp, and 8 bits per channel
+     cannot express it smoothly — the steps land far enough apart to read as stripes. Overlaying
+     faint noise scatters each step across its neighbours so the eye integrates a smooth gradient
+     instead of finding the edges. Desaturated, so it breaks the banding without tinting anything.
+     Raise `--ch-shade-dither-opacity` if bands survive; lower it if the surface looks grainy. */
+  --ch-shade-dither: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+  --ch-shade-dither-opacity: 0.055;
+  --ch-shade-fade: 13rem;
+  --ch-shade-pad: 2.5%;
+  --ch-shade-glide: 420ms;
+  /* Weighted toward the SHORT radii. Density right at the glyph edge is what buys legibility when
+     a bright ribbon passes directly behind a line; the long radii only carry the dissolve, and
+     adding more of those would spread the shade without making the text any easier to read. So the
+     stack triples up close and keeps a single long tail — more halo, same colour, same fade. */
+  --ch-text-halo:
+    0 0 3px var(--ch-shade-tone), 0 0 5px var(--ch-shade-tone), 0 0 7px var(--ch-shade-tone),
+    0 0 10px var(--ch-shade-tone), 0 0 14px var(--ch-shade-tone), 0 0 20px var(--ch-shade-tone),
+    0 0 28px var(--ch-shade-tone), 0 0 40px var(--ch-shade-tone), 0 0 56px var(--ch-shade-tone),
+    0 0 76px var(--ch-shade-tone);
 
   /* --- Focus (visible ring + offset; never color alone) --- */
   --ch-focus-ring-color: #7fb7ff;

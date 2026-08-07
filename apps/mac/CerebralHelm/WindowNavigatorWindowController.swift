@@ -28,6 +28,11 @@ final class WindowNavigatorWindowController: NSObject, WKNavigationDelegate, WKS
     /// Web → native shell actions (closeWindowNavigator). Set by `WindowCoordinator`.
     var onShellControl: (([String: Any]) -> Void)?
 
+    /// Kept in step with `.win-nav__scrim + .win-nav`'s `min(264px, 92vw)` in `shell.css`.
+    private static let contentWidth: CGFloat = 264
+    /// Kept in step with `.win-nav`'s `border-radius: 26px`.
+    private static let slabCornerRadius: CGFloat = 26
+
     private static var navigatorURL: URL {
         URL(string: "\(CerebralSchemeHandler.scheme)://\(CerebralSchemeHandler.host)/index.html?surface=windownavigator")!
     }
@@ -52,11 +57,15 @@ final class WindowNavigatorWindowController: NSObject, WKNavigationDelegate, WKS
         }
 
         webView = WKWebView(frame: .zero, configuration: configuration)
+        VibrantWindowChrome.makeTransparent(webView)
 
         // A tall, narrow panel (the iPhone-switcher feel): a single column of windows,
-        // scroll for more. Sized to the web surface's design dimensions.
+        // scroll for more. **264 is the web surface's width, not a guess** — the slab halved
+        // (owner, 2026-08-07) because a narrow column is what makes the list read as a wheel
+        // rather than a wall, and a window wider than the surface it hosts would give that
+        // back as dead margin.
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: Self.contentWidth, height: 640),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -73,7 +82,15 @@ final class WindowNavigatorWindowController: NSObject, WKNavigationDelegate, WKS
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.isReleasedWhenClosed = false
         window.center()
-        window.contentView = webView
+        // The slab draws its own tint and curvature; the vibrancy behind it supplies the blur that
+        // CSS cannot reach past the webview. `slabCornerRadius` is the single authority for the
+        // corner — the standalone web surface deliberately leaves its own radius at 0 so the two
+        // cannot drift apart.
+        VibrantWindowChrome.apply(
+            to: window,
+            hosting: webView,
+            cornerRadius: Self.slabCornerRadius
+        )
 
         super.init()
         window.delegate = self

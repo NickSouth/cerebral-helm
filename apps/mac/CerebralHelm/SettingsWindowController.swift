@@ -98,6 +98,7 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         ))
 
         webView = WKWebView(frame: .zero, configuration: configuration)
+        VibrantWindowChrome.makeTransparent(webView)
 
         // Sized to the web surface's design dimensions (design spec §10); resizable
         // so long panels are usable, min-bounded so the two-pane layout never crushes.
@@ -148,7 +149,11 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
             dragBand.topAnchor.constraint(equalTo: container.topAnchor),
             dragBand.heightAnchor.constraint(equalToConstant: 40)
         ])
-        window.contentView = container
+        // Vibrancy behind the whole window. The web layer keeps its right-hand reading pane
+        // near-opaque — dense settings text has a contrast requirement that translucency cannot
+        // guarantee over an arbitrary desktop — and lets it through on the chrome, which is the
+        // deliberate split recorded in the overhaul notes rather than blanket translucency.
+        VibrantWindowChrome.apply(to: window, hosting: container)
 
         super.init()
         window.delegate = self

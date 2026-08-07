@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useInputForm } from "./useInputForm";
 import { usePicker } from "./usePicker";
+import { useLeaveTransition } from "../shell/useLeaveTransition";
 import {
   PICKER_DEBOUNCE_MS,
   isPickerStage,
@@ -38,12 +39,20 @@ import { useInputs } from "../state/InputProvider";
  * target, where a report is something you read. A Picker will render here too, with a filter
  * field and a result list above the same footer.
  */
-export function InputRegion() {
+export function InputRegion({
+  contentRef
+}: {
+  /** Attached to the body so `CenterShade` can measure the surface it has to hug. */
+  contentRef?: RefObject<HTMLDivElement | null>;
+} = {}) {
   const { openInputId, closeInput } = useInputs();
-  const { form, loading } = useInputForm(openInputId ?? "");
-  const picker = usePicker(openInputId ?? "");
+  // Same handover as the report: the outgoing form recedes before the next one arrives, rather
+  // than being unmounted out from under itself.
+  const { shown: openInputIdShown, leaving } = useLeaveTransition(openInputId);
+  const { form, loading } = useInputForm(openInputIdShown ?? "");
+  const picker = usePicker(openInputIdShown ?? "");
 
-  if (!openInputId) {
+  if (!openInputIdShown) {
     return null;
   }
 
@@ -52,32 +61,40 @@ export function InputRegion() {
   const surface = picker ? "picker" : "form";
 
   return (
-    <section className="input-region" aria-label={`${quickActionLabel(openInputId)} ${surface}`}>
+    <section
+      className="input-region"
+      aria-label={`${quickActionLabel(openInputIdShown)} ${surface}`}
+      data-leaving={leaving || undefined}
+    >
       <header className="input-region__head">
         <h2 className="input-region__title">
-          {picker?.title ?? form?.title ?? quickActionLabel(openInputId)}
+          {picker?.title ?? form?.title ?? quickActionLabel(openInputIdShown)}
         </h2>
         <button
           type="button"
           className="input-region__close"
-          aria-label={`Close the ${quickActionLabel(openInputId)} ${surface}`}
+          aria-label={`Close the ${quickActionLabel(openInputIdShown)} ${surface}`}
           onClick={closeInput}
         >
           ×
         </button>
       </header>
 
-      {picker ? (
-        <PickerBody key={picker.actionId} picker={picker} onDone={closeInput} />
-      ) : loading ? (
-        <p className="input-region__pending">Loading…</p>
-      ) : form ? (
-        // Keyed so switching between two Inputs starts from a clean set of values rather than
-        // carrying the previous form's typing across.
-        <InputFormBody key={form.actionId} form={form} onDone={closeInput} />
-      ) : (
-        <p className="input-region__pending">This action isn’t built yet.</p>
-      )}
+      <div className="input-region__scroll">
+        <div className="input-region__content" ref={contentRef}>
+          {picker ? (
+            <PickerBody key={picker.actionId} picker={picker} onDone={closeInput} />
+          ) : loading ? (
+            <p className="input-region__pending">Loading…</p>
+          ) : form ? (
+            // Keyed so switching between two Inputs starts from a clean set of values rather than
+            // carrying the previous form's typing across.
+            <InputFormBody key={form.actionId} form={form} onDone={closeInput} />
+          ) : (
+            <p className="input-region__pending">This action isn’t built yet.</p>
+          )}
+        </div>
+      </div>
     </section>
   );
 }

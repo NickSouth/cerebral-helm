@@ -30,123 +30,182 @@
   padding: var(--ch-space-4);
   padding-top: calc(var(--ch-space-4) + var(--ch-safe-area-top));
   overflow: hidden;
-  background: var(--ch-surface-panel);
-  border-right: 1px solid color-mix(in srgb, var(--ch-accent-primary) 18%, var(--ch-panel-border));
-  /* The reveal animation is native (the window slides); the web layer only paints. */
-}
-
-/* ---- Head: portrait, identity, window controls ---------------------------------------- */
-
-.sidebar-head {
-  display: flex;
-  align-items: center;
-  gap: var(--ch-space-3);
-  flex: 0 0 auto;
-}
-
-.sidebar-head__portrait {
-  display: inline-flex;
-  flex: 0 0 auto;
-  width: 2.4rem;
-  height: 2.4rem;
-}
-
-.sidebar-head__portrait .heimlich-avatar {
-  width: 100%;
-  height: 100%;
-}
-
-.sidebar-head__identity {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.sidebar-head__name {
-  font-size: var(--ch-font-size-lg);
-  color: var(--ch-text-primary);
-}
-
-.sidebar-head__mode {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ch-space-2);
-  font-size: var(--ch-font-size-sm);
-  color: var(--ch-accent-primary);
-}
-
-.sidebar-head__dot {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--ch-accent-primary);
-  flex: 0 0 auto;
-}
-
-.sidebar-head__control {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 1.7rem;
-  height: 1.7rem;
-  padding: 0;
-  border: 0;
-  border-radius: var(--ch-radius-md);
-  background: transparent;
-  color: var(--ch-text-muted);
-  cursor: pointer;
-}
-
-.sidebar-head__control svg {
-  width: 1.05rem;
-  height: 1.05rem;
-}
-
-.sidebar-head__control:hover,
-.sidebar-head__control[aria-pressed="true"] {
-  color: var(--ch-accent-primary);
-  background: color-mix(in srgb, var(--ch-accent-primary) 12%, transparent);
-}
-
-.sidebar-head__control:focus-visible {
-  outline: 2px solid var(--ch-accent-primary);
-  outline-offset: 2px;
-}
-
-/* ---- Consciousness band ---------------------------------------------------------------- */
-
-/* The stream is a presence, not a hero, at this width: a short band under the identity row.
-   `.heimlich__ribbon` positions absolutely against this host, so the host owns the height. */
-.sidebar-stream {
+  /* NOT a panel any more. No fill, no border: the blurred column below is what makes these panes
+     read as one set, and a container edge is exactly what the Control Center look does without.
+     The reveal animation is native (the window slides); the web layer only paints. */
   position: relative;
-  flex: 0 0 auto;
-  /* NEEDS A LOOK ON THE MAC HOST. The stream shader scales its strand width off the host's
-     LARGER dimension (Threads.tsx `pixel()`), so a wide-but-short band drives the strands
-     sub-pixel. This height is the band proportion the design calls for, not a verified value —
-     the WebGL ribbon does not paint in the browser preview (it is blank on the full dashboard
-     there too), so it could not be tuned against a real render. If it reads thin in the app,
-     the fix is height here, not a change to the shared shader. */
-  height: 5.5rem;
-  border-radius: var(--ch-radius-md);
+  background: transparent;
+}
+
+/* ---- The unifier ------------------------------------------------------------------------
+   A blurred column with no edge of its own — it dissolves into the desktop on the right and
+   softens top and bottom, so nothing here ever ends on a line. This is the only thing holding the
+   panes together, which is why they can float separately without looking scattered. */
+.sidebar-blur {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  backdrop-filter: blur(34px) saturate(150%);
+  -webkit-backdrop-filter: blur(34px) saturate(150%);
+  background: color-mix(in srgb, var(--ch-bg-base) 34%, transparent);
+  mask-image:
+    linear-gradient(to right, black 0, black 66%, transparent 100%),
+    linear-gradient(to bottom, transparent 0, black 5%, black 95%, transparent 100%);
+  mask-composite: intersect;
+  -webkit-mask-image:
+    linear-gradient(to right, black 0, black 66%, transparent 100%),
+    linear-gradient(to bottom, transparent 0, black 5%, black 95%, transparent 100%);
+  -webkit-mask-composite: source-in;
+}
+
+/* ---- The glass --------------------------------------------------------------------------
+   Each pane floats: its own blur, a hairline lit from above, and a specular sheen over the top
+   third. The mode accent tints both the border and the sheen, so the whole column re-themes with
+   the dashboard instead of staying neutral grey. */
+.sidebar-glass {
+  position: relative;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--ch-bg-base) 42%, transparent);
+  backdrop-filter: blur(26px) saturate(180%);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 16%, rgba(255, 255, 255, 0.14));
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
   overflow: hidden;
 }
 
-/* The dashboard lifts the ribbon inside its tall centre panel; in a short band that would crop
-   the stream against the top edge, so it sits centred here. */
-.sidebar-root .heimlich__ribbon {
-  transform: none;
+.sidebar-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 55%;
+  pointer-events: none;
+  /* Clips itself to the pane's corners, so the sheen does not depend on the pane clipping its
+     children — which `.sidebar-search` below cannot afford to do. */
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ch-accent-primary) 9%, rgba(255, 255, 255, 0.07)),
+    transparent
+  );
 }
 
-/* ---- Command bar ----------------------------------------------------------------------- */
-
-.sidebar-search {
-  flex: 0 0 auto;
+.sidebar-glass > * {
   position: relative;
-  /* The suggestion list overlays the content below rather than pushing the column down. */
-  z-index: 5;
+}
+
+/* The search pane is the one that must NOT clip. `.command-suggestions` is absolutely positioned
+   below the field and therefore lands outside this box entirely — under `overflow: hidden` the
+   suggestion list is invisible, and the command surface silently loses the feature that makes it
+   a launcher rather than a text box. It gets its own inset instead, so the field floats inside the
+   glass the way every other pane's content does rather than running to the pane's edges. */
+.sidebar-search {
+  overflow: visible;
+  padding: var(--ch-space-2);
+}
+
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+  padding: var(--ch-space-3) var(--ch-space-4);
+  gap: var(--ch-space-4);
+}
+
+/* The hairline between sections is what does the grouping a per-region border used to do. */
+.sidebar-section + .sidebar-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: var(--ch-space-4);
+}
+
+.sidebar-cap {
+  margin: 0 0 var(--ch-space-2);
+  font-size: var(--ch-font-size-label);
+  letter-spacing: var(--ch-font-label-tracking);
+  text-transform: uppercase;
+  color: var(--ch-text-faint);
+}
+
+/* A pane already IS the surface, so the panels inside it stop being surfaces — glass inside glass
+   reads as a rendering mistake rather than as depth.
+
+   `padding: 0` is load-bearing, not tidying: `.sidebar-group` above now supplies the inset, and a
+   panel that keeps its own adds a second one inside it. The density overrides at the foot of this
+   file were measured against ~282px of usable width; a second inset drops that to ~252px and every
+   one of them — the 2-up quick actions, the 3-across app grid, the mode pills — is suddenly sized
+   for a column that no longer exists. Do not "restore" a panel padding here. */
+.sidebar-section .shell-panel {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+.sidebar-section .beam-overlay {
+  display: none;
+}
+
+/* ---- Foot: three controls that float separately, not a bar --------------------------------
+   Dashboard earns width and a label because it is the one actually aimed for; three identical
+   orbs would make the primary action the hardest to find. */
+.sidebar-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.sidebar-orb {
+  width: 2.6rem;
+  height: 2.6rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 16%, rgba(255, 255, 255, 0.14));
+  background: color-mix(in srgb, var(--ch-bg-base) 42%, transparent);
+  backdrop-filter: blur(26px) saturate(180%);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  color: var(--ch-text-muted);
+  font: inherit;
+  transition: all var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.sidebar-orb--wide {
+  width: auto;
+  flex: 1 1 auto;
+  grid-auto-flow: column;
+  gap: var(--ch-space-2);
+  padding: 0 var(--ch-space-4);
+  border-radius: var(--ch-radius-pill);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-primary);
+}
+
+.sidebar-orb svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.sidebar-orb:hover:not(:disabled),
+.sidebar-orb[aria-pressed="true"] {
+  color: var(--ch-text-primary);
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.38),
+    0 0 18px color-mix(in srgb, var(--ch-accent-primary) 25%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.sidebar-orb[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--ch-accent-primary) 20%, transparent);
+}
+
+.sidebar-orb:disabled {
+  opacity: 0.5;
 }
 
 /* ---- Scrolling body -------------------------------------------------------------------- */
@@ -161,8 +220,14 @@
   gap: var(--ch-space-3);
   /* Hairline scrollbar: the column is dense and a platform scrollbar eats real width. The
      gutter keeps the overlay scrollbar off the panel edges rather than sitting on top of them. */
-  scrollbar-width: thin;
-  padding-right: var(--ch-space-2);
+  scrollbar-width: none;
+  /* Room for the panes' shadows to fall inside the clip rather than being cut at it. */
+  padding: 0.5rem;
+  margin: -0.5rem;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 /* ---- Density overrides ----------------------------------------------------------------- */
@@ -272,65 +337,8 @@
   font-size: var(--ch-font-size-label);
 }
 
-/* Panels: the rail's padding is tuned for a wide canvas; tighter here so the column's eight
-   sections fit between the head and the foot without an internal scroll. */
-.sidebar-root .shell-panel {
-  padding: var(--ch-space-3);
-}
-
 /* Quick apps: six across is unreadable at this width. */
 .sidebar-root .quick-apps {
   grid-template-columns: repeat(3, 1fr);
 }
 
-/* ---- Foot ------------------------------------------------------------------------------- */
-
-.sidebar-foot {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ch-space-2);
-  flex: 0 0 auto;
-  padding-top: var(--ch-space-3);
-  border-top: 1px solid var(--ch-panel-border);
-}
-
-.sidebar-foot__action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--ch-space-2);
-  font: inherit;
-  font-size: var(--ch-font-size-sm);
-  color: var(--ch-text-primary);
-  padding: var(--ch-space-2) var(--ch-space-3);
-  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 20%, var(--ch-panel-border));
-  border-radius: var(--ch-radius-md);
-  background: transparent;
-  cursor: pointer;
-}
-
-.sidebar-foot__action svg {
-  width: 1rem;
-  height: 1rem;
-  flex: 0 0 auto;
-}
-
-.sidebar-foot__action:hover:not(:disabled) {
-  border-color: var(--ch-accent-primary);
-  background: color-mix(in srgb, var(--ch-accent-primary) 10%, transparent);
-}
-
-.sidebar-foot__action:focus-visible {
-  outline: 2px solid var(--ch-accent-primary);
-  outline-offset: 2px;
-}
-
-.sidebar-foot__action:disabled {
-  color: var(--ch-status-neutral);
-  cursor: not-allowed;
-}
-
-.sidebar-foot__action--quiet {
-  border-color: transparent;
-  color: var(--ch-text-muted);
-}
