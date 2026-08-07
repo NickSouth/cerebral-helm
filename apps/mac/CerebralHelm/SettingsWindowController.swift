@@ -165,12 +165,30 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         webView.load(URLRequest(url: Self.settingsURL))
     }
 
+    /// Where the window flies out of, in screen coordinates.
+    ///
+    /// Settings is summoned from the bottom bar's settings control, which lives at the bottom-right
+    /// of the screen — and the in-page overlay variant of this exact surface already animates from
+    /// that corner (`ch-settings-in` in settings.css). Deriving the corner rather than threading
+    /// the button's rect through `SettingsProvider` keeps the two presentations agreeing without a
+    /// second control-channel argument; if the control ever moves, that CSS animation and this
+    /// point are the two places to change together.
+    ///
+    /// Recomputed per open, not cached: this window is warm-reused and the user can move it, change
+    /// the main display, or unplug a screen between one open and the next.
+    private var emergencePoint: NSPoint? {
+        guard let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return nil }
+        return NSPoint(x: visible.maxX, y: visible.minY)
+    }
+
     func show() {
-        window.makeKeyAndOrderFront(nil)
+        WindowAppearance.present(window, emergingFrom: emergencePoint)
     }
 
     func close() {
-        window.orderOut(nil)
+        WindowAppearance.dismiss(window, receding: emergencePoint) { [window] in
+            window.orderOut(nil)
+        }
     }
 
     /// Route a shared-session bridge event (config/capability changes re-theme and

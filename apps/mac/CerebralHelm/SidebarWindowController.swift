@@ -41,6 +41,11 @@ private final class SidebarPanel: NSPanel {
 final class SidebarWindowController: NSObject, WKNavigationDelegate, WKScriptMessageHandler, NSWindowDelegate {
     static let controlHandlerName = "sidebarControl"
 
+    /// The private channel carrying this surface's glass geometry. Separate from the control
+    /// channels because it is window presentation, not an action: it fires many times a second
+    /// while the column scrolls.
+    static let glassHandlerName = "glassControl"
+
     /// Wide enough for the two-up quick-action grid and the Today panel to read, narrow enough to
     /// leave the underlying app usable. The web column scales its type off viewport *height*, so
     /// this stays a fixed point width rather than a proportion of the screen.
@@ -78,6 +83,9 @@ final class SidebarWindowController: NSObject, WKNavigationDelegate, WKScriptMes
     /// Driven from the web layer's pin control over `sidebarControl`.
     private(set) var pinned = false
 
+    /// Renders one desktop blur per pane the web layer reports (`glassControl`).
+    private var glassHost: GlassBlurHost?
+
     private static var sidebarURL: URL {
         URL(string: "\(CerebralSchemeHandler.scheme)://\(CerebralSchemeHandler.host)/index.html?surface=sidebar")!
     }
@@ -102,8 +110,7 @@ final class SidebarWindowController: NSObject, WKNavigationDelegate, WKScriptMes
         }
 
         webView = WKWebView(frame: .zero, configuration: configuration)
-        // The web column paints its own opaque panel background edge-to-edge.
-        webView.setValue(false, forKey: "drawsBackground")
+        VibrantWindowChrome.makeTransparent(webView)
 
         panel = SidebarPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 600),
@@ -118,17 +125,19 @@ final class SidebarWindowController: NSObject, WKNavigationDelegate, WKScriptMes
 
         configuration.userContentController.add(self, name: Self.controlHandlerName)
         configuration.userContentController.add(self, name: DashboardWindowController.controlHandlerName)
+        configuration.userContentController.add(self, name: Self.glassHandlerName)
 
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        // A soft shadow along the inner edge so the column reads as floating over the app beneath.
-        panel.hasShadow = true
         panel.level = .floating
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
-        panel.contentView = webView
+        // No material behind it (owner, 2026-08-07): the column is a set of floating panes, and
+        // everything that is not a pane is completely transparent. A window-level
+        // `NSVisualEffectView` blurs the whole rect — on a full-height column that is an enormous
+        // slab of blur for a handful of controls, which is exactly how it looked. The panes carry
+        // their own legibility in CSS, where their geometry already lives.
+        glassHost = VibrantWindowChrome.clear(window: panel, hosting: webView)
         panel.delegate = self
 
         bridge.attach(to: webView)
@@ -284,6 +293,13 @@ final class SidebarWindowController: NSObject, WKNavigationDelegate, WKScriptMes
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
+        // Glass geometry is pure presentation of this window, and arrives many times a second while
+        // the column scrolls — it never reaches the action routing below.
+        if message.name == Self.glassHandlerName {
+            let raw = body["rects"] as? [[String: Any]] ?? []
+            glassHost?.update(rects: raw.compactMap(GlassRect.init))
+            return
+        }
         // Shell actions (quick-app pinning, More Apps, settings) belong to the coordinator, which
         // already owns that routing for the dashboard.
         if message.name == DashboardWindowController.controlHandlerName {

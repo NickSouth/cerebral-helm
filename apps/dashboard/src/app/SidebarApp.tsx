@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import "../tokens/tokens.css";
 import "../app.css";
 import "../styles/responsive.css";
@@ -20,6 +20,8 @@ import { ReportProvider } from "../state/ReportProvider";
 import { InputProvider } from "../state/InputProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { ThemeProvider } from "./ThemeProvider";
+import { useTransparentSurface } from "./useTransparentSurface";
+import { useGlassGeometry } from "./useGlassGeometry";
 import { createDashboardRuntime } from "../state/bootstrapStore";
 import { withModeWave } from "../shell/modeWave";
 import { postSidebarControl } from "./sidebarControl";
@@ -85,6 +87,12 @@ function SidebarSurface() {
   const { mode, modes, windowCollapse } = useDashboardState();
   const posture = useUiPosture();
   const [pinned, setPinned] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // The panes and the foot orbs are the glass; the native shell puts a real blur behind each one.
+  // The gaps between them stay untouched, which is the whole point — a blur that covered the column
+  // would be the slab this design exists to avoid.
+  useGlassGeometry(rootRef, ".sidebar-glass, .sidebar-orb");
 
   // Resolve the id by lookup, not by lowercasing the label (the bottom bar's approach): a mode
   // whose display label diverges from its config id would otherwise throw here.
@@ -180,12 +188,7 @@ function SidebarSurface() {
   }, [bridgeApi, modeId, posture.readOnly]);
 
   return (
-    <div className="sidebar-root" role="complementary" aria-label="CerebralHelm sidebar">
-      {/* The unifier. A blurred column with NO edge of its own — it dissolves into the desktop on
-          the right and softens top and bottom, so the panes below read as one set without ever
-          being put in a box. Coherence from the blur, not from a container. */}
-      <div className="sidebar-blur" aria-hidden="true" />
-
+    <div className="sidebar-root" role="complementary" aria-label="CerebralHelm sidebar" ref={rootRef}>
       {/* The single execution-feedback surface, same as the dashboard's top-left cell (NIC-124). */}
       <ActionStatusIndicator />
 
@@ -324,6 +327,8 @@ function SidebarHandoff({ children }: { children: ReactNode }) {
  * a must-be-seen surface (backdrop-window policy, 2026-07-06): the dashboard itself never lifts.
  */
 export function SidebarApp() {
+  useTransparentSurface();
+
   return (
     <BridgeProvider bridge={bridge}>
       <DashboardStateProvider store={store}>

@@ -29,8 +29,17 @@
 
 body {
   margin: 0;
-  min-width: 320px;
   min-height: 100vh;
+}
+
+/* The 320px floor lives on the DASHBOARD, not on `body`.
+   On `body` it applied to every surface — including the standalone windows that are deliberately
+   narrower than it. The window manager is 264px wide, so the rule forced its document to 320px and
+   pushed 56px of the surface (including the close control, the only way out) off the right edge
+   where it could be neither seen nor clicked. Nothing suggested a minimum was involved: the layout
+   simply appeared to overflow. Keep the guard where it was meant to apply. */
+.dashboard-shell {
+  min-width: 320px;
 }
 
 #root {

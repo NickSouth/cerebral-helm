@@ -139,14 +139,21 @@ function WindowManagementSection() {
   const currentModeId = state.modes.find((modeView) => modeView.label === state.mode)?.id;
   const collapsed = currentModeId ? (state.windowCollapse?.[currentModeId] ?? false) : false;
 
-  const onOpenNavigator = (): void => {
+  const onOpenNavigator = (event: ReactMouseEvent<HTMLButtonElement>): void => {
     if (readOnly) {
       return;
     }
     // Prefer the native top-most window so the navigator layers above open windows
     // (the backdrop never lifts). In a plain browser there is no native channel, so
     // fall back to the in-dashboard overlay.
-    if (!postShellControl("openWindowNavigator")) {
+    //
+    // The button's viewport rect rides along, the same shape More Apps posts (the backdrop fills
+    // the screen, so the shell converts it to screen coordinates). It does not place the window —
+    // the navigator stays pinned to the right edge — it tells the shell which direction to open
+    // from, so the slab flies out of this control rather than materialising beside it.
+    const rect = event.currentTarget.getBoundingClientRect();
+    const anchor = { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+    if (!postShellControl("openWindowNavigator", { anchor })) {
       setNavigatorOpen(true);
     }
   };

@@ -23,6 +23,7 @@ import {
   lifecycleBridgeEvents
 } from "./eventFixtures";
 import { validateSettingsChanges } from "../shell/settings/settingsPatch";
+import { isBootstrapStubWidgetId } from "../widgets/widgetData";
 import recentActivityResponse from "../../../../packages/contracts/fixtures/valid/bridge/operations/get-recent-activity-response.json";
 
 /** Executive is the default mode (config/defaults/app.json `defaultModeId`; ADR-007). */
@@ -64,7 +65,14 @@ type SnapshotWidgets = DashboardBootstrapState["regions"]["widgets"];
 
 /** The generic placeholder the native `BootstrapComposer` emits before any producer speaks. */
 function pendingWidgetStub<K extends keyof SnapshotWidgets>(widgetId: K): SnapshotWidgets[K] {
-  return { widgetId, state: "unavailable", emptyMessage: "Unavailable" } as SnapshotWidgets[K];
+  // Through `unknown`: the stub's id is the rail *side*, which is deliberately not a member of
+  // `WidgetId` — no real widget can collide with it, which is exactly what makes it usable as a
+  // sentinel. The compiler is right that the two types do not overlap; that is the design.
+  return {
+    widgetId,
+    state: "unavailable",
+    emptyMessage: "Unavailable"
+  } as unknown as SnapshotWidgets[K];
 }
 
 /** Strip a snapshot's widget payloads back to the stub, so they must arrive by event. */
@@ -430,7 +438,7 @@ export function createMockCerebralBridge(
     for (const slot of ["left", "right"] as const) {
       const widget = widgets[slot];
       // The stub carries no real producer identity, so there is nothing to deliver for it.
-      if (!widget || widget.widgetId === "left" || widget.widgetId === "right") {
+      if (!widget || isBootstrapStubWidgetId(widget.widgetId)) {
         continue;
       }
       setTimeout(() => {

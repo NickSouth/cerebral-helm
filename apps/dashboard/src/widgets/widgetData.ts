@@ -305,6 +305,19 @@ export function resolveWidgetData(
 const BOOTSTRAP_STUB_WIDGET_IDS: ReadonlySet<string> = new Set(["left", "right"]);
 
 /**
+ * Is this the generic placeholder id rather than a real widget's?
+ *
+ * Takes a plain `string` deliberately. These two ids are *not* members of `WidgetId` — that is what
+ * makes them safe as sentinels — so anything holding a typed `WidgetId` cannot compare against them
+ * directly without the compiler (correctly) objecting that the two can never be equal. Routing
+ * every such check through here keeps one definition of the sentinel instead of the literals being
+ * re-typed at each site.
+ */
+export function isBootstrapStubWidgetId(widgetId: string): boolean {
+  return BOOTSTRAP_STUB_WIDGET_IDS.has(widgetId);
+}
+
+/**
  * Is this slot still waiting on its first word from a producer? (NIC-174)
  *
  * The bootstrap stub is `unavailable` because, at compose time, the native side genuinely does
@@ -329,11 +342,11 @@ export function isWidgetPending(
   fallback: WidgetData
 ): boolean {
   // A slot with no assigned widget has nothing inbound to wait for.
-  if (!slotWidgetId || BOOTSTRAP_STUB_WIDGET_IDS.has(slotWidgetId)) {
+  if (!slotWidgetId || isBootstrapStubWidgetId(slotWidgetId)) {
     return false;
   }
   if (liveWidgets?.[slotWidgetId]) {
     return false;
   }
-  return BOOTSTRAP_STUB_WIDGET_IDS.has(fallback.widgetId);
+  return isBootstrapStubWidgetId(fallback.widgetId);
 }

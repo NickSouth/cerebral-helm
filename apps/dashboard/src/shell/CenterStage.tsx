@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { useTypewriter } from "./useTypewriter";
-import { useLeaveTransition } from "./useLeaveTransition";
+import { useEnterAfter, useLeaveTransition } from "./useLeaveTransition";
 import { BeamOverlay } from "./BeamOverlay";
 import { CenterShade } from "./CenterShade";
 import { QuickApps } from "./QuickApps";
@@ -53,8 +53,28 @@ export function CenterStage() {
    * everything else in the centre.
    */
   const surfaceOpen = reportOpen || inputOpen;
-  const { shown: centerBusy, leaving: greetingLeaving } = useLeaveTransition(surfaceOpen);
-  const showGreeting = Boolean(greeting) && !centerBusy;
+
+  /**
+   * The greeting is what leaves, so this tracks the greeting itself rather than "is a surface
+   * open". Those are not the same question, and conflating them charged an exit's delay even when
+   * the mode had no greeting to remove.
+   *
+   * Closing the last surface runs it in reverse for free: the greeting is wanted again, waits for
+   * the surface to finish receding, and only then writes itself back in.
+   */
+  const greetingWanted = Boolean(greeting) && !surfaceOpen;
+  const { shown: greetingVisible, leaving: greetingLeaving } = useLeaveTransition(greetingWanted);
+  const showGreeting = greetingVisible;
+
+  /**
+   * The handover, owned here because this is the only place that can see both halves of it.
+   *
+   * Each surface knows its own state and nothing else, so left alone every one of them opened the
+   * instant it was asked to — landing on top of a greeting that was still fading out. That read as
+   * a stutter, which is exactly what it was: two animations running over each other with nothing
+   * sequencing them.
+   */
+  const surfacesReady = useEnterAfter(greetingVisible);
 
   // Keyed on the mode, so entering a mode writes its greeting and nothing else retypes it.
   useTypewriter(greetingRef, showGreeting ? mode : null, { enabled: !reducedMotion });
@@ -69,12 +89,12 @@ export function CenterStage() {
         data-report-open={reportOpen || undefined}
       >
         <HeimlichConsciousness />
-        <CenterShade side="report" open={reportOpen} contentRef={reportContentRef} />
+        <CenterShade side="report" open={reportOpen && surfacesReady} contentRef={reportContentRef} />
         <p className="heimlich__state">{assistantName}</p>
-        <ReportRegion contentRef={reportContentRef} />
-        <CenterShade side="input" open={inputOpen} contentRef={inputContentRef} />
+        <ReportRegion contentRef={reportContentRef} ready={surfacesReady} />
+        <CenterShade side="input" open={inputOpen && surfacesReady} contentRef={inputContentRef} />
         <div className="heimlich__foot">
-          <InputRegion contentRef={inputContentRef} />
+          <InputRegion contentRef={inputContentRef} ready={surfacesReady} />
           {greeting && showGreeting ? (
             /* Typed on every mode switch, the same way a report is. Today the line is hard-baked
                per mode; when a model writes it, only the source of the string changes — the

@@ -9,6 +9,30 @@ export const CENTER_EXIT_MS = 260;
  *  difference between a handover and a collision. */
 export const CENTER_BEAT_MS = 60;
 
+/**
+ * True once `blocked` has been false for `delayMs` — and immediately, with no wait, if it was
+ * never true in the first place.
+ *
+ * This is the second half of a handover, and the asymmetry is the whole point. When something is
+ * on screen that has to leave first, the incoming surface owes it a beat. When the space is
+ * *already* empty there is nothing to hand over from, and charging the delay anyway would make
+ * every surface feel slow for a transition that never happened.
+ */
+export function useEnterAfter(blocked: boolean, delayMs: number = CENTER_BEAT_MS): boolean {
+  const [entered, setEntered] = useState(!blocked);
+
+  useEffect(() => {
+    if (blocked) {
+      setEntered(false);
+      return;
+    }
+    const id = window.setTimeout(() => setEntered(true), delayMs);
+    return () => window.clearTimeout(id);
+  }, [blocked, delayMs]);
+
+  return entered;
+}
+
 export interface LeaveTransition<T> {
   /** What to render right now — the outgoing value until it has finished leaving. */
   readonly shown: T;

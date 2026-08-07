@@ -41,6 +41,25 @@
   --ch-surface-panel-rgb: 15 23 38;
   --ch-surface-panel: rgb(var(--ch-surface-panel-rgb) / 0.66);
   --ch-surface-raised: rgba(18, 26, 42, 0.92);
+
+  /* ---- Glass surfaces (sidebar, window manager) --------------------------------------------
+     These two windows sit over the user's actual work rather than over the dashboard, and the
+     owner's brief is "almost a hundred percent translucent" — far past the mode menu's 0.92, which
+     is the reference for the *kind* of look but not the amount.
+     Three steps, each a tinge less translucent than the last, and every one of them still glass:
+     the surface you read straight through, the panes that group things, and the boxes that hold
+     content — a button, an app tile, a window card. Anything that merges with the step below it has
+     stopped being a box, which is why they are spaced rather than merely different. */
+  --ch-glass-surface: color-mix(in srgb, var(--ch-bg-base) 12%, transparent);
+  --ch-glass-pane: color-mix(in srgb, var(--ch-bg-base) 20%, transparent);
+  --ch-glass-box: color-mix(in srgb, var(--ch-bg-base) 32%, transparent);
+  /* At these alphas the fill cannot be relied on for contrast — the desktop behind might be a white
+     document or a photograph. A tight shadow keeps light text legible over anything without adding
+     a single point of opacity back, which is the whole reason the surface can stay this clear. */
+  --ch-glass-text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.65),
+    0 0 8px rgba(0, 0, 0, 0.45);
+
   --ch-panel-border: rgba(255, 255, 255, 0.08);
   --ch-text-primary: #eaf2fb;
   --ch-text-muted: #9fb0c3;
@@ -211,6 +230,26 @@
   --ch-z-scrim: 900;
   --ch-z-overlay: 1000;
   --ch-z-tooltip: 1100;
+}
+
+/* --- Glass surfaces re-point their own secondary text ---
+   `--ch-text-muted` (#9fb0c3) and `--ch-text-faint` (#6b7c90) are mid-greys chosen to sit quietly
+   against the dashboard's near-black backdrop. On a surface you can see straight through, they land
+   on whatever the desktop happens to be — and a mid-grey over a white document is the worst case
+   there is, which is exactly how the secondary lines read.
+   Lifting them toward white keeps the hierarchy intact (still quieter than primary, now by alpha
+   rather than by darkness) while surviving any background. Scoped by surface rather than restated
+   per component, so every label inside inherits it for free. */
+.sidebar-root,
+.win-nav-window {
+  --ch-text-muted: rgba(234, 242, 251, 0.84);
+  --ch-text-faint: rgba(234, 242, 251, 0.66);
+  /* Every solid control on these surfaces — quick actions, agent rows, app tiles, the search field
+     — resolves its fill from these two tokens, so re-pointing them here turns the whole surface to
+     glass in one place. The alternative was a per-component override list that would go stale the
+     first time a component was added. */
+  --ch-surface-raised: var(--ch-glass-box);
+  --ch-surface-panel: var(--ch-glass-box);
 }
 
 /* --- Mode application: the ONLY place mode chooses a color ---

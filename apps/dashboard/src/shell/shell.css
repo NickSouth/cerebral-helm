@@ -5033,17 +5033,75 @@ button.deadline-row__open:not(:disabled):hover {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 
-/* Standalone variant fills its native window.
-   No radius and no border of its own: `VibrantWindowChrome` clips the native window at 26pt and
-   that is the single authority for the corner, so the two cannot drift apart. The blur is native
-   too — `backdrop-filter` inside a WKWebView can only sample the page's own backdrop, which is
-   transparent here, so leaving it on would cost a compositing layer and deliver nothing. */
+/* Standalone variant: the sidebar's treatment, not a slab (owner, 2026-08-07).
+   No border, no radius, and no edge at all — the surface dissolves into the desktop on every side.
+   The mask here is the tint's half of that; `VibrantWindowChrome`'s `edgeFade` masks the native
+   blur over the same fraction, and the two must be changed together or the tint fades while the
+   blur stops square. `mask-composite: intersect` makes a corner the MINIMUM of its two edges,
+   which is what the native `.destinationIn` compositing does too.
+   The blur is native: `backdrop-filter` inside a WKWebView can only sample the page's own backdrop,
+   which is transparent here, so leaving it on would cost a compositing layer and deliver nothing. */
 .win-nav-window .win-nav {
   flex: 1;
+  /* Load-bearing. As a flex item this defaults to `min-width: auto`, which refuses to shrink below
+     its content's min-content width — and a window title like "BridgeSession.swift — cerebral-helm"
+     does not wrap. The surface silently laid itself out 320px wide inside a 264px window, putting
+     the close control 29px past the right edge where it could be neither seen nor clicked. The
+     `min-width: 0` chain below is what lets titles truncate instead of widening the window. */
+  min-width: 0;
   border: 0;
   border-radius: 0;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  /* The whole surface is glass (owner, 2026-08-07), with the header and cards a tinge less
+     translucent so they read as things rather than smudges — the same two-step relationship the
+     sidebar uses, from the same tokens. */
+  background: var(--ch-glass-surface);
+  /* Inherited by every label. At this translucency the fill carries no contrast, so text does. */
+  text-shadow: var(--ch-glass-text-shadow);
+}
+
+.win-nav-window .win-nav__scroll,
+.win-nav-window .win-nav__group,
+.win-nav-window .win-nav__card {
+  min-width: 0;
+}
+
+/* NO wash behind the standalone navigator (owner, 2026-08-07).
+   The surface behind the cards is *completely transparent*: the cards are the only thing that
+   should read as substance. A full-bleed film — however light — plus a full-window
+   `NSVisualEffectView` behind it stacked into a dark blob covering the whole window, which is what
+   this looked like in the app. The blur went with it: an effect view blurs the entire window rect,
+   so "blur only behind the boxes" is not something a window-level material can express. */
+
+/* With the surface behind them gone, the header and the cards are the only substance in this
+   window — so each has to be legible against whatever desktop happens to be behind it, on its own.
+   At 46% alpha (the floated overlay's value, tuned against a slab) they were nearly invisible.
+   The header stops being a full-width bar with a rule under it — a rule across nothing reads as a
+   rendering artifact — and becomes another floating box, like everything else here. */
+.win-nav-window .win-nav__header {
+  margin: var(--ch-space-3) var(--ch-space-3) var(--ch-space-1);
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  border-bottom: 1px solid var(--ch-panel-border);
+  background: var(--ch-glass-box);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+.win-nav-window .win-nav__card {
+  background: var(--ch-glass-box);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+/* No curvature in the standalone window.
+   It was drawn to make the slab read as a cylinder, but its darkest stop (42% black) lands exactly
+   on the header — burying the ✕, which is `--ch-text-muted` to begin with, to the point that the
+   window had no visible way out. The edge dissolve above now says "cylinder fading at both ends"
+   on its own, and the wheel's own list mask says it again, so a third vertical gradient was both
+   redundant and actively harmful. */
+.win-nav-window .win-nav::after {
+  content: none;
 }
 
 .win-nav__header {
@@ -5094,6 +5152,11 @@ button.deadline-row__open:not(:disabled):hover {
    `useWheelPose`. */
 .win-nav__scroll {
   flex: 1;
+  /* Explicit, though not strictly required: a flex item that is itself a scroll container already
+     resolves `min-height: auto` to zero, which is why this one did scroll. Stated anyway so the
+     rule survives the container ever losing `overflow-y` — the `min-width` trap above is the same
+     mechanism without that exemption, and it cost three rounds to find. */
+  min-height: 0;
   position: relative;
   z-index: 1;
   overflow-y: auto;

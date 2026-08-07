@@ -1,4 +1,4 @@
-import { useRef, useState, type RefObject } from "react";
+import { useCallback, useRef, useState, type RefObject } from "react";
 import { useReportDocument } from "./useReportDocument";
 import { renderableBlocks, type ReportActionReference, type ReportBlock } from "./reportDocument";
 import { quickActionLabel } from "../shell/quickActionRegistry";
@@ -22,10 +22,18 @@ import { useLeaveTransition } from "../shell/useLeaveTransition";
  * and maps directly onto a model streaming blocks in later, with no second surface to build.
  */
 export function ReportRegion({
-  contentRef
+  contentRef,
+  ready = true
 }: {
   /** Attached to the block list so `CenterShade` can measure the text it has to hug. */
   contentRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * False while the centre is still handing over — the ambient greeting is on its way out and this
+   * surface must not appear on top of it. `CenterStage` owns that sequence, because it is the only
+   * thing that can see both. Held *after* the hooks above so the report's own data keeps loading
+   * during the handover: the wait is for the animation, not for the fetch.
+   */
+  ready?: boolean;
 } = {}) {
   const { openReportId, openReportParams, closeReport } = useReports();
   // The outgoing report stays mounted until it has finished receding, so a swap is a handover
@@ -36,15 +44,34 @@ export function ReportRegion({
   const bodyRef = useRef<HTMLDivElement>(null);
   const caretRef = useRef<HTMLSpanElement>(null);
 
-  // Keyed on the document's identity, so a refresh or a different report retypes and a re-render
-  // for any other reason does not. Suppressed while leaving — a surface on its way out must not
-  // start rewriting itself.
-  useTypewriter(bodyRef, document && !leaving ? `${shownReportId}:${document.title ?? ""}` : null, {
-    enabled: !reducedMotion,
-    caretRef
-  });
+  // What the typewriter is keyed on, and why it is none of the obvious candidates.
+  //
+  // The document **object** is not identity: `useReportDocument` composes a fresh one on every
+  // render, from a fresh `new Date()`. Keying on it restarts the animation on every re-render of
+  // the dashboard — the report visibly rewrites itself forever.
+  //
+  // The document's **text** is not identity either, for the same reason: relative times ("in 20
+  // minutes") drift on their own, so a clock tick would retype a report mid-read.
+  //
+  // What actually means "write this again" is: a different report opened, the reader asked for a
+  // refresh, or the composition changed shape (a fetch resolving from its loading state into the
+  // real thing). Block count is the cheap, stable expression of that last one — it survives a
+  // re-render and a clock tick, and moves when the report genuinely becomes a different document.
+  const [refreshCount, setRefreshCount] = useState(0);
+  const rewrite = useCallback(() => {
+    refresh();
+    setRefreshCount((count) => count + 1);
+  }, [refresh]);
 
-  if (!shownReportId) {
+  // Suppressed while leaving — a surface on its way out must not start rewriting itself — and
+  // while the centre is still handing over, so the greeting is gone before this starts writing.
+  const typewriterKey =
+    document && !leaving && ready
+      ? `${shownReportId}:${refreshCount}:${document.blocks.length}`
+      : null;
+  useTypewriter(bodyRef, typewriterKey, { enabled: !reducedMotion, caretRef });
+
+  if (!shownReportId || !ready) {
     return null;
   }
   const openReportIdShown = shownReportId;
@@ -70,7 +97,7 @@ export function ReportRegion({
             type="button"
             className="report-region__refresh"
             aria-label={`Refresh the ${quickActionLabel(openReportIdShown)} report`}
-            onClick={refresh}
+            onClick={rewrite}
           >
             Refresh
           </button>

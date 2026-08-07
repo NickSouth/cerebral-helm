@@ -30,6 +30,8 @@ import { quickActionLabel } from "../shell/quickActionRegistry";
 import { useActionStatus } from "../state/ActionStatusProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { useInputs } from "../state/InputProvider";
+import { useAppearance } from "../state/AppearanceProvider";
+import { useTypewriter } from "../shell/useTypewriter";
 
 /**
  * The Input region (docs/quick-actions/PLAN.md): the centre panel's lower right — below the
@@ -40,10 +42,17 @@ import { useInputs } from "../state/InputProvider";
  * field and a result list above the same footer.
  */
 export function InputRegion({
-  contentRef
+  contentRef,
+  ready = true
 }: {
   /** Attached to the body so `CenterShade` can measure the surface it has to hug. */
   contentRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * False while the centre is still handing over — the ambient greeting is on its way out and this
+   * surface must not land on top of it. `CenterStage` owns that sequence; held after the hooks so
+   * the form's options keep loading during the wait.
+   */
+  ready?: boolean;
 } = {}) {
   const { openInputId, closeInput } = useInputs();
   // Same handover as the report: the outgoing form recedes before the next one arrives, rather
@@ -51,8 +60,28 @@ export function InputRegion({
   const { shown: openInputIdShown, leaving } = useLeaveTransition(openInputId);
   const { form, loading } = useInputForm(openInputIdShown ?? "");
   const picker = usePicker(openInputIdShown ?? "");
+  const { reducedMotion } = useAppearance();
+  const titleRef = useRef<HTMLHeadingElement>(null);
 
-  if (!openInputIdShown) {
+  const title = openInputIdShown
+    ? (picker?.title ?? form?.title ?? quickActionLabel(openInputIdShown))
+    : null;
+
+  /**
+   * Only the title writes itself in — deliberately not the whole surface.
+   *
+   * A report is prose you read, so typing all of it is the point. A form is a thing you act on:
+   * watching its field labels and its Save button assemble character by character would make it
+   * look broken and briefly unreadable, and would delay the first field you were reaching for.
+   * The title is the one piece of prose here, so it carries the entrance and the rest arrives ready
+   * to use. Safe to key on the title text, unlike a report's body — a form's title is fixed
+   * copy, with none of the relative times that make report text drift on its own.
+   */
+  useTypewriter(titleRef, ready && title && !leaving ? `${openInputIdShown}:${title}` : null, {
+    enabled: !reducedMotion
+  });
+
+  if (!openInputIdShown || !ready) {
     return null;
   }
 
@@ -67,8 +96,8 @@ export function InputRegion({
       data-leaving={leaving || undefined}
     >
       <header className="input-region__head">
-        <h2 className="input-region__title">
-          {picker?.title ?? form?.title ?? quickActionLabel(openInputIdShown)}
+        <h2 className="input-region__title" ref={titleRef}>
+          {title}
         </h2>
         <button
           type="button"

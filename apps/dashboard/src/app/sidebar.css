@@ -30,47 +30,44 @@
   padding: var(--ch-space-4);
   padding-top: calc(var(--ch-space-4) + var(--ch-safe-area-top));
   overflow: hidden;
-  /* NOT a panel any more. No fill, no border: the blurred column below is what makes these panes
-     read as one set, and a container edge is exactly what the Control Center look does without.
+  /* The whole column is glass (owner, 2026-08-07): a wash you can read straight through, with the
+     panes a tinge less translucent so they read as things rather than smudges. The mode menu is the
+     reference for the *kind* of look; the amount goes far past it.
      The reveal animation is native (the window slides); the web layer only paints. */
   position: relative;
-  background: transparent;
+  background: var(--ch-glass-surface);
+  /* Inherited by every label in the column. At this translucency the fill carries no contrast, so
+     the text carries its own. */
+  text-shadow: var(--ch-glass-text-shadow);
 }
 
-/* ---- The unifier ------------------------------------------------------------------------
-   A blurred column with no edge of its own — it dissolves into the desktop on the right and
-   softens top and bottom, so nothing here ever ends on a line. This is the only thing holding the
-   panes together, which is why they can float separately without looking scattered. */
-.sidebar-blur {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  backdrop-filter: blur(34px) saturate(150%);
-  -webkit-backdrop-filter: blur(34px) saturate(150%);
-  background: color-mix(in srgb, var(--ch-bg-base) 34%, transparent);
-  mask-image:
-    linear-gradient(to right, black 0, black 66%, transparent 100%),
-    linear-gradient(to bottom, transparent 0, black 5%, black 95%, transparent 100%);
-  mask-composite: intersect;
-  -webkit-mask-image:
-    linear-gradient(to right, black 0, black 66%, transparent 100%),
-    linear-gradient(to bottom, transparent 0, black 5%, black 95%, transparent 100%);
-  -webkit-mask-composite: source-in;
-}
+/* ---- No unifier ------------------------------------------------------------------------
+   There is deliberately no column-wide backdrop any more (owner, 2026-08-07). A blurred film
+   spanning the full height of the screen is an enormous region of treatment for a handful of
+   controls, and it read as a dark slab rather than as anything floating. Everything that is not a
+   pane is now *completely transparent* — the panes are the only substance, and the gaps between
+   them show the user's actual work.
 
-/* ---- The glass --------------------------------------------------------------------------
-   Each pane floats: its own blur, a hairline lit from above, and a specular sheen over the top
-   third. The mode accent tints both the border and the sheen, so the whole column re-themes with
-   the dashboard instead of staying neutral grey. */
+   The blur went with it, and not reluctantly: it could never have worked here. Inside a transparent
+   WKWebView `backdrop-filter` samples the page's own backdrop, which is empty, and the native
+   alternative (`NSVisualEffectView`) blurs the entire window rect — the very thing being removed.
+   Blur behind the panes *only* would need one native effect view per pane, driven by geometry the
+   web layer reports; that is a real feature, not a CSS property. */
+
+/* ---- The panes --------------------------------------------------------------------------
+   Each pane floats on its own: a hairline lit from above and a specular sheen over the top third.
+   The mode accent tints both, so the column re-themes with the dashboard instead of staying grey. */
 .sidebar-glass {
   position: relative;
   border-radius: 20px;
-  background: color-mix(in srgb, var(--ch-bg-base) 42%, transparent);
-  backdrop-filter: blur(26px) saturate(180%);
-  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  /* One step up from the surface — enough to read as a box, not enough to stop being glass. The
+     border and the sheen do most of the work of defining it; the fill only has to hint. */
+  background: var(--ch-glass-pane);
   border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 16%, rgba(255, 255, 255, 0.14));
+  /* A soft lift rather than the old heavy drop: at this translucency a strong shadow reads as a
+     dark halo smudged onto the desktop instead of as depth. */
   box-shadow:
-    0 10px 28px rgba(0, 0, 0, 0.38),
+    0 6px 18px rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
   overflow: hidden;
 }
@@ -163,11 +160,9 @@
   display: grid;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 16%, rgba(255, 255, 255, 0.14));
-  background: color-mix(in srgb, var(--ch-bg-base) 42%, transparent);
-  backdrop-filter: blur(26px) saturate(180%);
-  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  background: var(--ch-glass-box);
   box-shadow:
-    0 10px 28px rgba(0, 0, 0, 0.38),
+    0 6px 18px rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
   color: var(--ch-text-muted);
   font: inherit;
@@ -211,7 +206,11 @@
 /* ---- Scrolling body -------------------------------------------------------------------- */
 
 .sidebar-scroll {
-  flex: 1 1 auto;
+  /* `0 1 auto`, not `1 1 auto` (owner, 2026-08-07): the column stops stretching to fill the screen,
+     so the foot sits directly under the last pane instead of being pushed to the bottom edge — where
+     it collided with whatever was behind it and read as belonging to nothing. It still SHRINKS when
+     the content is taller than the window, which is what keeps the foot reachable. */
+  flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;

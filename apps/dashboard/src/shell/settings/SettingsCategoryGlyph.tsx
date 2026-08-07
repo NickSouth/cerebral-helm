@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import type { SettingsCategoryId } from "./categories";
 
 /**
@@ -9,7 +10,7 @@ import type { SettingsCategoryId } from "./categories";
  * reason; drawing these from `--ch-accent-primary` would recolour the whole sidebar on a mode
  * switch and stop them being recognisable at a glance.
  */
-const GLYPHS: Readonly<Record<SettingsCategoryId, { tint: string; path: JSX.Element }>> = {
+const GLYPHS: Readonly<Record<SettingsCategoryId, { tint: string; path: ReactElement }>> = {
   general: {
     tint: "var(--ch-agent-research)",
     path: (

@@ -83,6 +83,16 @@ function install(): void {
   }
 }
 
+// Installed at module load, not on first subscribe.
+//
+// The native shell pushes the first value as soon as its occupancy observer has read the desktop,
+// which can land before React has mounted anything that subscribes. If the hook only appeared on
+// subscription, that first push would hit `undefined` and be dropped — and because the observer
+// only reports *changes*, a display that was already covered at launch would stay looking present
+// until something else moved. Existing from the moment the bundle evaluates removes the race
+// rather than papering over it with a replay.
+install();
+
 function subscribe(listener: () => void): () => void {
   install();
   listeners.add(listener);

@@ -54,9 +54,15 @@ function renderShell(bridgeOverrides: Partial<ReturnType<typeof createMockCerebr
   };
 }
 
-function openCaptureNote() {
+/**
+ * Opening is deliberately not synchronous any more: the ambient greeting has to finish leaving and
+ * the incoming surface owes it a beat before it lands (`CenterStage`'s handover). Awaited here so
+ * every case reads as "with the form open"; the ordering itself is asserted in CenterStage's own
+ * tests rather than re-checked in each of these.
+ */
+async function openCaptureNote() {
   fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
-  return screen.getByRole("region", { name: "Capture note form" });
+  return await screen.findByRole("region", { name: "Capture note form" });
 }
 
 describe("Input region", () => {
@@ -67,7 +73,7 @@ describe("Input region", () => {
 
   it("toggles closed when its own slot is pressed again", async () => {
     renderShell();
-    openCaptureNote();
+    await openCaptureNote();
     fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
     // Closing is a LEAVE, not a removal (increment 4): the form stays mounted and marked
     // `data-leaving` while it recedes, so a swap is a handover rather than a blink.
@@ -79,16 +85,16 @@ describe("Input region", () => {
     );
   });
 
-  it("keeps the quick-action grid and the running field in place — it is a panel, not a takeover", () => {
+  it("keeps the quick-action grid and the running field in place — it is a panel, not a takeover", async () => {
     renderShell();
-    openCaptureNote();
+    await openCaptureNote();
     expect(screen.getByRole("region", { name: "Heimlich" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Quick actions" })).toBeInTheDocument();
   });
 
   it("discards the form when the mode changes, rather than carrying typing into another mode", async () => {
     const { bridge } = renderShell();
-    const form = openCaptureNote();
+    const form = await openCaptureNote();
     fireEvent.change(within(form).getByLabelText(/Title/), { target: { value: "Half-written" } });
 
     await waitFor(async () => {
@@ -105,7 +111,7 @@ describe("Input region", () => {
       captureNote: () => Promise.reject(new Error("bridge down"))
     });
     void rest;
-    const form = openCaptureNote();
+    const form = await openCaptureNote();
     fireEvent.change(within(form).getByLabelText(/Title/), { target: { value: "Keep me" } });
     fireEvent.click(within(form).getByRole("button", { name: "Capture" }));
 
@@ -123,7 +129,7 @@ describe("Input region", () => {
         return Promise.resolve({ noteId: "note_x" });
       }
     } as never);
-    const form = openCaptureNote();
+    const form = await openCaptureNote();
     fireEvent.change(within(form).getByLabelText(/Title/), { target: { value: "Never sent" } });
     fireEvent.click(within(form).getByRole("button", { name: "Cancel" }));
 

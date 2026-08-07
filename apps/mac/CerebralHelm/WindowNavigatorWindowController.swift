@@ -28,11 +28,20 @@ final class WindowNavigatorWindowController: NSObject, WKNavigationDelegate, WKS
     /// Web → native shell actions (closeWindowNavigator). Set by `WindowCoordinator`.
     var onShellControl: (([String: Any]) -> Void)?
 
+    /// The centre of the control that summoned this window, in screen coordinates — recorded by
+    /// whichever `position*` call placed it, so it recedes back the way it arrived.
+    private var anchorPoint: NSPoint?
+
+    /// Renders one desktop blur per pane/box the web layer reports (`glassControl`).
+    private var glassHost: GlassBlurHost?
+
+    /// The private channel carrying this surface's glass geometry. Separate from `shellControl`
+    /// because it is window presentation, not a command: it fires many times a second while a list
+    /// scrolls, and must never touch the coordinator's action routing.
+    static let glassHandlerName = "glassControl"
+
     /// Kept in step with `.win-nav__scrim + .win-nav`'s `min(264px, 92vw)` in `shell.css`.
     private static let contentWidth: CGFloat = 264
-    /// Kept in step with `.win-nav`'s `border-radius: 26px`.
-    private static let slabCornerRadius: CGFloat = 26
-
     private static var navigatorURL: URL {
         URL(string: "\(CerebralSchemeHandler.scheme)://\(CerebralSchemeHandler.host)/index.html?surface=windownavigator")!
     }
@@ -82,19 +91,16 @@ final class WindowNavigatorWindowController: NSObject, WKNavigationDelegate, WKS
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.isReleasedWhenClosed = false
         window.center()
-        // The slab draws its own tint and curvature; the vibrancy behind it supplies the blur that
-        // CSS cannot reach past the webview. `slabCornerRadius` is the single authority for the
-        // corner — the standalone web surface deliberately leaves its own radius at 0 so the two
-        // cannot drift apart.
-        VibrantWindowChrome.apply(
-            to: window,
-            hosting: webView,
-            cornerRadius: Self.slabCornerRadius
-        )
+        // No material behind it (owner, 2026-08-07): everything except the cards is completely
+        // transparent. A window-level `NSVisualEffectView` blurs and tints the whole rect, and on a
+        // surface that is mostly empty space that produced a large dark slab with a few cards on
+        // it. The cards carry their own legibility in CSS instead.
+        glassHost = VibrantWindowChrome.clear(window: window, hosting: webView)
 
         super.init()
         window.delegate = self
         configuration.userContentController.add(self, name: DashboardWindowController.controlHandlerName)
+        configuration.userContentController.add(self, name: Self.glassHandlerName)
         bridge.attach(to: webView)
         bridge.bind(session: session)
         webView.navigationDelegate = self
@@ -110,14 +116,44 @@ final class WindowNavigatorWindowController: NSObject, WKNavigationDelegate, WKS
         frame.origin.x = visible.maxX - frame.width - margin
         frame.origin.y = visible.midY - frame.height / 2
         window.setFrame(frame, display: true)
+        // Only used when the opening control's rect is unknown: the slab slides in off the right
+        // edge it is parked against, which is at least honest about the placement even though it
+        // cannot point back at a button.
+        anchorPoint = NSPoint(x: visible.maxX, y: frame.midY)
+    }
+
+    /// Place the navigator against the right edge but flying out of the bottom-bar control that
+    /// opened it (`anchor` in screen coordinates, AppKit y-up). The placement is unchanged — a tall
+    /// list belongs at the edge, not under a button — so only the motion uses the anchor.
+    func positionOnRight(of screen: NSScreen, from anchor: NSRect) {
+        positionOnRight(of: screen)
+        anchorPoint = NSPoint(x: anchor.midX, y: anchor.midY)
     }
 
     func show() {
-        window.makeKeyAndOrderFront(nil)
+        WindowAppearance.present(window, emergingFrom: anchorPoint)
     }
 
     func close() {
+        WindowAppearance.dismiss(window, receding: anchorPoint) { [window] in
+            window.orderOut(nil)
+        }
+    }
+
+    /// Tear down without the dismissal animation, for when this window is being *replaced* by a
+    /// freshly-built one in the same place. Fading the outgoing copy out while its identical
+    /// replacement fades in over it reads as a flicker rather than as a transition — a replacement
+    /// is not a dismissal and should not be animated like one.
+    func closeImmediately() {
         window.orderOut(nil)
+    }
+
+
+    /// Decode a `glassControl` message and re-place the blur. Presentation of this window only, so
+    /// it is handled here rather than routed through the coordinator like a command would be.
+    private func applyGlassGeometry(_ body: [String: Any]) {
+        let raw = body["rects"] as? [[String: Any]] ?? []
+        glassHost?.update(rects: raw.compactMap(GlassRect.init))
     }
 
     /// Route a shared-session bridge event so the navigator re-themes live while open.
@@ -128,6 +164,10 @@ final class WindowNavigatorWindowController: NSObject, WKNavigationDelegate, WKS
     // MARK: - WKScriptMessageHandler (web → native shell control)
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == Self.glassHandlerName {
+            applyGlassGeometry(message.body as? [String: Any] ?? [:])
+            return
+        }
         guard
             message.name == DashboardWindowController.controlHandlerName,
             let body = message.body as? [String: Any]

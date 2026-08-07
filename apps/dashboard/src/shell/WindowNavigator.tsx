@@ -230,7 +230,11 @@ function useWheelPose(
         const rect = row.getBoundingClientRect();
         const t = Math.max(-1.6, Math.min(1.6, (rect.top + rect.height / 2 - mid) / reach));
         const away = Math.abs(t);
-        row.style.opacity = Math.max(0, 1 - away * 0.85).toFixed(3);
+        // Never all the way to zero. At `1 - away * 0.85` every row past ~60% of the half-height
+        // was fully invisible, so a list of six windows showed two or three and the rest simply
+        // were not there — which reads as "this doesn't scroll" rather than as depth. The wheel
+        // should dim its far rows, not delete them.
+        row.style.opacity = Math.max(0.32, 1 - away * 0.5).toFixed(3);
         row.style.transform =
           `perspective(760px) rotateX(${(-t * 34).toFixed(2)}deg)` +
           ` translateZ(${(-away * 44).toFixed(1)}px) scale(${(1 - away * 0.18).toFixed(3)})`;
