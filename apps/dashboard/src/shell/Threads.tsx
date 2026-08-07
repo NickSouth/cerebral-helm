@@ -68,7 +68,14 @@ uniform float uIntro;
 #define PI 3.1415926538
 
 const int u_line_count = 30;
-const float u_line_width = 4.0; // NIC-77: thinner strands (esp. on large viewports)
+// Strand thickness in VERTICAL pixels of the render buffer (recalibrated 2026-08-07 — see
+// lineWidthY below). 2.75 reproduces what the dashboard already drew at its ~0.68 panel aspect, so
+// look there is unchanged; every other viewport now matches it instead of scaling with its width.
+const float u_line_width = 2.75;
+// No strand may be thinner than the grid drawing it. Below one pixel a scanline coverage band
+// stipples rather than fades, and on a companion surface — whose buffer is capped and then upscaled
+// to a wide display — that beat is what read as the ribbons breaking apart.
+const float MIN_LINE_PX = 1.15;
 const float u_line_blur = 11.0; // softness trimmed to match the thinner lines
 
 float Perlin2D(vec2 P) {
@@ -94,6 +101,23 @@ float Perlin2D(vec2 P) {
 
 float pixel(float count, vec2 resolution) {
     return (1.0 / max(resolution.x, resolution.y)) * count;
+}
+
+/*
+ * A thickness measured along Y, in buffer pixels, floored so it can never go sub-pixel.
+ *
+ * pixel() divides by max(resolution) — the WIDTH on any landscape viewport — but coreCoverage
+ * measures its band along Y. So a strand's real thickness was count * height/width: about
+ * 0.68 of nominal inside the dashboard's panel, but only ~0.39 across a companion band on an
+ * ultrawide, which put most of the threads under a single pixel. A sub-pixel line in a buffer that
+ * is then upscaled to the display beats against the sample grid and stipples — which is exactly how
+ * the field "broke" on the second monitor and not on the laptop (owner, 2026-08-07).
+ *
+ * Normalizing by Y makes thickness a real pixel quantity, identical on every display and every
+ * aspect; the floor guarantees the thinnest strand still has a pixel to live in.
+ */
+float lineWidthY(float count) {
+    return max(count, MIN_LINE_PX) / max(iResolution.y, 1.0);
 }
 
 float hash1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
@@ -144,7 +168,9 @@ float threadY(vec2 st, float perc, float time, float amplitude, float distance, 
 // Crisp core coverage of a line at height y — cheap (no noise); called per fork sub-ribbon.
 float coreCoverage(vec2 st, float y, float width, float perc) {
     float blur = smoothstep(0.0, 0.2, st.x) * perc;
-    float bw = u_line_blur * pixel(1.0, iResolution.xy) * blur;
+    // Y-normalized for the same reason as the width itself: this softening band is measured along
+    // the same axis, and scaling it by the viewport's WIDTH made the edge collapse on wide surfaces.
+    float bw = u_line_blur * blur / max(iResolution.y, 1.0);
     float line_start = smoothstep(y + (width / 2.0) + bw, y, st.y);
     float line_end = smoothstep(y, y - (width / 2.0) - bw, st.y);
     float fade = 1.0 - smoothstep(0.0, 1.0, pow(perc, 0.3));
@@ -216,7 +242,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
         float phase = seed * 5.0;                       // desync (they cross in the middle)
         float lineAmp = uAmplitude * introAmp * mix(1.0, 1.25, loose);
-        float baseWidth = u_line_width * pixel(1.0, iResolution.xy) * (1.0 - p);
+        float baseWidth = lineWidthY(u_line_width * (1.0 - p));
 
         float y = threadY(uv, p, iTime, lineAmp, uDistance, phase);
 
