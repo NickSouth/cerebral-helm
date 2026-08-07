@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type AnimationEvent, type KeyboardEvent } 
 import { useSettings } from "../../state/SettingsProvider";
 import { useBridge } from "../../state/BridgeProvider";
 import { SETTINGS_CATEGORIES } from "./categories";
+import { SettingsCategoryGlyph } from "./SettingsCategoryGlyph";
 import { SETTINGS_PANELS } from "./SettingsPanels";
 import { SettingsSnapshotProvider } from "./SettingsSnapshotProvider";
 import { isShellControlAvailable } from "../shellControl";
@@ -186,6 +187,7 @@ function SettingsSurfaceContent() {
                 aria-selected={selected}
                 onClick={() => setCategory(category.id)}
               >
+                <SettingsCategoryGlyph id={category.id} />
                 {category.label}
               </button>
             );
@@ -197,7 +199,6 @@ function SettingsSurfaceContent() {
       <div className="settings-content" role="tabpanel" aria-label={active.label}>
         <header className="settings-content__header">
           <h2 className="settings-content__title">{active.label}</h2>
-          <p className="settings-content__description">{active.description}</p>
           <button
             type="button"
             className="settings-content__close"

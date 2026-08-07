@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en" data-mode="executive">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mockup — More Apps &amp; Pin app</title>
+    <link rel="stylesheet" href="/src/tokens/tokens.css" />
+    <link rel="stylesheet" href="/mockups/_mock.css" />
+    <style>
+      /* Three columns fixed, so the window is sized by the grid rather than the grid reflowing to
+         fill whatever width the window happens to have. A launcher you use by muscle memory should
+         put the same app in the same place every time. */
+      .apps {
+        width: 420px;
+        height: 560px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .apps__head {
+        flex: 0 0 auto;
+        padding: 0.25rem 1.05rem 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+      }
+      .apps__title {
+        margin: 0;
+        font-size: var(--ch-font-size-base);
+        font-weight: 400;
+        flex: 0 0 auto;
+      }
+      .apps__search {
+        flex: 1 1 auto;
+        min-width: 0;
+        font: inherit;
+        font-size: var(--ch-font-size-sm);
+        padding: 0.4rem 0.8rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(0, 0, 0, 0.28);
+        color: var(--ch-text-primary);
+        transition: border-color 160ms var(--ch-ease-standard);
+      }
+      .apps__search:focus {
+        outline: none;
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 60%, transparent);
+      }
+
+      .apps__body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0.2rem 0.85rem 1.1rem;
+        scrollbar-width: none;
+        scroll-behavior: smooth;
+        -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 5%, #000 93%, transparent 100%);
+        mask-image: linear-gradient(180deg, transparent 0, #000 5%, #000 93%, transparent 100%);
+      }
+      .apps__body::-webkit-scrollbar {
+        display: none;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.35rem;
+      }
+
+      .tile {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.9rem 0.4rem 0.75rem;
+        border-radius: 14px;
+        border: 1px solid transparent;
+        background: transparent;
+        cursor: pointer;
+        font: inherit;
+        color: var(--ch-text-primary);
+        transition:
+          transform 220ms var(--ch-ease-standard),
+          background 220ms var(--ch-ease-standard),
+          border-color 220ms var(--ch-ease-standard);
+      }
+      .tile:hover {
+        background: rgba(255, 255, 255, 0.07);
+        border-color: rgba(255, 255, 255, 0.12);
+        transform: translateY(-3px);
+      }
+      .tile__icon {
+        width: 3.4rem;
+        height: 3.4rem;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        font-size: 1.4rem;
+        font-weight: 600;
+        color: #08101c;
+        background: var(--app);
+        box-shadow:
+          inset 0 1.5px 0 rgba(255, 255, 255, 0.4),
+          0 8px 18px rgba(0, 0, 0, 0.4);
+        transition: transform 220ms var(--ch-ease-standard);
+      }
+      .tile:hover .tile__icon {
+        transform: scale(1.06);
+      }
+      .tile__name {
+        font-size: var(--ch-font-size-sm);
+        text-align: center;
+        line-height: 1.25;
+        max-width: 100%;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+
+      .sect {
+        font-size: var(--ch-font-size-label);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ch-text-faint);
+        margin: 0.85rem 0 0.3rem 0.55rem;
+      }
+      .sect:first-child {
+        margin-top: 0;
+      }
+
+      /* ---- Pin app: the SAME grid, at the same tile scale, in a popover-sized surface. The two
+         surfaces do the same job — choose an application — so they should not look like two
+         different products. Only the header and the footer differ. ---- */
+      .pin-wrap {
+        position: relative;
+      }
+      .pin {
+        width: 360px;
+        height: 470px;
+      }
+      .pin .apps__head {
+        padding-bottom: 0.6rem;
+      }
+      .pin__slot {
+        font-size: var(--ch-font-size-label);
+        color: var(--ch-text-faint);
+        margin: -0.35rem 0 0.55rem 1.05rem;
+      }
+      .pin__foot {
+        flex: 0 0 auto;
+        border-top: 1px solid rgba(255, 255, 255, 0.09);
+        padding: 0.6rem 0.9rem;
+        display: flex;
+        gap: 0.5rem;
+      }
+      .pin__foot button {
+        font: inherit;
+        font-size: var(--ch-font-size-sm);
+        flex: 1 1 auto;
+        padding: 0.4rem 0.7rem;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--ch-text-muted);
+        cursor: pointer;
+        transition: all 140ms var(--ch-ease-standard);
+      }
+      .pin__foot button:hover {
+        color: var(--ch-text-primary);
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+        background: color-mix(in srgb, var(--ch-accent-primary) 12%, transparent);
+      }
+    </style>
+  </head>
+  <body data-variant="a">
+    <div class="desk">
+      <div class="desk__glare"></div>
+      <div class="desk__win" style="left: 5%; top: 12%; width: 28%; height: 46%">
+        <div class="desk__lines"></div>
+      </div>
+      <div class="desk__win" style="right: 6%; bottom: 10%; width: 30%; height: 48%">
+        <div class="desk__lines"></div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <!-- ============ More Apps ============ -->
+      <div class="win apps v-a">
+        <div class="win__drag"></div>
+        <div class="apps__head">
+          <h2 class="apps__title">Applications</h2>
+          <input class="apps__search" placeholder="Search" />
+        </div>
+        <div class="apps__body">
+          <p class="sect">Recent</p>
+          <div class="grid" id="recent"></div>
+          <p class="sect">All applications · 81</p>
+          <div class="grid" id="all"></div>
+        </div>
+      </div>
+
+      <!-- ============ Pin app (same grammar) ============ -->
+      <!-- Wrapped, because the tail has to sit OUTSIDE the window: `.win` clips to its radius so
+           the scrolling grid keeps rounded corners, which would shear the wedge off. -->
+      <div class="pin-wrap v-b">
+        <span class="tail tail--up" style="left: 3.2rem"></span>
+        <div class="win apps pin">
+        <div class="win__drag"></div>
+        <div class="apps__head">
+          <h2 class="apps__title">Pin an app</h2>
+          <input class="apps__search" placeholder="Search" />
+        </div>
+        <p class="pin__slot">Quick Apps · slot 3</p>
+        <div class="apps__body">
+          <div class="grid" id="pin"></div>
+        </div>
+        <div class="pin__foot">
+          <button>Add a URL…</button>
+          <button>Chrome profile…</button>
+        </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="note">
+      <b>More Apps &amp; Pin app.</b> Fixed at three columns, so an app keeps the same position
+      every time and the launcher can be used from muscle memory. The list fades into the vibrancy
+      at both ends rather than clipping. <b>Pin app</b> reuses the identical grid and tile scale in
+      a popover-sized surface — they do the same job, so they should not look like two different
+      products; only the header and the footer actions differ.
+    </p>
+
+    <div class="switch">
+      <span class="switch__label">Surface</span>
+      <button data-v="a" aria-pressed="true">More Apps</button>
+      <button data-v="b" aria-pressed="false">Pin app</button>
+      <a href="/mockups/">All mockups</a>
+    </div>
+
+    <script type="module">
+      /* Placeholders only — the real surface shows each app's own icon. Drawn from CerebralHelm's
+         mode-INDEPENDENT tokens rather than invented hues, so the field reads as this product
+         even while it is standing in, and so it does not recolour on a mode switch. */
+      const PALETTE = [
+        "var(--ch-agent-research)",
+        "var(--ch-status-success)",
+        "var(--ch-agent-project)",
+        "var(--ch-status-warning)",
+        "var(--ch-status-info)",
+        "var(--ch-weather-sun)",
+        "var(--ch-status-error)",
+        "var(--ch-mode-executive-secondary)",
+        "var(--ch-status-neutral)"
+      ];
+
+      const APPS = [
+        "Activity Monitor", "App Store", "Calendar", "Chrome", "Claude", "Console",
+        "Disk Utility", "Figma", "Finder", "Font Book", "Keychain Access", "Linear",
+        "Mail", "Maps", "Messages", "Music", "Notes", "Obsidian", "Photos", "Preview",
+        "Reminders", "Safari", "Slack", "Spotify", "Terminal", "TextEdit", "VS Code",
+        "Xcode", "Zoom"
+      ];
+
+      // Stable per name, so an app keeps its colour wherever it appears.
+      const hue = (name) =>
+        PALETTE[[...name].reduce((n, c) => n + c.charCodeAt(0), 0) % PALETTE.length];
+
+      const tile = (name) => `
+        <button class="tile">
+          <span class="tile__icon" style="--app:${hue(name)}">${name[0]}</span>
+          <span class="tile__name">${name}</span>
+        </button>`;
+
+      document.getElementById("recent").innerHTML = APPS.slice(3, 9).map(tile).join("");
+      document.getElementById("all").innerHTML = APPS.map(tile).join("");
+      document.getElementById("pin").innerHTML = APPS.map(tile).join("");
+
+      for (const button of document.querySelectorAll(".switch button")) {
+        button.addEventListener("click", () => {
+          document.body.dataset.variant = button.dataset.v;
+          for (const other of document.querySelectorAll(".switch button")) {
+            other.setAttribute("aria-pressed", String(other === button));
+          }
+          const win = document.querySelector(".win:not([style*='display: none'])");
+          for (const w of document.querySelectorAll(".win")) {
+            w.style.animation = "none";
+            void w.offsetWidth;
+            w.style.animation = "";
+          }
+          void win;
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -61,7 +61,11 @@ function renderPopover(overrides: { bridge?: CerebralBridge; onClose?: () => voi
 /** Row names within a named section, so the two lists can be asserted independently. */
 function rowsIn(sectionLabel: string): string[] {
   const section = screen.getByRole("region", { name: sectionLabel });
-  return [...section.querySelectorAll(".pin-pop__name")].map((el) => el.textContent ?? "");
+  // Applications now use the shared More Apps tile (increment 7); the Chrome-profile list above
+  // is still a row list, so both names are collected and each section reports its own.
+  return [...section.querySelectorAll(".apps-picker__name, .pin-pop__name")].map(
+    (el) => el.textContent ?? ""
+  );
 }
 
 describe("PinPopover search (NIC-167)", () => {

@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en" data-mode="executive">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mockup — Centre surface choreography</title>
+    <link rel="stylesheet" href="/src/tokens/tokens.css" />
+    <link rel="stylesheet" href="/mockups/_mock.css" />
+    <style>
+      body {
+        overflow: hidden;
+      }
+      .stage {
+        padding: 1.5rem 1.5rem 5rem;
+      }
+
+      .heimlich {
+        position: relative;
+        width: min(1100px, 95vw);
+        height: min(620px, 80vh);
+        border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 12%, var(--ch-panel-border));
+        border-radius: var(--ch-radius-lg);
+        background: var(--ch-surface-panel);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        padding: var(--ch-space-6);
+        gap: var(--ch-space-4);
+        transition: background-color var(--ch-motion-slow) var(--ch-ease-standard);
+      }
+
+      .wordmark {
+        position: relative;
+        z-index: 4;
+        margin: 0;
+        font-family: var(--ch-font-mono);
+        font-size: var(--ch-font-size-label);
+        font-weight: var(--ch-font-weight-light);
+        letter-spacing: 0.18em;
+        color: var(--ch-accent-primary);
+        flex: 0 0 auto;
+      }
+
+      .stream {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+      }
+      .stream svg {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        width: 200%;
+        height: 66%;
+        transform: translateY(-58%);
+        animation: drift 26s linear infinite;
+      }
+      @keyframes drift {
+        to {
+          transform: translateY(-58%) translateX(-50%);
+        }
+      }
+
+      /* --- The two washes ---------------------------------------------------------------------
+         Same construction, mirrored. Each fades in with its surface and out with it, so the space
+         darkens as something arrives and lightens as it goes — the shade is part of the
+         transition, not scenery that was always there. */
+      .shade {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background: color-mix(in srgb, var(--ch-bg-base) 94%, transparent);
+        opacity: 0;
+        transition: opacity var(--exit) var(--ch-ease-standard);
+      }
+      .shade[data-on] {
+        opacity: 1;
+        transition: opacity 900ms var(--ch-ease-standard);
+      }
+      /* Registering these makes them ANIMATABLE. A bare custom property is a string as far as the
+         cascade is concerned, so it can only ever snap between values — which is why the wash used
+         to step down a whole line each time one was typed. With a declared syntax the browser can
+         interpolate, and the extent glides instead. */
+      @property --edge-x {
+        syntax: "<percentage>";
+        inherits: false;
+        initial-value: 8%;
+      }
+      @property --edge-y {
+        syntax: "<percentage>";
+        inherits: false;
+        initial-value: 8%;
+      }
+
+      /* Both reaches are driven by the CONTENT, not by a fraction of the panel: a fixed region
+         reads as shading when text fills it and as a dark blob when it does not, and report length
+         varies wildly. `--edge-x` follows the widest line, `--edge-y` the last one, so the wash
+         expands OUTWARD as the writing arrives rather than growing only downward.
+
+         One `--fade` for both axes. They used to differ enormously — 34% of the panel's width
+         horizontally against 3rem vertically — so the shade dissolved gently to the right and cut
+         off sharply below. Equal absolute lengths make it read as one soft field. */
+      .shade--report,
+      .shade--input {
+        --fade: 13rem;
+        transition:
+          opacity var(--exit) var(--ch-ease-standard),
+          --edge-x 420ms var(--ch-ease-standard),
+          --edge-y 420ms var(--ch-ease-standard);
+      }
+      .shade[data-on] {
+        transition:
+          opacity 900ms var(--ch-ease-standard),
+          --edge-x 420ms var(--ch-ease-standard),
+          --edge-y 420ms var(--ch-ease-standard);
+      }
+
+      .shade--report {
+        mask-image:
+          linear-gradient(to right, black 0, black var(--edge-x), transparent calc(var(--edge-x) + var(--fade))),
+          linear-gradient(to bottom, black 0, black var(--edge-y), transparent calc(var(--edge-y) + var(--fade)));
+        mask-composite: intersect;
+        -webkit-mask-image:
+          linear-gradient(to right, black 0, black var(--edge-x), transparent calc(var(--edge-x) + var(--fade))),
+          linear-gradient(to bottom, black 0, black var(--edge-y), transparent calc(var(--edge-y) + var(--fade)));
+        -webkit-mask-composite: source-in;
+      }
+
+      /* Mirrored: measured from the right and bottom edges instead. */
+      .shade--input {
+        mask-image:
+          linear-gradient(to left, black 0, black var(--edge-x), transparent calc(var(--edge-x) + var(--fade))),
+          linear-gradient(to top, black 0, black var(--edge-y), transparent calc(var(--edge-y) + var(--fade)));
+        mask-composite: intersect;
+        -webkit-mask-image:
+          linear-gradient(to left, black 0, black var(--edge-x), transparent calc(var(--edge-x) + var(--fade))),
+          linear-gradient(to top, black 0, black var(--edge-y), transparent calc(var(--edge-y) + var(--fade)));
+        -webkit-mask-composite: source-in;
+      }
+
+      .halo {
+        --pool: var(--ch-bg-base);
+        text-shadow:
+          0 0 6px var(--pool), 0 0 12px var(--pool), 0 0 20px var(--pool),
+          0 0 32px var(--pool), 0 0 48px var(--pool), 0 0 70px var(--pool);
+      }
+
+      /* --- The exit ---------------------------------------------------------------------------
+         One rule for every centre surface: nothing is ever removed, it LEAVES. `--exit` is the
+         single duration, so the greeting, a report and a form all recede at the same rate and the
+         centre reads as one surface changing its mind rather than three components swapping. */
+      :root {
+        --exit: 260ms;
+      }
+      .leaving {
+        opacity: 0;
+        transform: translateY(0.25rem);
+        transition:
+          opacity var(--exit) var(--ch-ease-standard),
+          transform var(--exit) var(--ch-ease-standard);
+        pointer-events: none;
+      }
+
+      .body {
+        position: relative;
+        z-index: 2;
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        gap: var(--ch-space-6);
+      }
+
+      /* Report, left. Header outside the scroller so its halo is never clipped square by the
+         scroll box; the scroller carries padding + negative margin for the same reason. */
+      .report {
+        width: 42%;
+        display: none;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .report[data-on] {
+        display: flex;
+      }
+      .report__scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        scrollbar-width: none;
+        padding: var(--ch-space-3) var(--ch-space-4) var(--ch-space-4) 3rem;
+        margin-left: -3rem;
+      }
+      .report__scroll::-webkit-scrollbar {
+        display: none;
+      }
+
+      .greeting {
+        margin: 0 0 var(--ch-space-2);
+        font-size: var(--ch-font-size-xl);
+        font-weight: var(--ch-font-weight-light);
+        line-height: 1.2;
+      }
+      .sub {
+        margin: 0 0 var(--ch-space-4);
+        font-size: var(--ch-font-size-base);
+        color: var(--ch-text-muted);
+      }
+      .rows {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-3);
+      }
+      .row {
+        display: flex;
+        align-items: baseline;
+        gap: var(--ch-space-3);
+        font-size: var(--ch-font-size-sm);
+      }
+      .row i {
+        flex: 0 0 auto;
+        width: 0.4rem;
+        height: 0.4rem;
+        border-radius: 50%;
+        background: var(--ch-accent-secondary);
+      }
+
+      /* Input, right. */
+      .input {
+        margin-left: auto;
+        width: 40%;
+        display: none;
+        flex-direction: column;
+        gap: var(--ch-space-3);
+        min-height: 0;
+      }
+      .input[data-on] {
+        display: flex;
+      }
+      .input__head {
+        flex: 0 0 auto;
+      }
+      .input__title {
+        margin: 0;
+        font-size: var(--ch-font-size-lg);
+        font-weight: var(--ch-font-weight-light);
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-2);
+        animation: field-in 420ms var(--ch-ease-standard) both;
+        animation-delay: calc(var(--i, 0) * 70ms + 120ms);
+      }
+      @keyframes field-in {
+        from {
+          opacity: 0;
+          transform: translateY(0.4rem);
+        }
+      }
+      .field__label {
+        font-size: var(--ch-font-size-label);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ch-text-faint);
+      }
+      .control {
+        width: 100%;
+        box-sizing: border-box;
+        padding: var(--ch-space-3) var(--ch-space-4);
+        border-radius: var(--ch-radius-md);
+        border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 12%, var(--ch-panel-border));
+        background: var(--ch-surface-raised);
+        color: var(--ch-text-primary);
+        font: inherit;
+        font-size: var(--ch-font-size-base);
+      }
+
+      /* --- The greeting, bottom centre --------------------------------------------------------
+         Types on a mode switch, and leaves the same way anything else does when a report or a form
+         takes the centre. Today it is hard-baked per mode; when a model writes it, only the source
+         of the string changes — the choreography is already the one a stream wants. */
+      .greet {
+        position: relative;
+        z-index: 2;
+        flex: 0 0 auto;
+        text-align: center;
+        padding-bottom: var(--ch-space-2);
+      }
+      .greet[hidden] {
+        display: none;
+      }
+      .greet__line {
+        margin: 0;
+        font-size: var(--ch-font-size-xl);
+        font-weight: var(--ch-font-weight-light);
+        color: var(--ch-accent-primary);
+      }
+      .greet__sub {
+        margin: var(--ch-space-2) 0 0;
+        font-size: var(--ch-font-size-sm);
+        color: var(--ch-text-muted);
+      }
+
+      .caret {
+        display: inline-block;
+        width: 0.5ch;
+        margin-left: 0.08ch;
+        background: currentColor;
+        animation: blink 1s steps(1) infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+
+      .foot {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        justify-content: center;
+        gap: var(--ch-space-3);
+        flex: 0 0 auto;
+      }
+      .foot button {
+        font: inherit;
+        font-size: var(--ch-font-size-label);
+        padding: var(--ch-space-2) var(--ch-space-4);
+        border-radius: var(--ch-radius-md);
+        border: 1px solid var(--ch-panel-border);
+        background: var(--ch-surface-raised);
+        color: var(--ch-text-primary);
+        cursor: pointer;
+      }
+
+      .switch {
+        max-width: 94vw;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="desk"><div class="desk__glare"></div></div>
+
+    <div class="stage">
+      <section class="heimlich">
+        <div class="stream">
+          <svg viewBox="0 0 1600 400" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="g1" x1="0" x2="1">
+                <stop offset="0%" stop-color="var(--ch-heimlich-primary)" stop-opacity="0" />
+                <stop offset="35%" stop-color="var(--ch-heimlich-primary)" stop-opacity="0.95" />
+                <stop offset="100%" stop-color="var(--ch-heimlich-secondary)" stop-opacity="0.9" />
+              </linearGradient>
+              <filter id="soft"><feGaussianBlur stdDeviation="5" /></filter>
+              <filter id="softer"><feGaussianBlur stdDeviation="14" /></filter>
+            </defs>
+            <g fill="none" stroke="url(#g1)">
+              <path d="M0 210 C 200 90, 380 320, 600 200 S 1000 60, 1200 190 S 1450 300, 1600 200"
+                    stroke-width="16" filter="url(#softer)" opacity=".55" />
+              <path d="M0 200 C 200 80, 380 310, 600 190 S 1000 50, 1200 180 S 1450 290, 1600 190"
+                    stroke-width="3" filter="url(#soft)" />
+              <path d="M0 230 C 220 120, 400 330, 620 220 S 1010 90, 1220 215 S 1460 320, 1600 225"
+                    stroke-width="2" opacity=".85" />
+            </g>
+          </svg>
+        </div>
+
+        <div class="shade shade--report" id="shadeReport" aria-hidden="true"></div>
+        <div class="shade shade--input" id="shadeInput" aria-hidden="true"></div>
+
+        <p class="wordmark">HEIMLICH</p>
+
+        <div class="body">
+          <div class="report" id="report">
+            <div class="report__scroll"><div class="halo" id="reportDoc"></div></div>
+          </div>
+
+          <div class="input" id="input">
+            <div class="input__head halo">
+              <h2 class="input__title" id="inputTitle">New event</h2>
+            </div>
+            <div class="field" style="--i: 0">
+              <span class="field__label halo">Title</span>
+              <input class="control" value="Data Structures revision" />
+            </div>
+            <div class="field" style="--i: 1">
+              <span class="field__label halo">When</span>
+              <input class="control" value="Fri 8 Aug · 14:00" />
+            </div>
+            <div class="field" style="--i: 2">
+              <span class="field__label halo">Notes</span>
+              <input class="control" value="Chapters 4–6" />
+            </div>
+          </div>
+        </div>
+
+        <div class="greet halo" id="greet">
+          <p class="greet__line" id="greetLine"></p>
+          <p class="greet__sub" id="greetSub"></p>
+        </div>
+
+        <div class="foot">
+          <button data-report="brief">Daily brief</button>
+          <button data-report="status">System status</button>
+          <button data-input="event">Create event</button>
+          <button data-close>Close</button>
+        </div>
+      </section>
+    </div>
+
+    <p class="note">
+      <b>Centre choreography.</b> Nothing is ever removed — it <i>leaves</i>. One exit duration for
+      every surface, so the greeting, a report and a form all recede at the same rate and the centre
+      reads as one surface changing its mind rather than three components swapping. Then the
+      replacement types itself in. Try: switch mode · open a report · switch to the other report ·
+      open the form · close.
+    </p>
+
+    <div class="switch">
+      <span class="switch__label">Mode</span>
+      <button data-mode="executive" aria-pressed="true">Executive</button>
+      <button data-mode="developer" aria-pressed="false">Developer</button>
+      <button data-mode="school" aria-pressed="false">School</button>
+      <button data-mode="entertainment" aria-pressed="false">Entertainment</button>
+      <a href="/mockups/">All</a>
+    </div>
+
+    <script type="module">
+      const EXIT = 260;
+
+      const GREETINGS = {
+        executive: ["Good day.", "Here to help you lead, decide, and deliver."],
+        developer: ["Ready to build.", "Let's ship something great today."],
+        school: ["Time to study.", "Let's learn, plan, and get ahead."],
+        entertainment: ["Time to unwind.", "Let's find something worth your time."]
+      };
+
+      const REPORTS = {
+        brief: [
+          ['<p class="greeting">', "Good morning, Nick.", "</p>"],
+          ['<p class="sub">', "Here's your day at a glance.", "</p>"],
+          ['<ul class="rows"><li class="row"><i></i><span>', "3 meetings, first at 10:30", "</span></li>"],
+          ['<li class="row"><i></i><span>', "2 PRs waiting on review", "</span></li>"],
+          ['<li class="row"><i></i><span>', "Markets up modestly", "</span></li></ul>"]
+        ],
+        status: [
+          ['<p class="greeting">', "System status", "</p>"],
+          ['<p class="sub">', "Everything checked out.", "</p>"],
+          ['<ul class="rows"><li class="row"><i></i><span>', "CPU steady at 18%", "</span></li>"],
+          ['<li class="row"><i></i><span>', "Memory pressure normal", "</span></li>"],
+          ['<li class="row"><i></i><span>', "Wi-Fi 120 Mbps · battery 82%", "</span></li></ul>"]
+        ]
+      };
+
+      const el = (id) => document.getElementById(id);
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      /** Every transition runs to completion before the next one starts. Without this, two
+       *  overlapping swaps interleave their waits and the centre ends up in a state neither of
+       *  them asked for — a surface left on screen, or the greeting hidden with nothing in its
+       *  place. A choreography engine has to serialise; there is no correct way to run two exits
+       *  at once. */
+      let chain = Promise.resolve();
+      const run = (fn) => {
+        chain = chain.then(fn).catch((error) => console.error(error));
+        return chain;
+      };
+
+      const isShowing = (node) =>
+        node.classList.contains("greet") ? !node.hidden : node.dataset.on !== undefined;
+
+      /** Fade a surface out, then hide it. Every disappearance in the centre goes through here. */
+      async function leave(node) {
+        if (!isShowing(node)) return;
+        node.classList.add("leaving");
+        await wait(EXIT);
+        node.classList.remove("leaving");
+        if (node.classList.contains("greet")) node.hidden = true;
+        else delete node.dataset.on;
+      }
+
+      let typer = null;
+      /** Type a document in, block by block, character by character. `tick` runs on every frame of
+       *  growth so the wash can follow the text as it is written. */
+      function typeInto(target, doc, { tick, done } = {}) {
+        clearTimeout(typer);
+        target.innerHTML = "";
+        let seg = 0, char = 0, html = "";
+        const step = () => {
+          if (seg >= doc.length) {
+            target.innerHTML = html;
+            tick?.();
+            done?.();
+            return;
+          }
+          const [open, body, close] = doc[seg];
+          char += 1;
+          let shown = body.slice(0, char);
+          const lastOpen = shown.lastIndexOf("<");
+          if (lastOpen > shown.lastIndexOf(">")) shown = body.slice(0, lastOpen);
+          target.innerHTML = html + open + shown + '<span class="caret">&nbsp;</span>' + close;
+          tick?.();
+          if (char >= body.length) {
+            html += open + body + close;
+            seg += 1; char = 0;
+            typer = setTimeout(step, 150);
+          } else {
+            typer = setTimeout(step, 13 + Math.random() * 24);
+          }
+        };
+        step();
+      }
+
+      // --- washes follow their content ---------------------------------------------------------
+      const panelRect = () => document.querySelector(".heimlich").getBoundingClientRect();
+
+      /** The union of the line boxes — so the width is the WIDEST LINE, not the column. Measuring
+       *  the element instead would give a constant (a block is as wide as its column however
+       *  little is in it), and the wash would never appear to grow sideways. */
+      function textBounds(node) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return range.getBoundingClientRect();
+      }
+
+      const PAD = 2.5; // percent of the panel, past the text, before the fade starts
+
+      /** Grow the report wash to the text's actual extent. Called on every typing tick, so the
+       *  region expands outward — right with the longest line, down with the last one — while the
+       *  registered properties above ease each step into a glide. */
+      function fitReportWash() {
+        const panel = panelRect();
+        const box = textBounds(el("reportDoc"));
+        if (!box.width && !box.height) return;
+        const x = ((box.right - panel.left) / panel.width) * 100 + PAD;
+        const y = ((box.bottom - panel.top) / panel.height) * 100 + PAD;
+        const shade = el("shadeReport").style;
+        shade.setProperty("--edge-x", `${Math.min(100, x).toFixed(1)}%`);
+        shade.setProperty("--edge-y", `${Math.min(100, y).toFixed(1)}%`);
+      }
+
+      /** Mirror: measured inward from the right and bottom edges, since that mask runs the other
+       *  way. The form has no prose to grow, so this settles once rather than per tick. */
+      function fitInputWash() {
+        const panel = panelRect();
+        const box = el("input").getBoundingClientRect();
+        if (!box.width) return;
+        const x = ((panel.right - box.left) / panel.width) * 100 + PAD;
+        const y = ((panel.bottom - box.top) / panel.height) * 100 + PAD;
+        const shade = el("shadeInput").style;
+        shade.setProperty("--edge-x", `${Math.min(100, x).toFixed(1)}%`);
+        shade.setProperty("--edge-y", `${Math.min(100, y).toFixed(1)}%`);
+      }
+
+      /** Back to a small corner, so the next open expands outward again rather than snapping in
+       *  at whatever size the last document happened to be. */
+      function resetWash(node) {
+        node.style.setProperty("--edge-x", "8%");
+        node.style.setProperty("--edge-y", "8%");
+      }
+
+      // --- state -------------------------------------------------------------------------------
+      let mode = "executive";
+      /** Report and input coexist by design (design spec §5.7): opposite sides of the centre, and
+       *  reading a brief is often the REASON a form is open. Closing one to show the other would
+       *  throw away the context that prompted it. Only the greeting is exclusive with them. */
+      const state = { report: null, input: false };
+      const nothingOpen = () => !state.report && !state.input;
+
+      function typeGreeting() {
+        const [line, sub] = GREETINGS[mode];
+        el("greet").hidden = false;
+        el("greetLine").textContent = "";
+        el("greetSub").textContent = "";
+        typeInto(el("greetLine"), [["", line, ""]], {
+          done: () => typeInto(el("greetSub"), [["", sub, ""]])
+        });
+      }
+
+      function fadeShade(node, on) {
+        if (on) node.dataset.on = "";
+        else delete node.dataset.on;
+        return wait(on ? 0 : EXIT);
+      }
+
+      async function setMode(next) {
+        document.documentElement.dataset.mode = next;
+        // Scoped to the switch: `<html>` also carries `data-mode` for theming, so an unscoped
+        // `[data-mode]` selector matches it too — which is how every click on the page ended up
+        // firing a mode change and racing a second transition against the one you asked for.
+        for (const b of document.querySelectorAll(".switch button[data-mode]")) {
+          b.setAttribute("aria-pressed", String(b.dataset.mode === next));
+        }
+        mode = next;
+        // The greeting leaves before the new one arrives — even here, where only the text changes.
+        // A crossfade would read as two greetings; this reads as one speaking.
+        if (nothingOpen()) {
+          await leave(el("greet"));
+          await wait(60);
+          typeGreeting();
+        }
+      }
+
+      async function showReport(id) {
+        if (nothingOpen()) await leave(el("greet"));
+        el("greet").hidden = true;
+        // Swapping report → report keeps the wash up: the space is still being used for the same
+        // thing, so darkening once beats flickering the whole centre between two briefs.
+        if (state.report) await leave(el("report"));
+        state.report = id;
+        el("report").dataset.on = "";
+        // Start compact: the wash then grows outward with the writing instead of appearing at the
+        // finished document's size and waiting for the text to catch up.
+        resetWash(el("shadeReport"));
+        fadeShade(el("shadeReport"), true);
+        await wait(60);
+        typeInto(el("reportDoc"), REPORTS[id], { tick: fitReportWash });
+      }
+
+      async function showInput() {
+        if (nothingOpen()) await leave(el("greet"));
+        el("greet").hidden = true;
+        if (state.input) await leave(el("input"));
+        state.input = true;
+        el("input").dataset.on = "";
+        resetWash(el("shadeInput"));
+        fadeShade(el("shadeInput"), true);
+        requestAnimationFrame(fitInputWash);
+        await wait(60);
+        // A form has no prose to type; its equivalent is the staggered arrival of the fields.
+        for (const f of el("input").querySelectorAll(".field")) {
+          f.style.animation = "none";
+          void f.offsetWidth;
+          f.style.animation = "";
+        }
+      }
+
+      async function closeAll() {
+        const jobs = [];
+        if (state.report) jobs.push(leave(el("report")), fadeShade(el("shadeReport"), false));
+        if (state.input) jobs.push(leave(el("input")), fadeShade(el("shadeInput"), false));
+        await Promise.all(jobs);
+        resetWash(el("shadeReport"));
+        resetWash(el("shadeInput"));
+        state.report = null;
+        state.input = false;
+        await wait(60);
+        typeGreeting();
+      }
+
+      // --- wiring ------------------------------------------------------------------------------
+      for (const b of document.querySelectorAll(".switch button[data-mode]")) {
+        b.addEventListener("click", () => run(() => setMode(b.dataset.mode)));
+      }
+      for (const b of document.querySelectorAll(".foot button[data-report]")) {
+        b.addEventListener("click", () => run(() => showReport(b.dataset.report)));
+      }
+      for (const b of document.querySelectorAll(".foot button[data-input]")) {
+        b.addEventListener("click", () => run(() => showInput()));
+      }
+      document
+        .querySelector(".foot button[data-close]")
+        .addEventListener("click", () => run(closeAll));
+
+      typeGreeting();
+    </script>
+  </body>
+</html>

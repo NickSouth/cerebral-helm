@@ -6,7 +6,10 @@ import { WindowNavigator } from "../shell/WindowNavigator";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
 import { AppearanceProvider } from "../state/AppearanceProvider";
+import { useRef } from "react";
 import { ThemeProvider } from "./ThemeProvider";
+import { useTransparentSurface } from "./useTransparentSurface";
+import { useGlassGeometry } from "./useGlassGeometry";
 import { postShellControl } from "../shell/shellControl";
 import { createDashboardRuntime } from "../state/bootstrapStore";
 
@@ -27,12 +30,18 @@ const store = runtime.store;
  * native shell owns the window's lifecycle.
  */
 export function WindowNavigatorApp() {
+  useTransparentSurface();
+  const rootRef = useRef<HTMLDivElement>(null);
+  // The header and each window card are the glass here — there is no grouping pane in this surface,
+  // so the boxes sit straight on the transparent surface and each gets its own blur.
+  useGlassGeometry(rootRef, ".win-nav__header, .win-nav__card");
+
   return (
     <BridgeProvider bridge={bridge}>
       <DashboardStateProvider store={store}>
         <AppearanceProvider>
           <ThemeProvider>
-            <div className="win-nav-window" role="main" aria-label="Open windows">
+            <div className="win-nav-window" role="main" aria-label="Open windows" ref={rootRef}>
               <WindowNavigator
                 variant="standalone"
                 onClose={() => postShellControl("closeWindowNavigator")}

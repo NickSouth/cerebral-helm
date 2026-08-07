@@ -13,7 +13,7 @@ import { useDashboardState } from "../state/DashboardStateProvider";
 import { useActiveMode } from "./useActiveMode";
 import { useUiPosture } from "../state/useUiPosture";
 import { toModeId } from "../tokens/tokens";
-import type { AppReference, ChromeProfile, DiscoveredApp } from "../bridge/cerebralBridge";
+import type { AppReference, ChromeProfile } from "../bridge/cerebralBridge";
 import { useDiscoveredApps } from "./useDiscoveredApps";
 import { PickerSearchField } from "./PickerSearchField";
 import { filterApps } from "./filterApps";
@@ -216,31 +216,6 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
       .finally(() => setBusy(false));
   }
 
-  function pinControl(app: DiscoveredApp) {
-    if (!app.referenceId) {
-      return null;
-    }
-    const referenceId = app.referenceId;
-    if (quickApps.includes(referenceId)) {
-      return (
-        <button type="button" className="pin-pop__pin" disabled={busy} onClick={() => unpin(referenceId)}>
-          Unpin
-        </button>
-      );
-    }
-    return (
-      <button
-        type="button"
-        className="pin-pop__pin"
-        disabled={busy || slotsFull}
-        title={slotsFull ? "All five quick-app slots are full — unpin one first." : undefined}
-        onClick={() => pin(referenceId)}
-      >
-        Pin
-      </button>
-    );
-  }
-
   return createPortal(
     <>
       {/* Click-to-dismiss catcher; Escape and × are the keyboard paths. */}
@@ -380,24 +355,68 @@ export function PinPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: 
               </p>
             ) : null}
             {picker.status === "ready" ? (
-              <ul className="pin-pop__list">
-                {visibleApps.map((app) => (
-                  <li key={app.bundleId} className="pin-pop__row" title={app.bundleId}>
-                    <span className="pin-pop__avatar" aria-hidden="true">
-                      {app.iconPng ? (
-                        <img src={`data:image/png;base64,${app.iconPng}`} alt="" />
-                      ) : (
-                        <AppGlyph category="files" />
-                      )}
-                    </span>
-                    <span className="pin-pop__name">{app.name}</span>
-                    {app.referenceId ? (
-                      pinControl(app)
-                    ) : (
-                      <span className="pin-pop__unpinnable">Not a configured app reference</span>
-                    )}
-                  </li>
-                ))}
+              /* The SAME grid and tile as More Apps, by class rather than by imitation — the two
+                 surfaces do the same job (choose an application) and would drift apart if each
+                 owned its own copy. Here the tile IS the action: at this size a row-plus-button
+                 would put the control somewhere other than the thing it acts on. */
+              <ul className="apps-picker__grid pin-pop__apps">
+                {visibleApps.map((app) => {
+                  const referenceId = app.referenceId;
+                  const pinned = referenceId ? quickApps.includes(referenceId) : false;
+                  // An app with no reference cannot be pinned at all — honest-disabled with the
+                  // reason on hover, rather than a tile that silently does nothing.
+                  const blocked = !referenceId || busy || (!pinned && slotsFull);
+                  return (
+                    <li key={app.bundleId} className="apps-picker__item">
+                      <button
+                        type="button"
+                        className="apps-picker__launch"
+                        data-pinned={pinned || undefined}
+                        disabled={blocked}
+                        aria-label={
+                          // An app with no reference must not announce itself as pinnable: the
+                          // control cannot do what its name claims, which is exactly the kind of
+                          // promise honest-unavailable exists to prevent.
+                          !referenceId
+                            ? `${app.name} — not a configured app reference`
+                            : pinned
+                              // Named for the destination, not just the app: the quick-app slot
+                              // has its own "Unpin <app>" control, and two buttons answering to
+                              // the same name is ambiguous to anyone navigating by name.
+                              ? `Unpin ${app.name} from Quick Apps`
+                              : `Pin ${app.name} to Quick Apps`
+                        }
+                        title={
+                          !referenceId
+                            ? "Not a configured app reference"
+                            : pinned
+                              ? "Pinned — click to remove"
+                              : slotsFull
+                                ? "All five quick-app slots are full — unpin one first."
+                                : app.bundleId
+                        }
+                        onClick={() =>
+                          referenceId && (pinned ? unpin(referenceId) : pin(referenceId))
+                        }
+                      >
+                        <span className="apps-picker__icon" aria-hidden="true">
+                          {app.iconPng ? (
+                            <img src={`data:image/png;base64,${app.iconPng}`} alt="" />
+                          ) : (
+                            <AppGlyph category="files" />
+                          )}
+                        </span>
+                        <span className="apps-picker__name">{app.name}</span>
+                        {/* Visible, not just a tooltip: honest-unavailable means the reason is on
+                            the surface (FR-UI-07). A disabled tile alone would leave the user
+                            guessing why this one app cannot be pinned. */}
+                        {!referenceId ? (
+                          <span className="apps-picker__note">Not a configured app reference</span>
+                        ) : null}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             ) : null}
           </section>

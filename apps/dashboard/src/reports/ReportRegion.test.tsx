@@ -1,4 +1,4 @@
-import { act, render, screen, within, fireEvent } from "@testing-library/react";
+import { act, render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import { DashboardShell } from "../shell/DashboardShell";
 import { ReportBlocks } from "./ReportRegion";
 import type { ReportBlock } from "./reportDocument";
@@ -48,9 +48,15 @@ function renderShell() {
   };
 }
 
-function openDailyBrief() {
+/**
+ * Opening is deliberately not synchronous any more: the ambient greeting has to finish leaving,
+ * and then the incoming surface owes it a beat, before anything is written into the space it had
+ * (`CenterStage`'s handover). Every case that just wants an open report awaits that; the ordering
+ * itself is asserted once, below, rather than re-tested in each of them.
+ */
+async function openDailyBrief() {
   fireEvent.click(screen.getByRole("button", { name: "Daily brief" }));
-  return screen.getByRole("region", { name: "Daily brief report" });
+  return await screen.findByRole("region", { name: "Daily brief report" });
 }
 
 describe("Report region", () => {
@@ -59,45 +65,56 @@ describe("Report region", () => {
     expect(screen.queryByRole("region", { name: "Daily brief report" })).toBeNull();
   });
 
-  it("opens from the daily-brief slot and renders the composed document", () => {
+  it("opens from the daily-brief slot and renders the composed document", async () => {
     renderShell();
-    const region = openDailyBrief();
+    const region = await openDailyBrief();
 
     // The greeting block, the time line, and the calendar list all come from the composer.
     expect(within(region).getByText(/^Good (morning|afternoon|evening)\.$/)).toBeInTheDocument();
     expect(within(region).getByText(/^It's .+ on .+\.$/)).toBeInTheDocument();
   });
 
-  it("keeps the consciousness field mounted — the report composites over it, never replaces it", () => {
+  it("keeps the consciousness field mounted — the report composites over it, never replaces it", async () => {
     renderShell();
-    openDailyBrief();
+    await openDailyBrief();
     // The centre panel and its running field are still there; only the greeting steps aside.
     expect(screen.getByRole("region", { name: "Heimlich" })).toBeInTheDocument();
   });
 
-  it("hides the ambient greeting while open, so two greetings never stack", () => {
+  it("hides the ambient greeting while open, so two greetings never stack", async () => {
     renderShell();
     const ambient = document.querySelector(".heimlich__greeting");
     expect(ambient).not.toBeNull();
 
-    openDailyBrief();
-    expect(document.querySelector(".heimlich__greeting")).toBeNull();
+    await openDailyBrief();
+    // The greeting LEAVES rather than vanishing (increment 4), so it is still mounted for one exit
+    // while it recedes. What must not happen is two greetings reading at once, which is why this
+    // waits for it to go rather than relaxing to "eventually maybe".
+    await waitFor(() => expect(document.querySelector(".heimlich__greeting")).toBeNull());
 
-    // Closing restores it.
+    // Closing restores it — also after an exit, since the report has to leave first.
     fireEvent.click(screen.getByRole("button", { name: "Close the Daily brief report" }));
-    expect(document.querySelector(".heimlich__greeting")).not.toBeNull();
+    await waitFor(() => expect(document.querySelector(".heimlich__greeting")).not.toBeNull());
   });
 
-  it("toggles closed when its own slot is pressed again", () => {
+  it("toggles closed when its own slot is pressed again", async () => {
     renderShell();
-    openDailyBrief();
+    await openDailyBrief();
     fireEvent.click(screen.getByRole("button", { name: "Daily brief" }));
-    expect(screen.queryByRole("region", { name: "Daily brief report" })).toBeNull();
+    // Closing is a LEAVE, not a removal (increment 4): the surface stays mounted and marked
+    // `data-leaving` while it recedes, so the swap is a handover rather than a blink. It is gone
+    // once the exit has run — which is what this now waits for.
+    expect(screen.getByRole("region", { name: "Daily brief report" })).toHaveAttribute(
+      "data-leaving"
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Daily brief report" })).toBeNull()
+    );
   });
 
   it("closes when the mode changes, since a report belongs to the mode whose slot opened it", async () => {
     const { bridge } = renderShell();
-    openDailyBrief();
+    await openDailyBrief();
 
     await act(async () => {
       await bridge.applyMode({ modeId: "school" });
@@ -105,7 +122,12 @@ describe("Report region", () => {
 
     // School has no daily-brief slot; leaving it open would render a report the mode does not
     // offer, degraded against providers the mode does not carry.
-    expect(screen.queryByRole("region", { name: "Daily brief report" })).toBeNull();
+    // Closing is a LEAVE, not a removal (increment 4): the surface stays mounted and marked
+    // `data-leaving` while it recedes, so the swap is a handover rather than a blink. It is gone
+    // once the exit has run — which is what this now waits for.
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Daily brief report" })).toBeNull()
+    );
   });
 
   it("does not dispatch a command — a report composes from state already in the dashboard", () => {

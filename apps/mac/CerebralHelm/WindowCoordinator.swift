@@ -48,6 +48,9 @@ final class WindowCoordinator: @unchecked Sendable {
     /// mode-specific), torn down on close. `nil` while closed.
     private var layoutEditor: LayoutEditorWindowController?
     private var windowNavigator: WindowNavigatorWindowController?
+    /// Watches which displays are covered by real work and tells each backdrop whether to recede
+    /// (NIC-152). Created with the ready session; never exists in recovery, which has no backdrop.
+    private var occupancy: DisplayOccupancyObserver?
     /// The expandable project detail window (NIC-129): built fresh on each open (its descriptor
     /// is re-read), torn down on close. `nil` while closed.
     private var projectDetail: ProjectDetailWindowController?
@@ -137,11 +140,16 @@ final class WindowCoordinator: @unchecked Sendable {
             // from a warm cache) is replayed through the runtime, which re-emits from cache
             // rather than re-fetching — no provider quota is spent to repaint a panel.
             self?.onDashboardBridgeReady?()
+            // The occupancy observer only speaks on change, and it may well have settled this
+            // display's state before the page could receive anything.
+            self?.pushPresence(to: dashboard, displayID: self?.mainDisplayID())
             guard let json = self?.lastTopologyJSON else { return }
             dashboard?.deliverBridgeEvent(json)
         }
         self.dashboard = dashboard
         dashboard.show()
+
+        startOccupancyObserver()
 
         // Visibility signal for the status publisher: sampling pauses only when
         // every backdrop is fully occluded or hidden (MAC-ADAPTER-3 battery AC).
@@ -177,6 +185,78 @@ final class WindowCoordinator: @unchecked Sendable {
         edgeMonitor.onExit = { [weak self] in self?.sidebar?.dismiss() }
         applySidebarEdgePreference()
         edgeMonitor.start()
+    }
+
+    // MARK: - Recede (per-display occupancy, NIC-152)
+
+    /// Start watching per-display occupancy and route each verdict to that display's backdrop.
+    ///
+    /// The observer owns the *rule* (what counts as occupancy, and the hysteresis); this owns the
+    /// *bindings* it cannot know: which displays exist, which of CerebralHelm's own windows count,
+    /// and which webview represents a given display.
+    private func startOccupancyObserver() {
+        let observer = DisplayOccupancyObserver(
+            displays: { [weak self] in self?.occupancyDisplays() ?? [] },
+            countedOwnWindows: { [weak self] in self?.occupancyCountedOwnWindows() ?? [] }
+        )
+        observer.onOccupancyChange = { [weak self] displayID, receded in
+            self?.backdrop(for: displayID)?.setReceded(receded)
+        }
+        occupancy = observer
+        observer.start()
+    }
+
+    /// The connected displays, from the topology the shell already keys everything else by — so a
+    /// display's recede state and its backdrop are addressed by the same id.
+    private func occupancyDisplays() -> [OccupancyDisplay] {
+        guard let topology = lastTopology else { return [] }
+        return topology.displays.map { descriptor in
+            OccupancyDisplay(
+                id: descriptor.id,
+                frame: NSRect(
+                    x: descriptor.frame.x, y: descriptor.frame.y,
+                    width: descriptor.frame.width, height: descriptor.frame.height
+                )
+            )
+        }
+    }
+
+    /// Which of CerebralHelm's own windows count as occupancy right now (owner decision,
+    /// 2026-08-05): **Settings only**, and only while it is actually on screen.
+    ///
+    /// Settings is a place you go to work, and a busy dashboard behind it is noise. Every other
+    /// surface is you interacting with CerebralHelm itself — the confirmation panel most pointedly,
+    /// since it is a momentary interruption *about* the dashboard and dimming behind it would just
+    /// flash. Re-asked on every tick rather than cached, because Settings opening and closing is
+    /// exactly the transition this has to notice.
+    private func occupancyCountedOwnWindows() -> Set<UInt32> {
+        guard let settings, settings.window.isVisible else { return [] }
+        let number = settings.window.windowNumber
+        guard number > 0 else { return [] }
+        return [UInt32(number)]
+    }
+
+    /// The backdrop showing on a given display: the main dashboard for the main display, else that
+    /// display's companion.
+    private func backdrop(for displayID: String) -> DashboardWindowController? {
+        if displayID == mainDisplayID() { return dashboard }
+        return secondaries[displayID]
+    }
+
+    private func mainDisplayID() -> String? {
+        guard let topology = lastTopology else { return nil }
+        return mainDescriptor(in: topology)?.id
+    }
+
+    /// Push a surface's current recede state (NIC-152).
+    ///
+    /// Needed wherever a surface starts representing a display it has not been hearing about: a
+    /// webview that has only just finished its handshake, a companion built when a display was
+    /// hot-plugged, or the main dashboard after the user re-targets which display is "main". The
+    /// observer reports transitions, so none of those would otherwise learn the current answer.
+    private func pushPresence(to controller: DashboardWindowController?, displayID: String?) {
+        guard let controller, let displayID, let occupancy else { return }
+        controller.setReceded(occupancy.currentState(of: displayID))
     }
 
     /// Recovery path: a single read-only recovery window; no dashboard or palette exist.
@@ -303,11 +383,13 @@ final class WindowCoordinator: @unchecked Sendable {
             secondary.onShellControl = { [weak self, weak secondary] body in
                 self?.handleShellControl(body, from: secondary)
             }
+            let descriptorID = descriptor.id
             secondary.onBridgeReady = { [weak self, weak secondary] in
                 // A companion appears mid-session, so it has missed every event already sent —
                 // including the weather that the bootstrap does not carry (NIC-172). Replay before
                 // the topology so it lands in the same order the main dashboard sees.
                 self?.onDashboardBridgeReady?()
+                self?.pushPresence(to: secondary, displayID: descriptorID)
                 guard let json = self?.lastTopologyJSON else { return }
                 secondary?.deliverBridgeEvent(json)
             }
@@ -335,6 +417,14 @@ final class WindowCoordinator: @unchecked Sendable {
         // layout display (or moves to the main backdrop if the layout display went
         // away), and clear it from any new companion (NIC-142).
         fanOutLayoutSession()
+        // Which display each surface speaks for may have just changed — a re-targeted main display
+        // hands the main dashboard a different screen, and a companion may have swapped displays
+        // without being rebuilt. Re-assert every backdrop's recede state against the display it now
+        // represents, rather than leaving it showing the previous one's (NIC-152).
+        pushPresence(to: dashboard, displayID: main?.id)
+        for (id, controller) in secondaries {
+            pushPresence(to: controller, displayID: id)
+        }
     }
 
     /// The display the main backdrop (and palette focus) belongs on:
@@ -506,7 +596,7 @@ final class WindowCoordinator: @unchecked Sendable {
     /// drops directly under the button. Absent anchor degrades to a right-edge open.
     func openMoreApps(anchor: [String: Any]? = nil) {
         guard let session, let dashboardRoot else { return }
-        moreApps?.close()
+        moreApps?.closeImmediately()
         let controller = MoreAppsWindowController(dashboardRoot: dashboardRoot, session: session)
         controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
         moreApps = controller
@@ -544,14 +634,24 @@ final class WindowCoordinator: @unchecked Sendable {
     /// Open the window navigator (NIC-143): a top-most floating window listing every
     /// open window for quick surface/minimize/close. Built fresh each open (any existing
     /// one is replaced) so its inventory is current, and placed toward the right edge.
-    func openWindowNavigator() {
+    ///
+    /// `anchor` is the bottom bar's navigator button in the dashboard webview's viewport, converted
+    /// the same way More Apps' is. It does **not** move the window — a tall list of open windows
+    /// belongs at the screen edge, not under a button — it only tells the window which direction to
+    /// arrive from, so the slab reads as flying out of the control that was pressed.
+    func openWindowNavigator(anchor: [String: Any]? = nil) {
         guard let session, let dashboardRoot else { return }
-        windowNavigator?.close()
+        windowNavigator?.closeImmediately()
         let controller = WindowNavigatorWindowController(dashboardRoot: dashboardRoot, session: session)
         controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
         windowNavigator = controller
         if let screen = dashboard?.window.screen ?? mainScreen() ?? NSScreen.main {
-            controller.positionOnRight(of: screen)
+            if let anchor, let dashboardWindow = dashboard?.window,
+               let anchorRect = Self.anchorScreenRect(anchor, in: dashboardWindow) {
+                controller.positionOnRight(of: screen, from: anchorRect)
+            } else {
+                controller.positionOnRight(of: screen)
+            }
         }
         controller.show()
         NSApp.activate(ignoringOtherApps: true)
@@ -773,7 +873,7 @@ final class WindowCoordinator: @unchecked Sendable {
         case "closeMoreApps":
             closeMoreApps()
         case "openWindowNavigator":
-            openWindowNavigator()
+            openWindowNavigator(anchor: body["anchor"] as? [String: Any])
         case "closeWindowNavigator":
             closeWindowNavigator()
         case "openProjectDetail":

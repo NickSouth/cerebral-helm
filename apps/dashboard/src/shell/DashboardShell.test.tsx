@@ -784,9 +784,10 @@ describe("DashboardShell quick actions (D4 / NIC-117 b)", () => {
   it("opens capture-note's form and captures what was typed, reporting the real result", async () => {
     renderShell();
 
-    // The slot now opens a form rather than capturing a fixed placeholder note.
+    // The slot now opens a form rather than capturing a fixed placeholder note. Awaited because
+    // the centre hands over first — the ambient greeting leaves before anything lands in its place.
     fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
-    const form = screen.getByRole("region", { name: "Capture note form" });
+    const form = await screen.findByRole("region", { name: "Capture note form" });
 
     fireEvent.change(within(form).getByLabelText(/Title/), {
       target: { value: "Ask about the lease" }
@@ -807,10 +808,10 @@ describe("DashboardShell quick actions (D4 / NIC-117 b)", () => {
     );
   });
 
-  it("blocks submission until every required field is filled", () => {
+  it("blocks submission until every required field is filled", async () => {
     renderShell();
     fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
-    const form = screen.getByRole("region", { name: "Capture note form" });
+    const form = await screen.findByRole("region", { name: "Capture note form" });
 
     // Title is required and starts blank, so the submit says why rather than sitting inert.
     const submit = within(form).getByRole("button", { name: "Capture" });

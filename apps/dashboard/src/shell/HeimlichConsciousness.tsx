@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useDashboardState } from "../state/DashboardStateProvider";
+import { useSurfaceReceded } from "../state/surfacePresence";
+import { FIELD_DURATION_MS, useFieldIntroStart } from "./useStartupIntro";
 import Threads from "./Threads";
 
 interface HeimlichConsciousnessProps {
@@ -19,6 +21,15 @@ type Rgb = [number, number, number];
  * instead of teleporting the field.
  */
 const RIBBON = { amplitude: 1.0, distance: 0, speed: 0.25 } as const;
+
+/**
+ * How the stream behaves while the surface is backdrop (NIC-152). It keeps flowing rather than
+ * freezing: a stopped field reads as a crashed dashboard, where a slower one reads as resting.
+ * Slowing and capping the frame rate together cut the GPU cost roughly fourfold while the motion
+ * still looks continuous — and because `Threads` accumulates its clock, the speed change eases in
+ * instead of teleporting the noise field (NIC-125/154).
+ */
+const RECEDED_RIBBON = { speedScale: 0.55, frameIntervalMs: 50 } as const;
 
 /** Stream tint cross-fade duration — matches `--ch-motion-slow` so the WebGL colour eases with the UI. */
 const COLOR_FADE_MS = 320;
@@ -40,6 +51,10 @@ export function HeimlichConsciousness({ interactive = false }: HeimlichConscious
   const [colors, setColors] = useState<{ a: Rgb; b: Rgb }>({ a: DEFAULT_GOLD, b: DEFAULT_CYAN });
   const colorsRef = useRef(colors);
   colorsRef.current = colors;
+  const receded = useSurfaceReceded();
+  // The field owns steps 2–4 of the launch sequence (NIC-157): the herald thread drawing in, the
+  // rest flying in from both sides, then the contraction. `null` once startup is over.
+  const introStartAt = useFieldIntroStart();
   const reducedMotion = usePrefersReducedMotion();
   const reducedMotionRef = useRef(reducedMotion);
   reducedMotionRef.current = reducedMotion;
@@ -85,7 +100,10 @@ export function HeimlichConsciousness({ interactive = false }: HeimlichConscious
           color2={colors.b}
           amplitude={RIBBON.amplitude}
           distance={RIBBON.distance}
-          speed={RIBBON.speed}
+          speed={receded ? RIBBON.speed * RECEDED_RIBBON.speedScale : RIBBON.speed}
+          frameIntervalMs={receded ? RECEDED_RIBBON.frameIntervalMs : 0}
+          introStartAt={introStartAt}
+          introDurationMs={FIELD_DURATION_MS}
         />
       ) : (
         <div className="heimlich__ribbon-fallback" />

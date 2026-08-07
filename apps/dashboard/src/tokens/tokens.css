@@ -35,8 +35,31 @@
   --ch-bg-base: #05080f;
   --ch-bg-gradient-top: #0a1422;
   --ch-glow-radial: rgba(95, 210, 232, 0.14);
-  --ch-surface-panel: rgba(15, 23, 38, 0.66);
+  /* Split so the shade can rebuild the panel's OPAQUE equivalent from the same source (below).
+     `--ch-surface-panel` itself is unchanged — `rgb(… / 0.66)` is the same colour as the old
+     `rgba(…, 0.66)`. */
+  --ch-surface-panel-rgb: 15 23 38;
+  --ch-surface-panel: rgb(var(--ch-surface-panel-rgb) / 0.66);
   --ch-surface-raised: rgba(18, 26, 42, 0.92);
+
+  /* ---- Glass surfaces (sidebar, window manager) --------------------------------------------
+     These two windows sit over the user's actual work rather than over the dashboard, and the
+     owner's brief is "almost a hundred percent translucent" — far past the mode menu's 0.92, which
+     is the reference for the *kind* of look but not the amount.
+     Three steps, each a tinge less translucent than the last, and every one of them still glass:
+     the surface you read straight through, the panes that group things, and the boxes that hold
+     content — a button, an app tile, a window card. Anything that merges with the step below it has
+     stopped being a box, which is why they are spaced rather than merely different. */
+  --ch-glass-surface: color-mix(in srgb, var(--ch-bg-base) 12%, transparent);
+  --ch-glass-pane: color-mix(in srgb, var(--ch-bg-base) 20%, transparent);
+  --ch-glass-box: color-mix(in srgb, var(--ch-bg-base) 32%, transparent);
+  /* At these alphas the fill cannot be relied on for contrast — the desktop behind might be a white
+     document or a photograph. A tight shadow keeps light text legible over anything without adding
+     a single point of opacity back, which is the whole reason the surface can stay this clear. */
+  --ch-glass-text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.65),
+    0 0 8px rgba(0, 0, 0, 0.45);
+
   --ch-panel-border: rgba(255, 255, 255, 0.08);
   --ch-text-primary: #eaf2fb;
   --ch-text-muted: #9fb0c3;
@@ -122,6 +145,79 @@
   --ch-motion-sampled: 1800ms;
   --ch-ease-linear: linear;
 
+  /* --- Receded posture (NIC-152): how far the dashboard pulls back when it is acting as
+     backdrop rather than as the thing being used. Owner-tunable — these four numbers ARE the
+     design decision, and changing them never touches a component. The bottom bar and the system
+     surfaces are deliberately exempt (see shell.css), so the treatment covers only the canvas. */
+  --ch-recede-opacity: 0.62;
+  --ch-recede-saturate: 0.7;
+  --ch-recede-blur: 1px;
+  /* Slow on the way out (it should feel like settling, not switching off) and quicker on the way
+     back, so returning to the dashboard feels immediately responsive. */
+  --ch-recede-out: 620ms;
+  --ch-recede-in: 240ms;
+
+  /* --- Startup sequence (NIC-157) — a set-piece, not a reveal. CerebralHelm launches at login
+     and is rarely restarted (owner decision, 2026-08-05), so the sequence is deliberately
+     unhurried: the field draws itself in over ~4s, the panel closes in around it, then the shell
+     assembles. These are the CSS half; the WebGL half is `FIELD_DURATION_MS` in useStartupIntro.ts,
+     which must equal `--ch-intro-delay-window` + `--ch-intro-window` — the field and the panel
+     contract together, so the shader's clock has to run exactly until the pinch ends. Collapsed
+     under reduced motion with the other durations, below. */
+  /* The panel's pinch-in. Slower than a normal region arrival on purpose — it is travelling the
+     width of the screen, and it carries the whole field with it. Everything after it waits until
+     it has finished, so the centre never fills in while the box is still moving. */
+  --ch-intro-window: 900ms;
+  --ch-intro-region: 420ms;
+  --ch-intro-rise: 0.5rem;
+  --ch-intro-delay-window: 4020ms;
+  --ch-intro-delay-center: 4980ms;
+  --ch-intro-delay-rails: 5180ms;
+  --ch-intro-delay-header: 5420ms;
+  --ch-intro-delay-bottombar: 5620ms;
+
+  /* --- Centre shade: how a report or a form sits over the running consciousness field.
+     NOT a panel. Two layers that together mean the text never acquires an edge:
+
+     `--ch-text-halo` is shade made BY the text — stacked wide shadows in the panel's own colour,
+     so it follows the glyphs and a long line carries its shade with it. It is a text-shadow value
+     held in a token so every centre surface halos identically.
+
+     `--ch-shade-fill` is the wash beneath it, which runs fully into two panel edges and dissolves
+     on the other two, so there is no outside to see. `--ch-shade-fade` is the dissolve distance —
+     ONE value for both axes, because unequal fades read as two different treatments on one shape.
+     `--ch-shade-pad` is how far past the text the solid region runs before the fade starts.
+     Owner-tunable; these four are the whole look. */
+  /* The tone both layers are built from: the OPAQUE EQUIVALENT OF THE PANEL — exactly the navy you
+     see under the Heimlich wordmark when nothing is open. That is the target by construction
+     (owner's test, 2026-08-07: the darkest part of the halo should match that colour), and it is
+     why the shade is built from the panel's own fill over the mode background rather than from
+     `--ch-bg-base` alone, which is markedly darker and read as black.
+
+     Rebuilt from `--ch-surface-panel-rgb` so there is still one source for the panel colour, and
+     it re-tints per mode for free because `--ch-bg-base` does. */
+  --ch-shade-tone: color-mix(in srgb, rgb(var(--ch-surface-panel-rgb)) 66%, var(--ch-bg-base));
+  --ch-shade-fill: color-mix(in srgb, var(--ch-shade-tone) 95%, transparent);
+  /* Dither. A 13rem fade across a near-black colour is a very shallow ramp, and 8 bits per channel
+     cannot express it smoothly — the steps land far enough apart to read as stripes. Overlaying
+     faint noise scatters each step across its neighbours so the eye integrates a smooth gradient
+     instead of finding the edges. Desaturated, so it breaks the banding without tinting anything.
+     Raise `--ch-shade-dither-opacity` if bands survive; lower it if the surface looks grainy. */
+  --ch-shade-dither: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+  --ch-shade-dither-opacity: 0.055;
+  --ch-shade-fade: 13rem;
+  --ch-shade-pad: 2.5%;
+  --ch-shade-glide: 420ms;
+  /* Weighted toward the SHORT radii. Density right at the glyph edge is what buys legibility when
+     a bright ribbon passes directly behind a line; the long radii only carry the dissolve, and
+     adding more of those would spread the shade without making the text any easier to read. So the
+     stack triples up close and keeps a single long tail — more halo, same colour, same fade. */
+  --ch-text-halo:
+    0 0 3px var(--ch-shade-tone), 0 0 5px var(--ch-shade-tone), 0 0 7px var(--ch-shade-tone),
+    0 0 10px var(--ch-shade-tone), 0 0 14px var(--ch-shade-tone), 0 0 20px var(--ch-shade-tone),
+    0 0 28px var(--ch-shade-tone), 0 0 40px var(--ch-shade-tone), 0 0 56px var(--ch-shade-tone),
+    0 0 76px var(--ch-shade-tone);
+
   /* --- Focus (visible ring + offset; never color alone) --- */
   --ch-focus-ring-color: #7fb7ff;
   --ch-focus-ring-width: 2px;
@@ -134,6 +230,26 @@
   --ch-z-scrim: 900;
   --ch-z-overlay: 1000;
   --ch-z-tooltip: 1100;
+}
+
+/* --- Glass surfaces re-point their own secondary text ---
+   `--ch-text-muted` (#9fb0c3) and `--ch-text-faint` (#6b7c90) are mid-greys chosen to sit quietly
+   against the dashboard's near-black backdrop. On a surface you can see straight through, they land
+   on whatever the desktop happens to be — and a mid-grey over a white document is the worst case
+   there is, which is exactly how the secondary lines read.
+   Lifting them toward white keeps the hierarchy intact (still quieter than primary, now by alpha
+   rather than by darkness) while surviving any background. Scoped by surface rather than restated
+   per component, so every label inside inherits it for free. */
+.sidebar-root,
+.win-nav-window {
+  --ch-text-muted: rgba(234, 242, 251, 0.84);
+  --ch-text-faint: rgba(234, 242, 251, 0.66);
+  /* Every solid control on these surfaces — quick actions, agent rows, app tiles, the search field
+     — resolves its fill from these two tokens, so re-pointing them here turns the whole surface to
+     glass in one place. The alternative was a per-component override list that would go stale the
+     first time a component was added. */
+  --ch-surface-raised: var(--ch-glass-box);
+  --ch-surface-panel: var(--ch-glass-box);
 }
 
 /* --- Mode application: the ONLY place mode chooses a color ---
@@ -193,5 +309,15 @@
     --ch-motion-base: 0ms;
     --ch-motion-slow: 0ms;
     --ch-motion-sampled: 0ms;
+    /* The launch sequence collapses to nothing: the dashboard is simply there. Delays go to zero
+       too — a staggered set of instant appearances would still read as motion. */
+    --ch-intro-window: 0ms;
+    --ch-intro-region: 0ms;
+    --ch-intro-rise: 0rem;
+    --ch-intro-delay-window: 0ms;
+    --ch-intro-delay-center: 0ms;
+    --ch-intro-delay-rails: 0ms;
+    --ch-intro-delay-header: 0ms;
+    --ch-intro-delay-bottombar: 0ms;
   }
 }

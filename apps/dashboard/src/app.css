@@ -29,8 +29,17 @@
 
 body {
   margin: 0;
-  min-width: 320px;
   min-height: 100vh;
+}
+
+/* The 320px floor lives on the DASHBOARD, not on `body`.
+   On `body` it applied to every surface — including the standalone windows that are deliberately
+   narrower than it. The window manager is 264px wide, so the rule forced its document to 320px and
+   pushed 56px of the surface (including the close control, the only way out) off the right edge
+   where it could be neither seen nor clicked. Nothing suggested a minimum was involved: the layout
+   simply appeared to overflow. Keep the guard where it was meant to apply. */
+.dashboard-shell {
+  min-width: 320px;
 }
 
 #root {
@@ -276,6 +285,26 @@ body {
 /* The programmatic skip-link target should not draw a focus ring. */
 #main:focus {
   outline: none;
+}
+
+/* Cursor affordance for every control, DERIVED from its actual enabled state instead of being
+   restated per component. A control that hardcodes `cursor: not-allowed` on its base rule keeps
+   claiming to be unavailable after its adapter lands — which is exactly how the Quick Apps tiles
+   and "View full schedule" ended up showing the no-entry cursor while working perfectly (NIC-173).
+   Deriving it here means a control can never disagree with itself again.
+
+   Zero-specificity :where() (the same shape as the focus ring above) so this only ever fills a
+   gap: any component rule still wins. That matters, because the shell deliberately runs two
+   disabled conventions — `not-allowed` for a control the user might otherwise press, and
+   `default` for a row that is merely inert (`.news__link:disabled`, `.widget-list__button:disabled`,
+   the pager arrows). Those overrides keep working untouched. */
+:where(button, [role="button"]) {
+  cursor: pointer;
+}
+
+:where(button, [role="button"]):disabled,
+:where(button, [role="button"])[aria-disabled="true"] {
+  cursor: not-allowed;
 }
 
 /* Skip link: hidden until focused, revealed via transform so it never adds scroll. */

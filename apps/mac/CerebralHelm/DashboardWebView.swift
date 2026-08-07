@@ -208,6 +208,20 @@ final class DashboardWindowController: NSObject, WKNavigationDelegate, WKScriptM
         return "document.documentElement.style.setProperty('--ch-safe-area-top', '\(px)px');"
     }
 
+    /// Tell this surface whether it is currently acting as backdrop behind the user's real work
+    /// (NIC-152), so it can dim, desaturate, soften and quiet its motion.
+    ///
+    /// **Per surface, not per app** — that is the whole point. Each backdrop is told about its own
+    /// display, so the laptop screen can stay fully present while the external display recedes.
+    /// The same per-surface injection shape as the safe-area inset above; the web side keeps this
+    /// in exactly one file (`surfacePresence.ts`), so if this ever wants to be a bridge event
+    /// instead, nothing that renders the treatment has to know.
+    func setReceded(_ receded: Bool) {
+        webView.evaluateJavaScript(
+            "window.__cerebralPresence && window.__cerebralPresence.set(\(receded));"
+        )
+    }
+
     /// Routes a shared-session bridge event (lifecycle/confirmation/config) to the
     /// dashboard webview. The app wires this as `AppBridgeRuntime`'s event sink.
     func deliverBridgeEvent(_ json: String) {

@@ -105,6 +105,165 @@
   gap: var(--ch-space-3);
 }
 
+/* Receded posture (NIC-152): CerebralHelm sitting behind the user's real work should be quieter
+   than CerebralHelm being used — dimmer, less saturated, and softened just enough to stop the
+   eye catching on detail.
+
+   `.recede-target` marks WHAT recedes, rather than the rule naming particular surfaces. The main
+   dashboard applies it to its canvas and the companion display to its stage; a future surface
+   opts in by adding the class, and nothing has to be added to this rule. Everything not marked
+   is exempt by default, which is the safer direction — a new surface renders at full presence
+   until someone decides otherwise.
+
+   What is deliberately NOT marked: the persistent bottom bar (owner decision — it is the
+   always-readable strip on every surface, and a dimmed status bar defeats its purpose), the
+   degraded-state banner (it is telling the user something is wrong), and the
+   confirmation/settings overlays (a confirmation is by definition the thing being looked at).
+   Each is a SIBLING of a recede target, so this cannot reach them even by accident, and no
+   component needs a per-case opt-out.
+
+   Note for anyone adding a `position: fixed` child inside a target: `filter` makes the element a
+   containing block for fixed descendants. Today's floating surfaces (the network callout, the
+   pin popover) portal to <body> and are unaffected. */
+.recede-target {
+  /* Returning is quicker than leaving; the receded rule swaps in the slower duration. */
+  transition:
+    opacity var(--ch-recede-in) var(--ch-ease-standard),
+    filter var(--ch-recede-in) var(--ch-ease-standard);
+}
+
+/* --- Startup sequence (NIC-157) ------------------------------------------------------------
+   CerebralHelm launches at login, so this is the first thing seen on every boot. The
+   consciousness field wakes alone on the empty background, then the shell assembles around it:
+   centre, rails, header, bottom bar. Heimlich arriving first and everything else arranging
+   itself around him is the same claim the layout makes — he owns the centre and the rest is
+   support.
+
+   Driven by `data-intro` on `.dashboard-shell` for the sequence's duration only (see
+   `useStartupIntro`). Animations, not transitions: an animation fires on first paint, whereas a
+   transition needs a start and an end state and would demand rendering the shell twice.
+
+   Every keyframe ENDS at the element's natural state, so when the attribute is dropped nothing
+   moves — and if the sequence is interrupted for any reason, the shell is simply already there.
+   Nothing here sets `pointer-events` or `visibility`: controls are live and hit-testable from
+   the first frame, animating or not, which is what "must not delay interactivity" requires. */
+@keyframes ch-intro-wake {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ch-intro-settle {
+  from {
+    opacity: 0;
+    transform: translateY(var(--ch-intro-rise));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The field itself is NOT animated here. Steps 2–4 — the herald thread drawing in from the left,
+   the rest flying in from both sides, the contraction — are motion of the threads themselves, so
+   they live in the shader (see `uIntro` in Threads.tsx), driven from the same clock. Fading the
+   canvas as a whole would just wash the choreography in and out on top of itself. */
+
+/* The panel arrives around the field once it has settled: its outline, fill and reflected light
+   resolve together with a small scale, so the "window" reads as forming around the stream rather
+   than the stream being placed into a box that was already there.
+
+   Only a `from` keyframe: with no `to`, the browser interpolates to the element's own computed
+   style, so the panel's real border/background (a `color-mix` on the live mode accent) is never
+   duplicated here and cannot drift from it. `both` holds the start state through the long delay,
+   which is what keeps the panel invisible for the whole field sequence. */
+/* The panel starts spanning the whole screen and closes in to its resting width, taking the field
+   with it — so the threads arrive from the EDGES OF THE SCREEN and the box reads as pinching in
+   around a field that was already there, rather than being drawn around threads that politely
+   stayed inside it.
+
+   ONE animation, on the panel alone. The ribbon is `inset: 0` within it and simply follows, so
+   the outline and the field cannot drift apart — an earlier version animated the two separately
+   and they visibly disagreed. Anything that must move with the box belongs inside the box, not in
+   a parallel keyframe.
+
+   Negative margins rather than width: `.heimlich` is a flex item in the centre column, so
+   horizontal margins are cross-axis and widen it past its container without touching the grid
+   tracks, the rails, or its own height. `.dashboard-shell` clips at the viewport, so the overhang
+   never becomes page overflow.
+
+   `--ch-intro-bleed-*` are measured at launch (DashboardShell) as this panel's distance to each
+   screen edge — not derivable in CSS, since it depends on rail widths, the canvas max-width cap
+   and the centring margin. They default to 0, so a failed measurement degrades to a panel-width
+   start rather than a broken layout.
+
+   The canvas resizes with the panel, so the composition COMPRESSES inward as it closes — the
+   threads converge to the middle instead of being progressively hidden — and it lands exactly on
+   the resting layout with nothing to cross-fade or swap at the end. */
+@keyframes ch-intro-window {
+  from {
+    margin-left: calc(-1 * var(--ch-intro-bleed-left, 0px));
+    margin-right: calc(-1 * var(--ch-intro-bleed-right, 0px));
+    border-color: transparent;
+    background-color: transparent;
+  }
+}
+
+[data-intro] .heimlich {
+  animation: ch-intro-window var(--ch-intro-window) var(--ch-ease-standard)
+    var(--ch-intro-delay-window) both;
+}
+
+/* The panel's own beam reflection has nothing to reflect off until the panel exists. */
+[data-intro] .heimlich > .beam-overlay {
+  animation: ch-intro-wake var(--ch-intro-window) var(--ch-ease-standard)
+    var(--ch-intro-delay-window) both;
+}
+
+/* The centre's own chrome follows the panel it sits in, before the rails arrive.
+   `.shell-center > .shell-panel` IS the Quick Apps panel — `QuickApps` renders a `Panel`, so
+   targeting the inner `.quick-apps` list left the panel's outline, label and beam sitting there
+   from the first frame while its contents waited. Animate the panel; the list rides along. */
+[data-intro] .shell-center > .shell-panel,
+[data-intro] .heimlich__state,
+[data-intro] .heimlich__foot {
+  animation: ch-intro-settle var(--ch-intro-region) var(--ch-ease-standard)
+    var(--ch-intro-delay-center) both;
+}
+
+/* Rails together, so the canvas resolves symmetrically inward rather than sweeping across. */
+[data-intro] .shell-left,
+[data-intro] .shell-right {
+  animation: ch-intro-settle var(--ch-intro-region) var(--ch-ease-standard)
+    var(--ch-intro-delay-rails) both;
+}
+
+[data-intro] .action-status,
+[data-intro] .shell-search,
+[data-intro] .shell-brand {
+  animation: ch-intro-settle var(--ch-intro-region) var(--ch-ease-standard)
+    var(--ch-intro-delay-header) both;
+}
+
+/* The bottom bar lands last and rises from below — it is the one element anchored to an edge, so
+   it arrives from that edge rather than sharing the others' downward drop. */
+[data-intro] .bottom-bar {
+  animation: ch-intro-settle var(--ch-intro-region) var(--ch-ease-standard)
+    var(--ch-intro-delay-bottombar) both;
+  --ch-intro-rise: -0.5rem;
+}
+
+[data-receded="true"] .recede-target {
+  opacity: var(--ch-recede-opacity);
+  filter: saturate(var(--ch-recede-saturate)) blur(var(--ch-recede-blur));
+  transition:
+    opacity var(--ch-recede-out) var(--ch-ease-standard),
+    filter var(--ch-recede-out) var(--ch-ease-standard);
+}
+
 .shell-search {
   grid-area: search;
   min-width: 0;
@@ -362,6 +521,107 @@
   background: var(--ch-surface-panel);
 }
 
+/* --- The centre's one exit ------------------------------------------------------------------
+   Nothing in the centre is removed, it LEAVES. One duration shared by the greeting, a report and
+   a form, so they recede at the same rate and the centre reads as one surface changing its mind
+   rather than three components swapping. Kept in step with `CENTER_EXIT_MS`.
+
+   Sequential, never a crossfade: two documents visible at once read as two voices, and the
+   incoming surface types itself in, which cannot start until the space is actually free. */
+:root {
+  --ch-exit: 260ms;
+}
+
+[data-leaving] {
+  opacity: 0;
+  transform: translateY(0.25rem);
+  pointer-events: none;
+  transition:
+    opacity var(--ch-exit) var(--ch-ease-standard),
+    transform var(--ch-exit) var(--ch-ease-standard);
+}
+
+/* --- Centre shade (the report/input wash) ---------------------------------------------------
+   A child of `.heimlich`, never of the surface it backs. That is the whole reason it works: it
+   reaches the panel's real edges, and the panel's own `overflow: hidden` trims it at the border —
+   so the only boundary is one that was already there. Anchored inside the surface instead, it
+   would stop somewhere in open space and you would see it stop.
+
+   Registering the two edges makes them ANIMATABLE. A bare custom property is a string to the
+   cascade and can only snap, which would step the wash down a whole line each time one is written;
+   with a declared syntax the browser interpolates and the extent glides. */
+@property --ch-shade-x {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 8%;
+}
+
+@property --ch-shade-y {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 8%;
+}
+
+.center-shade {
+  position: absolute;
+  inset: 0;
+  /* Above the field, below the text. */
+  z-index: 1;
+  pointer-events: none;
+  background: var(--ch-shade-fill);
+  opacity: 0;
+  isolation: isolate;
+  transition:
+    opacity var(--ch-motion-slow) var(--ch-ease-standard),
+    --ch-shade-x var(--ch-shade-glide) var(--ch-ease-standard),
+    --ch-shade-y var(--ch-shade-glide) var(--ch-ease-standard);
+}
+
+.center-shade[data-on] {
+  opacity: 1;
+}
+
+/* The dither, riding on top of the fill and INSIDE the same mask — so it fades out exactly where
+   the shade does and never leaves grain floating over the stream. `soft-light` keeps it a
+   perturbation of the existing tone rather than grey speckle laid over it. */
+.center-shade::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--ch-shade-dither);
+  background-repeat: repeat;
+  opacity: var(--ch-shade-dither-opacity);
+  mix-blend-mode: soft-light;
+  pointer-events: none;
+}
+
+/* Two gradients composited with `intersect` — a MINIMUM. At the anchored corner both are opaque,
+   so it is solid there; moving away, whichever has fallen further wins. That is what expresses
+   "solid into two edges, dissolving on the other two", which one gradient cannot. The corners it
+   rounds off are a side effect, and the reason the shade reads as a pool rather than a rectangle. */
+.center-shade[data-side="report"] {
+  mask-image:
+    linear-gradient(to right, black 0, black var(--ch-shade-x), transparent calc(var(--ch-shade-x) + var(--ch-shade-fade))),
+    linear-gradient(to bottom, black 0, black var(--ch-shade-y), transparent calc(var(--ch-shade-y) + var(--ch-shade-fade)));
+  mask-composite: intersect;
+  -webkit-mask-image:
+    linear-gradient(to right, black 0, black var(--ch-shade-x), transparent calc(var(--ch-shade-x) + var(--ch-shade-fade))),
+    linear-gradient(to bottom, black 0, black var(--ch-shade-y), transparent calc(var(--ch-shade-y) + var(--ch-shade-fade)));
+  -webkit-mask-composite: source-in;
+}
+
+/* Mirrored: measured inward from the right and bottom edges instead. */
+.center-shade[data-side="input"] {
+  mask-image:
+    linear-gradient(to left, black 0, black var(--ch-shade-x), transparent calc(var(--ch-shade-x) + var(--ch-shade-fade))),
+    linear-gradient(to top, black 0, black var(--ch-shade-y), transparent calc(var(--ch-shade-y) + var(--ch-shade-fade)));
+  mask-composite: intersect;
+  -webkit-mask-image:
+    linear-gradient(to left, black 0, black var(--ch-shade-x), transparent calc(var(--ch-shade-x) + var(--ch-shade-fade))),
+    linear-gradient(to top, black 0, black var(--ch-shade-y), transparent calc(var(--ch-shade-y) + var(--ch-shade-fade)));
+  -webkit-mask-composite: source-in;
+}
+
 /* The Heimlich ribbon (NIC-60): an embedded external WebGL motion asset that fills the panel and
    sits beneath the greeting/actions and the conversation overlay. Non-interactive by default;
    carries no semantics (aria-hidden on the element). The embed visual lives in the external asset. */
@@ -463,7 +723,6 @@
   background: transparent;
   padding: var(--ch-space-2);
   text-align: center;
-  cursor: not-allowed;
 }
 
 .quick-action--box {
@@ -517,13 +776,14 @@
   font-size: var(--ch-font-size-label);
 }
 
-/* A wired (live) quick action reads as actionable — solid border, primary text, pointer. */
+/* A wired (live) quick action reads as actionable — solid border, primary text. The pointer
+   cursor is no longer restated here: the slot is `disabled` exactly when it is unwired, so the
+   app.css baseline already derives it. */
 .quick-action--wired {
   color: var(--ch-text-primary);
   border-style: solid;
   border-color: var(--ch-panel-border);
   background: var(--ch-surface-raised);
-  cursor: pointer;
   transition: border-color var(--ch-motion-fast) var(--ch-ease-standard);
 }
 
@@ -554,12 +814,18 @@
   color: var(--ch-accent-primary);
 }
 
-/* `shut-down` is the only differently-coloured slot. Outline, never filled: a solid red button
-   reads as "danger, do not touch", but this one is pressed on purpose — the weight belongs on
-   the confirmation, not the tile. */
+/* `shut-down` is the only differently-coloured slot. Outlined AT REST, not filled: a solid red
+   button reads as "danger, do not touch", but this one is pressed on purpose — the weight belongs
+   on the confirmation, not the tile. Hover is the exception (owner decision, 2026-08-05): the fill
+   lands only once you are already on the control, so it confirms what you are about to press
+   rather than shouting at you across the dashboard. */
 .quick-action--danger {
   color: var(--ch-status-error);
   border-color: var(--ch-status-error);
+  transition:
+    background-color var(--ch-motion-fast) var(--ch-ease-standard),
+    border-color var(--ch-motion-fast) var(--ch-ease-standard),
+    color var(--ch-motion-fast) var(--ch-ease-standard);
 }
 
 /* The one coloured slot colours its glyph too: a red-outlined tile with a grey power icon would
@@ -568,9 +834,14 @@
   color: inherit;
 }
 
-.quick-action--danger:hover {
+/* Fills solid red on hover, in its own colour rather than the mode accent. The label and glyph
+   flip to the page base so they stay readable on the fill — the glyph inherits `currentColor`
+   (above), so it follows without a second rule. */
+.quick-action--danger:hover:not(:disabled) {
   border-color: var(--ch-status-error);
-  background: color-mix(in srgb, var(--ch-status-error) 12%, transparent);
+  background: var(--ch-status-error);
+  color: var(--ch-bg-base);
+  box-shadow: 0 0 14px 2px color-mix(in srgb, var(--ch-status-error) 30%, transparent);
 }
 
 /* R1 — mode switcher: four fixed controls, strong selected state. */
@@ -614,10 +885,14 @@
 
 /* NIC-77 — a faint outline glow on hover for every interactive control (mode buttons, Quick App
    tiles, Quick Action buttons, bottom-bar icon buttons). Additive box-shadow ring + soft bloom in
-   the active mode accent; it does not disturb a selected control's gradient fill. */
+   the active mode accent; it does not disturb a selected control's gradient fill.
+
+   Shut down is excluded: it owns a red hover of its own (below), and this rule would otherwise
+   repaint its border in the mode accent and stack an accent glow over it — the one control whose
+   whole job is to not look like the others. */
 .mode-switcher__option:hover:not(:disabled),
 .quick-app:hover:not(:disabled),
-.quick-action:hover:not(:disabled),
+.quick-action:hover:not(:disabled):not(.quick-action--danger),
 .bottom-bar__control:hover:not(:disabled),
 .bottom-bar__mode-trigger:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, var(--ch-panel-border));
@@ -719,6 +994,57 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Rail agents: taller cards that share the panel height, instead of four short one-liners pushed
+   apart by `justify-content: space-between` — which read as items marooned in empty space rather
+   than as a list. Same panel size, same four agents; the height goes into the cards.
+
+   Stacking the name over its status is what buys the height honestly: the card grows because it
+   now holds two lines, not because it was padded out. The avatar spans both rows, so it stays the
+   full-height element on the left.
+
+   Scoped to the rail deliberately. The edge sidebar renders this same roster bare and wants the
+   opposite — a compact one-line status list in a narrow column (see sidebar.css) — so this is a
+   host treatment, not a change to the component's own look. */
+.shell-right .agent-list__item {
+  /* Share the panel height evenly; with the cards filling it there is no gap left to distribute. */
+  flex: 1 1 0;
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  grid-template-rows: 1fr 1fr;
+  grid-template-areas:
+    "avatar name"
+    "avatar status";
+  column-gap: var(--ch-space-3);
+  padding: var(--ch-space-2) var(--ch-space-3);
+}
+
+/* Explicit column width rather than stretching to the row height: a width derived from an
+   `aspect-ratio` inside an `auto` column is circular and can collapse to zero. */
+.shell-right .agent-avatar {
+  grid-area: avatar;
+  align-self: center;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+
+/* A larger disc needs a larger glyph, or it reads as an empty ring. */
+.shell-right .agent-avatar .agent-glyph {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* The pair meets in the middle: name sits on the row boundary, status directly beneath it. */
+.shell-right .agent-list__name {
+  grid-area: name;
+  align-self: end;
+}
+
+.shell-right .agent-list__status {
+  grid-area: status;
+  align-self: start;
 }
 
 .agent-list__status {
@@ -946,11 +1272,18 @@
   font-weight: var(--ch-font-weight-medium);
   color: var(--ch-accent-primary);
   background: transparent;
-  border: 1px solid transparent;
+  /* The pill is ALWAYS drawn, faintly. It used to be `transparent` and only appeared on hover,
+     which meant the control announced itself as a button only once you had already found it —
+     the discovery problem, not the feedback problem. The shared NIC-77 hover rule then brightens
+     this border and adds the glow, so hover now intensifies something already there. */
+  border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 32%, var(--ch-panel-border));
   border-radius: var(--ch-radius-pill);
   padding: var(--ch-space-1) var(--ch-space-4);
   cursor: pointer;
   text-transform: capitalize;
+  transition:
+    border-color var(--ch-motion-fast) var(--ch-ease-standard),
+    box-shadow var(--ch-motion-fast) var(--ch-ease-standard);
 }
 
 .bottom-bar__mode-trigger:disabled {
@@ -975,6 +1308,12 @@
   border-radius: var(--ch-radius-md);
   background: var(--ch-surface-raised);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  /* Rises from the bottom-bar control it opens above. `--ch-pop-base` preserves the centring
+     offset this menu positions itself with. */
+  --ch-pop-base: translateX(-50%);
+  --ch-pop-y: 0.5rem;
+  --ch-pop-scale: 0.96;
+  animation: ch-pop-in var(--ch-motion-base) var(--ch-ease-standard);
 }
 
 .bottom-bar__mode-option {
@@ -1044,17 +1383,32 @@
   transform: none;
   width: 100%;
   transform-origin: bottom center;
-  animation: mode-menu-intro var(--ch-motion-medium, 160ms) var(--ch-ease-standard, ease-out);
+  /* Rises from the control below it. `--ch-motion-medium` never existed — this silently ran on
+     the 160ms fallback; it now uses the real token. */
+  --ch-pop-y: 0.5rem;
+  --ch-pop-scale: 0.96;
+  animation: ch-pop-in var(--ch-motion-base) var(--ch-ease-standard);
 }
 
-@keyframes mode-menu-intro {
+/* Anchored-surface intro. Every surface that appears attached to a control — the command
+   suggestions, the network-speed callout, both mode dropdowns — enters FROM the direction of that
+   control rather than materialising in place. A popup that simply exists gives the eye no clue
+   where it came from, and these appear precisely when attention is somewhere else on screen; the
+   short slide is what ties the surface to the thing that opened it.
+
+   ONE keyframe, with direction supplied per surface by the custom properties below, so there are
+   no near-identical copies to drift apart. `--ch-pop-base` carries any transform the element
+   already relies on for POSITIONING (a centring offset) — without it the animation would clobber
+   that and the surface would jump sideways as it opened.
+
+   Only a `from` step: the browser interpolates to the element's own computed transform, so a
+   surface's resting position is never restated here. No fill mode, so nothing is frozen
+   afterwards. Reduced motion is handled by the global safety net in app.css. */
+@keyframes ch-pop-in {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: var(--ch-pop-base, translateX(0))
+      translate3d(var(--ch-pop-x, 0px), var(--ch-pop-y, 0px), 0) scale(var(--ch-pop-scale, 0.985));
   }
 }
 
@@ -1371,7 +1725,6 @@
   border-radius: var(--ch-radius-md);
   background: var(--ch-surface-raised);
   color: var(--ch-text-muted);
-  cursor: not-allowed;
   text-align: center;
 }
 
@@ -1546,7 +1899,15 @@
   border: 0;
   background: transparent;
   color: var(--ch-text-muted);
-  cursor: not-allowed;
+  transition: color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+/* Take the mode accent on hover/focus so it reads as a control rather than a caption. Colour
+   alone carries it here because the arrow and the pointer cursor already mark it as actionable —
+   an outline at rest would draw a second box inside a panel that is already outlined. */
+.calendar__view:hover:not(:disabled),
+.calendar__view:focus-visible {
+  color: var(--ch-accent-primary);
 }
 
 /* System Health rows: category glyph · label · (usage bar) · value. The bar flexes to fill the
@@ -1666,6 +2027,13 @@
   border: 1px solid var(--ch-panel-border);
   border-radius: 10px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  /* Slides out to the RIGHT from the System Health row that opened it, matching the direction its
+     wedge points back toward — the callout appears to come out of the row, not next to it.
+     `--ch-pop-base` preserves the vertical centring it is positioned with. */
+  --ch-pop-base: translateY(-50%);
+  --ch-pop-x: -0.5rem;
+  transform-origin: left center;
+  animation: ch-pop-in var(--ch-motion-base) var(--ch-ease-standard);
 }
 
 /* Callout wedge pointing left, back toward System Health. */
@@ -3150,6 +3518,11 @@ button.deadline-row__open:not(:disabled):hover {
   border: 1px solid var(--ch-panel-border);
   border-radius: var(--ch-radius-md);
   background: var(--ch-surface-raised);
+  /* Slides DOWN out of the input it belongs to, so the list reads as an extension of the field
+     rather than a panel that landed on top of the dashboard. */
+  --ch-pop-y: -0.375rem;
+  transform-origin: top center;
+  animation: ch-pop-in var(--ch-motion-base) var(--ch-ease-standard);
 }
 
 .command-suggestion {
@@ -3664,6 +4037,207 @@ button.deadline-row__open:not(:disabled):hover {
   height: 0.7rem;
 }
 
+/* Widget loading bodies (NIC-174). Each shape mirrors the real body that replaces it, so the
+   panel does not re-flow when data lands. All sizes are rem/percentage like the bodies they
+   stand in for, so the loaders scale with the viewport-height root font-size as one unit with
+   the rest of the shell. The shimmer is inherited from `.skeleton-bone` and is stilled by the
+   global reduced-motion safety net — the shape alone still reads as "loading". */
+.widget-skeleton {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.widget-skeleton > [aria-hidden] {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* Row list — the `.widget-list__item` rhythm: a wide primary with a short trailing value. */
+.widget-skeleton__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+}
+
+.widget-skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-3);
+}
+
+.widget-skeleton__row-primary {
+  flex: 1 1 auto;
+  height: 0.7rem;
+}
+
+.widget-skeleton__row-secondary {
+  flex: 0 0 auto;
+  width: 22%;
+  height: 0.7rem;
+}
+
+/* Stocks — the 2×2 tile grid, each tile stacking symbol, price, change. */
+.widget-skeleton__tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ch-space-2);
+}
+
+.widget-skeleton__tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-3);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+}
+
+.widget-skeleton__tile-symbol {
+  width: 45%;
+  height: 0.6rem;
+}
+
+.widget-skeleton__tile-price {
+  width: 75%;
+  height: 0.95rem;
+}
+
+.widget-skeleton__tile-change {
+  width: 60%;
+  height: 0.6rem;
+}
+
+/* Releases — two full-size posters with a title and meta line beneath each. */
+.widget-skeleton__posters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ch-space-3);
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.widget-skeleton__poster-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  min-height: 0;
+}
+
+.widget-skeleton__poster {
+  flex: 1 1 auto;
+  min-height: 4rem;
+  border-radius: var(--ch-radius-md);
+}
+
+.widget-skeleton__poster-title {
+  width: 85%;
+  height: 0.7rem;
+}
+
+.widget-skeleton__poster-meta {
+  width: 55%;
+  height: 0.6rem;
+}
+
+/* Spotify — square artwork beside stacked track/artist/album lines, then the progress bar.
+   Matches the arrangement `SpotifyBody` already uses for its optimistic skip skeleton. */
+.widget-skeleton__media {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+}
+
+.widget-skeleton__media-main {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-3);
+}
+
+.widget-skeleton__art {
+  flex: 0 0 auto;
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: var(--ch-radius-md);
+}
+
+.widget-skeleton__media-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.widget-skeleton__media-track {
+  width: 80%;
+  height: 0.8rem;
+}
+
+.widget-skeleton__media-artist {
+  width: 60%;
+  height: 0.65rem;
+}
+
+.widget-skeleton__media-album {
+  width: 45%;
+  height: 0.6rem;
+}
+
+.widget-skeleton__media-bar {
+  width: 100%;
+  height: 0.35rem;
+}
+
+/* Project git status — a name/branch head, a sync line, then label/value rows. */
+.widget-skeleton__report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-3);
+}
+
+.widget-skeleton__report-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-3);
+}
+
+.widget-skeleton__report-name {
+  flex: 1 1 auto;
+  height: 0.75rem;
+}
+
+.widget-skeleton__report-branch {
+  flex: 0 0 auto;
+  width: 30%;
+  height: 0.75rem;
+}
+
+.widget-skeleton__report-sync {
+  width: 55%;
+  height: 0.65rem;
+}
+
+.widget-skeleton__report-line {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-3);
+}
+
+.widget-skeleton__report-label {
+  flex: 0 0 auto;
+  width: 35%;
+  height: 0.6rem;
+}
+
+.widget-skeleton__report-value {
+  flex: 1 1 auto;
+  height: 0.6rem;
+}
+
 @keyframes skeleton-shimmer {
   from {
     background-position: 200% 0;
@@ -3730,12 +4304,19 @@ button.deadline-row__open:not(:disabled):hover {
 }
 
 /* The standalone variant fills its own native window (NIC-148): no centering,
-   scrim, or float chrome — the window frames it. `.apps-window` paints the
-   backdrop so the themed bar + list read against the mode background. */
+   scrim, or float chrome — the window frames it.
+   `.apps-window` paints a mode-tinted **wash**, not a fill: the native window is transparent over
+   an `NSVisualEffectView` (`VibrantWindowChrome`), so the launcher reads as a big translucent sheet
+   of icons over the desktop rather than a slab. The wash is what keeps it CerebralHelm's — vibrancy
+   alone is a neutral grey and would not re-theme with the mode — and what holds the app names
+   legible over whatever happens to be behind the window. */
 .apps-window {
   width: 100%;
   min-height: 100vh;
-  background: linear-gradient(var(--ch-bg-gradient-top), var(--ch-bg-base));
+  background: linear-gradient(
+    color-mix(in srgb, var(--ch-bg-gradient-top) 62%, transparent),
+    color-mix(in srgb, var(--ch-bg-base) 62%, transparent)
+  );
 }
 
 .apps-picker--standalone {
@@ -3822,9 +4403,21 @@ button.deadline-row__open:not(:disabled):hover {
   margin: 0;
   padding: var(--ch-space-3);
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Fixed at three, not `auto-fill`: a launcher used from muscle memory has to put the same app in
+     the same place every time, and a grid that reflows with the window cannot promise that
+     (owner, 2026-08-07). */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--ch-space-2);
   overflow-y: auto;
+  /* The list dissolves into the surface at both ends rather than clipping against an edge, the
+     same treatment the centre surfaces use. */
+  scrollbar-width: none;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 4%, #000 94%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 4%, #000 94%, transparent 100%);
+}
+
+.apps-picker__grid::-webkit-scrollbar {
+  display: none;
 }
 
 .apps-picker__item {
@@ -3836,26 +4429,35 @@ button.deadline-row__open:not(:disabled):hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.6rem;
-  height: 1.6rem;
+  width: 3.4rem;
+  height: 3.4rem;
   flex: 0 0 auto;
   color: var(--ch-text-muted);
+  transition: transform var(--ch-motion-base) var(--ch-ease-standard);
+}
+
+.apps-picker__launch:hover:not(:disabled) .apps-picker__icon {
+  transform: scale(1.06);
 }
 
 .apps-picker__icon img {
-  width: 1.6rem;
-  height: 1.6rem;
-  border-radius: var(--ch-radius-sm);
+  width: 100%;
+  height: 100%;
+  border-radius: var(--ch-radius-md);
 }
 
 .apps-picker__name {
-  flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
   font-size: var(--ch-font-size-sm);
+  line-height: 1.25;
   color: var(--ch-text-primary);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Two lines then clamp: app names are long and truncating "Activity Monitor" to one line loses
+     the word that distinguishes it. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .apps-picker__note {
@@ -3879,17 +4481,23 @@ button.deadline-row__open:not(:disabled):hover {
 /* Each app is one full-width launch row (icon + name) in the two-wide grid. */
 .apps-picker__launch {
   display: flex;
-  flex-direction: row;
+  /* Icon over label, in a roomy tile: an app is recognised by its icon, so the icon leads and the
+     name confirms. The old side-by-side row made every entry a line of text with a small mark. */
+  flex-direction: column;
   align-items: center;
   gap: var(--ch-space-2);
   width: 100%;
   min-width: 0;
-  border: none;
+  border: 1px solid transparent;
   background: none;
-  padding: var(--ch-space-2);
-  border-radius: var(--ch-radius-md);
+  padding: var(--ch-space-4) var(--ch-space-2) var(--ch-space-3);
+  border-radius: var(--ch-radius-lg);
   cursor: pointer;
-  text-align: left;
+  text-align: center;
+  transition:
+    transform var(--ch-motion-base) var(--ch-ease-standard),
+    background var(--ch-motion-base) var(--ch-ease-standard),
+    border-color var(--ch-motion-base) var(--ch-ease-standard);
 }
 
 .apps-picker__launch:disabled {
@@ -3898,7 +4506,9 @@ button.deadline-row__open:not(:disabled):hover {
 }
 
 .apps-picker__launch:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-3px);
 }
 
 /* The pin popover (NIC-148): the anchored, in-webview surface that owns every pin
@@ -4134,13 +4744,17 @@ button.deadline-row__open:not(:disabled):hover {
 }
 
 .pin-pop__name {
-  flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
   font-size: var(--ch-font-size-sm);
+  line-height: 1.25;
   color: var(--ch-text-primary);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Two lines then clamp: app names are long and truncating "Activity Monitor" to one line loses
+     the word that distinguishes it. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .pin-pop__pin {
@@ -4368,14 +4982,42 @@ button.deadline-row__open:not(:disabled):hover {
   z-index: 40;
 }
 
+/* A Dock-like slab, not a panel. The Dock's trick is reading as translucent while still giving
+   its contents a consistent ground, so busy wallpaper never swallows them — the same job here.
+   The cards keep their own fill, but they now sit ON something instead of floating over whatever
+   happens to be behind the window. */
 .win-nav {
+  position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--ch-surface-panel);
-  border: 1px solid var(--ch-panel-border);
-  border-radius: var(--ch-radius-lg);
+  background: color-mix(in srgb, #2a2f3a 42%, transparent);
+  backdrop-filter: blur(44px) saturate(165%);
+  -webkit-backdrop-filter: blur(44px) saturate(165%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 26px;
   color: var(--ch-text-primary);
   overflow: hidden;
+}
+
+/* The curvature. Darkened top and bottom with a faint lift through the middle reads as a cylinder
+   seen edge-on, so the slab agrees with the wheel turning inside it rather than being a flat box
+   containing tilted cards. It also gives the close control a surface to belong to. */
+.win-nav::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 3;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.42) 0%,
+    rgba(0, 0, 0, 0.06) 16%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(0, 0, 0, 0.06) 84%,
+    rgba(0, 0, 0, 0.42) 100%
+  );
+  mix-blend-mode: soft-light;
 }
 
 /* Overlay variant: a tall panel pinned to the right, clear of the bottom bar. */
@@ -4384,16 +5026,82 @@ button.deadline-row__open:not(:disabled):hover {
   top: 4vh;
   right: 1.25rem;
   bottom: calc(var(--ch-bottombar-height, 3.5rem) + 1rem);
-  width: min(360px, 92vw);
+  /* Half the previous width (owner, 2026-08-07): titles truncate earlier, and a narrow
+     column is what makes the wheel read as a wheel rather than a wall. */
+  width: min(264px, 92vw);
   z-index: 41;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 
-/* Standalone variant fills its native window. */
+/* Standalone variant: the sidebar's treatment, not a slab (owner, 2026-08-07).
+   No border, no radius, and no edge at all — the surface dissolves into the desktop on every side.
+   The mask here is the tint's half of that; `VibrantWindowChrome`'s `edgeFade` masks the native
+   blur over the same fraction, and the two must be changed together or the tint fades while the
+   blur stops square. `mask-composite: intersect` makes a corner the MINIMUM of its two edges,
+   which is what the native `.destinationIn` compositing does too.
+   The blur is native: `backdrop-filter` inside a WKWebView can only sample the page's own backdrop,
+   which is transparent here, so leaving it on would cost a compositing layer and deliver nothing. */
 .win-nav-window .win-nav {
   flex: 1;
+  /* Load-bearing. As a flex item this defaults to `min-width: auto`, which refuses to shrink below
+     its content's min-content width — and a window title like "BridgeSession.swift — cerebral-helm"
+     does not wrap. The surface silently laid itself out 320px wide inside a 264px window, putting
+     the close control 29px past the right edge where it could be neither seen nor clicked. The
+     `min-width: 0` chain below is what lets titles truncate instead of widening the window. */
+  min-width: 0;
   border: 0;
   border-radius: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  /* The whole surface is glass (owner, 2026-08-07), with the header and cards a tinge less
+     translucent so they read as things rather than smudges — the same two-step relationship the
+     sidebar uses, from the same tokens. */
+  background: var(--ch-glass-surface);
+  /* Inherited by every label. At this translucency the fill carries no contrast, so text does. */
+  text-shadow: var(--ch-glass-text-shadow);
+}
+
+.win-nav-window .win-nav__scroll,
+.win-nav-window .win-nav__group,
+.win-nav-window .win-nav__card {
+  min-width: 0;
+}
+
+/* NO wash behind the standalone navigator (owner, 2026-08-07).
+   The surface behind the cards is *completely transparent*: the cards are the only thing that
+   should read as substance. A full-bleed film — however light — plus a full-window
+   `NSVisualEffectView` behind it stacked into a dark blob covering the whole window, which is what
+   this looked like in the app. The blur went with it: an effect view blurs the entire window rect,
+   so "blur only behind the boxes" is not something a window-level material can express. */
+
+/* With the surface behind them gone, the header and the cards are the only substance in this
+   window — so each has to be legible against whatever desktop happens to be behind it, on its own.
+   At 46% alpha (the floated overlay's value, tuned against a slab) they were nearly invisible.
+   The header stops being a full-width bar with a rule under it — a rule across nothing reads as a
+   rendering artifact — and becomes another floating box, like everything else here. */
+.win-nav-window .win-nav__header {
+  margin: var(--ch-space-3) var(--ch-space-3) var(--ch-space-1);
+  padding: var(--ch-space-2) var(--ch-space-3);
+  border: 1px solid var(--ch-panel-border);
+  border-radius: var(--ch-radius-md);
+  border-bottom: 1px solid var(--ch-panel-border);
+  background: var(--ch-glass-box);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+.win-nav-window .win-nav__card {
+  background: var(--ch-glass-box);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+/* No curvature in the standalone window.
+   It was drawn to make the slab read as a cylinder, but its darkest stop (42% black) lands exactly
+   on the header — burying the ✕, which is `--ch-text-muted` to begin with, to the point that the
+   window had no visible way out. The edge dissolve above now says "cylinder fading at both ends"
+   on its own, and the wheel's own list mask says it again, so a third vertical gradient was both
+   redundant and actively harmful. */
+.win-nav-window .win-nav::after {
+  content: none;
 }
 
 .win-nav__header {
@@ -4437,16 +5145,47 @@ button.deadline-row__open:not(:disabled):hover {
   color: #e5484d;
 }
 
+/* The wheel. Generous padding at both ends so the first and last rows can reach the centre line,
+   a mask so the list dissolves into the slab rather than stopping at an edge, and no scrollbar —
+   a platform bar would put a hard vertical line through a surface built not to have one.
+   `perspective` here is what lets the rows tilt in 3D; the pose itself is written per frame by
+   `useWheelPose`. */
 .win-nav__scroll {
   flex: 1;
+  /* Explicit, though not strictly required: a flex item that is itself a scroll container already
+     resolves `min-height: auto` to zero, which is why this one did scroll. Stated anyway so the
+     rule survives the container ever losing `overflow-y` — the `min-width` trap above is the same
+     mechanism without that exemption, and it cost three rounds to find. */
+  min-height: 0;
+  position: relative;
+  z-index: 1;
   overflow-y: auto;
-  padding: var(--ch-space-3);
+  overflow-x: hidden;
+  padding: 40% var(--ch-space-3);
   display: flex;
   flex-direction: column;
   gap: var(--ch-space-2);
-  /* Fade the bottom edge — the flowy switcher feel. */
-  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent);
-  mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent);
+  scrollbar-width: none;
+  perspective: 760px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 14%,
+    black 86%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(to bottom, transparent 0%, black 14%, black 86%, transparent 100%);
+}
+
+.win-nav__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Every direct child is a wheel row: posed per frame, so the origin has to be its own centre and
+   nothing may transition — easing a per-frame write fights the scroll and reads as lag. */
+.win-nav__scroll > * {
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
 }
 
 .win-nav__empty {
@@ -4554,9 +5293,33 @@ button.deadline-row__open:not(:disabled):hover {
 }
 
 /* Collapsed multi-window app: a depth edge behind the front card + a count badge. */
+/* A pile: two card edges peeking out beneath, inset from the sides, so "this app has more" is
+   legible before you interact — which the count chip alone never managed. */
 .win-nav__stack {
   position: relative;
   padding-top: 6px;
+}
+
+.win-nav__stack .win-nav__card::before,
+.win-nav__stack .win-nav__card::after {
+  content: "";
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: -4px;
+  height: 12px;
+  border-radius: 0 0 11px 11px;
+  background: color-mix(in srgb, var(--ch-surface-raised) 80%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 0;
+  z-index: -1;
+}
+
+.win-nav__stack .win-nav__card::after {
+  left: 14px;
+  right: 14px;
+  bottom: -8px;
+  opacity: 0.6;
 }
 
 .win-nav__stack::before {
@@ -4587,4 +5350,33 @@ button.deadline-row__open:not(:disabled):hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+
+/* The pin popover reuses the More Apps grid in a smaller surface, so its tiles tighten up. The
+   pinned state is carried by the accent outline plus the button's own label, never colour alone. */
+.pin-pop__apps {
+  padding: var(--ch-space-2);
+  gap: var(--ch-space-1);
+}
+
+.pin-pop__apps .apps-picker__launch {
+  padding: var(--ch-space-3) var(--ch-space-1) var(--ch-space-2);
+}
+
+.pin-pop__apps .apps-picker__icon {
+  width: 2.6rem;
+  height: 2.6rem;
+}
+
+.apps-picker__launch[data-pinned] {
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--ch-accent-primary) 14%, transparent);
+}
+
+.apps-picker__note {
+  max-width: 100%;
+  font-size: var(--ch-font-size-label);
+  line-height: 1.2;
+  color: var(--ch-status-neutral);
 }

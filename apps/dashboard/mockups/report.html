@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en" data-mode="school">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mockup — Report surface</title>
+    <link rel="stylesheet" href="/src/tokens/tokens.css" />
+    <link rel="stylesheet" href="/mockups/_mock.css" />
+    <style>
+      body {
+        overflow: hidden;
+      }
+      .stage {
+        padding: 2rem;
+      }
+
+      /* The Heimlich panel, as it is on the dashboard: flat translucent fill, hairline accent
+         border, small radius, everything else painted inside it. */
+      .heimlich {
+        position: relative;
+        width: min(1040px, 94vw);
+        height: min(600px, 82vh);
+        border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 12%, var(--ch-panel-border));
+        border-radius: var(--ch-radius-lg);
+        background: var(--ch-surface-panel);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        padding: var(--ch-space-6);
+        gap: var(--ch-space-6);
+      }
+
+      .wordmark {
+        position: relative;
+        z-index: 3;
+        margin: 0;
+        font-family: var(--ch-font-mono);
+        font-size: var(--ch-font-size-label);
+        font-weight: var(--ch-font-weight-light);
+        letter-spacing: 0.18em;
+        color: var(--ch-accent-primary);
+      }
+
+      /* --- Stand-in for the consciousness stream ---------------------------------------------
+         Not the real shader — enough moving, bright, high-contrast material on the right to judge
+         whether the text holds up against it, which is the only thing this mockup is testing. */
+      .stream {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+      }
+      .stream svg {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        width: 200%;
+        height: 70%;
+        transform: translateY(-58%);
+        filter: blur(0.4px);
+        animation: drift 26s linear infinite;
+      }
+      @keyframes drift {
+        to {
+          transform: translateY(-58%) translateX(-50%);
+        }
+      }
+      .stream::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          60% 50% at 62% 50%,
+          color-mix(in srgb, var(--ch-accent-secondary) 16%, transparent),
+          transparent 70%
+        );
+      }
+
+      /* --- The report ------------------------------------------------------------------------
+         Plate 02 does NOT put the text on a panel. There is no rectangle, no seam, no edge — the
+         text simply sits on the surface and the stream is pushed back around it.
+
+         So the shade is made BY THE TEXT, not by a box behind it: stacked wide text-shadows in the
+         panel's own colour build a dark halo that follows the glyphs. Wherever a line runs long the
+         shade runs with it; where a line is short it stops short. It is solid immediately behind
+         the characters and dissolves in every direction, which is why there is no seam anywhere —
+         there is no shape to have an edge. */
+      .report {
+        position: relative;
+        z-index: 2;
+        width: 44%;
+        min-height: 0;
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-4);
+      }
+
+      .report__scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        /* Wheel-scrollable with no visible bar, on every engine. */
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        padding-right: var(--ch-space-4);
+      }
+      .report__scroll::-webkit-scrollbar {
+        display: none;
+      }
+
+      /* The halo. Layered rather than one big blur: several passes at growing radii give a dense
+         core and a long tail, which a single shadow cannot do. Tunable as one value via --pool. */
+      .halo {
+        --pool: var(--ch-bg-base);
+        text-shadow:
+          0 0 6px var(--pool),
+          0 0 12px var(--pool),
+          0 0 20px var(--pool),
+          0 0 32px var(--pool),
+          0 0 48px var(--pool),
+          0 0 70px var(--pool);
+      }
+
+      /* --- The wash ---------------------------------------------------------------------------
+         The halo alone stops somewhere, and wherever it stops you can see it stop. This is the
+         base underneath it: the panel's own colour running FULLY into the top and left edges, so
+         there is no outside to see — the only boundary is the panel's own border, which is
+         already a border. It then dissolves rightward and downward, into the stream.
+
+         Anchored to the panel, not to the report box: it is a child of `.heimlich`, so it reaches
+         the actual edges rather than the padded content box, and `.heimlich`'s own `overflow:
+         hidden` trims it exactly at the rounded border.
+
+         Two masks composited with `intersect`, which is a MINIMUM: at the top-left both are fully
+         opaque, so the corner is solid; moving right or down, whichever gradient has fallen
+         further wins. That is what makes it solid into two edges while fading on the other two,
+         which a single gradient cannot express. */
+      .shade {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background: color-mix(in srgb, var(--ch-bg-base) 94%, transparent);
+        mask-image:
+          linear-gradient(to right, black 0, black 34%, transparent 68%),
+          linear-gradient(to bottom, black 0, black 58%, transparent 96%);
+        mask-composite: intersect;
+        -webkit-mask-image:
+          linear-gradient(to right, black 0, black 34%, transparent 68%),
+          linear-gradient(to bottom, black 0, black 58%, transparent 96%);
+        -webkit-mask-composite: source-in;
+        /* Fades in with the report rather than being permanently present — the space darkens as
+           Heimlich starts speaking, instead of a shadow that was always waiting there. */
+        animation: shade-in 900ms var(--ch-ease-standard) both;
+      }
+      @keyframes shade-in {
+        from {
+          opacity: 0;
+        }
+      }
+      [data-shade="halo"] .shade {
+        display: none;
+      }
+
+      /* Comparison: the same content over a soft elliptical pool instead of a glyph-shaped halo.
+         Closer to a panel, further from the plate — here to make the difference visible. */
+      [data-shade="pool"] .halo {
+        text-shadow: none;
+      }
+      [data-shade="pool"] .shade {
+        display: block;
+        background: radial-gradient(
+          70% 62% at 18% 42%,
+          color-mix(in srgb, var(--ch-bg-base) 96%, transparent) 0%,
+          color-mix(in srgb, var(--ch-bg-base) 82%, transparent) 46%,
+          transparent 80%
+        );
+        mask-image: none;
+        -webkit-mask-image: none;
+      }
+
+      .greeting {
+        margin: 0 0 var(--ch-space-2);
+        font-size: var(--ch-font-size-xl);
+        font-weight: var(--ch-font-weight-light);
+        color: var(--ch-text-primary);
+        line-height: 1.2;
+      }
+      .sub {
+        margin: 0 0 var(--ch-space-5);
+        font-size: var(--ch-font-size-base);
+        color: var(--ch-text-muted);
+      }
+      .lede {
+        margin: 0 0 var(--ch-space-3);
+        font-size: var(--ch-font-size-sm);
+        color: var(--ch-text-primary);
+      }
+      .rows {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-3);
+      }
+      .row {
+        display: flex;
+        align-items: baseline;
+        gap: var(--ch-space-3);
+        font-size: var(--ch-font-size-sm);
+        color: var(--ch-text-primary);
+      }
+      .row i {
+        flex: 0 0 auto;
+        width: 0.4rem;
+        height: 0.4rem;
+        border-radius: 50%;
+        background: var(--ch-accent-secondary);
+        box-shadow: 0 0 10px var(--ch-bg-base);
+      }
+      .row b {
+        font-weight: var(--ch-font-weight-medium);
+      }
+      .row span.k {
+        color: var(--ch-text-muted);
+      }
+
+      /* The caret that trails the typing. Vanishes when the document finishes. */
+      .caret {
+        display: inline-block;
+        width: 0.5ch;
+        margin-left: 0.1ch;
+        background: var(--ch-accent-primary);
+        animation: blink 1s steps(1) infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+      [data-done] .caret {
+        display: none;
+      }
+
+      /* --- The docked input (variant B) -----------------------------------------------------
+         Deliberately the command palette's shape: same radius, same faint accent hairline, same
+         raised fill, same leading glyph. Two input loci that look like one system. */
+      .ask {
+        position: relative;
+        flex: 0 0 auto;
+      }
+      [data-input="off"] .ask {
+        display: none;
+      }
+      .ask__icon {
+        position: absolute;
+        top: 50%;
+        left: var(--ch-space-4);
+        transform: translateY(-50%);
+        display: inline-flex;
+        color: var(--ch-text-muted);
+        pointer-events: none;
+      }
+      .ask__input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: var(--ch-space-3) var(--ch-space-4);
+        padding-left: calc(var(--ch-space-4) + var(--ch-space-6));
+        border-radius: var(--ch-radius-md);
+        border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 12%, var(--ch-panel-border));
+        background: var(--ch-surface-raised);
+        color: var(--ch-text-primary);
+        font: inherit;
+        font-size: var(--ch-font-size-base);
+        transition:
+          border-color var(--ch-motion-base) var(--ch-ease-standard),
+          box-shadow var(--ch-motion-base) var(--ch-ease-standard);
+      }
+      .ask__input::placeholder {
+        color: var(--ch-text-faint);
+      }
+      .ask__input:focus {
+        outline: none;
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+        box-shadow: 0 0 18px color-mix(in srgb, var(--ch-accent-primary) 18%, transparent);
+      }
+
+      .foot {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        justify-content: center;
+        gap: var(--ch-space-3);
+        flex: 0 0 auto;
+      }
+      .foot button {
+        font: inherit;
+        font-size: var(--ch-font-size-label);
+        padding: var(--ch-space-2) var(--ch-space-4);
+        border-radius: var(--ch-radius-md);
+        border: 1px solid var(--ch-panel-border);
+        background: var(--ch-surface-raised);
+        color: var(--ch-text-primary);
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body data-input="off" data-shade="wash">
+    <div class="desk"><div class="desk__glare"></div></div>
+
+    <div class="stage">
+      <section class="heimlich">
+        <div class="stream">
+          <svg viewBox="0 0 1600 400" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="g1" x1="0" x2="1">
+                <stop offset="0%" stop-color="var(--ch-heimlich-primary)" stop-opacity="0" />
+                <stop offset="35%" stop-color="var(--ch-heimlich-primary)" stop-opacity="0.95" />
+                <stop offset="100%" stop-color="var(--ch-heimlich-secondary)" stop-opacity="0.9" />
+              </linearGradient>
+              <filter id="soft"><feGaussianBlur stdDeviation="5" /></filter>
+              <filter id="softer"><feGaussianBlur stdDeviation="14" /></filter>
+            </defs>
+            <g fill="none" stroke="url(#g1)">
+              <path d="M0 210 C 200 90, 380 320, 600 200 S 1000 60, 1200 190 S 1450 300, 1600 200"
+                    stroke-width="16" filter="url(#softer)" opacity=".55" />
+              <path d="M0 200 C 200 80, 380 310, 600 190 S 1000 50, 1200 180 S 1450 290, 1600 190"
+                    stroke-width="3" filter="url(#soft)" />
+              <path d="M0 230 C 220 120, 400 330, 620 220 S 1010 90, 1220 215 S 1460 320, 1600 225"
+                    stroke-width="2" opacity=".85" />
+              <path d="M0 175 C 240 60, 420 290, 640 165 S 1020 30, 1240 155 S 1470 265, 1600 165"
+                    stroke-width="1.6" opacity=".7" />
+            </g>
+          </svg>
+        </div>
+
+        <div class="shade" id="shade" aria-hidden="true"></div>
+
+        <p class="wordmark">HEIMLICH</p>
+
+        <div class="report">
+          <div class="report__scroll" id="scroll">
+            <div class="halo" id="doc"></div>
+          </div>
+          <div class="ask">
+            <span class="ask__icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" />
+              </svg>
+            </span>
+            <input class="ask__input" placeholder="Ask Heimlich…" />
+          </div>
+        </div>
+
+        <div class="foot">
+          <button>Open Canvas</button>
+          <button>Review Assignments</button>
+          <button>Start Study Block</button>
+        </div>
+      </section>
+    </div>
+
+    <p class="note">
+      <b>Report surface.</b> No box, no seam — the shade is made <i>by the text</i>: stacked wide
+      text-shadows in the panel's own colour build a halo that follows the glyphs, so it is solid
+      right behind the characters and dissolves in every direction. A long line carries its shade
+      with it; a short line stops short. Scroll with the wheel — there is no scrollbar. The
+      <b>Shade</b> toggle contrasts it with an elliptical pool, which is closer to a panel and
+      further from the plate.
+    </p>
+
+    <div class="switch">
+      <span class="switch__label">Input</span>
+      <button data-in="off" aria-pressed="true">Without</button>
+      <button data-in="on" aria-pressed="false">With text box</button>
+      <span class="switch__label">Shade</span>
+      <button data-sh="wash" aria-pressed="true">Wash + halo</button>
+      <button data-sh="halo" aria-pressed="false">Halo only</button>
+      <button data-sh="pool" aria-pressed="false">Pool</button>
+      <button id="retype">Retype ▸</button>
+      <a href="/mockups/">All</a>
+    </div>
+
+    <script type="module">
+      /* The document is typed in left-to-right, the way a model streams it. Markup is emitted as
+         it goes, so the halo grows with the text — which is the whole point: the shade is a
+         property of the glyphs, so it types itself into existence alongside them. */
+      const DOC = [
+        ['<p class="greeting">', "Good morning, Scholar.", "</p>"],
+        ['<p class="sub">', "Ready to learn, plan, and achieve.", "</p>"],
+        ['<p class="lede">', "Here's your academic pulse for today:", "</p>"],
+        ['<ul class="rows"><li class="row"><i></i><span>', "4 classes on deck", "</span></li>"],
+        ['<li class="row"><i></i><span>', "2 assignments due this week", "</span></li>"],
+        ['<li class="row"><i></i><span>', "Study time suggested: <b>2h 15m</b>", "</span></li>"],
+        ['<li class="row"><i></i><span>', "Focus area: <b>Data Structures</b>", "</span></li>"],
+        ['<li class="row"><i></i><span>', "You're on track to hit your goals", "</span></li></ul>"],
+        ['<p class="lede" style="margin-top:1.25rem">', "Anything else you want to line up?", "</p>"]
+      ];
+
+      const doc = document.getElementById("doc");
+      const scroll = document.getElementById("scroll");
+      let timer = null;
+
+      function type() {
+        clearTimeout(timer);
+        document.body.removeAttribute("data-done");
+        doc.innerHTML = "";
+        // Replay the wash's fade so the darkening arrives with the words, not before them.
+        const shade = document.getElementById("shade");
+        shade.style.animation = "none";
+        void shade.offsetWidth;
+        shade.style.animation = "";
+        let seg = 0;
+        let char = 0;
+        let html = "";
+
+        const step = () => {
+          if (seg >= DOC.length) {
+            document.body.setAttribute("data-done", "");
+            return;
+          }
+          const [open, body, close] = DOC[seg];
+          char += 1;
+          // Reveal by character, but never split an HTML tag — advance past a whole tag at once.
+          let shown = body.slice(0, char);
+          const lastOpen = shown.lastIndexOf("<");
+          if (lastOpen > shown.lastIndexOf(">")) shown = body.slice(0, lastOpen);
+          doc.innerHTML = html + open + shown + '<span class="caret">&nbsp;</span>' + close;
+          scroll.scrollTop = scroll.scrollHeight;
+          if (char >= body.length) {
+            html += open + body + close;
+            seg += 1;
+            char = 0;
+            timer = setTimeout(step, 180);
+          } else {
+            timer = setTimeout(step, 14 + Math.random() * 26);
+          }
+        };
+        step();
+      }
+
+      const press = (group, attr, value) => {
+        document.body.dataset[attr] = value;
+        for (const b of document.querySelectorAll(`.switch button[data-${group}]`)) {
+          b.setAttribute("aria-pressed", String(b.dataset[group] === value));
+        }
+      };
+      for (const b of document.querySelectorAll(".switch button[data-in]")) {
+        b.addEventListener("click", () => press("in", "input", b.dataset.in));
+      }
+      for (const b of document.querySelectorAll(".switch button[data-sh]")) {
+        b.addEventListener("click", () => press("sh", "shade", b.dataset.sh));
+      }
+      document.getElementById("retype").addEventListener("click", type);
+      type();
+    </script>
+  </body>
+</html>

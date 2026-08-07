@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useRef, useState, type RefObject } from "react";
 import { useReportDocument } from "./useReportDocument";
 import { renderableBlocks, type ReportActionReference, type ReportBlock } from "./reportDocument";
 import { quickActionLabel } from "../shell/quickActionRegistry";
@@ -8,6 +8,9 @@ import { useActionStatus } from "../state/ActionStatusProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { useReports } from "../state/ReportProvider";
 import { useInputs } from "../state/InputProvider";
+import { useAppearance } from "../state/AppearanceProvider";
+import { useTypewriter } from "../shell/useTypewriter";
+import { useLeaveTransition } from "../shell/useLeaveTransition";
 
 /**
  * The Report region (docs/quick-actions/PLAN.md): the centre panel's left third, from below the
@@ -18,32 +21,83 @@ import { useInputs } from "../state/InputProvider";
  * a docked input. That is why blocks reveal top-down on a stagger: it reads well at this density
  * and maps directly onto a model streaming blocks in later, with no second surface to build.
  */
-export function ReportRegion() {
+export function ReportRegion({
+  contentRef,
+  ready = true
+}: {
+  /** Attached to the block list so `CenterShade` can measure the text it has to hug. */
+  contentRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * False while the centre is still handing over — the ambient greeting is on its way out and this
+   * surface must not appear on top of it. `CenterStage` owns that sequence, because it is the only
+   * thing that can see both. Held *after* the hooks above so the report's own data keeps loading
+   * during the handover: the wait is for the animation, not for the fetch.
+   */
+  ready?: boolean;
+} = {}) {
   const { openReportId, openReportParams, closeReport } = useReports();
-  const { document, refresh } = useReportDocument(openReportId ?? "", undefined, openReportParams);
+  // The outgoing report stays mounted until it has finished receding, so a swap is a handover
+  // rather than a blink. Everything below renders `shown`, not the live id.
+  const { shown: shownReportId, leaving } = useLeaveTransition(openReportId);
+  const { document, refresh } = useReportDocument(shownReportId ?? "", undefined, openReportParams);
+  const { reducedMotion } = useAppearance();
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const caretRef = useRef<HTMLSpanElement>(null);
 
-  if (!openReportId) {
+  // What the typewriter is keyed on, and why it is none of the obvious candidates.
+  //
+  // The document **object** is not identity: `useReportDocument` composes a fresh one on every
+  // render, from a fresh `new Date()`. Keying on it restarts the animation on every re-render of
+  // the dashboard — the report visibly rewrites itself forever.
+  //
+  // The document's **text** is not identity either, for the same reason: relative times ("in 20
+  // minutes") drift on their own, so a clock tick would retype a report mid-read.
+  //
+  // What actually means "write this again" is: a different report opened, the reader asked for a
+  // refresh, or the composition changed shape (a fetch resolving from its loading state into the
+  // real thing). Block count is the cheap, stable expression of that last one — it survives a
+  // re-render and a clock tick, and moves when the report genuinely becomes a different document.
+  const [refreshCount, setRefreshCount] = useState(0);
+  const rewrite = useCallback(() => {
+    refresh();
+    setRefreshCount((count) => count + 1);
+  }, [refresh]);
+
+  // Suppressed while leaving — a surface on its way out must not start rewriting itself — and
+  // while the centre is still handing over, so the greeting is gone before this starts writing.
+  const typewriterKey =
+    document && !leaving && ready
+      ? `${shownReportId}:${refreshCount}:${document.blocks.length}`
+      : null;
+  useTypewriter(bodyRef, typewriterKey, { enabled: !reducedMotion, caretRef });
+
+  if (!shownReportId || !ready) {
     return null;
   }
+  const openReportIdShown = shownReportId;
 
   const blocks = document ? renderableBlocks(document) : [];
 
   return (
     <section
       className="report-region"
-      aria-label={`${quickActionLabel(openReportId)} report`}
-      data-report={openReportId}
+      aria-label={`${quickActionLabel(openReportIdShown)} report`}
+      data-report={openReportIdShown}
+      data-leaving={leaving || undefined}
     >
+      {/* OUTSIDE the scroller. A halo paints beyond its element's box and `overflow-y: auto` clips
+          on both axes, so anything haloed inside a scroll container gets its shade sheared off
+          square at that container's edges. The header does not need to scroll anyway. */}
       <header className="report-region__head">
-        <h2 className="report-region__title">{quickActionLabel(openReportId)}</h2>
+        <h2 className="report-region__title">{quickActionLabel(openReportIdShown)}</h2>
         {/* Only for a report composed from a fetch: offering a refresh on a document built from
             ambient state would promise something it cannot do. */}
         {document?.refreshable ? (
           <button
             type="button"
             className="report-region__refresh"
-            aria-label={`Refresh the ${quickActionLabel(openReportId)} report`}
-            onClick={refresh}
+            aria-label={`Refresh the ${quickActionLabel(openReportIdShown)} report`}
+            onClick={rewrite}
           >
             Refresh
           </button>
@@ -51,20 +105,36 @@ export function ReportRegion() {
         <button
           type="button"
           className="report-region__close"
-          aria-label={`Close the ${quickActionLabel(openReportId)} report`}
+          aria-label={`Close the ${quickActionLabel(openReportIdShown)} report`}
           onClick={closeReport}
         >
           ×
         </button>
       </header>
 
-      {document === null ? (
-        // Registered as a Report with no composer yet. Honest-unavailable beats an empty
-        // document, which would read as "your brief is genuinely empty".
-        <p className="report-region__pending">This report isn’t built yet.</p>
-      ) : (
-        <ReportBlocks blocks={blocks} />
-      )}
+      <div className="report-region__scroll">
+        {/* One element, two readers: the shade measures it, the typewriter walks it. */}
+        <div
+          className="report-region__content"
+          ref={(node) => {
+            bodyRef.current = node;
+            if (contentRef) {
+              contentRef.current = node;
+            }
+          }}
+        >
+          {document === null ? (
+            // Registered as a Report with no composer yet. Honest-unavailable beats an empty
+            // document, which would read as "your brief is genuinely empty".
+            <p className="report-region__pending">This report isn’t built yet.</p>
+          ) : (
+            <ReportBlocks blocks={blocks} />
+          )}
+          {/* Positioned by the typewriter from a collapsed range, so it lands wherever the text
+              actually wrapped to rather than at a guessed offset. */}
+          <span className="report-caret" ref={caretRef} aria-hidden="true" />
+        </div>
+      </div>
     </section>
   );
 }
@@ -78,13 +148,7 @@ export function ReportBlocks({ blocks }: { blocks: readonly ReportBlock[] }) {
   return (
     <div className="report-region__blocks">
       {blocks.map((block, index) => (
-        <div
-          key={`${block.blockKind}-${index}`}
-          className="report-region__block"
-          /* Per-block delay drives the top-down stagger; the same mechanism carries a model's
-             streamed blocks later. */
-          style={{ "--ch-report-block-index": index } as React.CSSProperties}
-        >
+        <div key={`${block.blockKind}-${index}`} className="report-region__block">
           <BlockView block={block} />
         </div>
       ))}

@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en" data-mode="school">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mockup — Input surface</title>
+    <link rel="stylesheet" href="/src/tokens/tokens.css" />
+    <link rel="stylesheet" href="/mockups/_mock.css" />
+    <style>
+      body {
+        overflow: hidden;
+      }
+      .stage {
+        padding: 2rem;
+      }
+
+      .heimlich {
+        position: relative;
+        width: min(1040px, 94vw);
+        height: min(600px, 82vh);
+        border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 12%, var(--ch-panel-border));
+        border-radius: var(--ch-radius-lg);
+        background: var(--ch-surface-panel);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        padding: var(--ch-space-6);
+        gap: var(--ch-space-6);
+      }
+
+      .wordmark {
+        position: relative;
+        z-index: 3;
+        margin: 0;
+        font-family: var(--ch-font-mono);
+        font-size: var(--ch-font-size-label);
+        font-weight: var(--ch-font-weight-light);
+        letter-spacing: 0.18em;
+        color: var(--ch-accent-primary);
+      }
+
+      /* Stand-in for the consciousness stream — enough bright moving material to judge legibility. */
+      .stream {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+      }
+      .stream svg {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        width: 200%;
+        height: 70%;
+        transform: translateY(-58%);
+        animation: drift 26s linear infinite;
+      }
+      @keyframes drift {
+        to {
+          transform: translateY(-58%) translateX(-50%);
+        }
+      }
+
+      /* --- The wash, MIRRORED ------------------------------------------------------------------
+         The report's wash is solid into the top-left and dissolves right/down. This is the same
+         construction reflected: solid into the RIGHT and BOTTOM edges, dissolving left and up into
+         the stream. Same `intersect` minimum, same reason — solid into two edges, fading on the
+         other two, which one gradient cannot express.
+
+         Anchored to the panel so it reaches the real edges, and trimmed by the panel's own
+         `overflow: hidden` at the rounded border. Nothing else has an edge to notice. */
+      .shade {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background: color-mix(in srgb, var(--ch-bg-base) 94%, transparent);
+        mask-image:
+          linear-gradient(to left, black 0, black 38%, transparent 74%),
+          linear-gradient(to top, black 0, black 68%, transparent 98%);
+        mask-composite: intersect;
+        -webkit-mask-image:
+          linear-gradient(to left, black 0, black 38%, transparent 74%),
+          linear-gradient(to top, black 0, black 68%, transparent 98%);
+        -webkit-mask-composite: source-in;
+        animation: shade-in 900ms var(--ch-ease-standard) both;
+      }
+      @keyframes shade-in {
+        from {
+          opacity: 0;
+        }
+      }
+
+      .halo {
+        --pool: var(--ch-bg-base);
+        text-shadow:
+          0 0 6px var(--pool),
+          0 0 12px var(--pool),
+          0 0 20px var(--pool),
+          0 0 32px var(--pool),
+          0 0 48px var(--pool),
+          0 0 70px var(--pool);
+      }
+
+      /* --- The form ---------------------------------------------------------------------------
+         No container. The design spec gave the Input region a border because it is interactive and
+         needs a hit target — that requirement does not disappear here, it moves down to each
+         field, which is where a hit target is actually pressed. So the fields keep their boxes and
+         the panel around them goes away. */
+      .form {
+        position: relative;
+        z-index: 2;
+        margin-left: auto;
+        width: 46%;
+        min-height: 0;
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-4);
+      }
+
+      /* The header sits OUTSIDE the scroller. A halo paints beyond its element's box, and
+         `overflow-y: auto` clips on BOTH axes — so anything haloed inside a scroll container gets
+         its shade sheared off square at that container's edges. That was the sharp line along the
+         top and left of the title: not the shade being wrong, the shade being cut. The header does
+         not need to scroll anyway. */
+      .form__head {
+        flex: 0 0 auto;
+      }
+
+      .form__scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-4);
+        /* Room for the labels' halos to fall off inside the clip rather than at it, pulled back
+           by an equal negative margin so the fields stay exactly where they were laid out. The
+           clip boundary moves out of sight instead of the shade being trimmed to it. */
+        padding: var(--ch-space-4) 0 var(--ch-space-4) 3rem;
+        margin-left: -3rem;
+      }
+      .form__scroll::-webkit-scrollbar {
+        display: none;
+      }
+
+      .form__title {
+        margin: 0;
+        font-size: var(--ch-font-size-lg);
+        font-weight: var(--ch-font-weight-light);
+        color: var(--ch-text-primary);
+      }
+      .form__hint {
+        margin: 0.15rem 0 0;
+        font-size: var(--ch-font-size-sm);
+        color: var(--ch-text-muted);
+      }
+
+      /* Each field floats: its own box, its own gap, nothing enclosing the set. Same shape as the
+         command palette input — radius, faint accent hairline, raised fill — so every place you
+         type in this product looks like the same kind of place. */
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-2);
+        animation: field-in 420ms var(--ch-ease-standard) both;
+        animation-delay: calc(var(--i, 0) * 70ms + 260ms);
+      }
+      @keyframes field-in {
+        from {
+          opacity: 0;
+          transform: translateY(0.4rem);
+        }
+      }
+
+      .field__label {
+        font-size: var(--ch-font-size-label);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ch-text-faint);
+      }
+      [data-labels="in"] .field__label {
+        display: none;
+      }
+
+      .control {
+        width: 100%;
+        box-sizing: border-box;
+        padding: var(--ch-space-3) var(--ch-space-4);
+        border-radius: var(--ch-radius-md);
+        border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 12%, var(--ch-panel-border));
+        background: var(--ch-surface-raised);
+        color: var(--ch-text-primary);
+        font: inherit;
+        font-size: var(--ch-font-size-base);
+        transition:
+          border-color var(--ch-motion-base) var(--ch-ease-standard),
+          box-shadow var(--ch-motion-base) var(--ch-ease-standard);
+      }
+      .control::placeholder {
+        color: var(--ch-text-faint);
+      }
+      .control:focus {
+        outline: none;
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+        box-shadow: 0 0 18px color-mix(in srgb, var(--ch-accent-primary) 18%, transparent);
+      }
+      textarea.control {
+        resize: none;
+        min-height: 4.5rem;
+      }
+
+      .pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--ch-space-3);
+      }
+
+      /* Chips float too — a row of separate small surfaces, not a segmented control in a well. */
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--ch-space-2);
+      }
+      .chip {
+        font: inherit;
+        font-size: var(--ch-font-size-sm);
+        padding: var(--ch-space-2) var(--ch-space-3);
+        border-radius: var(--ch-radius-pill);
+        border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 12%, var(--ch-panel-border));
+        background: var(--ch-surface-raised);
+        color: var(--ch-text-muted);
+        cursor: pointer;
+        transition: all 140ms var(--ch-ease-standard);
+      }
+      .chip[aria-pressed="true"] {
+        color: var(--ch-text-primary);
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+        background: color-mix(in srgb, var(--ch-accent-primary) 16%, transparent);
+      }
+
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--ch-space-3);
+        flex: 0 0 auto;
+        animation: field-in 420ms var(--ch-ease-standard) both;
+        animation-delay: 700ms;
+      }
+      .btn {
+        font: inherit;
+        font-size: var(--ch-font-size-sm);
+        padding: var(--ch-space-2) var(--ch-space-5);
+        border-radius: var(--ch-radius-md);
+        border: 1px solid var(--ch-panel-border);
+        background: transparent;
+        color: var(--ch-text-muted);
+        cursor: pointer;
+        transition: all 140ms var(--ch-ease-standard);
+      }
+      .btn:hover {
+        color: var(--ch-text-primary);
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 45%, transparent);
+      }
+      .btn--go {
+        color: var(--ch-text-primary);
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+        background: color-mix(in srgb, var(--ch-accent-primary) 16%, transparent);
+      }
+      .btn--go:hover {
+        background: color-mix(in srgb, var(--ch-accent-primary) 26%, transparent);
+      }
+
+      .foot {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        justify-content: center;
+        gap: var(--ch-space-3);
+        flex: 0 0 auto;
+      }
+      .foot button {
+        font: inherit;
+        font-size: var(--ch-font-size-label);
+        padding: var(--ch-space-2) var(--ch-space-4);
+        border-radius: var(--ch-radius-md);
+        border: 1px solid var(--ch-panel-border);
+        background: var(--ch-surface-raised);
+        color: var(--ch-text-primary);
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body data-labels="above">
+    <div class="desk"><div class="desk__glare"></div></div>
+
+    <div class="stage">
+      <section class="heimlich">
+        <div class="stream">
+          <svg viewBox="0 0 1600 400" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="g1" x1="0" x2="1">
+                <stop offset="0%" stop-color="var(--ch-heimlich-primary)" stop-opacity="0" />
+                <stop offset="35%" stop-color="var(--ch-heimlich-primary)" stop-opacity="0.95" />
+                <stop offset="100%" stop-color="var(--ch-heimlich-secondary)" stop-opacity="0.9" />
+              </linearGradient>
+              <filter id="soft"><feGaussianBlur stdDeviation="5" /></filter>
+              <filter id="softer"><feGaussianBlur stdDeviation="14" /></filter>
+            </defs>
+            <g fill="none" stroke="url(#g1)">
+              <path d="M0 210 C 200 90, 380 320, 600 200 S 1000 60, 1200 190 S 1450 300, 1600 200"
+                    stroke-width="16" filter="url(#softer)" opacity=".55" />
+              <path d="M0 200 C 200 80, 380 310, 600 190 S 1000 50, 1200 180 S 1450 290, 1600 190"
+                    stroke-width="3" filter="url(#soft)" />
+              <path d="M0 230 C 220 120, 400 330, 620 220 S 1010 90, 1220 215 S 1460 320, 1600 225"
+                    stroke-width="2" opacity=".85" />
+              <path d="M0 175 C 240 60, 420 290, 640 165 S 1020 30, 1240 155 S 1470 265, 1600 165"
+                    stroke-width="1.6" opacity=".7" />
+            </g>
+          </svg>
+        </div>
+
+        <div class="shade" id="shade" aria-hidden="true"></div>
+
+        <p class="wordmark">HEIMLICH</p>
+
+        <div class="form">
+          <div class="form__head halo">
+            <h2 class="form__title">New event</h2>
+            <p class="form__hint">Goes to your School calendar.</p>
+          </div>
+
+          <div class="form__scroll">
+            <div class="field" style="--i: 0">
+              <span class="field__label halo">Title</span>
+              <input class="control" placeholder="Title" value="Data Structures revision" />
+            </div>
+
+            <div class="field" style="--i: 1">
+              <span class="field__label halo">When</span>
+              <div class="pair">
+                <input class="control" placeholder="Date" value="Fri 8 Aug" />
+                <input class="control" placeholder="Time" value="14:00" />
+              </div>
+            </div>
+
+            <div class="field" style="--i: 2">
+              <span class="field__label halo">Calendar</span>
+              <div class="chips">
+                <button class="chip" aria-pressed="true">School</button>
+                <button class="chip" aria-pressed="false">Personal</button>
+                <button class="chip" aria-pressed="false">Work</button>
+              </div>
+            </div>
+
+            <div class="field" style="--i: 3">
+              <span class="field__label halo">Notes</span>
+              <textarea class="control" placeholder="Notes">Chapters 4–6, plus the problem set.</textarea>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn">Cancel</button>
+            <button class="btn btn--go">Create event</button>
+          </div>
+        </div>
+
+        <div class="foot">
+          <button>Open Canvas</button>
+          <button>Review Assignments</button>
+          <button>Start Study Block</button>
+        </div>
+      </section>
+    </div>
+
+    <p class="note">
+      <b>Input surface.</b> The report's wash and halo, mirrored — solid into the right and bottom
+      edges, dissolving left and up into the stream. <b>No container:</b> the fields float, each
+      with its own box in the command palette's shape, so every place you type in this product
+      looks like the same kind of place. The spec's reason for bordering this region — it is
+      interactive and needs a hit target — is satisfied per field rather than per panel. Fields
+      stagger in after the wash. Wheel-scrolls with no scrollbar.
+    </p>
+
+    <div class="switch">
+      <span class="switch__label">Labels</span>
+      <button data-lb="above" aria-pressed="true">Above fields</button>
+      <button data-lb="in" aria-pressed="false">In-field only</button>
+      <button id="replay">Replay ▸</button>
+      <a href="/mockups/">All</a>
+    </div>
+
+    <script type="module">
+      for (const b of document.querySelectorAll(".switch button[data-lb]")) {
+        b.addEventListener("click", () => {
+          document.body.dataset.labels = b.dataset.lb;
+          for (const o of document.querySelectorAll(".switch button[data-lb]")) {
+            o.setAttribute("aria-pressed", String(o === b));
+          }
+        });
+      }
+      for (const chip of document.querySelectorAll(".chip")) {
+        chip.addEventListener("click", () => {
+          for (const c of document.querySelectorAll(".chip")) c.setAttribute("aria-pressed", "false");
+          chip.setAttribute("aria-pressed", "true");
+        });
+      }
+      document.getElementById("replay").addEventListener("click", () => {
+        for (const el of document.querySelectorAll(".shade, .field, .actions")) {
+          el.style.animation = "none";
+          void el.offsetWidth;
+          el.style.animation = "";
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -98,6 +98,7 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         ))
 
         webView = WKWebView(frame: .zero, configuration: configuration)
+        VibrantWindowChrome.makeTransparent(webView)
 
         // Sized to the web surface's design dimensions (design spec §10); resizable
         // so long panels are usable, min-bounded so the two-pane layout never crushes.
@@ -148,7 +149,11 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
             dragBand.topAnchor.constraint(equalTo: container.topAnchor),
             dragBand.heightAnchor.constraint(equalToConstant: 40)
         ])
-        window.contentView = container
+        // Vibrancy behind the whole window. The web layer keeps its right-hand reading pane
+        // near-opaque — dense settings text has a contrast requirement that translucency cannot
+        // guarantee over an arbitrary desktop — and lets it through on the chrome, which is the
+        // deliberate split recorded in the overhaul notes rather than blanket translucency.
+        VibrantWindowChrome.apply(to: window, hosting: container)
 
         super.init()
         window.delegate = self
@@ -160,12 +165,30 @@ final class SettingsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         webView.load(URLRequest(url: Self.settingsURL))
     }
 
+    /// Where the window flies out of, in screen coordinates.
+    ///
+    /// Settings is summoned from the bottom bar's settings control, which lives at the bottom-right
+    /// of the screen — and the in-page overlay variant of this exact surface already animates from
+    /// that corner (`ch-settings-in` in settings.css). Deriving the corner rather than threading
+    /// the button's rect through `SettingsProvider` keeps the two presentations agreeing without a
+    /// second control-channel argument; if the control ever moves, that CSS animation and this
+    /// point are the two places to change together.
+    ///
+    /// Recomputed per open, not cached: this window is warm-reused and the user can move it, change
+    /// the main display, or unplug a screen between one open and the next.
+    private var emergencePoint: NSPoint? {
+        guard let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return nil }
+        return NSPoint(x: visible.maxX, y: visible.minY)
+    }
+
     func show() {
-        window.makeKeyAndOrderFront(nil)
+        WindowAppearance.present(window, emergingFrom: emergencePoint)
     }
 
     func close() {
-        window.orderOut(nil)
+        WindowAppearance.dismiss(window, receding: emergencePoint) { [window] in
+            window.orderOut(nil)
+        }
     }
 
     /// Route a shared-session bridge event (config/capability changes re-theme and

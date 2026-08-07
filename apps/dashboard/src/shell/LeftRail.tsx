@@ -4,7 +4,7 @@ import { NewsPanel } from "./NewsPanel";
 import { WidgetSlot } from "./WidgetSlot";
 import { useDashboardState } from "../state/DashboardStateProvider";
 import { useActiveMode } from "./useActiveMode";
-import { resolveWidgetData } from "../widgets/widgetData";
+import { isWidgetPending, resolveWidgetData } from "../widgets/widgetData";
 
 /**
  * The left information rail (constitution §6 / design spec §5.3): L1 Today, L2 System Health,
@@ -19,6 +19,7 @@ export function LeftRail() {
   // bootstrap value (NIC-131 blueprint); today no left widget has a producer, so it falls
   // through to the bootstrap value unchanged.
   const leftWidget = resolveWidgetData(liveWidgets, activeMode.widgets.left, regions.widgets.left);
+  const leftPending = isWidgetPending(liveWidgets, activeMode.widgets.left, regions.widgets.left);
 
   // tabIndex makes the scrollable rail keyboard-reachable (it has no focusable children of its own,
   // unlike the operations rail); the rail only scrolls as a fallback on very short screens. This is
@@ -29,7 +30,12 @@ export function LeftRail() {
     <aside className="shell-rail shell-left" aria-label="Information" tabIndex={0}>
       <SchedulePanel />
       <SystemHealthPanel />
-      <WidgetSlot data={leftWidget} labelId="region-widget-left" slotWidgetId={activeMode.widgets.left} />
+      <WidgetSlot
+        data={leftWidget}
+        labelId="region-widget-left"
+        slotWidgetId={activeMode.widgets.left}
+        pending={leftPending}
+      />
       <NewsPanel />
     </aside>
   );

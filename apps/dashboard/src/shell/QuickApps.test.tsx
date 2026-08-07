@@ -231,12 +231,16 @@ describe("QuickApps", () => {
     // Clean slate: five empty Pin app slots before the write.
     expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(5);
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Pin" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /^Pin .+ to Quick Apps$/ })[0]);
 
     // The mock bridge emits mode.quickapps.changed on the accepted write — a
     // pinned tile appears and its picker control flips to Unpin, no restart.
     await waitFor(() => expect(screen.getAllByRole("button", { name: "Pin app" })).toHaveLength(4));
-    expect(await screen.findByRole("button", { name: "Unpin" })).toBeInTheDocument();
+    // The tile itself is the control now, and it names its destination so it cannot be confused
+    // with the slot's own "Unpin Terminal".
+    expect(
+      await screen.findByRole("button", { name: "Unpin Terminal from Quick Apps" })
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Unpin Terminal" })).toBeInTheDocument();
   });
 
@@ -259,7 +263,7 @@ describe("QuickApps", () => {
     expect(await screen.findAllByText("Not a configured app reference")).not.toHaveLength(0);
 
     // Terminal is reference-backed: pinning submits mode id + the extended slot set.
-    const pins = screen.getAllByRole("button", { name: "Pin" });
+    const pins = screen.getAllByRole("button", { name: /^Pin .+ to Quick Apps$/ });
     fireEvent.click(pins[0]);
     expect(updates).toHaveLength(1);
     expect(updates[0].modeId).toMatch(/^[a-z][a-z0-9-]*$/);
@@ -425,7 +429,7 @@ describe("QuickApps", () => {
 
     // Pinning lives only in the pin popover now — the launcher window has neither
     // Pin controls nor the Add-URL form.
-    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Pin .+ to Quick Apps$/ })).toBeNull();
     expect(screen.queryByLabelText("URL")).toBeNull();
   });
 

@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import "../tokens/tokens.css";
 import "../app.css";
 import "../styles/responsive.css";
 import "../shell/shell.css";
 import "./sidebar.css";
-import { HeimlichAvatar } from "../shell/HeimlichAvatar";
-import { HeimlichConsciousness } from "../shell/HeimlichConsciousness";
 import { CommandSurface } from "../shell/CommandSurface";
 import { ActionStatusIndicator } from "../shell/ActionStatusIndicator";
 import { ModeSwitcher } from "../shell/ModeSwitcher";
@@ -13,17 +11,17 @@ import { AgentRoster } from "../shell/AgentRoster";
 import { QuickActions } from "../shell/QuickActions";
 import { QuickApps } from "../shell/QuickApps";
 import { SchedulePanel } from "../shell/SchedulePanel";
-import { Panel } from "../shell/Panel";
-import { PanelGlyph } from "../shell/PanelGlyph";
 import { DashboardStateProvider, useDashboardState } from "../state/DashboardStateProvider";
 import { BridgeProvider, useBridge } from "../state/BridgeProvider";
 import { ActionStatusProvider, useActionStatus } from "../state/ActionStatusProvider";
 import { SettingsProvider } from "../state/SettingsProvider";
-import { AppearanceProvider, useAppearance } from "../state/AppearanceProvider";
+import { AppearanceProvider } from "../state/AppearanceProvider";
 import { ReportProvider } from "../state/ReportProvider";
 import { InputProvider } from "../state/InputProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { ThemeProvider } from "./ThemeProvider";
+import { useTransparentSurface } from "./useTransparentSurface";
+import { useGlassGeometry } from "./useGlassGeometry";
 import { createDashboardRuntime } from "../state/bootstrapStore";
 import { withModeWave } from "../shell/modeWave";
 import { postSidebarControl } from "./sidebarControl";
@@ -86,10 +84,15 @@ function DashboardGlyph() {
 function SidebarSurface() {
   const bridgeApi = useBridge();
   const { announce } = useActionStatus();
-  const { assistantName } = useAppearance();
   const { mode, modes, windowCollapse } = useDashboardState();
   const posture = useUiPosture();
   const [pinned, setPinned] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // The panes and the foot orbs are the glass; the native shell puts a real blur behind each one.
+  // The gaps between them stay untouched, which is the whole point — a blur that covered the column
+  // would be the slab this design exists to avoid.
+  useGlassGeometry(rootRef, ".sidebar-glass, .sidebar-orb");
 
   // Resolve the id by lookup, not by lowercasing the label (the bottom bar's approach): a mode
   // whose display label diverges from its config id would otherwise throw here.
@@ -185,50 +188,14 @@ function SidebarSurface() {
   }, [bridgeApi, modeId, posture.readOnly]);
 
   return (
-    <div className="sidebar-root" role="complementary" aria-label={`${assistantName} sidebar`}>
-      <header className="sidebar-head">
-        <span className="sidebar-head__portrait" aria-hidden="true">
-          <HeimlichAvatar />
-        </span>
-        <span className="sidebar-head__identity">
-          <span className="sidebar-head__name">{assistantName}</span>
-          <span className="sidebar-head__mode">
-            <span className="sidebar-head__dot" aria-hidden="true" />
-            {mode} Mode active
-          </span>
-        </span>
-        <button
-          type="button"
-          className="sidebar-head__control"
-          aria-label={pinned ? "Unpin the sidebar" : "Keep the sidebar open"}
-          aria-pressed={pinned}
-          title={pinned ? "Unpin — hide when the pointer leaves" : "Pin — keep open"}
-          onClick={togglePin}
-        >
-          <PinGlyph pinned={pinned} />
-        </button>
-        <button
-          type="button"
-          className="sidebar-head__control"
-          aria-label="Hide the sidebar"
-          title="Hide (Esc)"
-          onClick={() => postSidebarControl("dismiss")}
-        >
-          <CollapseGlyph />
-        </button>
-      </header>
-
+    <div className="sidebar-root" role="complementary" aria-label="CerebralHelm sidebar" ref={rootRef}>
       {/* The single execution-feedback surface, same as the dashboard's top-left cell (NIC-124). */}
       <ActionStatusIndicator />
 
-      <div className="sidebar-stream" aria-hidden="true">
-        <HeimlichConsciousness />
-      </div>
-
-      <div className="sidebar-search">
+      <div className="sidebar-glass sidebar-search">
         <CommandSurface
           variant="launcher"
-          placeholder={`Ask ${assistantName} or run a command…`}
+          placeholder="Search or run a command…"
           ariaLabel="Type a command"
           onSubmit={runCommand}
           fetchSuggestions={fetchSuggestions}
@@ -236,21 +203,45 @@ function SidebarSurface() {
         />
       </div>
 
-      <ModeSwitcher />
-
       <div className="sidebar-scroll">
-        <QuickActions />
-        <SchedulePanel />
-        <QuickApps />
-        <Panel label="Agents" labelId="sidebar-agents" icon={<PanelGlyph name="agents" />}>
-          <AgentRoster />
-        </Panel>
+        {/* Grouped, not one pane per region (owner decision, 2026-08-07): at this width six
+            separate panes meant six borders competing in a narrow column. The hairline between
+            sections does the grouping a border was doing, at a quarter of the noise. */}
+        <div className="sidebar-glass sidebar-group">
+          <section className="sidebar-section">
+            <p className="sidebar-cap">Mode</p>
+            <ModeSwitcher />
+          </section>
+          <section className="sidebar-section">
+            <p className="sidebar-cap">Quick actions</p>
+            <QuickActions />
+          </section>
+        </div>
+
+        <div className="sidebar-glass sidebar-group">
+          <section className="sidebar-section">
+            <SchedulePanel />
+          </section>
+          <section className="sidebar-section">
+            <QuickApps />
+          </section>
+        </div>
+
+        <div className="sidebar-glass sidebar-group">
+          <section className="sidebar-section">
+            <p className="sidebar-cap">Agents</p>
+            <AgentRoster />
+          </section>
+        </div>
       </div>
 
+      {/* Three controls that float separately rather than sitting in a bar. Dashboard earns width
+          and a label because it is the one you aim for; three identical orbs would make the
+          primary action the hardest to find. */}
       <footer className="sidebar-foot">
         <button
           type="button"
-          className="sidebar-foot__action"
+          className="sidebar-orb sidebar-orb--wide"
           onClick={returnToDashboard}
           disabled={posture.readOnly}
           title={
@@ -260,15 +251,26 @@ function SidebarSurface() {
           }
         >
           <DashboardGlyph />
-          {collapsed ? "Restore windows" : "Return to dashboard"}
+          {collapsed ? "Restore windows" : "Dashboard"}
         </button>
         <button
           type="button"
-          className="sidebar-foot__action sidebar-foot__action--quiet"
+          className="sidebar-orb"
+          aria-label={pinned ? "Unpin the sidebar" : "Keep the sidebar open"}
+          aria-pressed={pinned}
+          title={pinned ? "Unpin — hide when the pointer leaves" : "Pin — keep open"}
+          onClick={togglePin}
+        >
+          <PinGlyph pinned={pinned} />
+        </button>
+        <button
+          type="button"
+          className="sidebar-orb"
+          aria-label="Hide the sidebar"
+          title="Hide (Esc)"
           onClick={() => postSidebarControl("dismiss")}
         >
           <CollapseGlyph />
-          Collapse sidebar
         </button>
       </footer>
     </div>
@@ -325,6 +327,8 @@ function SidebarHandoff({ children }: { children: ReactNode }) {
  * a must-be-seen surface (backdrop-window policy, 2026-07-06): the dashboard itself never lifts.
  */
 export function SidebarApp() {
+  useTransparentSurface();
+
   return (
     <BridgeProvider bridge={bridge}>
       <DashboardStateProvider store={store}>

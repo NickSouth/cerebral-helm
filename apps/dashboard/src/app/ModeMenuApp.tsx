@@ -2,12 +2,12 @@ import "../tokens/tokens.css";
 import "../app.css";
 import "../styles/responsive.css";
 import "../shell/shell.css";
-import { useEffect } from "react";
 import { ModeMenuSurface } from "../shell/ModeMenuSurface";
 import { DashboardStateProvider } from "../state/DashboardStateProvider";
 import { BridgeProvider } from "../state/BridgeProvider";
 import { AppearanceProvider } from "../state/AppearanceProvider";
 import { ThemeProvider } from "./ThemeProvider";
+import { useTransparentSurface } from "./useTransparentSurface";
 import { createDashboardRuntime } from "../state/bootstrapStore";
 
 // The same runtime seam as AppRoot: the live WKWebView bridge inside the native shell
@@ -30,33 +30,7 @@ const store = runtime.store;
  * must show the desktop through everything but the menu itself.
  */
 export function ModeMenuApp() {
-  useEffect(() => {
-    const clear: HTMLElement[] = [document.documentElement, document.body];
-    const root = document.querySelector<HTMLElement>(".app-root");
-    if (root) {
-      clear.push(root);
-    }
-    // Transparent (so the desktop shows around the menu) AND overflow-free: the little
-    // window must not scroll, or the bottom-pinned menu is pushed below the fold. Clear
-    // the default body margin and clip any residual overflow on every ancestor.
-    const previous = clear.map((element) => ({
-      background: element.style.background,
-      margin: element.style.margin,
-      overflow: element.style.overflow
-    }));
-    for (const element of clear) {
-      element.style.background = "transparent";
-      element.style.margin = "0";
-      element.style.overflow = "hidden";
-    }
-    return () => {
-      clear.forEach((element, index) => {
-        element.style.background = previous[index].background;
-        element.style.margin = previous[index].margin;
-        element.style.overflow = previous[index].overflow;
-      });
-    };
-  }, []);
+  useTransparentSurface();
 
   return (
     <BridgeProvider bridge={bridge}>

@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en" data-mode="executive">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mockup — Edge sidebar</title>
+    <link rel="stylesheet" href="/src/tokens/tokens.css" />
+    <link rel="stylesheet" href="/mockups/_mock.css" />
+    <style>
+      body {
+        overflow: hidden;
+      }
+
+      /* --- The rail ---------------------------------------------------------------------------
+         Not a panel. A blurred column with no hard edge of its own: it dissolves on the right into
+         the desktop and softens top and bottom, so what unifies the bubbles is the BLUR, not a
+         container. That is the Control Center trick — coherence without a box. */
+      .rail {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 310px;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-3);
+        padding: var(--ch-space-4) var(--ch-space-4) var(--ch-space-4) var(--ch-space-3);
+        animation: rail-in 320ms var(--ch-ease-standard) both;
+      }
+      @keyframes rail-in {
+        from {
+          opacity: 0;
+          transform: translateX(-1.25rem);
+        }
+      }
+
+      .rail__blur {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        backdrop-filter: blur(34px) saturate(150%);
+        -webkit-backdrop-filter: blur(34px) saturate(150%);
+        background: color-mix(in srgb, var(--ch-bg-base) 34%, transparent);
+        mask-image:
+          linear-gradient(to right, black 0, black 66%, transparent 100%),
+          linear-gradient(to bottom, transparent 0, black 5%, black 95%, transparent 100%);
+        mask-composite: intersect;
+        -webkit-mask-image:
+          linear-gradient(to right, black 0, black 66%, transparent 100%),
+          linear-gradient(to bottom, transparent 0, black 5%, black 95%, transparent 100%);
+        -webkit-mask-composite: source-in;
+      }
+
+      /* --- The glass ---------------------------------------------------------------------------
+         Each region is its own floating pane: its own blur, a hairline lit from above, and a
+         specular sheen across the top third. The mode accent tints the border and the sheen, so
+         the whole column re-themes with the dashboard rather than staying neutral grey. */
+      .glass {
+        position: relative;
+        border-radius: 20px;
+        background: color-mix(in srgb, var(--ch-bg-base) 42%, transparent);
+        backdrop-filter: blur(26px) saturate(180%);
+        -webkit-backdrop-filter: blur(26px) saturate(180%);
+        border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 16%, rgba(255, 255, 255, 0.14));
+        box-shadow:
+          0 10px 28px rgba(0, 0, 0, 0.38),
+          inset 0 1px 0 rgba(255, 255, 255, 0.16);
+        padding: var(--ch-space-3) var(--ch-space-4);
+        overflow: hidden;
+      }
+      .glass::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 55%;
+        pointer-events: none;
+        background: linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--ch-accent-primary) 9%, rgba(255, 255, 255, 0.07)),
+          transparent
+        );
+      }
+      .glass > * {
+        position: relative;
+      }
+
+      .cap {
+        margin: 0 0 var(--ch-space-2);
+        font-size: var(--ch-font-size-label);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ch-text-faint);
+      }
+
+      /* Search — a floating pill, alone. */
+      .search {
+        position: relative;
+        border-radius: var(--ch-radius-pill);
+        padding: 0;
+      }
+      .search input {
+        width: 100%;
+        box-sizing: border-box;
+        border: 0;
+        background: transparent;
+        color: var(--ch-text-primary);
+        font: inherit;
+        font-size: var(--ch-font-size-sm);
+        padding: var(--ch-space-3) var(--ch-space-4) var(--ch-space-3) 2.6rem;
+      }
+      .search input:focus {
+        outline: none;
+      }
+      .search svg {
+        position: absolute;
+        left: var(--ch-space-4);
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--ch-text-muted);
+      }
+
+      /* Today */
+      .clock {
+        font-family: var(--ch-font-mono);
+        font-size: var(--ch-font-size-lg);
+        font-weight: var(--ch-font-weight-light);
+        color: var(--ch-text-primary);
+      }
+      .date {
+        font-size: var(--ch-font-size-label);
+        color: var(--ch-text-faint);
+        margin-bottom: var(--ch-space-3);
+      }
+      .ev {
+        display: flex;
+        align-items: baseline;
+        gap: var(--ch-space-2);
+        font-size: var(--ch-font-size-sm);
+        padding: 0.15rem 0;
+      }
+      .ev i {
+        width: 0.4rem;
+        height: 0.4rem;
+        border-radius: 50%;
+        background: var(--ch-accent-primary);
+        flex: 0 0 auto;
+      }
+      .ev span {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ev time {
+        color: var(--ch-text-muted);
+        font-size: var(--ch-font-size-label);
+      }
+
+      /* Modes — four tiles in a row, the active one lit with the accent. */
+      .modes {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: var(--ch-space-2);
+      }
+      .mode {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.3rem;
+        padding: var(--ch-space-2) 0.15rem;
+        border-radius: 13px;
+        border: 1px solid transparent;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--ch-text-muted);
+        font: inherit;
+        font-size: 0.6rem;
+        cursor: pointer;
+        transition: all 160ms var(--ch-ease-standard);
+      }
+      .mode svg {
+        width: 1.05rem;
+        height: 1.05rem;
+      }
+      .mode:hover {
+        background: rgba(255, 255, 255, 0.09);
+      }
+      .mode[aria-pressed="true"] {
+        color: var(--ch-text-primary);
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+        background: color-mix(in srgb, var(--ch-accent-primary) 20%, transparent);
+        box-shadow: 0 0 16px color-mix(in srgb, var(--ch-accent-primary) 22%, transparent);
+      }
+
+      /* Quick actions */
+      .acts {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+      }
+      .act {
+        display: flex;
+        align-items: center;
+        gap: var(--ch-space-3);
+        padding: var(--ch-space-2);
+        border-radius: 12px;
+        border: 0;
+        background: transparent;
+        color: var(--ch-text-primary);
+        font: inherit;
+        font-size: var(--ch-font-size-sm);
+        cursor: pointer;
+        text-align: left;
+        transition: background 140ms var(--ch-ease-standard);
+      }
+      .act:hover {
+        background: rgba(255, 255, 255, 0.07);
+      }
+      .act svg {
+        color: var(--ch-accent-primary);
+        flex: 0 0 auto;
+      }
+
+      /* Quick apps */
+      .apps {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: var(--ch-space-2);
+      }
+      .app {
+        aspect-ratio: 1;
+        border-radius: 13px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: var(--tint);
+        display: grid;
+        place-items: center;
+        font: inherit;
+        font-size: var(--ch-font-size-label);
+        font-weight: 600;
+        color: #08101c;
+        cursor: pointer;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        transition: transform 180ms var(--ch-ease-standard);
+      }
+      .app:hover {
+        transform: translateY(-2px) scale(1.04);
+      }
+
+      /* Agents */
+      .agents {
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-2);
+      }
+      .agent {
+        display: flex;
+        align-items: center;
+        gap: var(--ch-space-3);
+        font-size: var(--ch-font-size-sm);
+      }
+      .agent i {
+        width: 1.5rem;
+        height: 1.5rem;
+        border-radius: 50%;
+        flex: 0 0 auto;
+        border: 1px solid color-mix(in srgb, var(--who) 45%, transparent);
+        background: color-mix(in srgb, var(--who) 18%, transparent);
+      }
+      .agent span {
+        flex: 1 1 auto;
+      }
+      .agent em {
+        font-style: normal;
+        font-size: var(--ch-font-size-label);
+        color: var(--ch-text-faint);
+      }
+
+      .scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        scrollbar-width: none;
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-3);
+        /* Room for the bubbles' shadows to fall inside the clip rather than at it. */
+        padding: 0.5rem;
+        margin: -0.5rem;
+      }
+      .scroll::-webkit-scrollbar {
+        display: none;
+      }
+
+      /* --- Foot: three separate controls, not a bar ------------------------------------------- */
+      .foot {
+        display: flex;
+        align-items: center;
+        gap: var(--ch-space-2);
+        flex: 0 0 auto;
+      }
+      .orb {
+        width: 2.6rem;
+        height: 2.6rem;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        border: 1px solid color-mix(in srgb, var(--ch-accent-primary) 16%, rgba(255, 255, 255, 0.14));
+        background: color-mix(in srgb, var(--ch-bg-base) 42%, transparent);
+        backdrop-filter: blur(26px) saturate(180%);
+        -webkit-backdrop-filter: blur(26px) saturate(180%);
+        box-shadow:
+          0 10px 28px rgba(0, 0, 0, 0.38),
+          inset 0 1px 0 rgba(255, 255, 255, 0.16);
+        color: var(--ch-text-muted);
+        cursor: pointer;
+        transition: all 160ms var(--ch-ease-standard);
+      }
+      .orb:hover {
+        color: var(--ch-text-primary);
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+        box-shadow:
+          0 10px 28px rgba(0, 0, 0, 0.38),
+          0 0 18px color-mix(in srgb, var(--ch-accent-primary) 25%, transparent),
+          inset 0 1px 0 rgba(255, 255, 255, 0.16);
+      }
+      /* The primary of the three earns width and a label; the other two stay orbs. */
+      .orb--wide {
+        width: auto;
+        flex: 1 1 auto;
+        border-radius: var(--ch-radius-pill);
+        gap: var(--ch-space-2);
+        grid-auto-flow: column;
+        padding: 0 var(--ch-space-4);
+        font: inherit;
+        font-size: var(--ch-font-size-label);
+        color: var(--ch-text-primary);
+      }
+      .orb[aria-pressed="true"] {
+        color: var(--ch-text-primary);
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+        background: color-mix(in srgb, var(--ch-accent-primary) 20%, transparent);
+      }
+
+      /* --- Variant B: grouped ------------------------------------------------------------------
+         Fewer, larger panes — mode + actions together, calendar + apps together. Closer to what
+         Control Center actually does, and less visually busy at this width. */
+      [data-layout="grouped"] .group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-4);
+      }
+      /* Grouped: the wrapper is the pane, so its children stop being panes — glass inside glass
+         reads as a rendering mistake, not as depth. */
+      [data-layout="grouped"] .sub {
+        background: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        border: 0;
+        box-shadow: none;
+        border-radius: 0;
+        padding: 0;
+        overflow: visible;
+      }
+      [data-layout="grouped"] .sub::before {
+        display: none;
+      }
+      [data-layout="grouped"] .sub + .sub {
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        padding-top: var(--ch-space-4);
+      }
+      /* Separate: the wrapper generates no box at all, so each child floats on its own. */
+      [data-layout="separate"] .group {
+        display: contents;
+      }
+
+      /* This page's controls live bottom-RIGHT: the rail owns the left edge, and a centred switch
+         sat straight on top of the foot orbs. */
+      .switch {
+        left: auto;
+        right: 1.25rem;
+        transform: none;
+      }
+      .note {
+        bottom: 4.5rem;
+      }
+      /* Mockup-only: lift the foot clear of this page's own toggle bar. In the real sidebar the
+         foot sits at the bottom edge — nothing else is down there to avoid. */
+      .rail {
+        padding-bottom: 5.75rem;
+      }
+    </style>
+  </head>
+  <body data-layout="grouped">
+    <div class="desk">
+      <div class="desk__glare"></div>
+      <div class="desk__win" style="left: 22%; top: 10%; width: 40%; height: 62%">
+        <div class="desk__lines"></div>
+      </div>
+      <div class="desk__win" style="right: 5%; top: 30%; width: 30%; height: 55%">
+        <div class="desk__lines"></div>
+      </div>
+    </div>
+
+    <aside class="rail">
+      <div class="rail__blur"></div>
+
+      <div class="glass search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" />
+        </svg>
+        <input placeholder="Search or run a command…" />
+      </div>
+
+      <div class="scroll">
+        <div class="glass group">
+          <div class="sub glass" data-inner>
+            <p class="cap">Mode</p>
+            <div class="modes">
+              <button class="mode" aria-pressed="true" data-mode="executive">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 8l4 3 4-6 4 6 4-3v9H4z" /></svg>
+                Exec
+              </button>
+              <button class="mode" aria-pressed="false" data-mode="developer">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5" /></svg>
+                Dev
+              </button>
+              <button class="mode" aria-pressed="false" data-mode="school">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l10 5-10 5L2 9z" /><path d="M6 12v4c0 1.5 3 3 6 3s6-1.5 6-3v-4" fill="none" stroke="currentColor" stroke-width="1.8" /></svg>
+                School
+              </button>
+              <button class="mode" aria-pressed="false" data-mode="entertainment">
+                <svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="20" height="11" rx="4" /></svg>
+                Fun
+              </button>
+            </div>
+          </div>
+
+          <div class="sub glass" data-inner>
+            <p class="cap">Quick actions</p>
+            <div class="acts">
+              <button class="act">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16M4 12h16M4 19h9" /></svg>
+                Daily brief
+              </button>
+              <button class="act">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h9l5 5v11H5z" /><path d="M14 4v5h5" /></svg>
+                Capture note
+              </button>
+              <button class="act">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /></svg>
+                Create event
+              </button>
+              <button class="act">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14" /></svg>
+                Create project
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass group">
+          <div class="sub glass" data-inner>
+            <p class="cap">Today</p>
+            <div class="clock">6:42 PM</div>
+            <div class="date">Thursday, August 7</div>
+            <div class="ev"><i></i><span>Board prep review</span><time>5:00</time></div>
+            <div class="ev"><i></i><span>Investor call</span><time>8:30</time></div>
+          </div>
+
+          <div class="sub glass" data-inner>
+            <p class="cap">Quick apps</p>
+            <div class="apps">
+              <button class="app" style="--tint: var(--ch-agent-research)">C</button>
+              <button class="app" style="--tint: var(--ch-status-success)">S</button>
+              <button class="app" style="--tint: var(--ch-agent-project)">L</button>
+              <button class="app" style="--tint: var(--ch-status-warning)">F</button>
+              <button class="app" style="--tint: var(--ch-mode-executive-secondary)">V</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass">
+          <p class="cap">Agents</p>
+          <div class="agents">
+            <div class="agent" style="--who: var(--ch-agent-research)">
+              <i></i><span>Research Analyst</span><em>Idle</em>
+            </div>
+            <div class="agent" style="--who: var(--ch-agent-financial)">
+              <i></i><span>Financial Advisor</span><em>Idle</em>
+            </div>
+            <div class="agent" style="--who: var(--ch-agent-project)">
+              <i></i><span>Project Manager</span><em>Idle</em>
+            </div>
+            <div class="agent" style="--who: var(--ch-agent-system)">
+              <i></i><span>System Janitor</span><em>Idle</em>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <button class="orb orb--wide" title="Return to dashboard">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M9 9v11" />
+          </svg>
+          Dashboard
+        </button>
+        <button class="orb" title="Pin — keep open" aria-pressed="false" id="pin">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M9 3h6l-1 6 4 3v2H6v-2l4-3z" /><path d="M12 14v7" />
+          </svg>
+        </button>
+        <button class="orb" title="Hide the sidebar">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M14 6l-6 6 6 6" />
+          </svg>
+        </button>
+      </div>
+    </aside>
+
+    <p class="note" style="left: 22rem">
+      <b>Edge sidebar.</b> No Heimlich stream and no assistant identity — the column is a set of
+      controls, not a presence. Each region is its own floating pane of glass; what unifies them is
+      a <i>blurred column with no edge of its own</i>, dissolving into the desktop on the right.
+      Every pane's border and sheen carry the mode accent, so the whole rail re-themes. The three
+      foot controls float separately rather than sitting in a bar. Switch modes below.
+    </p>
+
+    <div class="switch">
+      <span class="switch__label">Layout</span>
+      <button data-lay="separate" aria-pressed="false">Every region</button>
+      <button data-lay="grouped" aria-pressed="true">Grouped</button>
+      <span class="switch__label">Mode</span>
+      <button data-m="executive" aria-pressed="true">Exec</button>
+      <button data-m="developer" aria-pressed="false">Dev</button>
+      <button data-m="school" aria-pressed="false">School</button>
+      <button data-m="entertainment" aria-pressed="false">Fun</button>
+      <a href="/mockups/">All</a>
+    </div>
+
+    <script type="module">
+      // Scoped to `.switch`: `<html>` also carries `data-mode`, so an unscoped attribute selector
+      // would match it and every click on the page would fire a mode change.
+      for (const b of document.querySelectorAll(".switch button[data-m]")) {
+        b.addEventListener("click", () => {
+          document.documentElement.dataset.mode = b.dataset.m;
+          for (const o of document.querySelectorAll(".switch button[data-m]")) {
+            o.setAttribute("aria-pressed", String(o === b));
+          }
+          for (const m of document.querySelectorAll(".modes .mode")) {
+            m.setAttribute("aria-pressed", String(m.dataset.mode === b.dataset.m));
+          }
+        });
+      }
+      for (const b of document.querySelectorAll(".switch button[data-lay]")) {
+        b.addEventListener("click", () => {
+          document.body.dataset.layout = b.dataset.lay;
+          for (const o of document.querySelectorAll(".switch button[data-lay]")) {
+            o.setAttribute("aria-pressed", String(o === b));
+          }
+          const rail = document.querySelector(".rail");
+          rail.style.animation = "none";
+          void rail.offsetWidth;
+          rail.style.animation = "";
+        });
+      }
+      for (const m of document.querySelectorAll(".modes .mode")) {
+        m.addEventListener("click", () => {
+          document.querySelector(`.switch button[data-m="${m.dataset.mode}"]`).click();
+        });
+      }
+      const pin = document.getElementById("pin");
+      pin.addEventListener("click", () =>
+        pin.setAttribute("aria-pressed", String(pin.getAttribute("aria-pressed") !== "true"))
+      );
+    </script>
+  </body>
+</html>

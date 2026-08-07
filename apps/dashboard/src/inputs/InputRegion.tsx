@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useInputForm } from "./useInputForm";
 import { usePicker } from "./usePicker";
+import { useLeaveTransition } from "../shell/useLeaveTransition";
 import {
   PICKER_DEBOUNCE_MS,
   isPickerStage,
@@ -29,6 +30,8 @@ import { quickActionLabel } from "../shell/quickActionRegistry";
 import { useActionStatus } from "../state/ActionStatusProvider";
 import { useUiPosture } from "../state/useUiPosture";
 import { useInputs } from "../state/InputProvider";
+import { useAppearance } from "../state/AppearanceProvider";
+import { useTypewriter } from "../shell/useTypewriter";
 
 /**
  * The Input region (docs/quick-actions/PLAN.md): the centre panel's lower right — below the
@@ -38,12 +41,47 @@ import { useInputs } from "../state/InputProvider";
  * target, where a report is something you read. A Picker will render here too, with a filter
  * field and a result list above the same footer.
  */
-export function InputRegion() {
+export function InputRegion({
+  contentRef,
+  ready = true
+}: {
+  /** Attached to the body so `CenterShade` can measure the surface it has to hug. */
+  contentRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * False while the centre is still handing over — the ambient greeting is on its way out and this
+   * surface must not land on top of it. `CenterStage` owns that sequence; held after the hooks so
+   * the form's options keep loading during the wait.
+   */
+  ready?: boolean;
+} = {}) {
   const { openInputId, closeInput } = useInputs();
-  const { form, loading } = useInputForm(openInputId ?? "");
-  const picker = usePicker(openInputId ?? "");
+  // Same handover as the report: the outgoing form recedes before the next one arrives, rather
+  // than being unmounted out from under itself.
+  const { shown: openInputIdShown, leaving } = useLeaveTransition(openInputId);
+  const { form, loading } = useInputForm(openInputIdShown ?? "");
+  const picker = usePicker(openInputIdShown ?? "");
+  const { reducedMotion } = useAppearance();
+  const titleRef = useRef<HTMLHeadingElement>(null);
 
-  if (!openInputId) {
+  const title = openInputIdShown
+    ? (picker?.title ?? form?.title ?? quickActionLabel(openInputIdShown))
+    : null;
+
+  /**
+   * Only the title writes itself in — deliberately not the whole surface.
+   *
+   * A report is prose you read, so typing all of it is the point. A form is a thing you act on:
+   * watching its field labels and its Save button assemble character by character would make it
+   * look broken and briefly unreadable, and would delay the first field you were reaching for.
+   * The title is the one piece of prose here, so it carries the entrance and the rest arrives ready
+   * to use. Safe to key on the title text, unlike a report's body — a form's title is fixed
+   * copy, with none of the relative times that make report text drift on its own.
+   */
+  useTypewriter(titleRef, ready && title && !leaving ? `${openInputIdShown}:${title}` : null, {
+    enabled: !reducedMotion
+  });
+
+  if (!openInputIdShown || !ready) {
     return null;
   }
 
@@ -52,32 +90,40 @@ export function InputRegion() {
   const surface = picker ? "picker" : "form";
 
   return (
-    <section className="input-region" aria-label={`${quickActionLabel(openInputId)} ${surface}`}>
+    <section
+      className="input-region"
+      aria-label={`${quickActionLabel(openInputIdShown)} ${surface}`}
+      data-leaving={leaving || undefined}
+    >
       <header className="input-region__head">
-        <h2 className="input-region__title">
-          {picker?.title ?? form?.title ?? quickActionLabel(openInputId)}
+        <h2 className="input-region__title" ref={titleRef}>
+          {title}
         </h2>
         <button
           type="button"
           className="input-region__close"
-          aria-label={`Close the ${quickActionLabel(openInputId)} ${surface}`}
+          aria-label={`Close the ${quickActionLabel(openInputIdShown)} ${surface}`}
           onClick={closeInput}
         >
           ×
         </button>
       </header>
 
-      {picker ? (
-        <PickerBody key={picker.actionId} picker={picker} onDone={closeInput} />
-      ) : loading ? (
-        <p className="input-region__pending">Loading…</p>
-      ) : form ? (
-        // Keyed so switching between two Inputs starts from a clean set of values rather than
-        // carrying the previous form's typing across.
-        <InputFormBody key={form.actionId} form={form} onDone={closeInput} />
-      ) : (
-        <p className="input-region__pending">This action isn’t built yet.</p>
-      )}
+      <div className="input-region__scroll">
+        <div className="input-region__content" ref={contentRef}>
+          {picker ? (
+            <PickerBody key={picker.actionId} picker={picker} onDone={closeInput} />
+          ) : loading ? (
+            <p className="input-region__pending">Loading…</p>
+          ) : form ? (
+            // Keyed so switching between two Inputs starts from a clean set of values rather than
+            // carrying the previous form's typing across.
+            <InputFormBody key={form.actionId} form={form} onDone={closeInput} />
+          ) : (
+            <p className="input-region__pending">This action isn’t built yet.</p>
+          )}
+        </div>
+      </div>
     </section>
   );
 }

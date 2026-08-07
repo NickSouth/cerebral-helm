@@ -32,6 +32,11 @@ final class MoreAppsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
     /// which owns the action routing.
     var onShellControl: (([String: Any]) -> Void)?
 
+    /// The centre of the control that summoned this window, in screen coordinates. Recorded by
+    /// whichever `position*` call placed the window, so the launcher recedes back into the button
+    /// it flew out of rather than fading on the spot.
+    private var anchorPoint: NSPoint?
+
     private static var moreAppsURL: URL {
         URL(string: "\(CerebralSchemeHandler.scheme)://\(CerebralSchemeHandler.host)/index.html?surface=moreapps")!
     }
@@ -57,8 +62,9 @@ final class MoreAppsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         }
 
         webView = WKWebView(frame: .zero, configuration: configuration)
+        VibrantWindowChrome.makeTransparent(webView)
 
-        // A tall, narrow launcher (owner decision): two columns of apps, scroll for
+        // A tall, narrow launcher (owner decision): three fixed columns of apps, scroll for
         // more. Sized to the web surface's design dimensions.
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 560),
@@ -83,7 +89,9 @@ final class MoreAppsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.isReleasedWhenClosed = false
         window.center()
-        window.contentView = webView
+        // Translucent over the desktop (2026-08-06 direction): the launcher is a big transparent
+        // sheet of icons, so the tiles are the only thing that reads as solid.
+        VibrantWindowChrome.apply(to: window, hosting: webView)
 
         super.init()
         window.delegate = self
@@ -109,6 +117,7 @@ final class MoreAppsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         let originY = max(anchor.minY - gap - frame.height, visible.minY + 8)
         frame.origin = NSPoint(x: originX, y: originY)
         window.setFrame(frame, display: true)
+        anchorPoint = NSPoint(x: anchor.midX, y: anchor.midY)
     }
 
     /// Fallback placement when the button's anchor isn't known: toward the right
@@ -120,13 +129,26 @@ final class MoreAppsWindowController: NSObject, WKNavigationDelegate, WKScriptMe
         frame.origin.x = visible.maxX - frame.width - margin
         frame.origin.y = visible.midY - frame.height / 2
         window.setFrame(frame, display: true)
+        // Pinned to the right edge with no button behind it, so the edge itself is where it comes
+        // from — a launcher sliding in off the side of the screen it is parked against.
+        anchorPoint = NSPoint(x: visible.maxX, y: frame.midY)
     }
 
     func show() {
-        window.makeKeyAndOrderFront(nil)
+        WindowAppearance.present(window, emergingFrom: anchorPoint)
     }
 
     func close() {
+        WindowAppearance.dismiss(window, receding: anchorPoint) { [window] in
+            window.orderOut(nil)
+        }
+    }
+
+    /// Tear down without the dismissal animation, for when this window is being *replaced* by a
+    /// freshly-built one in the same place. Fading the outgoing copy out while its identical
+    /// replacement fades in over it reads as a flicker rather than as a transition — a replacement
+    /// is not a dismissal and should not be animated like one.
+    func closeImmediately() {
         window.orderOut(nil)
     }
 

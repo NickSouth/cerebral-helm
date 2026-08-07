@@ -112,6 +112,11 @@
   border-radius: 0;
   box-shadow: none;
   animation: none;
+  /* The native window is transparent over an `NSVisualEffectView` (`VibrantWindowChrome`), so the
+     window-level fill has to go or the vibrancy is behind an opaque page and shows nothing. The
+     two panes below take over, each with the opacity its content earns — this is where the split
+     lives, deliberately: translucency on the chrome, near-opacity behind reading text. */
+  background: transparent;
   /* Frameless native window (NIC-140): the macOS title bar is hidden and a native
      40px transparent drag band overlays the top edge so the window drags from its whole
      top (the WKWebView otherwise swallows movableByWindowBackground). Push the top-row
@@ -122,6 +127,17 @@
 
 .settings-window[data-standalone="true"] .settings-sidebar {
   padding-top: calc(var(--ch-space-4) + var(--ch-standalone-titlebar));
+  /* Chrome: a category list of short labels and coloured marks, which stays legible over a blur.
+     This is the pane the vibrancy is for. */
+  background: color-mix(in srgb, rgb(var(--ch-surface-panel-rgb)) 34%, transparent);
+}
+
+/* Reading pane: settings text is dense, small, and the one thing here a user has to be able to
+   parse without effort. The design spec already made this call once for the Report region — it
+   chose opacity because that meets the contrast requirement *by construction*, rather than hoping
+   the desktop behind the window is quiet. Same reasoning, same answer. */
+.settings-window[data-standalone="true"] .settings-content {
+  background: color-mix(in srgb, rgb(var(--ch-surface-panel-rgb)) 94%, transparent);
 }
 
 .settings-window[data-standalone="true"] .settings-content__header {
@@ -152,18 +168,43 @@
   min-height: 0;
 }
 
+/* Icon-first, the way macOS System Settings is: the mark is what you actually navigate by once
+   the list is familiar, and the label confirms it. Replaces a column of bare text rows. */
 .settings-category {
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-3);
   font: inherit;
   text-align: left;
   padding: var(--ch-space-2) var(--ch-space-3);
   border-radius: var(--ch-radius-md);
   border: 1px solid transparent;
   background: transparent;
-  color: var(--ch-text-muted);
+  color: var(--ch-text-primary);
   cursor: pointer;
   transition:
     background var(--ch-motion-fast) var(--ch-ease-standard),
     color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+/* Filled rounded square in the category's OWN fixed colour — identity, so it does not follow the
+   mode accent. The glyph is punched out in the page's base colour rather than white, so the mark
+   sits in the palette instead of glaring out of it. */
+.settings-category__mark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 7px;
+  background: var(--cat);
+  color: var(--ch-bg-base);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.settings-category__mark svg {
+  width: 62%;
+  height: 62%;
 }
 
 .settings-category:hover {
