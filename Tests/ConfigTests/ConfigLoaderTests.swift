@@ -221,3 +221,50 @@ func lastKnownGoodRoundTrips() throws {
     let restored = ConfigLoader(workspace: paths).lastKnownGood()
     #expect(restored?.modes.count == 4)
 }
+
+// MARK: - NIC-103: crash-during-write leaves no half-written durable config
+
+@Test("a truncated last-known-good snapshot does not brick loading")
+func truncatedSnapshotDoesNotBrickLoad() throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: loaderRepositoryRoot())
+    try FileManager.default.createDirectory(at: paths.stateRoot, withIntermediateDirectories: true)
+    // The shape a non-atomic write leaves behind when the process dies mid-write.
+    try Data("{\"activeConfigVersion\":\"1.0".utf8).write(to: paths.activeConfigPath)
+
+    let loader = ConfigLoader(workspace: paths)
+
+    // Reading the corrupt snapshot yields nothing rather than throwing or crashing…
+    #expect(loader.lastKnownGood() == nil)
+    // …and loading still produces a usable configuration from the shipped defaults,
+    // so a torn snapshot can never leave the app unable to start (NFR-06).
+    _ = loader.load()
+}
+
+/// Note on what this does *not* prove: atomicity cannot be unit-tested here. A
+/// write that completes leaves an identical file whether or not `.atomic` was
+/// used — the difference only appears if the process dies mid-write, which is not
+/// reproducible in-process. This asserts the observable postconditions (the
+/// snapshot round-trips whole, and no temp sibling is left behind); the atomicity
+/// guarantee itself rests on the `.atomic` option in `persistLastKnownGood`.
+@Test("a persisted snapshot round-trips whole and leaves no temp file behind")
+func snapshotWriteLeavesNoPartialFile() throws {
+    let paths = try WorkspacePaths.temporary(repositoryRoot: loaderRepositoryRoot())
+    let loader = ConfigLoader(workspace: paths)
+
+    // `load()` persists the snapshot as a side effect.
+    _ = loader.load()
+
+    // Whatever is on disk must be complete and decodable. With a non-atomic write the
+    // file is built up in place, so an interrupted write leaves a prefix; `.atomic`
+    // writes a temp file and replaces, so the path only ever names a whole file.
+    guard FileManager.default.fileExists(atPath: paths.activeConfigPath.path) else { return }
+    let data = try Data(contentsOf: paths.activeConfigPath)
+    #expect(!data.isEmpty)
+    #expect(loader.lastKnownGood() != nil, "the persisted snapshot must decode as a whole value")
+
+    // No temporary sibling should survive a completed write.
+    let leftovers = try FileManager.default
+        .contentsOfDirectory(atPath: paths.stateRoot.path)
+        .filter { $0.hasPrefix(".") && $0.contains("active-config") }
+    #expect(leftovers.isEmpty, "an atomic write must not leave its temp file behind: \(leftovers)")
+}
