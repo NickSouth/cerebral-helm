@@ -38,6 +38,22 @@ upgrade changes configuration defaults or runs a schema migration (NIC-70 AC-12)
   with a redaction-canary sweep, and documentation/compatibility checks.
 - ESLint (flat config) and Prettier for the dashboard package.
 - A migration upgrade-path test asserting recorded checksums stay canonical.
+- Operations guide (`docs/operations/operations-guide.md`, NIC-105): setup,
+  permissions, where personal data lives, backup, manual restore, and integration
+  re-provisioning — written to be followed after a machine wipe with no knowledge
+  of the source. Registered in `docs/required-docs.json`.
+
+### Fixed
+
+- Durable config writes are now atomic (NIC-103). `active-config.json` and
+  `settings-metadata.json` were the only two durable writes in the codebase not
+  using `.atomic`. Because `lastKnownGood()` decodes with `try?`, a crash partway
+  through that write did not fail loudly — it silently discarded the last-known-good
+  snapshot the config rollback path depends on.
+- `git.clone` no longer echoes its input when a repository URL fails to parse
+  (NIC-104). A malformed URL carrying a token would otherwise reach the `tool_calls`
+  record verbatim, defeating the adjacent guard that refuses credential-bearing URLs
+  precisely to keep tokens out of the command log.
 
 Config impact: none — this work adds CI and tooling only; no `config/*` defaults or
 user-facing settings change.
