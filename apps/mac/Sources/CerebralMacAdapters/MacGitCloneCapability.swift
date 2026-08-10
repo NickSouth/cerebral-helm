@@ -98,8 +98,15 @@ public struct MacGitCloneCapability: GitCloneCapability {
     /// Accepts only an `https` URL with a host and no embedded credentials.
     static func validatedSource(_ repositoryURL: String) throws -> URL {
         let trimmed = repositoryURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Deliberately does not echo the input. A malformed URL can still carry a
+        // token (`https://user:tok en@host/...` fails to parse but holds a secret),
+        // and this message reaches the same `tool_calls` record the credential guard
+        // below exists to keep tokens out of. Describing the expected shape is as
+        // useful to the user and cannot leak (NIC-104).
         guard let url = URL(string: trimmed), let host = url.host, !host.isEmpty else {
-            throw NativeCapabilityError.adapterFailure("'\(repositoryURL)' is not a repository URL.")
+            throw NativeCapabilityError.adapterFailure(
+                "That is not a repository URL. Use a plain https URL, e.g. https://github.com/owner/repo.git"
+            )
         }
         guard url.scheme?.lowercased() == "https" else {
             throw NativeCapabilityError.adapterFailure(
