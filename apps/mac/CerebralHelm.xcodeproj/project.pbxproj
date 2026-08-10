@@ -61,6 +61,7 @@
 		CE0000000000000000000035 /* PaletteShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaletteShortcut.swift; sourceTree = "<group>"; };
 		CE0000000000000000000037 /* AppBridgeRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBridgeRuntime.swift; sourceTree = "<group>"; };
 		CE000000000000000000003D /* WindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCoordinator.swift; sourceTree = "<group>"; };
+		CE0000000000000000000052 /* ProjectDetailWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000042 /* ConfirmationWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmationWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000044 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000046 /* MoreAppsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreAppsWindowController.swift; sourceTree = "<group>"; };
