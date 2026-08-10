@@ -43,14 +43,19 @@ public enum BackupRetention {
 
         let entries = try fileManager.contentsOfDirectory(
             at: backupsDirectory,
-            includingPropertiesForKeys: [.isDirectoryKey],
+            includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         )
 
+        // Directory-ness is tested with `fileExists(atPath:isDirectory:)` rather than
+        // `resourceValues(forKeys: [.isDirectoryKey])`: URL resource values are thinly
+        // implemented on swift-corelibs-foundation, so the resource-value form can
+        // report nothing on Linux and silently make every candidate un-prunable.
         let snapshots = entries
             .filter { url in
-                let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-                guard isDirectory else { return false }
+                var isDirectory: ObjCBool = false
+                guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                      isDirectory.boolValue else { return false }
                 return fileManager.fileExists(atPath: url.appendingPathComponent("manifest.json").path)
             }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }

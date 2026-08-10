@@ -39,7 +39,12 @@ struct Doctor: ParsableCommand {
                 // Flush before crossing to stderr: stdout is block-buffered while
                 // stderr is not, so without this the banner overtakes the roots
                 // block whenever both are pointed at the same terminal.
-                fflush(stdout)
+                //
+                // `nil` flushes every open output stream rather than naming `stdout`.
+                // On Glibc `stdout` is a mutable global, which Swift 6 strict
+                // concurrency rejects as shared mutable state — Darwin accepts it, so
+                // naming it compiles on macOS and breaks the Linux build.
+                fflush(nil)
                 FileHandle.standardError.write(Data("Storage needs recovery (staying read-only):\n".utf8))
                 for diagnostic in diagnostics {
                     print("- [\(diagnostic.code)] \(diagnostic.summary)\n  → \(diagnostic.guidance)")
