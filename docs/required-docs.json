@@ -14,6 +14,7 @@
     ".agent/spec/CEREBRALHELM_DESIGN_SPEC.md",
     "docs/architecture/repository-boundaries.md",
     "docs/operations/first-mac-bootstrap-checklist.md",
+    "docs/operations/operations-guide.md",
     "docs/compatibility/compatibility-manifest.json",
     "docs/compatibility/compatibility-manifest.schema.json",
     "wiki/NORTH-STAR.md",

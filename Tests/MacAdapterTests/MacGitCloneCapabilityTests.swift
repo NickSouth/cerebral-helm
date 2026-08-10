@@ -44,6 +44,39 @@ func gitCloneRefusesNonURL() {
     }
 }
 
+@Test("a malformed URL carrying a token is refused without echoing it (NIC-104)")
+func gitCloneDoesNotEchoSecretsFromMalformedURLs() {
+    // A well-formed credential URL parses and is caught by the embedded-credentials
+    // guard, whose message never quotes the input. A *malformed* one fails to parse
+    // first — and this rejection reaches the same `tool_calls` record, which
+    // git.clone declares no redaction paths for. Echoing the input here would defeat
+    // the protection the credential guard exists to provide.
+    let secret = "ghp_thisisnotarealtokenjustatestvalue"
+    // The space makes `URL(string:)` fail while the token is still present.
+    let malformed = "https://someone:\(secret)@github .com/o/r.git"
+
+    do {
+        _ = try MacGitCloneCapability.validatedSource(malformed)
+        Issue.record("a malformed repository URL must be refused")
+    } catch let error as NativeCapabilityError {
+        guard case let .adapterFailure(message) = error else {
+            return // any non-message rejection cannot leak
+        }
+        // Pin the guard: this input must fail at *parsing*, not at the embedded-
+        // credentials check. If Foundation's URL parsing ever becomes lenient enough
+        // to accept it, this assertion fails and says so, rather than the test
+        // quietly passing because the (already safe) credential guard caught it.
+        #expect(
+            message.contains("Use a plain https URL"),
+            "expected the parse guard to reject this input; got: \(message)"
+        )
+        #expect(!message.contains(secret), "the rejection message leaked the token: \(message)")
+        #expect(!message.contains("someone"), "the rejection message leaked the username")
+    } catch {
+        Issue.record("unexpected error type: \(error)")
+    }
+}
+
 // MARK: - Folder name
 
 @Test("the folder name is derived from the repository, with .git stripped")
