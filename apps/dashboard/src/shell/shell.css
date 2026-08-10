@@ -5161,20 +5161,30 @@ button.deadline-row__open:not(:disabled):hover {
   z-index: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 40% var(--ch-space-3);
+  /* 40% used to sit here so the first and last rows could reach the wheel's centre line. Two
+     things were wrong with it. A percentage padding resolves against the container's WIDTH even on
+     the block axis — the same width-for-a-vertical-measurement mistake as the strand width and the
+     line thickness — so it had no relationship to the height it was insetting. And at 264x640 it
+     ate 256 of 600 usable pixels: only ~8 rows could ever be on screen where 14 fit, and the list
+     did not overflow (so did not scroll) until you had nine windows open.
+     The pose already fades rows by their distance from centre, so a row starting at the centre was
+     a nicety; being able to see your windows and scroll them is not. */
+  padding: var(--ch-space-4) var(--ch-space-3);
   display: flex;
   flex-direction: column;
   gap: var(--ch-space-2);
   scrollbar-width: none;
   perspective: 760px;
+  /* Softened from 14%/86%: that faded ~84px at each end, which on top of the old padding meant
+     most of the window was dedicated to not showing you anything. */
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0%,
-    black 14%,
-    black 86%,
+    black 7%,
+    black 93%,
     transparent 100%
   );
-  mask-image: linear-gradient(to bottom, transparent 0%, black 14%, black 86%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 7%, black 93%, transparent 100%);
 }
 
 .win-nav__scroll::-webkit-scrollbar {

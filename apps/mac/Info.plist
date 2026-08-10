@@ -10,8 +10,15 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleDisplayName</key>
+	<string>$(CH_DISPLAY_NAME)</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
+	<!-- The folder under ~/Library/Application Support this build owns. Set per
+	     build configuration (CH_STATE_ROOT_NAME) so a Debug build can never read or
+	     write the Release build's knowledge base, database, or settings. -->
+	<key>CHStateRootName</key>
+	<string>$(CH_STATE_ROOT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

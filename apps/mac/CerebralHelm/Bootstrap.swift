@@ -35,9 +35,24 @@ enum Bootstrap {
             ))
         }
 
+        // The state-root folder name comes from the bundle (`CHStateRootName`, set per
+        // build configuration), so the Debug build owns
+        // `~/Library/Application Support/CerebralHelm (Debug)` while Release keeps
+        // `.../CerebralHelm`. Without this both configurations resolve the same root
+        // and a development build would read and write the real knowledge base,
+        // database, and settings — including running new migrations against them.
+        // Falling back to the shipped default keeps a bundle without the key working.
+        let stateRootName = (Bundle.main.object(forInfoDictionaryKey: "CHStateRootName") as? String)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+
         let paths: WorkspacePaths
         do {
-            paths = try WorkspacePaths.forApplication(bundleResourcesRoot: resources)
+            paths = try WorkspacePaths.forApplication(
+                bundleResourcesRoot: resources,
+                stateRoot: stateRootName.map { WorkspacePaths.applicationSupportRoot(appName: $0) }
+                    ?? WorkspacePaths.applicationSupportRoot()
+            )
         } catch {
             return .recovery(Recovery(
                 reason: "startup_validation_failed",

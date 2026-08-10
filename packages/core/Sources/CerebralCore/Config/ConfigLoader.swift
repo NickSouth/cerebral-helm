@@ -154,7 +154,10 @@ public struct ConfigLoader {
     private func persistSettingsMetadata(_ metadata: SettingsMetadata) {
         guard let data = try? JSONEncoder().encode(metadata) else { return }
         try? FileManager.default.createDirectory(at: workspace.stateRoot, withIntermediateDirectories: true)
-        try? data.write(to: workspace.settingsMetadataPath)
+        // `.atomic` writes a temp file then replaces it. Without it, a crash partway
+        // through leaves truncated rollback metadata, which `SettingsMetadata`
+        // decoding then discards silently (NFR-06, NIC-103).
+        try? data.write(to: workspace.settingsMetadataPath, options: .atomic)
     }
 
     /// Applies per-mode overrides onto modes, matched by id; later overrides win
@@ -193,7 +196,11 @@ public struct ConfigLoader {
         try? FileManager.default.createDirectory(
             at: workspace.stateRoot, withIntermediateDirectories: true
         )
-        try? data.write(to: workspace.activeConfigPath)
+        // `.atomic` writes a temp file then replaces it. This file is the
+        // last-known-good snapshot the rollback path depends on, and `lastKnownGood()`
+        // decodes it with `try?` — so a crash partway through this write would not
+        // brick launch, it would silently delete the recovery point (NFR-06, NIC-103).
+        try? data.write(to: workspace.activeConfigPath, options: .atomic)
     }
 
     private func overrideFiles() -> [URL] {

@@ -13,16 +13,47 @@ upgrade changes configuration defaults or runs a schema migration (NIC-70 AC-12)
 - `Migration impact:` — which schema migrations run on upgrade (`none` when it adds
   no migration).
 
-## [Unreleased]
+## [1.0.0] -2026-08-10
 
 ### Added
 
+- Automatic pre-migration backups (NIC-95): opening the operational database now
+  takes a verified snapshot into `<stateRoot>/backups/<timestamp>/` before applying
+  any pending schema migration, and a failed or unverifiable backup blocks the
+  migration. Wired at `operationalDatabase(_:)` — the single chokepoint the macOS
+  app, the CLI, and every store helper share — so no surface can reach a schema
+  write without passing it. A first run skips the snapshot: with no migrations
+  applied there are no tables yet, so there is no user data to protect.
+- Bounded backup retention (`BackupRetention`, NIC-95): the newest five snapshots
+  are kept. Only directories carrying a readable `manifest.json` are deletion
+  candidates, and the keep count is clamped to at least one, so pruning can never
+  empty the directory or remove unmanaged content placed under `backups/`.
+- `cerebral doctor` now reports the resolved environment and all seven durable
+  roots, in both the healthy and the recovery outcome (NIC-91). A recovery
+  diagnostic names a store but never a path, so without this there was no way to
+  tell which environment's data had failed.
 - PRE-CI quality-and-delivery foundation (NIC-66): GitHub Actions CI covering the
   portable Swift core (Linux + macOS), the dashboard (lint, typecheck, unit tests,
   production build), the contract/config/fixture/migration gates, secret scanning
   with a redaction-canary sweep, and documentation/compatibility checks.
 - ESLint (flat config) and Prettier for the dashboard package.
 - A migration upgrade-path test asserting recorded checksums stay canonical.
+- Operations guide (`docs/operations/operations-guide.md`, NIC-105): setup,
+  permissions, where personal data lives, backup, manual restore, and integration
+  re-provisioning — written to be followed after a machine wipe with no knowledge
+  of the source. Registered in `docs/required-docs.json`.
+
+### Fixed
+
+- Durable config writes are now atomic (NIC-103). `active-config.json` and
+  `settings-metadata.json` were the only two durable writes in the codebase not
+  using `.atomic`. Because `lastKnownGood()` decodes with `try?`, a crash partway
+  through that write did not fail loudly — it silently discarded the last-known-good
+  snapshot the config rollback path depends on.
+- `git.clone` no longer echoes its input when a repository URL fails to parse
+  (NIC-104). A malformed URL carrying a token would otherwise reach the `tool_calls`
+  record verbatim, defeating the adjacent guard that refuses credential-bearing URLs
+  precisely to keep tokens out of the command log.
 
 Config impact: none — this work adds CI and tooling only; no `config/*` defaults or
 user-facing settings change.
