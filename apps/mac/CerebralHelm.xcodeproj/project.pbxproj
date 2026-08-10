@@ -49,6 +49,7 @@
 		CE0000000000000000000010 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		CE0000000000000000000011 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		CE0000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		CE00000000000000000000A2 /* CerebralHelm.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CerebralHelm.entitlements; sourceTree = "<group>"; };
 		CE0000000000000000000019 /* Bootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bootstrap.swift; sourceTree = "<group>"; };
 		CE000000000000000000001A /* RecoveryWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryWindowController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000020 /* config */ = {isa = PBXFileReference; lastKnownFileType = folder; name = config; path = ../../config; sourceTree = "<group>"; };
@@ -101,6 +102,7 @@
 			children = (
 				CE0000000000000000000004 /* CerebralHelm */,
 				CE0000000000000000000012 /* Info.plist */,
+				CE00000000000000000000A2 /* CerebralHelm.entitlements */,
 				CE0000000000000000000020 /* config */,
 				CE0000000000000000000028 /* DashboardBundle */,
 				CE00000000000000000000A0 /* Assets.xcassets */,
@@ -312,6 +314,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = V8WPJ8J9PN;
+				CODE_SIGN_ENTITLEMENTS = CerebralHelm.entitlements;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
@@ -337,6 +340,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = V8WPJ8J9PN;
+				CODE_SIGN_ENTITLEMENTS = CerebralHelm.entitlements;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;

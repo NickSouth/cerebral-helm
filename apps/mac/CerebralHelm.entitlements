@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Hardened Runtime resource access (NIC-92 follow-up).
+
+	  The app runs with the Hardened Runtime enabled (ENABLE_HARDENED_RUNTIME).
+	  Under that runtime macOS refuses access to these protected resources unless
+	  the binary carries the matching entitlement — and the refusal is silent: no
+	  TCC prompt is ever shown, and the authorization status stays notDetermined
+	  forever. The usage-description strings in Info.plist are necessary but not
+	  sufficient; both halves are required.
+
+	  This was latent while the app was ad-hoc signed and only began biting once it
+	  was signed with a real certificate and the runtime was genuinely enforced.
+
+	  These are Hardened Runtime entitlements, NOT App Sandbox entitlements. The app
+	  remains unsandboxed, so ADR-008 is unaffected — hook child processes, plain-path
+	  knowledge access, and login-keychain item identity all keep working.
+
+	  Add an entry here only when a capability genuinely needs it; each one widens
+	  what the process may reach.
+	-->
+
+	<!-- EventKit: the calendar widget reads events; the Create Event action writes one. -->
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+
+	<!-- Contacts: picking a recipient for the Send text action. -->
+	<key>com.apple.security.personal-information.addressbook</key>
+	<true/>
+
+	<!-- CoreLocation: the weather widget's location fix (NIC-169). -->
+	<key>com.apple.security.personal-information.location</key>
+	<true/>
+
+	<!-- Apple Events: focusing an already-open browser tab, and sending a message
+	     through Messages. Every send is confirmation-gated by the policy layer. -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+</dict>
+</plist>
