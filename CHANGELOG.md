@@ -13,7 +13,7 @@ upgrade changes configuration defaults or runs a schema migration (NIC-70 AC-12)
 - `Migration impact:` — which schema migrations run on upgrade (`none` when it adds
   no migration).
 
-## [Unreleased]
+## [1.0.0] -2026-08-10
 
 ### Added
 
