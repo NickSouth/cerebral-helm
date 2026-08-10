@@ -19,22 +19,19 @@ struct Backup: ParsableCommand {
         _ = try operationalDatabase(paths)
 
         let now = Date()
-        let destination = paths.backupsDirectory.appendingPathComponent(Self.token(now), isDirectory: true)
+        let destination = paths.backupsDirectory
+            .appendingPathComponent(BackupRetention.token(now), isDirectory: true)
         let service = makeBackupService(paths)
         let manifest = try service.createBackup(into: destination, now: now)
         try service.verify(at: destination)
+        // A manual backup prunes on the same policy as the automatic pre-migration
+        // one, so `backups/` has a single bound however snapshots were created.
+        try? BackupRetention.prune(paths.backupsDirectory)
 
         if options.json {
             print("{\"backedUp\":true,\"path\":\"\(destination.path)\",\"notes\":\(manifest.knowledge.count)}")
         } else {
             print("Backed up and verified \(manifest.knowledge.count) note(s) to \(destination.path).")
         }
-    }
-
-    /// A filesystem-safe timestamp for the backup directory name, e.g. `20260628T170000Z`.
-    private static func token(_ instant: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: instant).replacingOccurrences(of: ":", with: "")
     }
 }

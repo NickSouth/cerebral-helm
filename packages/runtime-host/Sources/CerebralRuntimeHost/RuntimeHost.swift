@@ -125,10 +125,54 @@ public func makeCommandRuntime(
 
 /// Opens and migrates the operational SQLite database (ADR-006). The database and
 /// migrator are idempotent, so every invocation is a cheap no-op once current.
+///
+/// When migrations *are* pending, a verified backup is taken first and a backup
+/// failure blocks the migration (FR-UPD-04, NIC-95). This is the right place for
+/// that gate because it is the single chokepoint every surface opens the database
+/// through — the macOS app at launch, the CLI, and each `make*Store` helper — so
+/// no path can reach a schema write without passing it.
 public func operationalDatabase(_ paths: WorkspacePaths) throws -> SQLiteDatabase {
     let database = try SQLiteDatabase(location: .file(paths.operationalDatabasePath))
-    try SchemaMigrator().migrate(database)
+    try BackupGatedMigration.migrate(database) {
+        try backUpBeforeMigration(paths, database: database)
+    }
     return database
+}
+
+/// Creates and verifies the pre-migration snapshot, then prunes old ones.
+///
+/// The knowledge root is read from the *unmigrated* database with `try?`: a
+/// re-pointed root (NIC-138) should be what gets backed up, but an older schema
+/// may predate the settings table entirely, and failing to read a preference must
+/// never be the reason a backup does not happen. Falling back to the environment
+/// default is always safe — worst case the manifest covers the wrong root, which
+/// is caught by verification rather than silently accepted.
+///
+/// Pruning is `try?` on purpose: housekeeping must not block a migration that has
+/// already produced a verified backup.
+private func backUpBeforeMigration(_ paths: WorkspacePaths, database: SQLiteDatabase) throws {
+    // First run: every table this app owns is created by a migration, so a database
+    // with nothing applied yet holds no user data and there is nothing to protect.
+    // Skipping keeps a fresh install from minting an empty snapshot that would read
+    // as a real recovery point.
+    if (try? SchemaMigrator().appliedMigrations(database))?.isEmpty ?? true { return }
+
+    let stored = try? SQLiteSettingsStore(database: database).load()
+    let service = BackupService(
+        databasePath: paths.operationalDatabasePath,
+        configFiles: [paths.activeConfigPath, paths.settingsMetadataPath],
+        overridesDirectory: paths.overridesDirectory,
+        knowledgeRoot: EffectiveSettings.knowledgeRootURL(
+            reference: stored?.knowledgeRootReference, default: paths.knowledgeRoot
+        )
+    )
+
+    let now = Date()
+    let destination = paths.backupsDirectory
+        .appendingPathComponent(BackupRetention.token(now), isDirectory: true)
+    try service.createBackup(into: destination, now: now)
+    try service.verify(at: destination)
+    try? BackupRetention.prune(paths.backupsDirectory)
 }
 
 /// The durable knowledge service over the effective knowledge root and the
