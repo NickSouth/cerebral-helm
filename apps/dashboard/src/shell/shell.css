@@ -5161,15 +5161,19 @@ button.deadline-row__open:not(:disabled):hover {
   z-index: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  /* 40% used to sit here so the first and last rows could reach the wheel's centre line. Two
-     things were wrong with it. A percentage padding resolves against the container's WIDTH even on
-     the block axis — the same width-for-a-vertical-measurement mistake as the strand width and the
-     line thickness — so it had no relationship to the height it was insetting. And at 264x640 it
-     ate 256 of 600 usable pixels: only ~8 rows could ever be on screen where 14 fit, and the list
-     did not overflow (so did not scroll) until you had nine windows open.
-     The pose already fades rows by their distance from centre, so a row starting at the centre was
-     a nicety; being able to see your windows and scroll them is not. */
-  padding: var(--ch-space-4) var(--ch-space-3);
+  padding-inline: var(--ch-space-3);
+  /* Only the resting value. The block axis is the wheel's end gutters — half a viewport less half a
+     row, so any row can be brought to the centre line where it is flat, opaque and largest — and
+     `useWheelPose` writes it from the same box it measures for `mid`/`reach` (see the note there for
+     why the two cannot be split). It clears this back to the resting value under reduced motion,
+     where there is no centre line to reach.
+     `40%` used to sit here to do the same job in CSS, and could not: a percentage padding resolves
+     against the container's WIDTH even on the block axis — the same width-for-a-vertical-measurement
+     mistake as the strand width and the line thickness — so it had no relationship to the height it
+     was insetting. At 264x640 it ate 256 of 600 usable pixels. Removing it fixed that and cost the
+     wheel its point: with the rows pinned to the top, the first one could never reach the centre,
+     and a list that fit (~14 rows) did not overflow at all, so the surface did not scroll. */
+  padding-block: var(--ch-space-4);
   display: flex;
   flex-direction: column;
   gap: var(--ch-space-2);
