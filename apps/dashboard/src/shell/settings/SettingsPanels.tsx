@@ -1237,6 +1237,7 @@ function CalendarModeMapField() {
 
   return (
     <Field
+      stack
       label="Calendar → mode"
       hint="Map each calendar to a mode so the Today panel shows the right events per mode. Unmapped calendars show under Executive. Tip: add #executive, #developer, #school, or #entertainment to an event's notes to override per event."
     >
