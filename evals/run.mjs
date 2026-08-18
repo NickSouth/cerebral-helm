@@ -185,6 +185,13 @@ async function main() {
   if (options.case) cases = cases.filter((entry) => entry.id === options.case);
   if (!cases.length) throw new Error("No cases matched the given filters.");
 
+  // Group by allowlist so each manifest is prefilled once and then stays warm.
+  // Case order is otherwise by category, which alternates allowlists almost every
+  // case and thrashes the runtime's prefix cache — observed dropping a 1,819-token
+  // cached prefix to 345 and re-prefilling 1,492 tokens on a single request.
+  // Ordering does not affect scoring: cases are independent and stateless.
+  cases = [...cases].sort((a, b) => (a.allowlist ?? "").localeCompare(b.allowlist ?? ""));
+
   console.log(
     `${cases.length} cases · runtime ${options.runtime} · allowlist ${options.allowlist} · ` +
       `descriptions ${options.descriptions} · ${catalog.length} tools in catalog`
@@ -195,6 +202,11 @@ async function main() {
     console.log(`\nrunning ${model}...`);
     const rows = await runModel(model, cases, catalog, options);
     results[model] = { stats: report(model, rows), rows };
+
+    // Evict before the next model loads. Without this, a two-model comparison holds
+    // both resident and oversubscribes memory — see ollamaUnload. Every model is
+    // unloaded, including the last, so a run leaves the machine as it found it.
+    await RUNTIMES[options.runtime].unload?.(model);
   }
 
   if (options.models.length > 1) {

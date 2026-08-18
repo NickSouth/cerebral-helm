@@ -38,6 +38,25 @@ node evals/run.mjs --model=muse-glimmer:30b-mlx,qwen3.6:35b-mlx --json=/tmp/eval
 | `--case` | a case id | Single case, for diagnosis. |
 | `--runtime` | `ollama` | Adapter to use. llama.cpp (for GBNF grammar-constrained decoding) is the next one owed. |
 
+## Talking to it directly
+
+```bash
+node evals/chat.mjs
+```
+
+A streaming REPL that talks to the model as Heimlich, with the real system prompt
+and the real tool manifest. **Tools are never executed** — a proposed call is
+printed with its arguments and answered with an accepted-but-not-run stub, which
+is the same boundary the runtime enforces and the most informative thing to watch.
+
+`--allowlist=knowledge` for a scoped-agent-sized manifest, `--tools=none` for plain
+conversation, `--model=` to switch, `--context=` to change the window. `/reset`
+clears history, `/tools` lists them, `/quit` exits and unloads the model.
+
+It streams because whole-turn latency is the wrong number for perceived speed:
+15 seconds of silence and 15 seconds of visible typing feel nothing alike. Each
+turn reports time-to-first-token separately for that reason.
+
 ## What it measures
 
 Four questions, each mapping to a case category:
