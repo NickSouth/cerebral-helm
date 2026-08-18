@@ -55,7 +55,7 @@
               "state": "ready",
               "headline": "2 active",
               "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" },
-              "data": { "items": [{ "name": "Quarterly planning", "status": "in-progress" }, { "name": "Board prep", "status": "review" }] },
+              "data": { "items": [{ "id": "quarterly-planning", "name": "Quarterly planning", "path": "/Users/x/Projects/QuarterlyPlanning", "descriptorPath": "/Users/x/Projects/QuarterlyPlanning/PROJECT.md", "hasDescriptor": true }, { "id": "board-prep", "name": "Board prep", "path": "/Users/x/Projects/BoardPrep", "hasDescriptor": false }] },
               "action": { "id": "review-projects", "label": "Review projects" }
             }
           }
@@ -696,7 +696,7 @@
           "news": { "state": "ready", "headlines": [{ "id": "news-rates", "title": "Central bank holds rates steady", "source": "Finance Daily", "url": "https://example.com/rates-steady" }] },
           "widgets": {
             "left": { "widgetId": "stocks", "state": "ready", "headline": "Markets up modestly", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "2m ago" }, "data": { "items": [{ "symbol": "SPY", "price": 543.21, "change": 3.24, "changePercent": 0.6 }] } },
-            "right": { "widgetId": "projects", "state": "ready", "headline": "2 active", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" }, "data": { "items": [{ "name": "Quarterly planning", "status": "in-progress" }] } }
+            "right": { "widgetId": "projects", "state": "ready", "headline": "2 active", "freshness": { "observedAt": "2026-06-23T16:11:00.000Z", "label": "1m ago" }, "data": { "items": [{ "id": "quarterly-planning", "name": "Quarterly planning", "path": "/Users/x/Projects/QuarterlyPlanning", "descriptorPath": "/Users/x/Projects/QuarterlyPlanning/PROJECT.md", "hasDescriptor": true }] } }
           }
         }
       },
