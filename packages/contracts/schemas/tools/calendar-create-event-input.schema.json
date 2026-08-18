@@ -8,14 +8,17 @@
   "required": ["title", "startsAt", "endsAt"],
   "properties": {
     "title": {
+      "description": "The event's title, as it will appear in the calendar.",
       "type": "string",
       "minLength": 1
     },
     "startsAt": {
+      "description": "Local wall-clock start time, `YYYY-MM-DDTHH:MM` (seconds optional). NOT UTC and never carries a timezone offset or trailing `Z` — the time the user said is the time that is meant, and the host resolves it in its own zone. If the user gave a relative time (\"tomorrow at noon\") resolve it against the current local date; if the date is genuinely unclear, ask rather than guessing.",
       "type": "string",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2})?$"
     },
     "endsAt": {
+      "description": "Local wall-clock end time in the same format as `startsAt`, and after it. When the user gave a duration rather than an end time, add it to the start; when they gave neither, a one-hour default is reasonable.",
       "type": "string",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2})?$"
     },

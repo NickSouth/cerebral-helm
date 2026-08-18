@@ -7,6 +7,7 @@
   "required": ["modeId"],
   "properties": {
     "modeId": {
+      "description": "The id of a configured mode, from the mode catalog — the working context to switch to. Modes are defined in validated configuration rather than fixed in code, so the set of valid ids comes from the caller's configuration and is not enumerable here. If the user's words do not clearly name a configured mode, ask rather than guessing.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$",
       "minLength": 1

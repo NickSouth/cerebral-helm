@@ -8,6 +8,7 @@
   "description": "Property names are prefixed because the code generator derives type names from property names: a bare `name`/`description` would mint or steal a generic type across the whole shared module.",
   "properties": {
     "playlistName": {
+      "description": "The playlist's name, as it will appear in Spotify.",
       "type": "string",
       "minLength": 1
     },
