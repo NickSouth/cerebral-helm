@@ -8,6 +8,7 @@
   "description": "Property names are prefixed because the code generator derives type names from property names: a bare `title`/`description`/`priority` would mint or steal a generic type across the whole shared module.",
   "properties": {
     "issueTitle": {
+      "description": "The issue's one-line title, as it appears in Linear.",
       "type": "string",
       "minLength": 1
     },

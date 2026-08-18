@@ -7,6 +7,7 @@
   "required": ["appId"],
   "properties": {
     "appId": {
+      "description": "The id of a CONFIGURED application reference, from the app reference catalog — not an application's display name, bundle identifier, or filesystem path. Valid ids are supplied by the caller's reference catalog; there is no way to derive one from the user's words alone. If the user names an app that does not resolve to a known id, ask which one they mean rather than guessing an id — an invented id fails, and a wrong one opens the wrong application.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$",
       "minLength": 1

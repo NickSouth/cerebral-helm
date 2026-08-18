@@ -5474,6 +5474,12 @@ public extension ScoreboardSide {
 
 // MARK: - CerebralHelmAppOpenInput
 public struct CerebralHelmAppOpenInput: Codable {
+    /// The id of a CONFIGURED application reference, from the app reference catalog — not an
+    /// application's display name, bundle identifier, or filesystem path. Valid ids are supplied
+    /// by the caller's reference catalog; there is no way to derive one from the user's words
+    /// alone. If the user names an app that does not resolve to a known id, ask which one they
+    /// mean rather than guessing an id — an invented id fails, and a wrong one opens the wrong
+    /// application.
     public let appID: String
 
     public enum CodingKeys: String, CodingKey {
@@ -5964,9 +5970,18 @@ public struct CerebralHelmCalendarCreateEventInput: Codable {
     /// Which calendar to write to. Omitted uses the host's default calendar — never a guess at
     /// which one the user meant.
     public let calendarID: String?
+    /// Local wall-clock end time in the same format as `startsAt`, and after it. When the user
+    /// gave a duration rather than an end time, add it to the start; when they gave neither, a
+    /// one-hour default is reasonable.
     public let endsAt: String
     public let location, notes: String?
+    /// Local wall-clock start time, `YYYY-MM-DDTHH:MM` (seconds optional). NOT UTC and never
+    /// carries a timezone offset or trailing `Z` — the time the user said is the time that is
+    /// meant, and the host resolves it in its own zone. If the user gave a relative time
+    /// ("tomorrow at noon") resolve it against the current local date; if the date is genuinely
+    /// unclear, ask rather than guessing.
     public let startsAt: String
+    /// The event's title, as it will appear in the calendar.
     public let title: String
 
     public enum CodingKeys: String, CodingKey {
@@ -7131,6 +7146,11 @@ public extension CerebralHelmGoogleSearchOutput {
 
 // MARK: - CerebralHelmHookRunInput
 public struct CerebralHelmHookRunInput: Codable {
+    /// The id of a CONFIGURED, allowlisted hook, from the hook catalog. This is never shell
+    /// text, a command line, a script path, or an executable name — the hook's contents are
+    /// fixed in configuration and only its id is selected here, so no command the caller
+    /// composes can be run. If the user's words do not resolve to a known hook id, ask rather
+    /// than guessing.
     public let hookID: String
 
     public enum CodingKeys: String, CodingKey {
@@ -7268,6 +7288,7 @@ public struct CerebralHelmLinearCreateIssueInput: Codable {
     public let issueDescription: String?
     /// Linear's priority scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low.
     public let issuePriority: Int?
+    /// The issue's one-line title, as it appears in Linear.
     public let issueTitle: String
     /// Optional labels. A list because Linear issues carry several, and because that is how the
     /// labels are actually used here — an issue is routinely both a category and a status.
@@ -7639,6 +7660,10 @@ public extension CerebralHelmMessagesSendOutput {
 
 // MARK: - CerebralHelmModeApplyInput
 public struct CerebralHelmModeApplyInput: Codable {
+    /// The id of a configured mode, from the mode catalog — the working context to switch to.
+    /// Modes are defined in validated configuration rather than fixed in code, so the set of
+    /// valid ids comes from the caller's configuration and is not enumerable here. If the user's
+    /// words do not clearly name a configured mode, ask rather than guessing.
     public let modeID: String
 
     public enum CodingKeys: String, CodingKey {
@@ -7954,10 +7979,20 @@ public enum CerebralHelmNetworkSpeedTestOutputStatus: String, Codable {
 
 // MARK: - CerebralHelmNoteCaptureInput
 public struct CerebralHelmNoteCaptureInput: Codable {
+    /// The note's Markdown content. May be empty for a title-only capture.
     public let body: String
+    /// A short lowercase-hyphenated classifier stored in the note's frontmatter so notes can be
+    /// filtered later. The vocabulary is deliberately OPEN — there is no fixed list, and no
+    /// value is rejected for being unfamiliar. Prefer reusing a kind already used elsewhere in
+    /// the user's notes; when nothing more specific fits, use `note`. Never omit this or block
+    /// on it: an imperfect classifier is recoverable, a failed capture loses the user's thought.
     public let kind: String
+    /// Optional project slug to file the note under. Omit unless the user named a project —
+    /// inventing one misfiles the note.
     public let project: String?
     public let sensitivity: Sensitivity?
+    /// The note's title, used as its heading and to derive its filename. Take the user's own
+    /// words where they gave a title; otherwise write a short descriptive one.
     public let title: String
 
     public init(body: String, kind: String, project: String?, sensitivity: Sensitivity?, title: String) {
@@ -8558,6 +8593,9 @@ public extension CerebralHelmNoteReadOutput {
 // MARK: - CerebralHelmNoteSearchInput
 public struct CerebralHelmNoteSearchInput: Codable {
     public let limit: Int?
+    /// Free text matched against note titles, metadata, and Markdown content. Use the user's own
+    /// search terms; this is a literal text match, not a semantic one, so paraphrasing the
+    /// user's wording reduces the chance of a hit.
     public let query: String
 
     public init(limit: Int?, query: String) {
@@ -9095,6 +9133,7 @@ public struct CerebralHelmSpotifyCreatePlaylistInput: Codable {
     /// Spotify's own API defaults this to true, and silently publishing something to someone's
     /// profile is not a default worth inheriting.
     public let playlistIsPublic: Bool?
+    /// The playlist's name, as it will appear in Spotify.
     public let playlistName: String
 
     public init(playlistDescription: String?, playlistIsPublic: Bool?, playlistName: String) {
@@ -10063,6 +10102,10 @@ public extension CerebralHelmToolResultError {
 
 // MARK: - CerebralHelmURLOpenInput
 public struct CerebralHelmURLOpenInput: Codable {
+    /// The id of a CONFIGURED URL reference, from the URL reference catalog — never a literal
+    /// web address. To open an arbitrary https address the user supplied, use `web.open`
+    /// instead; this tool only opens destinations that were configured ahead of time. If the
+    /// user's words do not resolve to a known id, ask rather than guessing.
     public let urlID: String
 
     public enum CodingKeys: String, CodingKey {
@@ -10292,6 +10335,8 @@ public extension CerebralHelmWebOpenOutput {
 /// workflow step; the future layout mode builds on this same tool.
 // MARK: - CerebralHelmWindowArrangeInput
 public struct CerebralHelmWindowArrangeInput: Codable {
+    /// The windows to place, one entry per application, applied in order. At most eight; an
+    /// application named twice is placed twice, so list each one once.
     public let arrangement: [Arrangement]
     /// Which display the whole arrangement targets (NIC-142 layout mode). Absent or 'primary'
     /// targets the primary display; 'secondary' targets the first non-primary display, degrading
@@ -10348,6 +10393,9 @@ public extension CerebralHelmWindowArrangeInput {
 
 // MARK: - Arrangement
 public struct Arrangement: Codable {
+    /// The id of a CONFIGURED application reference, from the same catalog `app.open` uses — not
+    /// a display name, bundle identifier, or path. If the user's words do not resolve to a known
+    /// id, ask rather than guessing.
     public let appID: String
     public let frame: Frame
 

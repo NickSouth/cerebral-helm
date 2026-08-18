@@ -195,6 +195,18 @@ function prefersReducedMotion(): boolean {
  * `animation-timeline` may well be available in this WebKit, and if it is this becomes a few
  * declarative lines. Worth confirming on the Mac host before relying on it.
  *
+ * **This also owns the wheel's end gutters**, and deliberately so: the centre line is the wheel's
+ * reading position — the one place a row is flat, opaque and full size — and *every* row has to be
+ * able to arrive there, including the first and the last. That takes half a viewport of empty space
+ * at each end, measured against the same box this function already measures for `mid`/`reach`. Split
+ * across two owners (CSS sizing the gutter, JS placing the centre line) the two drift and a row can
+ * never quite reach the position the pose rewards; the previous `padding: 40%` was exactly that,
+ * resolving a block-axis inset against the container's WIDTH.
+ *
+ * Padding rather than spacer elements (owner's suggestion, 2026-08-10): identical geometry, but a
+ * spacer would be a `.win-nav__scroll > *` child — posed as a row, spaced by the flex `gap`, and
+ * present in the accessibility tree — for a gap that is pure whitespace.
+ *
  * Skipped entirely under reduced motion: the rows keep their natural flat layout, which is the
  * honest equivalent and avoids animating a surface someone asked to hold still.
  */
@@ -210,6 +222,9 @@ function useWheelPose(
     const rows = () => [...scroller.children] as HTMLElement[];
     if (!enabled) {
       // Clear anything a previous run left behind, so turning motion off restores a flat list.
+      // The gutters go with the pose: with no wheel there is no centre line to reach, and a flat
+      // list that opens half-empty would be a costume rather than a behaviour.
+      scroller.style.paddingBlock = "";
       for (const row of rows()) {
         row.style.transform = "";
         row.style.opacity = "";
@@ -218,12 +233,43 @@ function useWheelPose(
     }
 
     let frame = 0;
+    // The last gutter written, so a per-frame scroll pose only touches layout when the value
+    // actually moves (a resize, or the row height changing).
+    let gutter = "";
+
+    /**
+     * Half a viewport of empty space at each end, less half a row — so the first row starts on the
+     * centre line and the last row can still get there.
+     *
+     * `clientHeight` is the padding box, fixed by flexbox here and therefore independent of the
+     * padding written into it — this measures the same number before and after it writes. The
+     * `ResizeObserver` below does still fire (it watches the content box, which the padding shrinks),
+     * so the write costs one extra pose; because the measurement is stable that pose computes the
+     * same value, the guard above drops it, and it settles rather than oscillating.
+     * `offsetHeight` is likewise a layout measurement, unaffected by the transforms on the row.
+     */
+    const centreGutters = (first: HTMLElement | undefined) => {
+      if (!first) {
+        return;
+      }
+      const inset = Math.max(0, (scroller.clientHeight - first.offsetHeight) / 2);
+      const next = `${inset.toFixed(1)}px`;
+      if (next === gutter) {
+        return;
+      }
+      gutter = next;
+      scroller.style.paddingBlock = next;
+    };
+
     const pose = () => {
       frame = 0;
       const box = scroller.getBoundingClientRect();
       if (!box.height) {
         return;
       }
+      // Before the rows are measured: this moves every one of them. The scroller's own border box
+      // is unchanged by its padding, so `mid` and `reach` hold either way.
+      centreGutters(rows()[0]);
       const mid = box.top + box.height / 2;
       const reach = box.height / 2;
       for (const row of rows()) {
@@ -262,6 +308,9 @@ function useWheelPose(
       scroller.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
       observer?.disconnect();
+      // The gutters are this effect's inline write; leaving them behind would strand a stylesheet
+      // rule the stylesheet does not know about.
+      scroller.style.paddingBlock = "";
     };
   }, [scrollRef, enabled, deps]);
 }

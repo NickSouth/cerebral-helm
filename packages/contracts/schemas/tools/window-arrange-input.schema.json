@@ -13,6 +13,7 @@
       "enum": ["primary", "secondary"]
     },
     "arrangement": {
+      "description": "The windows to place, one entry per application, applied in order. At most eight; an application named twice is placed twice, so list each one once.",
       "type": "array",
       "minItems": 1,
       "maxItems": 8,
@@ -22,6 +23,7 @@
         "required": ["appId", "frame"],
         "properties": {
           "appId": {
+            "description": "The id of a CONFIGURED application reference, from the same catalog `app.open` uses — not a display name, bundle identifier, or path. If the user's words do not resolve to a known id, ask rather than guessing.",
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]*$",
             "minLength": 1

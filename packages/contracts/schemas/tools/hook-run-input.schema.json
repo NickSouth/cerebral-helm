@@ -7,6 +7,7 @@
   "required": ["hookId"],
   "properties": {
     "hookId": {
+      "description": "The id of a CONFIGURED, allowlisted hook, from the hook catalog. This is never shell text, a command line, a script path, or an executable name — the hook's contents are fixed in configuration and only its id is selected here, so no command the caller composes can be run. If the user's words do not resolve to a known hook id, ask rather than guessing.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$",
       "minLength": 1

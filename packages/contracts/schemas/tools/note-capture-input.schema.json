@@ -7,18 +7,23 @@
   "required": ["title", "body", "kind"],
   "properties": {
     "title": {
+      "description": "The note's title, used as its heading and to derive its filename. Take the user's own words where they gave a title; otherwise write a short descriptive one.",
       "type": "string",
       "minLength": 1
     },
     "body": {
+      "description": "The note's Markdown content. May be empty for a title-only capture.",
       "type": "string"
     },
     "kind": {
+      "description": "A short lowercase-hyphenated classifier stored in the note's frontmatter so notes can be filtered later. The vocabulary is deliberately OPEN — there is no fixed list, and no value is rejected for being unfamiliar. Prefer reusing a kind already used elsewhere in the user's notes; when nothing more specific fits, use `note`. Never omit this or block on it: an imperfect classifier is recoverable, a failed capture loses the user's thought.",
+      "examples": ["note", "idea", "meeting", "reference", "task", "journal"],
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$",
       "minLength": 1
     },
     "project": {
+      "description": "Optional project slug to file the note under. Omit unless the user named a project — inventing one misfiles the note.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$",
       "minLength": 1

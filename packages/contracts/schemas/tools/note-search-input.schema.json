@@ -7,6 +7,7 @@
   "required": ["query"],
   "properties": {
     "query": {
+      "description": "Free text matched against note titles, metadata, and Markdown content. Use the user's own search terms; this is a literal text match, not a semantic one, so paraphrasing the user's wording reduces the chance of a hit.",
       "type": "string",
       "minLength": 1
     },

@@ -1350,6 +1350,14 @@ export interface ScoreboardSide {
 }
 
 export interface CerebralHelmAppOpenInput {
+    /**
+     * The id of a CONFIGURED application reference, from the app reference catalog — not an
+     * application's display name, bundle identifier, or filesystem path. Valid ids are supplied
+     * by the caller's reference catalog; there is no way to derive one from the user's words
+     * alone. If the user names an app that does not resolve to a known id, ask which one they
+     * mean rather than guessing an id — an invented id fails, and a wrong one opens the wrong
+     * application.
+     */
     appId: string;
 }
 
@@ -1419,11 +1427,26 @@ export interface CerebralHelmCalendarCreateEventInput {
      * which one the user meant.
      */
     calendarId?: string;
-    endsAt:      string;
-    location?:   string;
-    notes?:      string;
-    startsAt:    string;
-    title:       string;
+    /**
+     * Local wall-clock end time in the same format as `startsAt`, and after it. When the user
+     * gave a duration rather than an end time, add it to the start; when they gave neither, a
+     * one-hour default is reasonable.
+     */
+    endsAt:    string;
+    location?: string;
+    notes?:    string;
+    /**
+     * Local wall-clock start time, `YYYY-MM-DDTHH:MM` (seconds optional). NOT UTC and never
+     * carries a timezone offset or trailing `Z` — the time the user said is the time that is
+     * meant, and the host resolves it in its own zone. If the user gave a relative time
+     * ("tomorrow at noon") resolve it against the current local date; if the date is genuinely
+     * unclear, ask rather than guessing.
+     */
+    startsAt: string;
+    /**
+     * The event's title, as it will appear in the calendar.
+     */
+    title: string;
 }
 
 export interface CerebralHelmCalendarCreateEventOutput {
@@ -1646,6 +1669,13 @@ export interface CerebralHelmGoogleSearchOutput {
 }
 
 export interface CerebralHelmHookRunInput {
+    /**
+     * The id of a CONFIGURED, allowlisted hook, from the hook catalog. This is never shell
+     * text, a command line, a script path, or an executable name — the hook's contents are
+     * fixed in configuration and only its id is selected here, so no command the caller
+     * composes can be run. If the user's words do not resolve to a known hook id, ask rather
+     * than guessing.
+     */
     hookId: string;
 }
 
@@ -1673,7 +1703,10 @@ export interface CerebralHelmLinearCreateIssueInput {
      * Linear's priority scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low.
      */
     issuePriority?: number;
-    issueTitle:     string;
+    /**
+     * The issue's one-line title, as it appears in Linear.
+     */
+    issueTitle: string;
     /**
      * Optional labels. A list because Linear issues carry several, and because that is how the
      * labels are actually used here — an issue is routinely both a category and a status.
@@ -1768,6 +1801,12 @@ export interface CerebralHelmMessagesSendOutput {
 }
 
 export interface CerebralHelmModeApplyInput {
+    /**
+     * The id of a configured mode, from the mode catalog — the working context to switch to.
+     * Modes are defined in validated configuration rather than fixed in code, so the set of
+     * valid ids comes from the caller's configuration and is not enumerable here. If the user's
+     * words do not clearly name a configured mode, ask rather than guessing.
+     */
     modeId: string;
 }
 
@@ -1832,11 +1871,29 @@ export enum CerebralHelmNetworkSpeedTestOutputStatus {
 }
 
 export interface CerebralHelmNoteCaptureInput {
-    body:         string;
-    kind:         string;
+    /**
+     * The note's Markdown content. May be empty for a title-only capture.
+     */
+    body: string;
+    /**
+     * A short lowercase-hyphenated classifier stored in the note's frontmatter so notes can be
+     * filtered later. The vocabulary is deliberately OPEN — there is no fixed list, and no
+     * value is rejected for being unfamiliar. Prefer reusing a kind already used elsewhere in
+     * the user's notes; when nothing more specific fits, use `note`. Never omit this or block
+     * on it: an imperfect classifier is recoverable, a failed capture loses the user's thought.
+     */
+    kind: string;
+    /**
+     * Optional project slug to file the note under. Omit unless the user named a project —
+     * inventing one misfiles the note.
+     */
     project?:     string;
     sensitivity?: Sensitivity;
-    title:        string;
+    /**
+     * The note's title, used as its heading and to derive its filename. Take the user's own
+     * words where they gave a title; otherwise write a short descriptive one.
+     */
+    title: string;
 }
 
 export interface CerebralHelmNoteCaptureOutput {
@@ -2001,7 +2058,12 @@ export interface CerebralHelmNoteReadOutput {
 
 export interface CerebralHelmNoteSearchInput {
     limit?: number;
-    query:  string;
+    /**
+     * Free text matched against note titles, metadata, and Markdown content. Use the user's own
+     * search terms; this is a literal text match, not a semantic one, so paraphrasing the
+     * user's wording reduces the chance of a hit.
+     */
+    query: string;
 }
 
 export interface CerebralHelmNoteSearchOutput {
@@ -2120,7 +2182,10 @@ export interface CerebralHelmSpotifyCreatePlaylistInput {
      * profile is not a default worth inheriting.
      */
     playlistIsPublic?: boolean;
-    playlistName:      string;
+    /**
+     * The playlist's name, as it will appear in Spotify.
+     */
+    playlistName: string;
 }
 
 export interface CerebralHelmSpotifyCreatePlaylistOutput {
@@ -2313,6 +2378,12 @@ export interface CerebralHelmToolResultError {
 }
 
 export interface CerebralHelmURLOpenInput {
+    /**
+     * The id of a CONFIGURED URL reference, from the URL reference catalog — never a literal
+     * web address. To open an arbitrary https address the user supplied, use `web.open`
+     * instead; this tool only opens destinations that were configured ahead of time. If the
+     * user's words do not resolve to a known id, ask rather than guessing.
+     */
     urlId: string;
 }
 
@@ -2349,6 +2420,10 @@ export interface CerebralHelmWebOpenOutput {
  * workflow step; the future layout mode builds on this same tool.
  */
 export interface CerebralHelmWindowArrangeInput {
+    /**
+     * The windows to place, one entry per application, applied in order. At most eight; an
+     * application named twice is placed twice, so list each one once.
+     */
     arrangement: Arrangement[];
     /**
      * Which display the whole arrangement targets (NIC-142 layout mode). Absent or 'primary'
@@ -2360,6 +2435,11 @@ export interface CerebralHelmWindowArrangeInput {
 }
 
 export interface Arrangement {
+    /**
+     * The id of a CONFIGURED application reference, from the same catalog `app.open` uses — not
+     * a display name, bundle identifier, or path. If the user's words do not resolve to a known
+     * id, ask rather than guessing.
+     */
     appId: string;
     frame: Frame;
 }
