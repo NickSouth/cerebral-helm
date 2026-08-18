@@ -455,6 +455,28 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     expect(patches[0]).toEqual({ stocks: { tickers: ["SPY", "NVDA", "VTI", "TSLA"] } });
   });
 
+  /**
+   * NIC-222: by default a settings control is `flex: none` — sized at max-content and never
+   * allowed to shrink — so the ticker chips laid themselves out on a single line. Past ~12
+   * symbols that ran off the right edge of the panel and carried the field's own Save/Cancel
+   * buttons out of reach, since the panel only scrolls on Y.
+   *
+   * jsdom has no layout engine, so this asserts the stacked opt-in that gives `flex-wrap` a
+   * definite width to wrap against, not the wrapping itself — the pixels are a visual check.
+   * Dropping `stack` from the field is the regression this catches.
+   */
+  it("stacks the ticker field so a long list can wrap instead of overflowing (NIC-222)", async () => {
+    renderApp();
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const addInput = await within(dialog).findByLabelText("Add a stock ticker");
+    const field = addInput.closest(".settings-field") as HTMLElement;
+
+    expect(field.classList.contains("settings-field--stack")).toBe(true);
+  });
+
   it("maps a calendar to a mode and saves it through the settings path (NIC-126)", async () => {
     const { bridge } = renderApp();
     const patches: Array<Record<string, unknown>> = [];
@@ -485,6 +507,29 @@ describe("SettingsOverlay (E3 / NIC-63)", () => {
     // The untouched rows keep their own state rather than being reset by the whole-map write.
     expect((within(dialog).getByLabelText("Mode for School") as HTMLSelectElement).value).toBe("school");
     expect((within(dialog).getByLabelText("Mode for Personal") as HTMLSelectElement).value).toBe("");
+  });
+
+  /**
+   * The calendar map is stacked for the same reason as the ticker list (NIC-222): it is a
+   * growing, multi-row control rather than a single compact input, so it reads better given the
+   * full panel width than squeezed into the right-hand column.
+   *
+   * Unlike the ticker list this is a layout choice, not a bug fix — measured in the running app,
+   * the rows did NOT overflow the panel even at a 146-character calendar name, because the
+   * settings font is small enough that a realistic name still fits the row layout. Stacking does
+   * give `.settings-calendars__title`'s `text-overflow: ellipsis` a constrained width to act on
+   * if a name ever did grow past the panel, but that is headroom, not an observed failure.
+   */
+  it("stacks the calendar map for consistency with the ticker list (NIC-222)", async () => {
+    renderApp();
+
+    const dialog = openSettings();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Setup" }));
+
+    const workSelect = await within(dialog).findByLabelText("Mode for Work");
+    const field = workSelect.closest(".settings-field") as HTMLElement;
+
+    expect(field.classList.contains("settings-field--stack")).toBe(true);
   });
 
   it("shows the Canvas pairing token + last-scrape status and disconnects (NIC-132)", async () => {
