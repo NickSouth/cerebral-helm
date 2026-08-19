@@ -416,6 +416,44 @@ function validateAgent(document, relativePath, errors) {
   assert(typeof document.summary === "string", `${relativePath}: summary must be a string.`, errors);
 }
 
+// Model profiles (NIC-243 / ADR-009). The file is OPTIONAL: with no catalog the app runs
+// exactly as it does today, because no model is required for the product to work. What is
+// checked is the pair the JSON Schema cannot express on its own — a bounded residency needs an
+// idle window, and a non-bounded one must not carry a stale number that reads as meaningful.
+function validateModelProfiles(document, relativePath, errors) {
+  assert(typeof document.schemaVersion === "string", `${relativePath}: schemaVersion must be a string.`, errors);
+  assert(Array.isArray(document.modelProfiles), `${relativePath}: modelProfiles must be an array.`, errors);
+
+  const seen = new Set();
+  for (const profile of document.modelProfiles ?? []) {
+    const id = profile?.id;
+    assert(typeof id === "string", `${relativePath}: every profile needs an id.`, errors);
+    assert(!seen.has(id), `${relativePath}: profile "${id}" is configured more than once.`, errors);
+    seen.add(id);
+    assert(typeof profile?.modelId === "string", `${relativePath}: profile "${id}" must name a modelId.`, errors);
+    assert(typeof profile?.runtimeId === "string", `${relativePath}: profile "${id}" must name a runtimeId.`, errors);
+    assert(
+      Number.isInteger(profile?.contextTokens),
+      `${relativePath}: profile "${id}" must cap contextTokens — left unset a runtime allocates the model's full advertised window.`,
+      errors
+    );
+
+    if (profile?.residency === "bounded") {
+      assert(
+        Number.isInteger(profile?.residencyIdleSeconds),
+        `${relativePath}: profile "${id}" is bounded, so it must state residencyIdleSeconds.`,
+        errors
+      );
+    } else {
+      assert(
+        profile?.residencyIdleSeconds === undefined,
+        `${relativePath}: profile "${id}" is ${profile?.residency}, so residencyIdleSeconds does not apply.`,
+        errors
+      );
+    }
+  }
+}
+
 function validateTool(document, relativePath, errors) {
   assert(typeof document.id === "string", `${relativePath}: id must be a string.`, errors);
   assert(typeof document.risk === "string", `${relativePath}: risk must be a string.`, errors);
@@ -461,6 +499,8 @@ export function validateRepositoryConfig() {
   const agentFiles = collectJsonFiles(path.join(configRoot, "agents"));
   const toolFiles = collectJsonFiles(path.join(configRoot, "tools"));
   const descriptorFiles = collectJsonFiles(path.join(configRoot, "tools", "descriptors"));
+  const modelProfilesDir = path.join(configRoot, "models");
+  const modelProfileFiles = fs.existsSync(modelProfilesDir) ? collectJsonFiles(modelProfilesDir) : [];
   const workflowsDir = path.join(configRoot, "workflows");
   const workflowFiles = fs.existsSync(workflowsDir) ? collectJsonFiles(workflowsDir) : [];
   const simulationFiles = collectJsonFiles(path.join(fixtureRoot, "simulations"));
@@ -477,6 +517,10 @@ export function validateRepositoryConfig() {
 
   for (const filePath of toolFiles) {
     validateTool(readJson(filePath), path.relative(configRoot, filePath), errors);
+  }
+
+  for (const filePath of modelProfileFiles) {
+    validateModelProfiles(readJson(filePath), path.relative(configRoot, filePath), errors);
   }
 
   for (const filePath of simulationFiles) {
@@ -526,7 +570,8 @@ export function validateRepositoryConfig() {
     agentCount: agentFiles.length,
     toolCount: toolFiles.length,
     workflowCount: workflowFiles.length,
-    simulationCount: simulationFiles.length
+    simulationCount: simulationFiles.length,
+    modelProfileFileCount: modelProfileFiles.length
   };
 }
 
@@ -534,7 +579,7 @@ export function main() {
   const summary = validateRepositoryConfig();
 
   console.log(
-    `Validated ${summary.modeCount} modes, ${summary.agentCount} agents, ${summary.toolCount} tools, ${summary.workflowCount} workflows, and ${summary.simulationCount} simulations.`
+    `Validated ${summary.modeCount} modes, ${summary.agentCount} agents, ${summary.toolCount} tools, ${summary.workflowCount} workflows, ${summary.simulationCount} simulations, and ${summary.modelProfileFileCount} model-profile files.`
   );
   console.log(`Defaults file: ${summary.defaultsPath}`);
 }

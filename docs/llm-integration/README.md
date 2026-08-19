@@ -23,9 +23,10 @@ two disagree, PLAN.md and the charters win, and this file should be corrected.
 
 - **Phase 0 is underway.** `NIC-225`: ADR-009 is written and the `ModelProvider` port
   exists in `packages/core/Sources/CerebralCore/Model/` (`NIC-241`, 2026-08-18) — protocol,
-  request/usage types, `ModelDeadline`, `MockModelProvider`, 13 tests. Nothing calls it, by
-  design. Still unbuilt: the profile/lifecycle config (`NIC-243`) and the Ollama adapter
-  (`NIC-242`). Everything else in the milestone remains Backlog.
+  request/usage types, `ModelDeadline`, `MockModelProvider`. The profile catalog is configuration
+  (`NIC-243`): `config/models/profiles.json` + `model-profiles.schema.json`, resolved by
+  `ModelProfileCatalog`, optional everywhere. Nothing calls either, by design. Still unbuilt:
+  the Ollama adapter (`NIC-242`). Everything else in the milestone remains Backlog.
 - **Committed:** descriptor affordances on `fix/tool-descriptor-model-affordances`;
   plan, charters and eval harness on `feat/llm-eval-harness`. Both pushed, both
   awaiting merge to `dev`. Full `node scripts/test.mjs` green on the contract change.
@@ -234,6 +235,16 @@ run — swap contamination; re-measure on a clean boot.*
   between models**. A run went from ~12 to 30+ minutes.
 - **Unbounded `num_ctx` allocates the full advertised window** — 131K/262K — taking a
   21 GB model to 29 GB resident. Capping to 16K recovered ~6 GB.
+- **A new JSON Schema can rename an unrelated generated type.** Adding
+  `model-profiles.schema.json` gave quicktype a second `id` enum to name, so the system-status
+  metrics enum stopped being the bare `ID` and became `MetricElement` — breaking the build at
+  `PortableToolHandlers.swift`. The generated names are heuristic and positional; expect one
+  unrelated rename per schema that introduces a common property name, and check the build rather
+  than only the drift gate.
+- **Config families cost six gates, not five:** the JSON Schema, the shipped config, the Swift
+  `ConfigValidator`, `scripts/validate-config.mjs`, the fixture routing in
+  `scripts/validate-contracts.mjs` — *and* `scripts/contracts-config.test.mjs`, which pins the
+  exact set of config schema filenames and fails until the new one is registered.
 - **Cancelling an `AsyncThrowingStream` consumer terminates the stream, it does not throw
   through it.** So a cancelled completion arrives at the collector looking exactly like a
   truncated one, and the obvious implementation reports "the runtime returned corruption"

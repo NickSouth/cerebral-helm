@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "modelProfiles": [
+    {
+      "id": "balanced",
+      "modelId": "qwen3.6:35b-mlx",
+      "runtimeId": "ollama",
+      "contextTokens": 16384,
+      "residency": "pinned",
+      "thinking": false,
+      "riskClass": "read_only"
+    }
+  ]
+}
