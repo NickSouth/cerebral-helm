@@ -102,10 +102,10 @@ PLAN.md is owed the correction.
 6. **Long-term intent** (future compatibility, not current scope) → [`wiki/NORTH-STAR.md`](wiki/NORTH-STAR.md).
 7. **Hard architecture boundaries** → [`docs/architecture/repository-boundaries.md`](docs/architecture/repository-boundaries.md).
 8. **Key decisions** → [`docs/adr/README.md`](docs/adr/) is the index; read it rather than
-   any list here. ADR-001…008 exist: AppKit+WKWebView shell · single command lifecycle ·
+   any list here. ADR-001…009 exist: AppKit+WKWebView shell · single command lifecycle ·
    internal tool registry & risk policy · versioned bridge · vendored SQLite ·
    SQLite as sole operational-history source · Executive default mode · unsandboxed
-   Developer ID distribution. **Next free number is 009.**
+   Developer ID distribution · model provider port. **Next free number is 010.**
 9. **Programme plans** — read only the one you're working in → [`docs/llm-integration/`](docs/llm-integration/)
    · [`docs/quick-actions/PLAN.md`](docs/quick-actions/PLAN.md) · [`docs/widget-work-handoff.md`](docs/widget-work-handoff.md)
    · `docs/mvp-polish/` · `docs/pre-ui-frontend/` (historical). Ops/release →

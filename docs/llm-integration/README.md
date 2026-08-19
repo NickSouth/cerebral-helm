@@ -12,6 +12,7 @@ and benchmarking session that produced it.
 | [agents/](agents/) | Four agent charters — the six fields, protocols, state, open questions |
 | Linear milestone **CerebralHelm Local LLMs** | 16 epics, 76 pointed sub-issues, NIC-225 → NIC-317 |
 | `evals/README.md` | How to re-run every measurement below |
+| [ADR-009](../adr/ADR-009-model-provider-port.md) | The phase-0 decision: provider-neutral port, runtime abstraction, lifecycle ownership, local-first |
 
 **This file is a decision log and an index. It is not the architecture** — when the
 two disagree, PLAN.md and the charters win, and this file should be corrected.
@@ -20,8 +21,10 @@ two disagree, PLAN.md and the charters win, and this file should be corrected.
 
 ## Where things stand
 
-- **Nothing is built.** All 92 Linear issues are in Backlog. This was a planning and
-  benchmarking session; the only production change made was descriptor affordances.
+- **Phase 0 is underway.** `NIC-225` is In Progress and its first increment — ADR-009 —
+  is written (2026-08-18). No model-facing *code* exists yet: the port
+  (`NIC-241`), the profile/lifecycle config (`NIC-243`) and the Ollama adapter
+  (`NIC-242`) are still unbuilt. Everything else in the milestone remains Backlog.
 - **Committed:** descriptor affordances on `fix/tool-descriptor-model-affordances`;
   plan, charters and eval harness on `feat/llm-eval-harness`. Both pushed, both
   awaiting merge to `dev`. Full `node scripts/test.mjs` green on the contract change.
@@ -126,6 +129,25 @@ All 2026-08-11 unless noted. Each is a decision, not a suggestion.
 25. **The Research Analyst is the injection surface for the whole system** — it reads
     untrusted web content *and* writes into a vault every other agent reads.
     Mitigation is content provenance in frontmatter plus a retrieval trust filter.
+
+### Phase 0 — the provider port (owner, 2026-08-18)
+
+Recorded in full in [ADR-009](../adr/ADR-009-model-provider-port.md).
+
+30. **Capability profiles, not functional roles, are the configuration keys** —
+    `fast` / `balanced` / `deep` / `local`, per the tech stack's Model Profiles table.
+    This *overrides* the working assumption in PLAN.md, which speaks in per-model roles.
+    Each profile resolves to a model id, runtime id, `num_ctx` cap, residency directive
+    and thinking flag. `local` is reserved for surfaces that must never leave the machine
+    even if a cloud escape hatch is later enabled.
+31. **The Ollama concrete lives in `apps/mac/Sources/CerebralMacAdapters`**, alongside
+    every other provider concrete, rather than in the portable `packages/runtime-host`.
+    Known cost, accepted: the NDJSON stream parser is `#if canImport(AppKit)`-gated and
+    so is covered only by the macOS CI job, never `core-swift-linux`.
+32. **The resident-memory budget is advisory, not enforcing.** The measured figures are
+    documented beside the profile config; validation does not reject a configuration
+    that exceeds them. Nothing loads a model in phase 0, and the per-profile GB estimate
+    would drift with every model change. Revisit when a caller exists.
 
 ### Agents
 

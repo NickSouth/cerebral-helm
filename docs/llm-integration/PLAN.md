@@ -495,7 +495,7 @@ existing boundary rules. Streaming, cancellation, timeout, token accounting.
 Model lifecycle is a first-class concern here, not a footnote: three models at
 once is ~41 GB resident, so the port owns resident-vs-lazy-vs-evict.
 
-Nothing calls it yet. An ADR is owed (next free number: 005).
+Nothing calls it yet. The decision is recorded in [ADR-009](../adr/ADR-009-model-provider-port.md).
 
 ### Phase 1 — Passive tier: the LLM Composer
 
