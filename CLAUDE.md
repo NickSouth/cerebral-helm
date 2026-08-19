@@ -4,8 +4,11 @@ This file is auto-loaded into every session. It is a **router**, not a manual: i
 orients you fast and points at the authoritative source for each thing. Read the
 pointer, then read the source — do not assume the contents from here.
 
-> Adapted from `.agent/AGENTS.md`, which remains the longer-form companion. If the
-> two ever diverge, this file wins for day-to-day work; reconcile them.
+> `.agent/AGENTS.md` is the older long-form companion, last updated 2026-06-26. It
+> predates the move to macOS: its "Windows Swift Verification" section describes a
+> Windows/OneDrive machine that no longer exists, and it omits the JS/contract
+> gates, the design-spec pointers, and the code map below. **This file wins.**
+> Treat AGENTS.md as historical until someone reconciles it.
 
 ## What this is
 
@@ -16,44 +19,140 @@ knowledge system, and launcher for narrow tools and specialized agents. It is
 context-aware front door to the user's digital life. **Core principle: useful
 before intelligent.**
 
-The MVP builds the deterministic foundation first, on a Windows dev machine with
-mock adapters (no AppKit yet). Voice, mobile, models, integrations, and agents
-must **extend the same contracts**, never fork parallel systems.
+**v1.0.0 shipped 2026-08-10** (`CHANGELOG.md`) and is in daily personal use. It is a
+free-tier, personal-use app: signed with an Apple Development identity, never
+notarized, installed by copying to `/Applications`. The deterministic foundation is
+built — native AppKit + WKWebView shell, versioned bridge, mode engine, quick-action
+workflows, window management, knowledge vault, and ~20 live widget integrations.
+Voice, mobile, models, and agents must **extend the same contracts**, never fork
+parallel systems.
 
 Canonical vocabulary: Modes = Executive / Developer / School / Entertainment ·
 Agent surfaces = Research Analyst / Financial Advisor / Project Manager / System
-Janitor · Durable knowledge = Markdown + SQLite · Vector indexes = disposable and
-rebuildable.
+Janitor, **plus Heimlich himself as agent #5** — widest scope, a conversation
+surface and voice, *not* a separate system · Durable knowledge = Markdown + SQLite ·
+Vector indexes = disposable and rebuildable.
+
+## Current frontier
+
+> Keep this section current — it's the highest-value, fastest-stale pointer in the repo.
+
+- **The MVP is closed.** ~139 issues Done, zero open. `.agent/spec/MVP-PRD.md` is now
+  the record of what shipped and why, **not** a live scope gate. Don't reason about
+  "MVP scope" as though it were pending work.
+- **Two workstreams.** (1) Minor features and fixes on the shipped app — currently
+  NIC-224 (report rendering), NIC-223 (news interests), NIC-221 (Linear projects
+  widget). (2) **Local LLM integration** — the big one, see the next section.
+- **Branch flow:** feature branch → PR → `dev` → `prod`, both current as of
+  2026-08-18. No `v1.0.0` git tag was ever pushed, despite NIC-106 being closed.
+- **Live trap:** every Playwright visual baseline is `-win32`, there is no Windows box
+  and no Playwright CI job. The suite only *looks* green because it silently skips —
+  see Verification before installing browsers.
+- Resolved, no longer worth restating: the settings-read bridge op (`getSettings`)
+  exists; the app has a stable signing identity, so the Accessibility TCC re-grant
+  treadmill is gone; the mode-switch re-scope fully landed — no `enter-*` workflows
+  remain, and `config/workflows/open-*-layout.json` are ordinary quick actions.
+
+## LLM integration
+
+**Nothing model-facing is built.** All 92 issues (NIC-225 → NIC-317, Linear milestone
+*CerebralHelm Local LLMs*) are Backlog; 13 are pulled into the current cycle.
+
+**Any work touching models, agents, retrieval, or evals reads
+[`docs/llm-integration/README.md`](docs/llm-integration/README.md) first and keeps it
+updated as it goes** — it is the decision log and index, and the place a session's
+findings land so the next one never re-derives them.
+
+- Why a decision was made · what was measured · traps · where to start → that README.
+  It is *not* the architecture; PLAN.md and the charters win where they disagree.
+- Architecture, the three tiers, phase order → [`PLAN.md`](docs/llm-integration/PLAN.md).
+- One agent's persona, allowlist, state schema, protocols → [`agents/`](docs/llm-integration/agents/).
+- Does a model still drive this repo's real tools → [`evals/README.md`](evals/README.md).
+
+Invariants, before you open anything: three tiers, **one spine** — the passive tier
+composes prose *and proposals* and executes nothing; agents read through tools, the
+passive tier reads deterministically. **Models propose; risk classification and
+confirmation policy stay deterministic, outside the model, and absent from the
+model-facing manifest.** `ActionProvenance` may not be weakened. Agent memory is typed
+domain state, never freeform model notes. Descriptors — not prompts — are the lever
+for model accuracy, and every descriptor change owes an eval re-run.
+
+*Unmerged:* that README exists only on the working branch, and the descriptor-affordance
+commit (`ea666c1`, `fix/tool-descriptor-model-affordances`) is local-only and unpushed —
+yet every post-fix benchmark number in PLAN.md depends on it. *Known doc conflict:*
+README decision 20 (owner override — Heimlich MAY hold both `finance.*` and
+`web.search`) contradicts PLAN.md's recommendation. **The owner's override wins**;
+PLAN.md is owed the correction.
 
 ## Start here (orientation, cheapest first)
 
 1. **The user's latest explicit instruction** — always outranks everything below.
-2. **Scope & acceptance criteria** → [`.agent/spec/MVP-PRD.md`](.agent/spec/MVP-PRD.md). Controls *current* scope.
-3. **Approved stack & impl decisions** → [`.agent/spec/TECH-STACK.md`](.agent/spec/TECH-STACK.md).
-4. **UI/visual authority** → [`.agent/spec/CEREBRALHELM_DESIGN_SPEC.md`](.agent/spec/CEREBRALHELM_DESIGN_SPEC.md) + [`wiki/CerebralHelm-Visual-Design-Reference.pdf`](wiki/CerebralHelm-Visual-Design-Reference.pdf). **Precedence: the design spec beats the MVP-PRD for UI questions.** Day-to-day dashboard work reads the distilled [`.agent/spec/UI-CONSTITUTION.md`](.agent/spec/UI-CONSTITUTION.md) (tokens, grammar, per-increment checklist); the design spec still wins if they diverge.
-5. **Long-term intent (future compatibility, not current scope)** → [`wiki/NORTH-STAR.md`](wiki/NORTH-STAR.md).
-6. **Hard architecture boundaries** → [`docs/architecture/repository-boundaries.md`](docs/architecture/repository-boundaries.md).
-7. **Key decisions** → ADRs in [`docs/adr/`](docs/adr/): 001 AppKit+WKWebView shell · 002 single command lifecycle · 003 internal tool registry & risk policy · 004 versioned bridge.
+2. **Live scope & acceptance criteria** → Linear (NIC-xx), plus `docs/llm-integration/`
+   for the LLM programme.
+3. **What shipped and why** → [`.agent/spec/MVP-PRD.md`](.agent/spec/MVP-PRD.md) —
+   historical authority for MVP requirements, acceptance and release gates.
+4. **Stack baseline & impl decisions** → [`.agent/spec/TECH-STACK.md`](.agent/spec/TECH-STACK.md).
+   Only **Locked** rows bind; an ADR may override a **Recommended** one.
+5. **UI/visual authority** → [`.agent/spec/CEREBRALHELM_DESIGN_SPEC.md`](.agent/spec/CEREBRALHELM_DESIGN_SPEC.md)
+   + [`wiki/CerebralHelm-Visual-Design-Reference.pdf`](wiki/CerebralHelm-Visual-Design-Reference.pdf).
+   **Precedence: the design spec beats the MVP-PRD for UI questions.** Day-to-day
+   dashboard work reads the distilled [`.agent/spec/UI-CONSTITUTION.md`](.agent/spec/UI-CONSTITUTION.md)
+   (tokens, grammar, per-increment checklist) — its rules and checklist bind; its header
+   framing (the completed NIC-50 epic, "proposed" token values) is historical.
+6. **Long-term intent** (future compatibility, not current scope) → [`wiki/NORTH-STAR.md`](wiki/NORTH-STAR.md).
+7. **Hard architecture boundaries** → [`docs/architecture/repository-boundaries.md`](docs/architecture/repository-boundaries.md).
+8. **Key decisions** → [`docs/adr/README.md`](docs/adr/) is the index; read it rather than
+   any list here. ADR-001…008 exist: AppKit+WKWebView shell · single command lifecycle ·
+   internal tool registry & risk policy · versioned bridge · vendored SQLite ·
+   SQLite as sole operational-history source · Executive default mode · unsandboxed
+   Developer ID distribution. **Next free number is 009.**
+9. **Programme plans** — read only the one you're working in → [`docs/llm-integration/`](docs/llm-integration/)
+   · [`docs/quick-actions/PLAN.md`](docs/quick-actions/PLAN.md) · [`docs/widget-work-handoff.md`](docs/widget-work-handoff.md)
+   · `docs/mvp-polish/` · `docs/pre-ui-frontend/` (historical). Ops/release →
+   `docs/operations/`, `docs/compatibility/`, `CHANGELOG.md`.
 
-The MVP-PRD controls current scope; the North Star informs future compatibility
-but does **not** auto-place future features inside the MVP.
+Renaming or deleting a spec/ADR requires updating [`docs/required-docs.json`](docs/required-docs.json) —
+CI fails otherwise.
 
-## Current frontier
+## Where the code lives
 
-> Keep this line current — it's the highest-value, fastest-stale pointer in the repo.
+Root is both a SwiftPM package (`Package.swift`) and a pnpm workspace
+(`pnpm-workspace.yaml` → `apps/*`, `packages/*`).
 
-- **Phase:** macOS (development moved to the Mac; the Windows Swift instructions below are legacy for that machine). Native shell, bridge, NSWorkspace/hook/metrics/Keychain adapters, and permission rechecks are live.
-- **Mode-switch re-scope (2026-07-06, decision):** a mode switch changes mode/context/dashboard surface + optional "Windows Stored by Mode" window behavior — it runs **no** workflow steps. Opening apps/URLs/hooks is always an explicitly triggered quick-action workflow (`run <id>`), confirmed once at aggregate risk. PRD §7.5 reworded; Linear NIC-86/88 + NIC-121 still need matching edits.
-- **NIC-85 (MAC-WORKSPACE), increments 1–10 done** (1–8 committed on `feat/mac-workflow`; 9–10 uncommitted): durable settings store · validated config-write path (`ConfigOverrideWriter`, no live consumer yet) · quick-action workflow execution + `mode.apply` re-scope (`enter-*` workflows → `open-*-layout`) · `workflow.action.progress` event + last-active-mode bootstrap restore (`BridgeSession.composeBootstrapState()` is the only bootstrap composition — every transport must use it) · dashboard quick apps/actions wired + capability map · "Windows Stored by Mode" toggle (app hide/return + per-mode SQLite snapshots) · `window.arrange` tool (AX, named frames, permission-gated) · geometry capture/restore · display detection (NIC-87: `DisplayTopologyObserver`, `display.topology.changed` event, stranded-window re-hosting) · backdrop dashboard, single display (NIC-120a: borderless sub-normal-level window, `surface()` raise for must-be-seen overlays).
-- **NIC-85 (MAC-WORKSPACE) increments 9–14 are ALL built** (uncommitted): display detection · backdrop dashboard (strict: never lifts; native confirmation panel + settings window — reverses NIC-76 overlay-only) · multi-display + main-display setting + companion surface on secondaries · `apps.list` discovery + More Apps picker · quick-app pinning through the validated config path (override read side live in bootstrap; clean-slate modes; auto-minted user app references under the state root) · login item + single-instance guard (NIC-89). The full sequence awaits Nick's review/commit. Increment details and machine quirks live in the auto-memory (`nic85-increment-progress`).
-- **Known gaps:** no settings-read bridge operation (settings UI cannot display persisted values); Playwright visual snapshots are `-win32` — regenerate on Windows/CI; the Debug app is ad-hoc signed, so every rebuild invalidates the Accessibility TCC grant (remove/re-add in System Settings, then relaunch).
+```
+packages/           Portable Swift + language-neutral contracts. No AppKit — enforced by Tests/RepositoryBoundaryTests.
+  contracts/        JSON Schemas: schemas/{commands,bridge,tools,config,knowledge,workflows,references,reports} + fixtures/.
+                    GENERATED, never hand-edit: generated/typescript/contracts.ts and
+                    Sources/CerebralContracts/GeneratedContracts.swift. Regenerate: node scripts/generate-contracts.mjs
+  shared/ core/     CerebralShared (leaf utils) · CerebralCore (command runtime, policy/risk, tool registry, config, WorkspacePaths)
+  bridge/           CerebralBridge — the versioned dashboard bridge contract (ADR-004)
+  tools/ knowledge/ Siblings: both → core, never each other. Tool handlers · Markdown/YAML note vault
+  storage/          CerebralStorage — SQLite via vendored swift-toolchain-sqlite (ADR-005)
+  runtime-host/     Composes Core+Tools+Knowledge+Storage into the live runtime. THIS is where concretes compose.
+apps/
+  mac/              Native shell (ADR-001). Entry CerebralHelm/main.swift · adapters Sources/CerebralMacAdapters · CerebralHelm.xcodeproj
+  dashboard/        React 19 + Vite. Entry src/main.tsx (?surface= selects dashboard/settings/moreapps/modemenu/sidebar)
+  cli/              `cerebral` executable. Entry Sources/cerebral/Cerebral.swift
+  canvas-extension/ Browser extension for the Canvas scrape (ios/ is a placeholder README)
+config/             Read-only shipped config. tools/descriptors/*.json = 29 AUTHORITATIVE rich descriptors;
+                    tools/*.json = 19 stricter-only overlays. Plus modes/ agents/ workflows/ references/ defaults/app.json
+scripts/            Node gates: test.mjs (runner), generate-contracts, check-contract-drift, validate-{contracts,config,docs}
+Tests/              Swift test targets    database/migrations/  0001–0015    evals/  model evals    .local/development/  dev state root
+```
+
+Runtime state root (`packages/core/Sources/CerebralCore/Workspace/WorkspacePaths.swift`):
+development → `.local/development/`; packaged app → `~/Library/Application Support/CerebralHelm`.
+Holds `overrides/`, `active-config.json`, `database/cerebral.sqlite`, `knowledge/`,
+`backups/`, `events/`.
 
 ## Where state lives (don't duplicate it)
 
 - **What's been built / changed** → `git log` and closed Linear tickets. Don't restate it.
 - **What's planned / acceptance criteria** → Linear (NIC-xx). Source of truth for scope.
-- **The contracts** → the JSON Schemas under `packages/contracts/`. Authoritative; TS/Swift are generated.
-- **Decisions, rationale, gotchas** → the auto-memory files (`MEMORY.md` index + per-fact files). This is the running log — sharded so only relevant facts load.
+- **The contracts** → the JSON Schemas under `packages/contracts/schemas/`. Authoritative;
+  TS/Swift are generated and drift-checked.
+- **Decisions, rationale, gotchas** → the auto-memory files (`MEMORY.md` index + per-fact
+  files). This is the running log — sharded so only relevant facts load.
 
 ## Verify, do not assume
 
@@ -95,15 +194,15 @@ future scope. Preserve these architectural truths:
 - Platform / provider / model / storage behavior lives behind **replaceable adapters**; provider-neutral at the core boundary.
 - Tools are narrow, explicit, typed, permission-aware, independently testable.
 - **Risk classification and confirmation policy are deterministic and outside models.** Models may *propose* actions but never bypass policy or invoke unrestricted capabilities.
-- **Descriptors are authoritative** (ADR-003): rich tool descriptors are the source of truth for risk/policy; `config/tools/*.json` is a **stricter-only overlay** (may tighten, never weaken).
-- `packages/` stays portable (**no AppKit**); `tools` and `knowledge` are **siblings** (both → `core`), never depend on each other; compose concretes at the app layer.
+- **Descriptors are authoritative** (ADR-003): the rich descriptors in `config/tools/descriptors/` are the source of truth for risk/policy; `config/tools/*.json` is a **stricter-only overlay** (may tighten, never weaken — enforced in `ToolRegistryBuilder.register`). Known exception: `evals/lib/catalog.mjs` is a sanctioned prototype projection, to be replaced by the Swift one.
+- `packages/` stays portable (**no AppKit**); `tools` and `knowledge` are **siblings** (both → `core`), never depend on each other; concretes compose in `packages/runtime-host`, and apps supply only capabilities and paths.
 - Configuration lives outside hardcoded logic where practical.
 - Durable personal state stays local, inspectable, portable, migration-safe, and survives updates. Never silently reset/replace/migrate user state — every stateful change has explicit behavior, tests, and a recovery path.
 - **Contracts are versioned before adding production providers.** Missing integrations degrade gracefully rather than disabling the command surface.
 - Tests cover contracts, regressions, migrations, failures, and security boundaries.
 
 Don't over-engineer speculative abstractions. Add extension points only when the
-North Star or MVP-PRD establishes a real future requirement.
+North Star or the active programme plan establishes a real future requirement.
 
 ## Safety and state
 
@@ -114,25 +213,34 @@ activity, authentication, and personal data as sensitive boundaries.
 
 ## Verification
 
-- **JS/contract gates:** `node scripts/test.mjs` (runner); contract/config validation via `scripts/validate-contracts.mjs`, `scripts/validate-config.mjs`, `scripts/check-contract-drift.mjs`. Linux/CI runs plain `swift test`.
-- **Swift on this Windows dev box:** the default shell often can't find `swift` or fails with duplicate `PATH` errors. Use the cleaned-environment pattern below, and a scratch path **outside OneDrive** (OneDrive's filter breaks symlinks and locks `.build`).
+Development is on macOS. `just` is **not installed** on this machine — use these
+commands directly, not the `justfile` recipes.
 
-```powershell
-$swiftRoot = 'C:\Users\nickr\AppData\Local\Programs\Swift'
-$msvcRoot = 'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207'
-$winKitRoot = 'C:\Program Files (x86)\Windows Kits\10'
-$winKitVersion = '10.0.22621.0'
-$swiftSDK = "$swiftRoot\Platforms\6.3.2\Windows.platform\Developer\SDKs\Windows.sdk"
-$originalPath = [System.Environment]::GetEnvironmentVariable('Path', 'Process')
-[System.Environment]::SetEnvironmentVariable('PATH', $null, 'Process')
-[System.Environment]::SetEnvironmentVariable('Path', "$swiftRoot\Toolchains\6.3.2+Asserts\usr\bin;$swiftRoot\Runtimes\6.3.2\usr\bin;$msvcRoot\bin\Hostx64\x64;$winKitRoot\bin\$winKitVersion\x64;$winKitRoot\bin\x64;$originalPath", 'Process')
-[System.Environment]::SetEnvironmentVariable('SDKROOT', $swiftSDK, 'Process')
-[System.Environment]::SetEnvironmentVariable('INCLUDE', "$msvcRoot\include;$winKitRoot\Include\$winKitVersion\ucrt;$winKitRoot\Include\$winKitVersion\shared;$winKitRoot\Include\$winKitVersion\um;$winKitRoot\Include\$winKitVersion\winrt", 'Process')
-[System.Environment]::SetEnvironmentVariable('LIB', "$msvcRoot\lib\x64;$winKitRoot\Lib\$winKitVersion\ucrt\x64;$winKitRoot\Lib\$winKitVersion\um\x64", 'Process')
-& "$swiftRoot\Toolchains\6.3.2+Asserts\usr\bin\swift.exe" test --scratch-path 'C:\Users\nickr\AppData\Local\cerebral-build'
-```
+- **Everything, one shot:** `node scripts/test.mjs` — toolchain check (requires Swift ≥ 6.0)
+  → config/compatibility/contract validators → `check-contract-drift` → secret canary
+  sweep → `validate-docs` → 11 `node --test` suites → `swift test` → dashboard unit tests
+  and production build → Playwright (skipped unless browsers are installed).
+- **Portable Swift core:** `swift test` at the repo root. The same plain command runs
+  everywhere now, macOS and CI alike.
+- **Keychain adapter contracts:** `CEREBRAL_KEYCHAIN_TESTS=1 swift test --filter MacAdapterTests`
+  — opt-in, and must run isolated; it is unstable under the full suite's parallel load.
+- **Dashboard** (`apps/dashboard`), in CI's order: `lint` → `typecheck` → `test --run` → `build`.
+  **`typecheck` must stay `tsc -b`.** `tsconfig.json` is solution-style (`files: []`), so
+  `tsc --noEmit` compiles nothing and exits 0. Note `tsc -b` also skips every test file.
+- **macOS app target** — not covered by `swift test` and not in CI. Stage the dashboard,
+  then build through the shared scheme (`apps/mac/README.md`): `apps/mac/scripts/build-dashboard-bundle.sh`,
+  then from `apps/mac`: `xcodebuild -project CerebralHelm.xcodeproj -scheme CerebralHelm -configuration Debug -destination 'platform=macOS' build`.
+- **Model evals** (`evals/README.md`) — opt-in, deliberately outside `scripts/test.mjs`
+  (~45 GB of local models, tens of minutes): `ollama serve`, then `node evals/run.mjs --model=<tag>`.
+  This is the **only** regression gate for a model or descriptor change.
+- **CI** (`.github/workflows/ci.yml`, described in `docs/operations/ci.md`): six parallel
+  jobs on every PR and on pushes to `dev`/`prod` — `contracts-config`, `dashboard`,
+  `core-swift-linux` (swift:6.1 container), `core-swift-macos` (macos-15), `docs`, `secrets`.
+  No Playwright job, no xcodebuild job.
 
-`swift-argument-parser` is pinned to `1.1.x` on purpose (1.2.0+ uses symlinked
-plugin sources SwiftPM-on-Windows can't traverse). Enable Windows **Developer
-Mode** so git can materialize package symlinks. Full detail + failure signatures:
-[`.agent/AGENTS.md`](.agent/AGENTS.md) § Windows Swift Verification.
+**Playwright baselines are stale, not skipped by choice.** Every PNG in
+`apps/dashboard/tests/visual/shell.spec.ts-snapshots/` is `-win32`, and
+`playwright.config.ts` sets no `snapshotPathTemplate`, so macOS looks for `-darwin` and
+finds nothing. The suite passes today only because `visual:available` fails and the
+runner skips the step. Installing the browsers turns `node scripts/test.mjs` red until
+the baselines are regenerated on macOS.
