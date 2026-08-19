@@ -25,8 +25,11 @@ two disagree, PLAN.md and the charters win, and this file should be corrected.
   exists in `packages/core/Sources/CerebralCore/Model/` (`NIC-241`, 2026-08-18) — protocol,
   request/usage types, `ModelDeadline`, `MockModelProvider`. The profile catalog is configuration
   (`NIC-243`): `config/models/profiles.json` + `model-profiles.schema.json`, resolved by
-  `ModelProfileCatalog`, optional everywhere. Nothing calls either, by design. Still unbuilt:
-  the Ollama adapter (`NIC-242`). Everything else in the milestone remains Backlog.
+  `ModelProfileCatalog`, optional everywhere. The Ollama adapter (`NIC-242`) is built at
+  `apps/mac/Sources/CerebralMacAdapters/OllamaModelProvider.swift` and **verified against a live
+  Ollama 0.32.7** — a streamed completion in 9.0 s with real token accounting, plus 18 offline
+  helper tests. Nothing calls any of it, by design: phase 0 is complete and the first caller is
+  `NIC-250`. Everything else in the milestone remains Backlog.
 - **Committed:** descriptor affordances on `fix/tool-descriptor-model-affordances`;
   plan, charters and eval harness on `feat/llm-eval-harness`. Both pushed, both
   awaiting merge to `dev`. Full `node scripts/test.mjs` green on the contract change.
@@ -151,6 +154,13 @@ Recorded in full in [ADR-009](../adr/ADR-009-model-provider-port.md).
     that exceeds them. Nothing loads a model in phase 0, and the per-profile GB estimate
     would drift with every model change. Revisit when a caller exists.
 
+33. **`keep_alive` semantics are settled by probe, not by docs** (2026-08-18, against 0.32.7):
+    `-1` keeps a model resident indefinitely — `/api/ps` reported an expiry in the year **2318** —
+    `0` unloads immediately (`done_reason: "unload"`, via `/api/generate`), and a positive integer
+    is an idle window in seconds. An unknown model is **HTTP 404** carrying
+    `{"error":"model '…' not found"}`, which is why that maps to `modelNotInstalled` rather than a
+    generic failure.
+
 ### Agents
 
 26. **Financial Advisor:** SimpleFIN (~$15/yr, read-only by design). All four
@@ -235,6 +245,9 @@ run — swap contamination; re-measure on a clean boot.*
   between models**. A run went from ~12 to 30+ minutes.
 - **Unbounded `num_ctx` allocates the full advertised window** — 131K/262K — taking a
   21 GB model to 29 GB resident. Capping to 16K recovered ~6 GB.
+- **`URLSession.bytes(for:).lines` does the NDJSON framing for you.** The JS harness had to
+  hand-roll a tail buffer for chunks that split mid-line; the Swift adapter does not, and adding
+  one would be duplicated work. Verified by the live test, not assumed.
 - **A new JSON Schema can rename an unrelated generated type.** Adding
   `model-profiles.schema.json` gave quicktype a second `id` enum to name, so the system-status
   metrics enum stopped being the bare `ID` and became `MetricElement` — breaking the build at
