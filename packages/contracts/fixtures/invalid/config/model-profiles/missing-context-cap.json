@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "modelProfiles": [
+    {
+      "id": "balanced",
+      "modelId": "qwen3.6:35b-mlx",
+      "runtimeId": "ollama",
+      "residency": "pinned",
+      "thinking": false
+    }
+  ]
+}

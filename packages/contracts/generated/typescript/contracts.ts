@@ -996,6 +996,96 @@ export interface Widgets {
     right: string;
 }
 
+/**
+ * Which model serves each capability profile, how much context it may allocate, and how
+ * long it stays resident (ADR-009). Product logic addresses profiles; exact model ids are
+ * resolved here so that no named local model becomes an architectural dependency. Optional:
+ * with no such file the app runs exactly as it does today, with no model attached.
+ */
+export interface CerebralHelmModelProfileCatalog {
+    extensions?:   { [key: string]: any };
+    modelProfiles: ModelProfile[];
+    /**
+     * Advisory only, never enforced: how much model weight this machine can hold resident
+     * before it swaps. Measured at ~48 GB on the target Mac (default GPU allocation); two
+     * resident 30B models came to ~51 GB and drove 18 GB of swap. Recorded so the figure is not
+     * rediscovered the hard way.
+     */
+    residentBudgetGigabytes?: number;
+    schemaVersion:            string;
+}
+
+export interface ModelProfile {
+    /**
+     * Context window to allocate. A memory lever, not only a capability one: left unset a
+     * runtime allocates the model's full advertised window (131K/262K), which took a 21 GB
+     * model to 29 GB resident. Capping to 16K recovered ~6 GB.
+     */
+    contextTokens: number;
+    extensions?:   { [key: string]: any };
+    /**
+     * The capability profile product logic asks for. 'local' is not a capability but a policy:
+     * a surface that must never leave this machine even if a cloud escape hatch is later
+     * enabled.
+     */
+    id: ModelProfileID;
+    /**
+     * The runtime's own tag for the model, e.g. 'qwen3.6:35b-mlx'.
+     */
+    modelId: string;
+    /**
+     * pinned for an always-on surface, where a ~70 s cold reload would be felt every time;
+     * evictAfterUse for a rare specialist that would otherwise hold tens of gigabytes.
+     */
+    residency: Residency;
+    /**
+     * Required when residency is 'bounded', and rejected otherwise.
+     */
+    residencyIdleSeconds?: number;
+    /**
+     * Advisory estimate of this model's resident footprint, counted once per distinct model id.
+     * An owner-maintained figure that drifts with quantisation; never enforced.
+     */
+    residentGigabytes?: number;
+    /**
+     * Which inference runtime serves it — 'ollama', 'llama.cpp', 'mlx'. A pattern rather than
+     * an enum so adding a runtime is a config change, not a schema change.
+     */
+    runtimeId: string;
+    /**
+     * Whether the model may deliberate. Off everywhere except deep research: composition from a
+     * typed snapshot is rendering, not reasoning, and leaving it on cost 79-130 s against 9-17
+     * s.
+     */
+    thinking: boolean;
+    /**
+     * Wall-clock budget for one request. Defaults to 120 when absent.
+     */
+    timeoutSeconds?: number;
+}
+
+/**
+ * The capability profile product logic asks for. 'local' is not a capability but a policy:
+ * a surface that must never leave this machine even if a cloud escape hatch is later
+ * enabled.
+ */
+export enum ModelProfileID {
+    Balanced = "balanced",
+    Deep = "deep",
+    Fast = "fast",
+    Local = "local",
+}
+
+/**
+ * pinned for an always-on surface, where a ~70 s cold reload would be felt every time;
+ * evictAfterUse for a rare specialist that would otherwise hold tens of gigabytes.
+ */
+export enum Residency {
+    Bounded = "bounded",
+    EvictAfterUse = "evictAfterUse",
+    Pinned = "pinned",
+}
+
 export interface CerebralHelmSettingsPatch {
     changes:       Changes;
     patchId:       string;
@@ -2204,10 +2294,10 @@ export interface CerebralHelmSpotifyCreatePlaylistOutput {
 }
 
 export interface CerebralHelmSystemStatusReadInput {
-    metrics?: ID[];
+    metrics?: MetricElement[];
 }
 
-export enum ID {
+export enum MetricElement {
     Battery = "battery",
     CPU = "cpu",
     Display = "display",
@@ -2221,7 +2311,7 @@ export interface CerebralHelmSystemStatusReadOutput {
 
 export interface Metric {
     availability: AvailabilityEnum;
-    id:           ID;
+    id:           MetricElement;
     sampledAt?:   string;
     unit?:        string;
     value?:       number;

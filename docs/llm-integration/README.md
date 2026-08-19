@@ -12,6 +12,7 @@ and benchmarking session that produced it.
 | [agents/](agents/) | Four agent charters — the six fields, protocols, state, open questions |
 | Linear milestone **CerebralHelm Local LLMs** | 16 epics, 76 pointed sub-issues, NIC-225 → NIC-317 |
 | `evals/README.md` | How to re-run every measurement below |
+| [ADR-009](../adr/ADR-009-model-provider-port.md) | The phase-0 decision: provider-neutral port, runtime abstraction, lifecycle ownership, local-first |
 
 **This file is a decision log and an index. It is not the architecture** — when the
 two disagree, PLAN.md and the charters win, and this file should be corrected.
@@ -20,8 +21,15 @@ two disagree, PLAN.md and the charters win, and this file should be corrected.
 
 ## Where things stand
 
-- **Nothing is built.** All 92 Linear issues are in Backlog. This was a planning and
-  benchmarking session; the only production change made was descriptor affordances.
+- **Phase 0 is underway.** `NIC-225`: ADR-009 is written and the `ModelProvider` port
+  exists in `packages/core/Sources/CerebralCore/Model/` (`NIC-241`, 2026-08-18) — protocol,
+  request/usage types, `ModelDeadline`, `MockModelProvider`. The profile catalog is configuration
+  (`NIC-243`): `config/models/profiles.json` + `model-profiles.schema.json`, resolved by
+  `ModelProfileCatalog`, optional everywhere. The Ollama adapter (`NIC-242`) is built at
+  `apps/mac/Sources/CerebralMacAdapters/OllamaModelProvider.swift` and **verified against a live
+  Ollama 0.32.7** — a streamed completion in 9.0 s with real token accounting, plus 18 offline
+  helper tests. Nothing calls any of it, by design: phase 0 is complete and the first caller is
+  `NIC-250`. Everything else in the milestone remains Backlog.
 - **Committed:** descriptor affordances on `fix/tool-descriptor-model-affordances`;
   plan, charters and eval harness on `feat/llm-eval-harness`. Both pushed, both
   awaiting merge to `dev`. Full `node scripts/test.mjs` green on the contract change.
@@ -127,6 +135,32 @@ All 2026-08-11 unless noted. Each is a decision, not a suggestion.
     untrusted web content *and* writes into a vault every other agent reads.
     Mitigation is content provenance in frontmatter plus a retrieval trust filter.
 
+### Phase 0 — the provider port (owner, 2026-08-18)
+
+Recorded in full in [ADR-009](../adr/ADR-009-model-provider-port.md).
+
+30. **Capability profiles, not functional roles, are the configuration keys** —
+    `fast` / `balanced` / `deep` / `local`, per the tech stack's Model Profiles table.
+    This *overrides* the working assumption in PLAN.md, which speaks in per-model roles.
+    Each profile resolves to a model id, runtime id, `num_ctx` cap, residency directive
+    and thinking flag. `local` is reserved for surfaces that must never leave the machine
+    even if a cloud escape hatch is later enabled.
+31. **The Ollama concrete lives in `apps/mac/Sources/CerebralMacAdapters`**, alongside
+    every other provider concrete, rather than in the portable `packages/runtime-host`.
+    Known cost, accepted: the NDJSON stream parser is `#if canImport(AppKit)`-gated and
+    so is covered only by the macOS CI job, never `core-swift-linux`.
+32. **The resident-memory budget is advisory, not enforcing.** The measured figures are
+    documented beside the profile config; validation does not reject a configuration
+    that exceeds them. Nothing loads a model in phase 0, and the per-profile GB estimate
+    would drift with every model change. Revisit when a caller exists.
+
+33. **`keep_alive` semantics are settled by probe, not by docs** (2026-08-18, against 0.32.7):
+    `-1` keeps a model resident indefinitely — `/api/ps` reported an expiry in the year **2318** —
+    `0` unloads immediately (`done_reason: "unload"`, via `/api/generate`), and a positive integer
+    is an idle window in seconds. An unknown model is **HTTP 404** carrying
+    `{"error":"model '…' not found"}`, which is why that maps to `modelNotInstalled` rather than a
+    generic failure.
+
 ### Agents
 
 26. **Financial Advisor:** SimpleFIN (~$15/yr, read-only by design). All four
@@ -211,6 +245,26 @@ run — swap contamination; re-measure on a clean boot.*
   between models**. A run went from ~12 to 30+ minutes.
 - **Unbounded `num_ctx` allocates the full advertised window** — 131K/262K — taking a
   21 GB model to 29 GB resident. Capping to 16K recovered ~6 GB.
+- **`URLSession.bytes(for:).lines` does the NDJSON framing for you.** The JS harness had to
+  hand-roll a tail buffer for chunks that split mid-line; the Swift adapter does not, and adding
+  one would be duplicated work. Verified by the live test, not assumed.
+- **A new JSON Schema can rename an unrelated generated type.** Adding
+  `model-profiles.schema.json` gave quicktype a second `id` enum to name, so the system-status
+  metrics enum stopped being the bare `ID` and became `MetricElement` — breaking the build at
+  `PortableToolHandlers.swift`. The generated names are heuristic and positional; expect one
+  unrelated rename per schema that introduces a common property name, and check the build rather
+  than only the drift gate.
+- **Config families cost six gates, not five:** the JSON Schema, the shipped config, the Swift
+  `ConfigValidator`, `scripts/validate-config.mjs`, the fixture routing in
+  `scripts/validate-contracts.mjs` — *and* `scripts/contracts-config.test.mjs`, which pins the
+  exact set of config schema filenames and fails until the new one is registered.
+- **Cancelling an `AsyncThrowingStream` consumer terminates the stream, it does not throw
+  through it.** So a cancelled completion arrives at the collector looking exactly like a
+  truncated one, and the obvious implementation reports "the runtime returned corruption"
+  when the user simply changed their mind. The consumer must check `Task.isCancelled`
+  before concluding a stream was broken — adapter-side politeness cannot fix it, because
+  the stream is already terminated by the time the adapter notices. Caught by a test in
+  `Tests/CoreModelTests/ModelProviderTests.swift`, not by reasoning.
 - **Prefix-cache thrash:** interleaving allowlists dropped a 1,819-token cached prefix
   to 345. Group work by manifest.
 - **`ReportRegion.test.tsx:73` is flaky** — asserts on greeting text that arrives via

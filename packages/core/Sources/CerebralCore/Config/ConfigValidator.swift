@@ -12,17 +12,23 @@ public struct ValidatedConfig {
     public let modes: [CerebralHelmModeConfig]
     public let agents: [CerebralHelmAgentSurfaceConfig]
     public let toolIDs: [String]
+    /// Which model serves each capability profile (NIC-243), or nil when this machine ships no
+    /// `config/models/profiles.json`. Optional and defaulted so a configuration with no model
+    /// attached stays exactly as valid as it is today.
+    public let modelProfiles: CerebralHelmModelProfileCatalog?
 
     public init(
         defaults: CerebralHelmApplicationDefaults,
         modes: [CerebralHelmModeConfig],
         agents: [CerebralHelmAgentSurfaceConfig],
-        toolIDs: [String]
+        toolIDs: [String],
+        modelProfiles: CerebralHelmModelProfileCatalog? = nil
     ) {
         self.defaults = defaults
         self.modes = modes
         self.agents = agents
         self.toolIDs = toolIDs
+        self.modelProfiles = modelProfiles
     }
 }
 
@@ -60,6 +66,9 @@ public enum ConfigValidator {
     ]
     static let agentKeys: Set<String> = [
         "id", "label", "status", "summary", "allowedKnowledgeRoots", "allowedToolIds", "extensions"
+    ]
+    static let modelProfileCatalogKeys: Set<String> = [
+        "schemaVersion", "residentBudgetGigabytes", "modelProfiles", "extensions"
     ]
     static let overrideKeys: Set<String> = [
         "schemaVersion", "id", "quickApps", "layout", "extensions"
@@ -135,6 +144,24 @@ public enum ConfigValidator {
             in: toolsDirectory.appendingPathComponent("descriptors", isDirectory: true)
         )
 
+        // Model profiles (NIC-243). Deliberately optional: a machine with no model configured is
+        // a valid machine, so an absent file is silence rather than an error. A file that IS
+        // present must be correct — a half-configured model is worse than none.
+        var modelProfiles: CerebralHelmModelProfileCatalog?
+        let modelProfilesURL = configDirectory
+            .appendingPathComponent("models", isDirectory: true)
+            .appendingPathComponent("profiles.json")
+        if FileManager.default.fileExists(atPath: modelProfilesURL.path) {
+            let label = "models/profiles.json"
+            if let data = readFile(modelProfilesURL) {
+                let result = decodeModelProfiles(file: label, data: data)
+                errors += result.errors
+                modelProfiles = result.value
+            } else {
+                errors.append(unreadable(file: label))
+            }
+        }
+
         // Cross-file references (only meaningful once defaults decoded).
         if let defaults {
             errors += crossReferenceErrors(
@@ -146,7 +173,13 @@ public enum ConfigValidator {
         }
 
         if errors.isEmpty, let defaults {
-            return .valid(ValidatedConfig(defaults: defaults, modes: modes, agents: agents, toolIDs: toolIDs))
+            return .valid(ValidatedConfig(
+                defaults: defaults,
+                modes: modes,
+                agents: agents,
+                toolIDs: toolIDs,
+                modelProfiles: modelProfiles
+            ))
         }
         return .invalid(errors)
     }
@@ -163,6 +196,10 @@ public enum ConfigValidator {
 
     public static func agentDocumentErrors(file: String, data: Data) -> [CerebralHelmConfigValidationError] {
         decodeAgent(file: file, data: data).errors
+    }
+
+    public static func modelProfilesDocumentErrors(file: String, data: Data) -> [CerebralHelmConfigValidationError] {
+        decodeModelProfiles(file: file, data: data).errors
     }
 
     public static func overrideDocumentErrors(file: String, data: Data) -> [CerebralHelmConfigValidationError] {
@@ -220,6 +257,67 @@ public enum ConfigValidator {
         file: String, data: Data
     ) -> (value: CerebralHelmAgentSurfaceConfig?, errors: [CerebralHelmConfigValidationError]) {
         decode(file: file, data: data, allowed: agentKeys, type: CerebralHelmAgentSurfaceConfig.self) { _ in [] }
+    }
+
+    private static func decodeModelProfiles(
+        file: String, data: Data
+    ) -> (value: CerebralHelmModelProfileCatalog?, errors: [CerebralHelmConfigValidationError]) {
+        decode(
+            file: file,
+            data: data,
+            allowed: modelProfileCatalogKeys,
+            type: CerebralHelmModelProfileCatalog.self
+        ) { catalog in
+            structuralModelProfileErrors(catalog, file: file)
+        }
+    }
+
+    /// The rules the schema cannot state on its own: one entry per profile, and a residency whose
+    /// idle window matches its mode. A `bounded` profile with no window would silently inherit a
+    /// default, and an idle window on a `pinned` profile reads as meaningful when nothing consumes
+    /// it — both are configuration that lies about what will happen.
+    private static func structuralModelProfileErrors(
+        _ catalog: CerebralHelmModelProfileCatalog,
+        file: String
+    ) -> [CerebralHelmConfigValidationError] {
+        var errors: [CerebralHelmConfigValidationError] = []
+        var seen: Set<ModelProfileID> = []
+
+        for profile in catalog.modelProfiles {
+            if !seen.insert(profile.id).inserted {
+                errors.append(makeError(
+                    file: file,
+                    field: "/modelProfiles",
+                    expected: "one entry per capability profile",
+                    message: "Profile \"\(profile.id.rawValue)\" is configured more than once.",
+                    remediation: "Remove the duplicate \"\(profile.id.rawValue)\" entry."
+                ))
+            }
+
+            switch profile.residency {
+            case .bounded where profile.residencyIdleSeconds == nil:
+                errors.append(makeError(
+                    file: file,
+                    field: "/modelProfiles/residencyIdleSeconds",
+                    expected: "an idle window, in seconds",
+                    message: "Profile \"\(profile.id.rawValue)\" is bounded but states no residencyIdleSeconds.",
+                    remediation: "Set residencyIdleSeconds, or choose pinned or evictAfterUse."
+                ))
+            case .pinned, .evictAfterUse:
+                if profile.residencyIdleSeconds != nil {
+                    errors.append(makeError(
+                        file: file,
+                        field: "/modelProfiles/residencyIdleSeconds",
+                        expected: "no idle window",
+                        message: "Profile \"\(profile.id.rawValue)\" is \(profile.residency.rawValue), so residencyIdleSeconds is never read.",
+                        remediation: "Remove residencyIdleSeconds, or set residency to bounded."
+                    ))
+                }
+            case .bounded:
+                break
+            }
+        }
+        return errors
     }
 
     private static func decodeOverride(

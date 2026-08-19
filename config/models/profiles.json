@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0.0",
+  "residentBudgetGigabytes": 48,
+  "modelProfiles": [
+    {
+      "id": "fast",
+      "modelId": "qwen3.6:35b-mlx",
+      "runtimeId": "ollama",
+      "contextTokens": 8192,
+      "residency": "bounded",
+      "residencyIdleSeconds": 300,
+      "thinking": false,
+      "timeoutSeconds": 60,
+      "residentGigabytes": 21
+    },
+    {
+      "id": "balanced",
+      "modelId": "qwen3.6:35b-mlx",
+      "runtimeId": "ollama",
+      "contextTokens": 16384,
+      "residency": "pinned",
+      "thinking": false,
+      "timeoutSeconds": 120,
+      "residentGigabytes": 21
+    },
+    {
+      "id": "deep",
+      "modelId": "qwen3.6:35b-mlx",
+      "runtimeId": "ollama",
+      "contextTokens": 32768,
+      "residency": "evictAfterUse",
+      "thinking": true,
+      "timeoutSeconds": 600,
+      "residentGigabytes": 21
+    },
+    {
+      "id": "local",
+      "modelId": "qwen3.6:35b-mlx",
+      "runtimeId": "ollama",
+      "contextTokens": 16384,
+      "residency": "bounded",
+      "residencyIdleSeconds": 300,
+      "thinking": false,
+      "timeoutSeconds": 120,
+      "residentGigabytes": 21
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cerebralhelm.local/schemas/config/model-profiles.schema.json",
+  "title": "CerebralHelm Model Profile Catalog",
+  "description": "Which model serves each capability profile, how much context it may allocate, and how long it stays resident (ADR-009). Product logic addresses profiles; exact model ids are resolved here so that no named local model becomes an architectural dependency. Optional: with no such file the app runs exactly as it does today, with no model attached.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "modelProfiles"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "residentBudgetGigabytes": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Advisory only, never enforced: how much model weight this machine can hold resident before it swaps. Measured at ~48 GB on the target Mac (default GPU allocation); two resident 30B models came to ~51 GB and drove 18 GB of swap. Recorded so the figure is not rediscovered the hard way."
+    },
+    "modelProfiles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/modelProfile"
+      }
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    }
+  },
+  "$defs": {
+    "modelProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "modelId", "runtimeId", "contextTokens", "residency", "thinking"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "enum": ["fast", "balanced", "deep", "local"],
+          "description": "The capability profile product logic asks for. 'local' is not a capability but a policy: a surface that must never leave this machine even if a cloud escape hatch is later enabled."
+        },
+        "modelId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The runtime's own tag for the model, e.g. 'qwen3.6:35b-mlx'."
+        },
+        "runtimeId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]*$",
+          "description": "Which inference runtime serves it — 'ollama', 'llama.cpp', 'mlx'. A pattern rather than an enum so adding a runtime is a config change, not a schema change."
+        },
+        "contextTokens": {
+          "type": "integer",
+          "minimum": 512,
+          "maximum": 1048576,
+          "description": "Context window to allocate. A memory lever, not only a capability one: left unset a runtime allocates the model's full advertised window (131K/262K), which took a 21 GB model to 29 GB resident. Capping to 16K recovered ~6 GB."
+        },
+        "residency": {
+          "type": "string",
+          "enum": ["pinned", "bounded", "evictAfterUse"],
+          "description": "pinned for an always-on surface, where a ~70 s cold reload would be felt every time; evictAfterUse for a rare specialist that would otherwise hold tens of gigabytes."
+        },
+        "residencyIdleSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Required when residency is 'bounded', and rejected otherwise."
+        },
+        "thinking": {
+          "type": "boolean",
+          "description": "Whether the model may deliberate. Off everywhere except deep research: composition from a typed snapshot is rendering, not reasoning, and leaving it on cost 79-130 s against 9-17 s."
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Wall-clock budget for one request. Defaults to 120 when absent."
+        },
+        "residentGigabytes": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Advisory estimate of this model's resident footprint, counted once per distinct model id. An owner-maintained figure that drifts with quantisation; never enforced."
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^x-[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": true
+    }
+  }
+}

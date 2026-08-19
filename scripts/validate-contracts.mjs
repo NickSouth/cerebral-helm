@@ -142,6 +142,13 @@ function schemaForFixture(filePath) {
     return schemaId("config", "mode-override");
   }
 
+  if (
+    relativePath.startsWith("valid/config/model-profiles/") ||
+    relativePath.startsWith("invalid/config/model-profiles/")
+  ) {
+    return schemaId("config", "model-profiles");
+  }
+
   if (relativePath.startsWith("valid/references/") || relativePath.startsWith("invalid/references/")) {
     return schemaId("references", "reference-catalog");
   }

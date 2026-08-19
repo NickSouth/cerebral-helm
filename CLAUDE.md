@@ -30,7 +30,7 @@ parallel systems.
 Canonical vocabulary: Modes = Executive / Developer / School / Entertainment ·
 Agent surfaces = Research Analyst / Financial Advisor / Project Manager / System
 Janitor, **plus Heimlich himself as agent #5** — widest scope, a conversation
-surface and voice, *not* a separate system · Durable knowledge = Markdown + SQLite ·
+surface and voice, _not_ a separate system · Durable knowledge = Markdown + SQLite ·
 Vector indexes = disposable and rebuildable.
 
 ## Current frontier
@@ -46,7 +46,7 @@ Vector indexes = disposable and rebuildable.
 - **Branch flow:** feature branch → PR → `dev` → `prod`, both current as of
   2026-08-18. No `v1.0.0` git tag was ever pushed, despite NIC-106 being closed.
 - **Live trap:** every Playwright visual baseline is `-win32`, there is no Windows box
-  and no Playwright CI job. The suite only *looks* green because it silently skips —
+  and no Playwright CI job. The suite only _looks_ green because it silently skips —
   see Verification before installing browsers.
 - Resolved, no longer worth restating: the settings-read bridge op (`getSettings`)
   exists; the app has a stable signing identity, so the Accessibility TCC re-grant
@@ -56,7 +56,7 @@ Vector indexes = disposable and rebuildable.
 ## LLM integration
 
 **Nothing model-facing is built.** All 92 issues (NIC-225 → NIC-317, Linear milestone
-*CerebralHelm Local LLMs*) are Backlog; 13 are pulled into the current cycle.
+_CerebralHelm Local LLMs_) are Backlog; 13 are pulled into the current cycle.
 
 **Any work touching models, agents, retrieval, or evals reads
 [`docs/llm-integration/README.md`](docs/llm-integration/README.md) first and keeps it
@@ -64,22 +64,22 @@ updated as it goes** — it is the decision log and index, and the place a sessi
 findings land so the next one never re-derives them.
 
 - Why a decision was made · what was measured · traps · where to start → that README.
-  It is *not* the architecture; PLAN.md and the charters win where they disagree.
+  It is _not_ the architecture; PLAN.md and the charters win where they disagree.
 - Architecture, the three tiers, phase order → [`PLAN.md`](docs/llm-integration/PLAN.md).
 - One agent's persona, allowlist, state schema, protocols → [`agents/`](docs/llm-integration/agents/).
 - Does a model still drive this repo's real tools → [`evals/README.md`](evals/README.md).
 
 Invariants, before you open anything: three tiers, **one spine** — the passive tier
-composes prose *and proposals* and executes nothing; agents read through tools, the
+composes prose _and proposals_ and executes nothing; agents read through tools, the
 passive tier reads deterministically. **Models propose; risk classification and
 confirmation policy stay deterministic, outside the model, and absent from the
 model-facing manifest.** `ActionProvenance` may not be weakened. Agent memory is typed
 domain state, never freeform model notes. Descriptors — not prompts — are the lever
 for model accuracy, and every descriptor change owes an eval re-run.
 
-*Unmerged:* that README exists only on the working branch, and the descriptor-affordance
+_Unmerged:_ that README exists only on the working branch, and the descriptor-affordance
 commit (`ea666c1`, `fix/tool-descriptor-model-affordances`) is local-only and unpushed —
-yet every post-fix benchmark number in PLAN.md depends on it. *Known doc conflict:*
+yet every post-fix benchmark number in PLAN.md depends on it. _Known doc conflict:_
 README decision 20 (owner override — Heimlich MAY hold both `finance.*` and
 `web.search`) contradicts PLAN.md's recommendation. **The owner's override wins**;
 PLAN.md is owed the correction.
@@ -94,18 +94,18 @@ PLAN.md is owed the correction.
 4. **Stack baseline & impl decisions** → [`.agent/spec/TECH-STACK.md`](.agent/spec/TECH-STACK.md).
    Only **Locked** rows bind; an ADR may override a **Recommended** one.
 5. **UI/visual authority** → [`.agent/spec/CEREBRALHELM_DESIGN_SPEC.md`](.agent/spec/CEREBRALHELM_DESIGN_SPEC.md)
-   + [`wiki/CerebralHelm-Visual-Design-Reference.pdf`](wiki/CerebralHelm-Visual-Design-Reference.pdf).
-   **Precedence: the design spec beats the MVP-PRD for UI questions.** Day-to-day
-   dashboard work reads the distilled [`.agent/spec/UI-CONSTITUTION.md`](.agent/spec/UI-CONSTITUTION.md)
-   (tokens, grammar, per-increment checklist) — its rules and checklist bind; its header
-   framing (the completed NIC-50 epic, "proposed" token values) is historical.
+   - [`wiki/CerebralHelm-Visual-Design-Reference.pdf`](wiki/CerebralHelm-Visual-Design-Reference.pdf).
+     **Precedence: the design spec beats the MVP-PRD for UI questions.** Day-to-day
+     dashboard work reads the distilled [`.agent/spec/UI-CONSTITUTION.md`](.agent/spec/UI-CONSTITUTION.md)
+     (tokens, grammar, per-increment checklist) — its rules and checklist bind; its header
+     framing (the completed NIC-50 epic, "proposed" token values) is historical.
 6. **Long-term intent** (future compatibility, not current scope) → [`wiki/NORTH-STAR.md`](wiki/NORTH-STAR.md).
 7. **Hard architecture boundaries** → [`docs/architecture/repository-boundaries.md`](docs/architecture/repository-boundaries.md).
 8. **Key decisions** → [`docs/adr/README.md`](docs/adr/) is the index; read it rather than
-   any list here. ADR-001…008 exist: AppKit+WKWebView shell · single command lifecycle ·
+   any list here. ADR-001…009 exist: AppKit+WKWebView shell · single command lifecycle ·
    internal tool registry & risk policy · versioned bridge · vendored SQLite ·
    SQLite as sole operational-history source · Executive default mode · unsandboxed
-   Developer ID distribution. **Next free number is 009.**
+   Developer ID distribution · model provider port. **Next free number is 010.**
 9. **Programme plans** — read only the one you're working in → [`docs/llm-integration/`](docs/llm-integration/)
    · [`docs/quick-actions/PLAN.md`](docs/quick-actions/PLAN.md) · [`docs/widget-work-handoff.md`](docs/widget-work-handoff.md)
    · `docs/mvp-polish/` · `docs/pre-ui-frontend/` (historical). Ops/release →
@@ -184,6 +184,8 @@ next step. Avoid unrelated refactors and opportunistic features.
 what was run · key decisions · unresolved risks · the next logical increment
 (named, not implemented).
 
+Never include Linear ticket ids inside of comments.
+
 ## Engineering principles
 
 Build the current increment with the full vision in mind, without implementing
@@ -193,7 +195,7 @@ future scope. Preserve these architectural truths:
 - UI expresses intent and renders state; it does not control the platform directly. All UI work follows the design spec + visual references.
 - Platform / provider / model / storage behavior lives behind **replaceable adapters**; provider-neutral at the core boundary.
 - Tools are narrow, explicit, typed, permission-aware, independently testable.
-- **Risk classification and confirmation policy are deterministic and outside models.** Models may *propose* actions but never bypass policy or invoke unrestricted capabilities.
+- **Risk classification and confirmation policy are deterministic and outside models.** Models may _propose_ actions but never bypass policy or invoke unrestricted capabilities.
 - **Descriptors are authoritative** (ADR-003): the rich descriptors in `config/tools/descriptors/` are the source of truth for risk/policy; `config/tools/*.json` is a **stricter-only overlay** (may tighten, never weaken — enforced in `ToolRegistryBuilder.register`). Known exception: `evals/lib/catalog.mjs` is a sanctioned prototype projection, to be replaced by the Swift one.
 - `packages/` stays portable (**no AppKit**); `tools` and `knowledge` are **siblings** (both → `core`), never depend on each other; concretes compose in `packages/runtime-host`, and apps supply only capabilities and paths.
 - Configuration lives outside hardcoded logic where practical.
