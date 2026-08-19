@@ -25,11 +25,15 @@ function Host({
   docKey = "doc-1",
   enabled = true,
   withCaret = false,
+  withDots = false,
   paragraphs = [FIRST]
 }: {
   docKey?: string | null;
   enabled?: boolean;
   withCaret?: boolean;
+  /** Stands in for a report's painted parts — a calendar dot, a team accent, a proposal pill:
+   *  elements that carry no text and so are invisible to a text-only walk. */
+  withDots?: boolean;
   paragraphs?: readonly string[];
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -38,7 +42,12 @@ function Host({
   return (
     <div ref={ref} data-testid="doc">
       {paragraphs.map((text, index) => (
-        <p key={index}>{text}</p>
+        <p key={index}>
+          {withDots ? (
+            <span data-testid={`dot-${index}`} style={{ background: "#ff0000" }} />
+          ) : null}
+          {text}
+        </p>
       ))}
       {withCaret ? <span ref={caretRef} data-testid="caret" /> : null}
     </div>
@@ -116,23 +125,24 @@ describe("useTypewriter", () => {
     const { getByTestId } = render(<Host paragraphs={[FIRST, SECOND]} />);
     const doc = getByTestId("doc");
 
+    // 71 characters over two runs: too long for the base rate to fit the budget, so this document
+    // types at ~81 chars/second and the beat between the runs is the full 120ms.
     frame(0);
     frame(500);
     // The frame that crosses a run boundary is what arms the beat, so this is where it starts.
-    frame(1000);
+    frame(630);
     const atBoundary = textOf(doc);
-    expect(atBoundary.startsWith(FIRST)).toBe(true);
-    expect(atBoundary.length).toBeLessThan(FIRST.length + SECOND.length);
+    expect(atBoundary).toBe(FIRST);
 
     // Held for the full 120ms beat — frames keep running, the reveal does not advance.
-    frame(1050);
-    frame(1110);
+    frame(700);
+    frame(749);
     expect(textOf(doc)).toBe(atBoundary);
 
-    frame(1130);
+    frame(820);
     expect(textOf(doc).length).toBeGreaterThan(atBoundary.length);
 
-    frame(5000);
+    frame(3000);
     expect(textOf(doc)).toBe(FIRST + SECOND);
   });
 
@@ -168,8 +178,95 @@ describe("useTypewriter", () => {
 
     frame(0);
     expect(caret.hasAttribute("data-on")).toBe(true);
+    // The caret is the hook's own instrument, not content: hiding it with the document would have
+    // meant no visible caret for the whole run it exists to mark.
+    expect(caret.style.visibility).toBe("");
 
     frame(1500);
     expect(caret.hasAttribute("data-on")).toBe(false);
+  });
+
+  /**
+   * The painted parts of a report — a calendar event's colour dot, a scoreboard's team accent, a
+   * proposal's pill — carry no text, so a text-only reveal left them all on screen from the first
+   * frame: a column of coloured dots with the words arriving around them afterwards.
+   */
+  describe("painted elements", () => {
+    it("holds each one back until its own line starts typing", () => {
+      const { getByTestId } = render(<Host withDots paragraphs={[FIRST, SECOND]} />);
+      const first = getByTestId("dot-0");
+      const second = getByTestId("dot-1");
+
+      frame(0);
+      expect(first.style.visibility).toBe("hidden");
+      expect(second.style.visibility).toBe("hidden");
+
+      // Part-way through the first line: its dot is out, the second line's is not.
+      frame(300);
+      expect(first.style.visibility).toBe("");
+      expect(second.style.visibility).toBe("hidden");
+
+      // The first line has just finished; the second has not written a character yet, so its dot
+      // is still waiting rather than sitting above an empty line.
+      frame(630);
+      expect(textOf(getByTestId("doc"))).toBe(FIRST);
+      expect(second.style.visibility).toBe("hidden");
+
+      frame(3000);
+      expect(second.style.visibility).toBe("");
+    });
+
+    it("gives them back their own inline colour, not a cleared style", () => {
+      const view = render(<Host withDots />);
+      const dot = view.getByTestId("dot-0");
+      frame(0);
+      frame(300);
+      view.unmount();
+      // Cleanup removes only what it set. These elements carry React's inline colours — an event's
+      // dot, a team's accent — and wiping the style would strip the very thing they exist to show.
+      expect(dot.style.visibility).toBe("");
+      expect(dot.style.background).toBe("rgb(255, 0, 0)");
+    });
+  });
+
+  /**
+   * Pacing is per document. A fixed rate cannot serve both a one-line greeting and a forty-block
+   * brief: at 62 chars/second the brief below would take over a minute.
+   */
+  describe("length-aware pacing", () => {
+    const LONG = Array.from({ length: 40 }, (_, index) => `${index}`.padEnd(100, "x"));
+
+    it("finishes a long report inside the budget, still frame by frame", () => {
+      const { getByTestId } = render(<Host paragraphs={LONG} />);
+      const doc = getByTestId("doc");
+      const full = LONG.join("");
+
+      frame(0);
+      let now = 0;
+      let frames = 0;
+      // Step at a real display cadence rather than jumping, so the elapsed time below is the time
+      // a reader would actually wait.
+      while (queue.length && now < 5000) {
+        now += 16;
+        frames += 1;
+        frame(now);
+      }
+
+      expect(textOf(doc)).toBe(full);
+      expect(now).toBeLessThanOrEqual(1200);
+      // Still an animation: it was revealed over many frames, not dumped on the first one.
+      expect(frames).toBeGreaterThan(10);
+    });
+
+    it("leaves a short document at the unhurried base rate", () => {
+      const { getByTestId } = render(<Host />);
+      const doc = getByTestId("doc");
+
+      frame(0);
+      // 50 characters at 62 chars/second: still around 0.8s, unchanged by the budget, because a
+      // short document that raced to fit 1s would read as a flicker.
+      frame(500);
+      expect(textOf(doc).length).toBe(31);
+    });
   });
 });
