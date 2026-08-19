@@ -21,10 +21,11 @@ two disagree, PLAN.md and the charters win, and this file should be corrected.
 
 ## Where things stand
 
-- **Phase 0 is underway.** `NIC-225` is In Progress and its first increment — ADR-009 —
-  is written (2026-08-18). No model-facing *code* exists yet: the port
-  (`NIC-241`), the profile/lifecycle config (`NIC-243`) and the Ollama adapter
-  (`NIC-242`) are still unbuilt. Everything else in the milestone remains Backlog.
+- **Phase 0 is underway.** `NIC-225`: ADR-009 is written and the `ModelProvider` port
+  exists in `packages/core/Sources/CerebralCore/Model/` (`NIC-241`, 2026-08-18) — protocol,
+  request/usage types, `ModelDeadline`, `MockModelProvider`, 13 tests. Nothing calls it, by
+  design. Still unbuilt: the profile/lifecycle config (`NIC-243`) and the Ollama adapter
+  (`NIC-242`). Everything else in the milestone remains Backlog.
 - **Committed:** descriptor affordances on `fix/tool-descriptor-model-affordances`;
   plan, charters and eval harness on `feat/llm-eval-harness`. Both pushed, both
   awaiting merge to `dev`. Full `node scripts/test.mjs` green on the contract change.
@@ -233,6 +234,13 @@ run — swap contamination; re-measure on a clean boot.*
   between models**. A run went from ~12 to 30+ minutes.
 - **Unbounded `num_ctx` allocates the full advertised window** — 131K/262K — taking a
   21 GB model to 29 GB resident. Capping to 16K recovered ~6 GB.
+- **Cancelling an `AsyncThrowingStream` consumer terminates the stream, it does not throw
+  through it.** So a cancelled completion arrives at the collector looking exactly like a
+  truncated one, and the obvious implementation reports "the runtime returned corruption"
+  when the user simply changed their mind. The consumer must check `Task.isCancelled`
+  before concluding a stream was broken — adapter-side politeness cannot fix it, because
+  the stream is already terminated by the time the adapter notices. Caught by a test in
+  `Tests/CoreModelTests/ModelProviderTests.swift`, not by reasoning.
 - **Prefix-cache thrash:** interleaving allowlists dropped a 1,819-token cached prefix
   to 345. Group work by manifest.
 - **`ReportRegion.test.tsx:73` is flaky** — asserts on greeting text that arrives via
