@@ -168,3 +168,68 @@ test("valid shell confirmation fixture is explicit and does not default to appro
   assert.equal(disclosure.executionNotice, "Execution has not happened yet.");
   assert.notEqual(disclosure.choices.defaultFocusedChoice, "approve");
 });
+
+/// Maps a descriptor's `inputSchema.schemaId` to the file backing it.
+///
+/// Ids are `https://cerebralhelm.local/schemas/<path>`, and the repo mirrors that
+/// path under `packages/contracts/schemas/`, so a new tool needs no registration.
+function schemaPathForId(schemaId) {
+  const marker = "/schemas/";
+  const index = schemaId.indexOf(marker);
+
+  assert.notEqual(index, -1, `unrecognised schema id ${schemaId}`);
+  return path.join(contractsRoot, "schemas", schemaId.slice(index + marker.length));
+}
+
+/// Every property a caller can supply, as dotted paths, including the ones nested
+/// inside objects and array items — a bare field hidden one level down reads to a
+/// model exactly like a bare field at the top.
+function inputFields(schema, prefix = "") {
+  const fields = [];
+
+  for (const [name, property] of Object.entries(schema.properties ?? {})) {
+    const fieldPath = prefix ? `${prefix}.${name}` : name;
+    fields.push([fieldPath, property]);
+
+    if (property.type === "object") {
+      fields.push(...inputFields(property, fieldPath));
+    }
+    if (property.type === "array" && property.items?.type === "object") {
+      fields.push(...inputFields(property.items, `${fieldPath}[]`));
+    }
+  }
+
+  return fields;
+}
+
+test("every tool input field states its meaning, not only its shape", () => {
+  // Measured, not stylistic: an audit found 14 required fields carrying no prose,
+  // 7 of them pattern-constrained — telling a model the shape of a value and
+  // nothing about what it means. Describing them moved the eval suite 90.6% ->
+  // 93.8%, entirely in argument correctness, and stripping them again reproduced
+  // an invented identifier. An `enum` is not a substitute: it constrains the value
+  // without saying when to send one, which is how `window.arrange`'s frame and
+  // `note.capture`'s sensitivity stayed opaque after the first pass.
+  const descriptorFiles = collectJsonFiles(path.join(repositoryRoot, "config", "tools", "descriptors"));
+  const bare = [];
+  let inspectedFields = 0;
+
+  for (const filePath of descriptorFiles) {
+    const descriptor = readJson(filePath);
+    const schemaPath = schemaPathForId(descriptor.inputSchema.schemaId);
+
+    assert.ok(fs.existsSync(schemaPath), `${descriptor.id} references a missing input schema ${schemaPath}`);
+
+    for (const [fieldPath, property] of inputFields(readJson(schemaPath))) {
+      inspectedFields += 1;
+      if (typeof property.description !== "string" || property.description.trim() === "") {
+        bare.push(`${descriptor.id}.${fieldPath}`);
+      }
+    }
+  }
+
+  // Guards against the walk silently finding nothing and passing vacuously.
+  assert.equal(descriptorFiles.length, mvpToolIds.size, "every MVP tool must have a descriptor to walk");
+  assert.ok(inspectedFields > 0, "the field walk inspected nothing");
+  assert.deepEqual(bare, [], `these input fields carry no description: ${bare.join(", ")}`);
+});

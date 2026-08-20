@@ -30,11 +30,18 @@ two disagree, PLAN.md and the charters win, and this file should be corrected.
   Ollama 0.32.7** — a streamed completion in 9.0 s with real token accounting, plus 18 offline
   helper tests. Nothing calls any of it, by design: phase 0 is complete and the first caller is
   `NIC-250`. Everything else in the milestone remains Backlog.
-- **Committed:** descriptor affordances on `fix/tool-descriptor-model-affordances`;
-  plan, charters and eval harness on `feat/llm-eval-harness`. Both pushed, both
-  awaiting merge to `dev`. Full `node scripts/test.mjs` green on the contract change.
+- **Merged to `dev` (2026-08-18):** descriptor affordances as `5e95795` (#20); plan,
+  charters and eval harness as `214813e` (#21). Full `node scripts/test.mjs` green on
+  the contract change.
 - **Installed locally:** Ollama 0.32.7, llama.cpp (Homebrew), and ~42 GB of models —
   `muse-glimmer:30b-mlx`, `qwen3.6:35b-mlx`, `qwen3-embedding:0.6b`.
+- **Descriptor affordances are finished (`NIC-226`, 2026-08-20).** The seven fields the
+  first pass left — five optional ones with no prose, plus `note.capture.sensitivity`
+  and `window.arrange`'s `frame`, which had an enum and nothing else — now describe what
+  omission does. `scripts/contracts-tool.test.mjs` gates it: every model-facing input
+  field, nested ones included, must carry a description, so a new tool cannot ship bare.
+  `evals/lib/score.mjs` gained a `"!"` expectation meaning **the argument must be
+  absent**, without which an invented optional argument was invisible to scoring.
 
 **Where to start:** `NIC-284`, the SimpleFIN adapter. It is the only ticket with a
 clock on it — SimpleFIN serves a 90-day window, so financial trend history exists
@@ -219,6 +226,16 @@ deliberating before a short brief. 79–130s → 9–17s.
 **98.7% cached**, turning ~46s of cold prefill into ~1.5s. Each distinct allowlist is
 a distinct cache prefix, so few stable manifests matter.
 
+**8. Restraint on optional arguments is descriptor-driven too, and costs more.** With
+the optional fields described, Qwen sends `includeIcons: false` instead of accepting a
+default that attaches a base64 icon per installed app, leaves `location` empty on an
+event that named no place, and reads one metric instead of five — 4/5 on the new
+`argument-restraint` cases. The old 32 cases are **unchanged**, as expected: none of
+them grade these arguments. Cost was **+8.3% prompt tokens for seven fields** against
++6.7% for the first fourteen, because omission semantics take more words than formats.
+The one miss was not restraint but completeness — `note.capture` declined to invent a
+sensitivity and then dropped the required `title`.
+
 **7. Multi-turn holds up.** 9/10, **no runaways**, median 2 calls. capability-gap
 2/2 (refused to fake calendar/Linear reads), injection 2/2 **including via tool
 result**. The one real weakness: **stopping on empty results** — 5 calls where 1 was
@@ -295,5 +312,12 @@ run — swap contamination; re-measure on a clean boot.*
 6. **`note.capture.kind` enum** — deliberately left open. Constraining what is written
    to durable frontmatter is a product decision about note taxonomy. A `note` default
    was agreed; the vocabulary was not.
-7. **Whether Glimmer deserves a re-measure** after the descriptor fixes, given its
-   failures were exactly the type those fixes target.
+7. ~~**Whether Glimmer deserves a re-measure** after the descriptor fixes, given its
+   failures were exactly the type those fixes target.~~ **Settled 2026-08-20 — no,
+   and not later either.** The premise held (its invented `repoPath` was descriptor-
+   driven, and the fixes now cover it), but the payoff cannot clear the latency gap:
+   Glimmer tied Qwen on accuracy at **19.2 s median turn against 3.5 s**, 14.8 tok/s
+   decode against 66.8. A re-measure could at best confirm a tie on the slower model.
+   Owner's call. Qwen3.6-35B-A3B is the model the descriptors are tuned against;
+   revisit only if a future Glimmer release changes the speed picture, not the
+   accuracy one.
