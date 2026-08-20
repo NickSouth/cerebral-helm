@@ -28,9 +28,11 @@
       "minLength": 1
     },
     "location": {
+      "description": "Where the event takes place, in the user's own words - a room, an address, a meeting link. Omit unless they said one; a plausible-looking invented location is worse than an empty field.",
       "type": "string"
     },
     "notes": {
+      "description": "Longer detail stored on the event body - an agenda, a link, whatever the user asked to be recorded. Omit when there is nothing beyond the title; restating the title here adds nothing.",
       "type": "string"
     }
   }

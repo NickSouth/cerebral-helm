@@ -29,6 +29,7 @@
             "minLength": 1
           },
           "frame": {
+            "description": "Which region of the target display's visible area the window fills. Halves and thirds are measured against that display rather than the window's current size, and `centered` is a three-quarter-size window inset from every edge, not a move that preserves the window's size. Only these named frames are accepted; arbitrary coordinates are not.",
             "type": "string",
             "enum": [
               "full",
