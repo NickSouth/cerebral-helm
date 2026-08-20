@@ -295,6 +295,21 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // Composed *after* the settings store because the interests note (NIC-223) lives under the
         // EFFECTIVE knowledge root, which is the user's `knowledgeRootReference` when they have
         // re-pointed the vault (NIC-138).
+        // The user's interests, per newsProfile, re-read on every use — like the stocks tickers and
+        // the calendar mode map — so editing the note in any Markdown editor takes effect on the
+        // next tick without a relaunch. Read by two callers a tick: the provider, to ask the source
+        // for these terms, and the publisher, to rank whatever comes back. Two reads of a small
+        // local file at a two-hour cadence is not worth a cache that could go stale against a file
+        // the user edits by hand. No note, an empty note, or a re-pointed vault that has none: no
+        // interests, which is exactly the pre-NIC-223 behaviour.
+        let newsInterests: @Sendable () -> [String: [NewsInterest]] = {
+            let stored = (try? settingsStore?.load()).flatMap { $0 } ?? StoredSettings()
+            let root = EffectiveSettings.knowledgeRootURL(
+                reference: stored.knowledgeRootReference, default: paths.knowledgeRoot
+            )
+            guard let note = NewsInterestNote.load(knowledgeRoot: root) else { return [:] }
+            return note.resolve(modeProfiles: newsModeProfiles)
+        }
         if let newsCatalog = NewsProfileCatalog.load(configDirectory: paths.configDirectory),
            !newsCatalog.profiles.isEmpty {
             let news = NewsPublisher(
@@ -304,7 +319,10 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 // publishers' own RSS/Atom feeds — so a rate limit, an outage, or an unconfigured
                 // key degrades the panel's *source*, never the panel itself.
                 provider: FallbackNewsProvider([
-                    NewsDataProvider(catalog: newsCatalog),
+                    NewsDataProvider(
+                        catalog: newsCatalog,
+                        interests: { profile in newsInterests()[profile] ?? [] }
+                    ),
                     RSSNewsProvider(catalog: newsCatalog),
                 ]),
                 cacheStore: try? makeNewsCacheStore(paths),
@@ -313,14 +331,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 // without a relaunch and without spending a provider request. No note, an empty
                 // note, or a re-pointed vault that has none: no interests, which is exactly the
                 // pre-NIC-223 behaviour.
-                interests: {
-                    let stored = (try? settingsStore?.load()).flatMap { $0 } ?? StoredSettings()
-                    let root = EffectiveSettings.knowledgeRootURL(
-                        reference: stored.knowledgeRootReference, default: paths.knowledgeRoot
-                    )
-                    guard let note = NewsInterestNote.load(knowledgeRoot: root) else { return [:] }
-                    return note.resolve(modeProfiles: newsModeProfiles)
-                },
+                interests: newsInterests,
                 emit: { relay.emit($0) }
             )
             newsPublisher = news

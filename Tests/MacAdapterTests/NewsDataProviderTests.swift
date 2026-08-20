@@ -11,7 +11,8 @@ import CerebralCore
 @Test("the request sends the key in the X-ACCESS-KEY header, never the URL (FR-OBS-03)")
 func newsDataRequestKeyInHeaderNotURL() throws {
     let request = try #require(NewsDataProvider.makeRequest(
-        host: "https://newsdata.io", category: "technology", language: "en", apiToken: "SECRET_KEY"
+        host: "https://newsdata.io", category: "technology", language: "en",
+        query: nil, apiToken: "SECRET_KEY"
     ))
     let url = try #require(request.url?.absoluteString)
     #expect(url.contains("/api/1/latest"))
@@ -21,6 +22,47 @@ func newsDataRequestKeyInHeaderNotURL() throws {
     // The key is in the header, and NOT anywhere in the URL.
     #expect(!url.contains("SECRET_KEY"))
     #expect(request.value(forHTTPHeaderField: "X-ACCESS-KEY") == "SECRET_KEY")
+    // No interests → no `q` at all, so a user without the note gets the request they always got.
+    #expect(!url.contains("q="))
+}
+
+@Test("interest terms ride along as a q= search beside the category filter (NIC-223)")
+func newsDataRequestCarriesTheInterestQuery() throws {
+    let request = try #require(NewsDataProvider.makeRequest(
+        host: "https://newsdata.io", category: "technology", language: "en",
+        query: "\"artificial intelligence\" OR rugby", apiToken: "SECRET_KEY"
+    ))
+    let url = try #require(request.url?.absoluteString)
+    // Verified against the live free tier: `q` combines with category and prioritydomain.
+    #expect(url.contains("category=technology"))
+    #expect(url.contains("prioritydomain=top"))
+    let query = try #require(URLComponents(string: url)?.queryItems?.first { $0.name == "q" }?.value)
+    #expect(query == "\"artificial intelligence\" OR rugby")
+}
+
+@Test("an empty query is omitted rather than sent blank")
+func newsDataRequestOmitsAnEmptyQuery() throws {
+    let request = try #require(NewsDataProvider.makeRequest(
+        host: "https://newsdata.io", category: "technology", language: "en",
+        query: "", apiToken: "SECRET_KEY"
+    ))
+    #expect(!(try #require(request.url?.absoluteString)).contains("q="))
+}
+
+@Test("config's interestQuery switch decides whether interests reach the provider at all")
+func newsDataHonoursTheInterestQuerySwitch() {
+    let on = NewsProfileCatalog(
+        language: "en", defaultCategory: "top", profiles: ["broad": "top"], interestQuery: "q"
+    )
+    let off = NewsProfileCatalog(
+        language: "en", defaultCategory: "top", profiles: ["broad": "top"], interestQuery: "off"
+    )
+    let unset = NewsProfileCatalog(language: "en", defaultCategory: "top", profiles: ["broad": "top"])
+    #expect(on.sendsInterestQuery)
+    #expect(!off.sendsInterestQuery)
+    // An older config file with no switch keeps the default behaviour rather than silently
+    // disabling the feature.
+    #expect(unset.sendsInterestQuery)
 }
 
 @Test("a normal payload parses id/title/source/url from the NewsData fields")

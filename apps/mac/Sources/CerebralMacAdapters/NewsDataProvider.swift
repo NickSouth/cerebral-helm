@@ -12,7 +12,8 @@ import CerebralCore
 ///
 /// The profile → category mapping is not hardcoded here: it comes from the injected
 /// ``NewsProfileCatalog`` (loaded from `config/news/profiles.json`), satisfying AC5. The endpoint
-/// is `/api/1/latest?category=<categories>&language=<lang>`. Any transport, non-2xx, or decode
+/// is `/api/1/latest?category=<categories>&language=<lang>`, plus an OR-joined `q=` of the user's
+/// interests for that profile when they have any (NIC-223). Any transport, non-2xx, or decode
 /// failure throws ``NewsError/providerFailed(_:)`` so the panel degrades to an honest "unavailable"
 /// — never a fabricated list. Up to `limit` headlines are returned — the *candidate pool* interest
 /// ranking then picks the panel's four from, not the panel's own slot count; an item without a
@@ -22,6 +23,7 @@ public struct NewsDataProvider: NewsProvider {
     private let host: String
     private let catalog: NewsProfileCatalog
     private let limit: Int
+    private let interests: @Sendable (String) -> [NewsInterest]
 
     public init(
         catalog: NewsProfileCatalog,
@@ -31,6 +33,12 @@ public struct NewsDataProvider: NewsProvider {
         // four the panel shows from everything returned here. Ten is the free tier's page size,
         // so a fuller pool costs no extra credit.
         limit: Int = 10,
+        // The user's interests for a profile, read per request (NIC-223) so an edit to the note
+        // reaches the *source* on the next fetch, not just the ranking. A closure rather than a
+        // stored value for the same reason the publisher takes one: the note is a file the user
+        // edits, and this provider outlives any single reading of it. Defaults to none, which
+        // leaves the request byte-identical to the pre-NIC-223 one.
+        interests: @escaping @Sendable (String) -> [NewsInterest] = { _ in [] },
         resourceTimeout: TimeInterval = 15
     ) {
         if let session {
@@ -44,6 +52,7 @@ public struct NewsDataProvider: NewsProvider {
         self.host = host
         self.catalog = catalog
         self.limit = limit
+        self.interests = interests
     }
 
     public func headlines(profile: String, apiToken: String) async throws -> [NewsHeadline] {
@@ -54,8 +63,11 @@ public struct NewsDataProvider: NewsProvider {
             throw NewsError.credentialsMissing
         }
         let category = catalog.category(for: profile)
+        // Ask the source for the user's interests, not just the category. Nil when there are none
+        // (or when config has the switch off), in which case `q` is omitted entirely.
+        let query = catalog.sendsInterestQuery ? NewsInterestQuery.build(interests(profile)) : nil
         guard let request = Self.makeRequest(
-            host: host, category: category, language: catalog.language, apiToken: apiToken
+            host: host, category: category, language: catalog.language, query: query, apiToken: apiToken
         ) else {
             throw NewsError.providerFailed("Could not build the news request URL.")
         }
@@ -98,7 +110,9 @@ public struct NewsDataProvider: NewsProvider {
     /// Builds the latest-headlines request. The key rides the `X-ACCESS-KEY` header, deliberately
     /// NOT the URL — so the secret never appears in a logged/cached request URL (FR-OBS-03). The
     /// category and language are data (not secret), so they stay in the query.
-    static func makeRequest(host: String, category: String, language: String, apiToken: String) -> URLRequest? {
+    static func makeRequest(
+        host: String, category: String, language: String, query: String?, apiToken: String
+    ) -> URLRequest? {
         guard var components = URLComponents(string: "\(host)/api/1/latest") else { return nil }
         components.queryItems = [
             URLQueryItem(name: "category", value: category),
@@ -107,6 +121,12 @@ public struct NewsDataProvider: NewsProvider {
             // filter that keeps the low-quality aggregator blogs out of the panel (owner request).
             URLQueryItem(name: "prioritydomain", value: "top"),
         ]
+        // The interest keywords (NIC-223), verified against the live free tier to combine with
+        // `category` and `prioritydomain`. Omitted rather than sent empty when there are no
+        // interests, so a user without the note gets exactly the request they got before.
+        if let query, !query.isEmpty {
+            components.queryItems?.append(URLQueryItem(name: "q", value: query))
+        }
         guard let url = components.url else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
