@@ -91,8 +91,10 @@ func linearProjectCycleQueryIsFiltered() {
     #expect(query.contains("eqIgnoreCase: $project"))
     // Both halves of the filter must be present; either alone returns the wrong set entirely.
     #expect(query.contains("cycle: { isActive: { eq: true } }"))
-    // The cycles root exists so the empty case can still name the cycle.
+    // The cycles root exists so the empty case can still name the cycle, and the projects root
+    // so a misspelled name is not rendered as "nothing to do".
     #expect(query.contains("cycles(first: 1"))
+    #expect(query.contains("projects(first: 1"))
     // A truncated page has to be detectable.
     #expect(query.contains("hasNextPage"))
     // Issue descriptions are deliberately not requested.
@@ -110,7 +112,7 @@ func linearDecodesIssue() throws {
         "sortOrder": -99.5,
         "state": ["name": "Next-Up", "type": "unstarted", "color": "#e2e2e2", "position": 2],
         "labels": ["nodes": [["name": "Feature"]]],
-        "assignee": ["displayName": "Nick"]
+        "assignee": ["displayName": "nickrsouthey", "initials": "NS"]
     ]
 
     let issue = try #require(LinearAPIClient.decodeIssue(node))
@@ -119,7 +121,10 @@ func linearDecodesIssue() throws {
     #expect(issue.estimate == 5)
     #expect(issue.sortOrder == -99.5)
     #expect(issue.labels == ["Feature"])
-    #expect(issue.assignee == "Nick")
+    // displayName is Linear's handle; the avatar draws the initials it supplies, never a letter
+    // sliced off the handle (verified live 2026-08-20).
+    #expect(issue.assignee == "nickrsouthey")
+    #expect(issue.assigneeInitials == "NS")
     // The state's TYPE is what grouping keys off — the name is user-renameable.
     #expect(issue.state.type == "unstarted")
     #expect(issue.state.color == "#e2e2e2")
@@ -139,6 +144,7 @@ func linearDecodesSparseIssue() throws {
     let issue = try #require(LinearAPIClient.decodeIssue(node))
     #expect(issue.estimate == nil)
     #expect(issue.assignee == nil)
+    #expect(issue.assigneeInitials == nil)
     #expect(issue.labels.isEmpty)
     #expect(issue.priority == 0)
 }
@@ -210,6 +216,41 @@ func linearResolvesCycleWhenProjectHasNoIssues() throws {
 @Test("between cycles, there is no cycle to report")
 func linearResolvesNoCycle() {
     #expect(LinearAPIClient.resolveCycle(issueNodes: [], payload: ["cycles": ["nodes": []]]) == nil)
+}
+
+@Test("a name that matches no Linear project is distinguishable from an empty cycle")
+func linearReportsUnmatchedProject() {
+    // Live finding (2026-08-20): a misspelled `linear_project` returns zero issues, exactly like a
+    // correctly-linked project with nothing in the cycle. Without the projects root the surface
+    // would render a typo as "nothing to do" — an answer, and the wrong one.
+    #expect(LinearAPIClient.matchedProjectName(in: ["projects": ["nodes": []]]) == nil)
+    #expect(LinearAPIClient.matchedProjectName(in: [:]) == nil)
+}
+
+@Test("the matched project reports Linear's own casing, not the descriptor's")
+func linearReportsCanonicalProjectName() {
+    // `eqIgnoreCase` means "cerebralhelm" in a descriptor matches "CerebralHelm" in Linear
+    // (verified live). The header echoes Linear's spelling so the match is visible.
+    let payload: [String: Any] = ["projects": ["nodes": [["id": "p1", "name": "CerebralHelm"]]]]
+    #expect(LinearAPIClient.matchedProjectName(in: payload) == "CerebralHelm")
+}
+
+@Test("numeric fields decode whether Linear sends them as int or float")
+func linearDecodesMixedNumberTypes() throws {
+    // Not hypothetical: across one real cycle response `sortOrder` and `state.position` each
+    // arrived as BOTH int and float depending on the issue (verified live 2026-08-20).
+    let asInt = try #require(LinearAPIClient.decodeIssue([
+        "identifier": "NIC-1", "title": "t", "url": "u", "priority": 3, "sortOrder": -77240,
+        "state": ["name": "Todo", "type": "unstarted", "color": "#e2e2e2", "position": 1]
+    ]))
+    let asFloat = try #require(LinearAPIClient.decodeIssue([
+        "identifier": "NIC-2", "title": "t", "url": "u", "priority": 0, "sortOrder": 49.16,
+        "state": ["name": "Testing", "type": "started", "color": "#f2994a", "position": 907.65]
+    ]))
+    #expect(asInt.sortOrder == -77240)
+    #expect(asInt.state.position == 1)
+    #expect(asFloat.sortOrder == 49.16)
+    #expect(asFloat.state.position == 907.65)
 }
 
 @Test("a blank project name is refused before any request is made")

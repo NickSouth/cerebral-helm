@@ -81,8 +81,13 @@ public struct LinearProjectCycle: Equatable, Sendable {
         public let sortOrder: Double
         public let state: State
         public let labels: [String]
-        /// The assignee's display name, or `nil` when unassigned.
+        /// The assignee's display name, or `nil` when unassigned. Verified live 2026-08-20: this
+        /// is Linear's **handle** (`nickrsouthey`), not a person's name — it labels the row for
+        /// assistive tech, while ``assigneeInitials`` is what an avatar should draw.
         public let assignee: String?
+        /// Linear's own initials for the assignee (`NS`), or `nil` when unassigned. Taken from the
+        /// API rather than derived from the handle, which would render "n".
+        public let assigneeInitials: String?
 
         public init(
             identifier: String,
@@ -93,7 +98,8 @@ public struct LinearProjectCycle: Equatable, Sendable {
             sortOrder: Double,
             state: State,
             labels: [String],
-            assignee: String?
+            assignee: String?,
+            assigneeInitials: String?
         ) {
             self.identifier = identifier
             self.title = title
@@ -104,6 +110,7 @@ public struct LinearProjectCycle: Equatable, Sendable {
             self.state = state
             self.labels = labels
             self.assignee = assignee
+            self.assigneeInitials = assigneeInitials
         }
     }
 
@@ -124,6 +131,15 @@ public struct LinearProjectCycle: Equatable, Sendable {
         }
     }
 
+    /// The project's name as **Linear** spells it, or `nil` when no project matches the descriptor's
+    /// `linear_project` at all.
+    ///
+    /// This exists because of a live finding (2026-08-20): a misspelled project name returns zero
+    /// issues, which is byte-identical to a correctly-linked project that simply has nothing in the
+    /// cycle. Without this the surface would quietly render a typo as "nothing to do" — the worst
+    /// kind of wrong, because it looks like an answer. It also lets the header echo the canonical
+    /// casing back, confirming which project was matched.
+    public let matchedProject: String?
     /// The active cycle, or `nil` when there is none running — between cycles is a real state and
     /// reads differently from "a cycle is running and this project has nothing in it".
     public let cycle: Cycle?
@@ -132,7 +148,8 @@ public struct LinearProjectCycle: Equatable, Sendable {
     /// list silently cut at the page size reads as complete when it is not.
     public let truncated: Bool
 
-    public init(cycle: Cycle?, issues: [Issue], truncated: Bool) {
+    public init(matchedProject: String?, cycle: Cycle?, issues: [Issue], truncated: Bool) {
+        self.matchedProject = matchedProject
         self.cycle = cycle
         self.issues = issues
         self.truncated = truncated
@@ -276,6 +293,7 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding, 
         let pageInfo = container?["pageInfo"] as? [String: Any]
 
         return LinearProjectCycle(
+            matchedProject: Self.matchedProjectName(in: payload),
             cycle: Self.resolveCycle(issueNodes: nodes, payload: payload),
             issues: issues,
             truncated: pageInfo?["hasNextPage"] as? Bool == true
@@ -370,10 +388,15 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding, 
 
     /// One project's issues in the active cycle, plus the active cycle itself (NIC-221).
     ///
-    /// Two root fields in one document rather than two round trips. The `cycles` root exists to
-    /// answer the **empty** case honestly: when the project has no issues in the cycle there is no
-    /// issue to read the cycle off, and "there is no active cycle" and "the cycle is running and
-    /// this project has nothing in it" must not collapse into the same answer.
+    /// Three root fields in one document rather than three round trips, and each earns its place
+    /// by separating a state that would otherwise collapse into another:
+    ///
+    /// - `projects` distinguishes **"no such project"** from "this project has nothing in the
+    ///   cycle" — verified live (2026-08-20) to be the same zero-issue response otherwise, which
+    ///   would render a misspelled `linear_project` as "nothing to do".
+    /// - `cycles` answers the **empty** case: with no issues there is no issue to read the cycle
+    ///   off, and "there is no active cycle" must not collapse into "the cycle is running and this
+    ///   project has nothing in it".
     ///
     /// The project is matched with `eqIgnoreCase` because the name is hand-typed into a
     /// `PROJECT.md` frontmatter key, where casing is not something to fail a lookup over.
@@ -382,6 +405,9 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding, 
     /// list can say so instead of looking complete.
     static let projectCycleQuery = """
     query CerebralHelmProjectCycle($project: String!) {
+      projects(first: 1, filter: { name: { eqIgnoreCase: $project } }) {
+        nodes { id name }
+      }
       cycles(first: 1, filter: { isActive: { eq: true } }) {
         nodes { id number name startsAt endsAt }
       }
@@ -402,7 +428,7 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding, 
           sortOrder
           state { name type color position }
           labels(first: 10) { nodes { name } }
-          assignee { displayName }
+          assignee { displayName initials }
           cycle { id number name startsAt endsAt }
         }
       }
@@ -451,6 +477,7 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding, 
             let state = decodeState(stateNode)
         else { return nil }
 
+        let assignee = node["assignee"] as? [String: Any]
         return LinearProjectCycle.Issue(
             identifier: identifier,
             title: title,
@@ -462,7 +489,8 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding, 
             sortOrder: number(node["sortOrder"]) ?? 0,
             state: state,
             labels: labelNames(in: node["labels"]),
-            assignee: (node["assignee"] as? [String: Any])?["displayName"] as? String
+            assignee: assignee?["displayName"] as? String,
+            assigneeInitials: assignee?["initials"] as? String
         )
     }
 
@@ -509,6 +537,15 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding, 
             let nodes = cycles["nodes"] as? [[String: Any]]
         else { return nil }
         return nodes.compactMap(decodeCycle).first
+    }
+
+    /// The matched project's name as Linear spells it, or `nil` when the name matched nothing.
+    static func matchedProjectName(in payload: [String: Any]) -> String? {
+        guard
+            let projects = payload["projects"] as? [String: Any],
+            let nodes = projects["nodes"] as? [[String: Any]]
+        else { return nil }
+        return nodes.compactMap { $0["name"] as? String }.first
     }
 
     static func labelNames(in container: Any?) -> [String] {
