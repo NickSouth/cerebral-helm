@@ -32,7 +32,15 @@ final class ProjectDetailWindowController: NSObject, WKNavigationDelegate, WKScr
         URL(string: "\(CerebralSchemeHandler.scheme)://\(CerebralSchemeHandler.host)/index.html?surface=projectdetail")!
     }
 
-    init(dashboardRoot: URL, session: BridgeSession, projectPath: String, name: String, markdownBody: String, importance: Int) {
+    init(
+        dashboardRoot: URL,
+        session: BridgeSession,
+        projectPath: String,
+        name: String,
+        markdownBody: String,
+        importance: Int,
+        linearProject: String?
+    ) {
         handler = CerebralSchemeHandler(root: dashboardRoot)
 
         let configuration = WKWebViewConfiguration()
@@ -51,9 +59,16 @@ final class ProjectDetailWindowController: NSObject, WKNavigationDelegate, WKScr
 
         // The per-project payload rides alongside the shared bootstrap as its own global,
         // JSON-encoded so the name/body/path are safely escaped into the injected script. It
-        // carries `path` and `importance` so the priority stepper can write the new value back.
+        // carries `path` and `importance` so the priority stepper can write the new value back,
+        // and `linearProject` so the cycle section knows which Linear project to ask about
+        // (NIC-221). Explicitly `NSNull` when unlinked rather than an absent key: the web layer
+        // types it as `string | null`, and "absent" and "null" are different facts there.
         let payload: [String: Any] = [
-            "path": projectPath, "name": name, "markdownBody": markdownBody, "importance": importance
+            "path": projectPath,
+            "name": name,
+            "markdownBody": markdownBody,
+            "importance": importance,
+            "linearProject": linearProject ?? NSNull()
         ]
         if let data = try? JSONSerialization.data(withJSONObject: payload),
            let json = String(data: data, encoding: .utf8) {

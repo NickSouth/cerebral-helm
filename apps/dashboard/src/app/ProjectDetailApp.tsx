@@ -17,6 +17,9 @@ interface ProjectDetailPayload {
   name: string;
   markdownBody: string;
   importance: number;
+  /** The Linear project this folder tracks, by name (NIC-221), or null when unlinked — which is
+   *  a normal state, not an error. Always present as an explicit null rather than omitted. */
+  linearProject: string | null;
 }
 interface ProjectDetailWindow extends Window {
   __cerebralProjectDetail?: ProjectDetailPayload;
@@ -34,7 +37,8 @@ const detail: ProjectDetailPayload =
     path: "",
     name: "Project",
     markdownBody: "",
-    importance: 0
+    importance: 0,
+    linearProject: null
   };
 
 /**

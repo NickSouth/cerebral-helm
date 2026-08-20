@@ -1,0 +1,895 @@
+<!doctype html>
+<html lang="en" data-mode="executive" data-variant="a" data-state="linked">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mockup — project detail × Linear cycle</title>
+    <link rel="stylesheet" href="/src/tokens/tokens.css" />
+    <link rel="stylesheet" href="/mockups/_mock.css" />
+    <style>
+      /* ==========================================================================================
+         Project detail × Linear (NIC-221) — direction-setting mockup.
+
+         NOT production code. Nothing under src/ is touched; the folder deletes in one command.
+         It pulls the REAL token layer, so every colour, radius and type size is what ships.
+
+         The window is drawn at 560 x 680 — the exact contentRect ProjectDetailWindowController
+         already opens (apps/mac/CerebralHelm/ProjectDetailWindowController.swift:73), so the
+         density judgement here is the density you get. The ticket data is the REAL contents of
+         Cycle 2 (17 Aug – 24 Aug), pulled from Linear, not invented: if it looks cramped here it
+         will be cramped in the app.
+         ======================================================================================= */
+
+      .stage {
+        gap: 1.25rem;
+      }
+
+      /* The window, at its true size. */
+      .win--pd {
+        width: 560px;
+        height: 680px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* --- Shared chrome: the header that ships today ---------------------------------------- */
+      .pd {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        flex: 1;
+      }
+
+      .pd__header {
+        display: flex;
+        align-items: center;
+        gap: var(--ch-space-3);
+        padding: var(--ch-space-3) var(--ch-space-4);
+        border-bottom: 1px solid var(--ch-panel-border);
+      }
+
+      .pd__title {
+        margin: 0;
+        margin-inline-end: auto;
+        font-size: var(--ch-font-size-sm);
+        font-weight: var(--ch-font-weight-medium);
+      }
+
+      .pd__priority {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--ch-space-2);
+        padding: 0 var(--ch-space-2);
+      }
+
+      .pd__priority-label {
+        font-size: var(--ch-font-size-label);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--ch-text-muted);
+      }
+
+      .pd__priority-value {
+        min-width: 1.5ch;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        font-size: var(--ch-font-size-sm);
+      }
+
+      .pd__step {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.4rem;
+        height: 1.4rem;
+        border: 1px solid var(--ch-panel-border);
+        background: transparent;
+        color: var(--ch-text-primary);
+        cursor: pointer;
+        border-radius: var(--ch-radius-sm);
+        line-height: 1;
+        font-size: 1rem;
+      }
+
+      .pd__step:hover {
+        border-color: var(--ch-accent-primary);
+        color: var(--ch-accent-primary);
+      }
+
+      .pd__close {
+        border: 0;
+        background: transparent;
+        color: var(--ch-text-muted);
+        cursor: pointer;
+        padding: 0 var(--ch-space-2);
+        font-size: 1.1rem;
+        line-height: 1;
+      }
+
+      .pd__close:hover {
+        color: var(--ch-text-primary);
+      }
+
+      /* --- The markdown brief (unchanged today; restyled only enough to read honestly) -------- */
+      .md {
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-3);
+        font-size: var(--ch-font-size-sm);
+        line-height: 1.55;
+        padding: var(--ch-space-4);
+      }
+
+      .md h1 {
+        margin: 0;
+        font-size: var(--ch-font-size-lg);
+        font-weight: var(--ch-font-weight-light);
+      }
+
+      .md h2 {
+        margin: var(--ch-space-2) 0 0;
+        font-size: var(--ch-font-size-label);
+        text-transform: uppercase;
+        letter-spacing: var(--ch-font-label-tracking);
+        color: var(--ch-text-muted);
+        font-weight: var(--ch-font-weight-medium);
+      }
+
+      .md p {
+        margin: 0;
+        color: var(--ch-text-muted);
+      }
+
+      .md em {
+        color: var(--ch-text-muted);
+      }
+
+      .md ul {
+        margin: 0;
+        padding-left: 1.1rem;
+        color: var(--ch-text-muted);
+      }
+
+      .md li {
+        margin-bottom: 0.25rem;
+      }
+
+      /* ==========================================================================================
+         THE LINEAR SECTION — the part being judged.
+         ======================================================================================= */
+
+      /* Section header: which cycle, how far through it, and the escape hatch to Linear. It is
+         sticky so that once you are ten rows into the list you still know what you are looking at. */
+      .cyc__head {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: var(--ch-space-2) var(--ch-space-3);
+        padding: var(--ch-space-3) var(--ch-space-4);
+        background: color-mix(in srgb, rgb(var(--ch-surface-panel-rgb)) 88%, transparent);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-bottom: 1px solid var(--ch-panel-border);
+      }
+
+      .cyc__label {
+        display: flex;
+        align-items: baseline;
+        gap: var(--ch-space-2);
+        min-width: 0;
+      }
+
+      .cyc__name {
+        font-size: var(--ch-font-size-label);
+        text-transform: uppercase;
+        letter-spacing: var(--ch-font-label-tracking);
+        color: var(--ch-text-primary);
+        font-weight: var(--ch-font-weight-medium);
+      }
+
+      .cyc__dates {
+        font-size: var(--ch-font-size-label);
+        color: var(--ch-text-faint);
+        white-space: nowrap;
+      }
+
+      .cyc__link {
+        justify-self: end;
+        font-size: var(--ch-font-size-label);
+        color: var(--ch-text-faint);
+        text-decoration: none;
+        border: 1px solid transparent;
+        border-radius: var(--ch-radius-sm);
+        padding: 0.15rem 0.4rem;
+        white-space: nowrap;
+      }
+
+      .cyc__link:hover {
+        color: var(--ch-accent-primary);
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 40%, transparent);
+      }
+
+      /* Progress: a single hairline, not a chart. The number carries the meaning; the bar just
+         gives it a shape you can read without reading. */
+      .cyc__progress {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        gap: var(--ch-space-3);
+      }
+
+      .cyc__bar {
+        position: relative;
+        flex: 1;
+        height: 3px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.09);
+        overflow: hidden;
+      }
+
+      .cyc__bar i {
+        position: absolute;
+        inset: 0 auto 0 0;
+        border-radius: 999px;
+        background: var(--ch-status-success);
+      }
+
+      .cyc__bar i + i {
+        background: var(--ch-status-warning);
+        opacity: 0.55;
+      }
+
+      .cyc__count {
+        font-size: var(--ch-font-size-label);
+        color: var(--ch-text-muted);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      /* --- Group header: Linear's stacked-by-status divider ---------------------------------- */
+      .grp {
+        position: sticky;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        gap: var(--ch-space-2);
+        padding: var(--ch-space-2) var(--ch-space-4);
+        background: color-mix(in srgb, rgb(var(--ch-surface-panel-rgb)) 92%, transparent);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-block: 1px solid rgba(255, 255, 255, 0.05);
+        font-size: var(--ch-font-size-label);
+      }
+
+      .grp__name {
+        color: var(--ch-text-primary);
+        font-weight: var(--ch-font-weight-medium);
+        letter-spacing: 0.02em;
+      }
+
+      .grp__count {
+        color: var(--ch-text-faint);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* --- Ticket row ------------------------------------------------------------------------
+         Four columns: priority · identifier · title · trailing meta. The title is the only
+         flexible one, so the identifier column stays a straight edge down the list — which is
+         what makes a stack of these scannable rather than merely dense. */
+      .tk {
+        display: grid;
+        grid-template-columns: auto auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--ch-space-2);
+        padding: 0.42rem var(--ch-space-4);
+        text-decoration: none;
+        color: inherit;
+        cursor: pointer;
+        border: 0;
+        border-left: 2px solid transparent;
+        background: transparent;
+        width: 100%;
+        text-align: left;
+        font: inherit;
+        transition:
+          background var(--ch-motion-fast) var(--ch-ease-standard),
+          border-color var(--ch-motion-fast) var(--ch-ease-standard);
+      }
+
+      .tk:hover {
+        background: rgba(255, 255, 255, 0.045);
+        border-left-color: var(--ch-accent-primary);
+      }
+
+      .tk:focus-visible {
+        outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+        outline-offset: calc(var(--ch-focus-ring-offset) * -1);
+      }
+
+      .tk__status {
+        display: inline-flex;
+      }
+
+      .tk__id {
+        font-family: var(--ch-font-mono);
+        font-size: var(--ch-font-size-label);
+        color: var(--ch-text-faint);
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.01em;
+      }
+
+      .tk__title {
+        font-size: var(--ch-font-size-sm);
+        color: var(--ch-text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* Trailing meta collapses right-to-left as the window narrows: labels go first, then the
+         estimate, and the avatar is the last thing standing. */
+      .tk__meta {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--ch-space-2);
+      }
+
+      .pill {
+        font-size: 0.62rem;
+        line-height: 1;
+        padding: 0.22rem 0.4rem;
+        border-radius: var(--ch-radius-pill);
+        border: 1px solid color-mix(in srgb, var(--pill-color, var(--ch-text-faint)) 45%, transparent);
+        color: color-mix(in srgb, var(--pill-color, var(--ch-text-faint)) 88%, white);
+        background: color-mix(in srgb, var(--pill-color, var(--ch-text-faint)) 14%, transparent);
+        white-space: nowrap;
+      }
+
+      .tk__est {
+        font-size: var(--ch-font-size-label);
+        color: var(--ch-text-faint);
+        font-variant-numeric: tabular-nums;
+        min-width: 1ch;
+        text-align: right;
+      }
+
+      .tk__av {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.15rem;
+        height: 1.15rem;
+        border-radius: 999px;
+        font-size: 0.56rem;
+        letter-spacing: 0.02em;
+        color: #0d1420;
+        background: var(--ch-accent-secondary);
+        font-weight: var(--ch-font-weight-semibold);
+      }
+
+      /* Unassigned holds its slot so the right edge stays straight, but draws nothing: this is a
+         one-person workspace, and a marker on almost every row is noise, not information. */
+      .tk__av--none {
+        background: transparent;
+        color: transparent;
+      }
+
+      /* The open-in-Linear affordance. Present in the layout at all times so nothing reflows on
+         hover; it only gains opacity. */
+      .tk__go {
+        width: 0.85rem;
+        color: var(--ch-text-faint);
+        opacity: 0;
+        transition: opacity var(--ch-motion-fast) var(--ch-ease-standard);
+      }
+
+      .tk:hover .tk__go {
+        opacity: 1;
+      }
+
+      /* --- Unlinked / empty / error states ---------------------------------------------------- */
+      .state {
+        padding: var(--ch-space-5) var(--ch-space-4);
+        display: flex;
+        flex-direction: column;
+        gap: var(--ch-space-3);
+        align-items: flex-start;
+      }
+
+      .state__title {
+        margin: 0;
+        font-size: var(--ch-font-size-sm);
+        color: var(--ch-text-primary);
+        font-weight: var(--ch-font-weight-medium);
+      }
+
+      .state__note {
+        margin: 0;
+        font-size: var(--ch-font-size-label);
+        line-height: 1.6;
+        color: var(--ch-text-muted);
+        max-width: 34rem;
+      }
+
+      .state__note code {
+        font-family: var(--ch-font-mono);
+        color: var(--ch-text-primary);
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 4px;
+        padding: 0.05rem 0.3rem;
+      }
+
+      .picker {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--ch-space-2);
+      }
+
+      .picker button {
+        font: inherit;
+        font-size: var(--ch-font-size-label);
+        cursor: pointer;
+        padding: 0.35rem 0.7rem;
+        border-radius: var(--ch-radius-sm);
+        border: 1px solid var(--ch-panel-border);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--ch-text-muted);
+        transition: all var(--ch-motion-fast) var(--ch-ease-standard);
+      }
+
+      .picker button:hover {
+        border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+        color: var(--ch-text-primary);
+      }
+
+      /* ==========================================================================================
+         VARIANT A — stacked. The brief and the cycle live in ONE scroll, the cycle taking over
+         where the "Live status" placeholder sits today. You always see the brief first; the
+         tickets are the thing you scroll into.
+         ======================================================================================= */
+      .v-a .pd__scroll {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+      }
+
+      .v-a .cyc__head {
+        top: 0;
+      }
+
+      /* The group headers stack UNDER the cycle header, so their sticky offset has to be its real
+         height. A hardcoded rem value leaves a sliver the rows scroll through — the height moves
+         with the type scale, so it is measured at runtime into `--cyc-head-h` instead. */
+      .v-a .grp {
+        top: var(--cyc-head-h, 4.55rem);
+      }
+
+      /* A rule that says "the descriptor ends here and live state begins" without a heading. */
+      .v-a .cyc {
+        margin-top: var(--ch-space-2);
+        border-top: 1px solid var(--ch-panel-border);
+      }
+
+      /* ==========================================================================================
+         VARIANT B — tabbed. The cycle gets the whole window, and the header carries a permanent
+         count so the tab you are not on still reports state. Opens on Brief; the tab is one click.
+         ======================================================================================= */
+      .tabs {
+        display: flex;
+        gap: var(--ch-space-1);
+        padding: var(--ch-space-2) var(--ch-space-4) 0;
+        border-bottom: 1px solid var(--ch-panel-border);
+      }
+
+      .tabs button {
+        font: inherit;
+        font-size: var(--ch-font-size-label);
+        text-transform: uppercase;
+        letter-spacing: var(--ch-font-label-tracking);
+        cursor: pointer;
+        border: 0;
+        background: transparent;
+        color: var(--ch-text-faint);
+        padding: var(--ch-space-2) var(--ch-space-3);
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        transition: color var(--ch-motion-fast) var(--ch-ease-standard);
+      }
+
+      .tabs button:hover {
+        color: var(--ch-text-muted);
+      }
+
+      .tabs button[aria-selected="true"] {
+        color: var(--ch-text-primary);
+        border-bottom-color: var(--ch-accent-primary);
+      }
+
+      .tabs .tabs__n {
+        font-variant-numeric: tabular-nums;
+        color: var(--ch-text-faint);
+        background: rgba(255, 255, 255, 0.07);
+        border-radius: 999px;
+        padding: 0.05rem 0.35rem;
+        font-size: 0.6rem;
+        letter-spacing: 0;
+      }
+
+      .v-b .pane {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+      }
+
+      .v-b [data-pane]:not([data-active]) {
+        display: none;
+      }
+
+      .v-b .grp {
+        top: var(--cyc-head-h, 4.55rem);
+      }
+
+      /* --- State switcher (second row of controls) -------------------------------------------- */
+      .switch--states {
+        bottom: 4.25rem;
+      }
+
+      /* The tab's count is a claim about linked data; it must not survive into a state that has
+         none. */
+      :root:not([data-state="linked"]) .tabs__n {
+        display: none;
+      }
+
+      [data-state="linked"] .s-unlinked,
+      [data-state="linked"] .s-empty,
+      [data-state="unlinked"] .s-linked,
+      [data-state="unlinked"] .s-empty,
+      [data-state="empty"] .s-linked,
+      [data-state="empty"] .s-unlinked {
+        display: none !important;
+      }
+
+      .note {
+        max-width: 21rem;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Mock desktop, so the window's vibrancy is judged over something busy. -->
+    <div class="desk">
+      <div class="desk__glare"></div>
+      <div class="desk__win" style="left: 4%; top: 12%; width: 30%; height: 46%">
+        <div class="desk__lines"></div>
+      </div>
+      <div class="desk__win" style="right: 5%; top: 20%; width: 26%; height: 58%">
+        <div class="desk__lines"></div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <!-- ===================== VARIANT A — stacked ===================== -->
+      <div class="win win--pd v-a">
+        <div class="win__drag"></div>
+        <div class="pd">
+          <header class="pd__header">
+            <h1 class="pd__title">CerebralHelm</h1>
+            <div class="pd__priority">
+              <span class="pd__priority-label">Priority</span>
+              <button class="pd__step">−</button>
+              <span class="pd__priority-value">10</span>
+              <button class="pd__step">+</button>
+            </div>
+            <button class="pd__close">×</button>
+          </header>
+
+          <div class="pd__scroll">
+            <div class="md" data-brief></div>
+            <section class="cyc">
+              <div data-cycle="a"></div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== VARIANT B — tabbed ===================== -->
+      <div class="win win--pd v-b">
+        <div class="win__drag"></div>
+        <div class="pd">
+          <header class="pd__header">
+            <h1 class="pd__title">CerebralHelm</h1>
+            <div class="pd__priority">
+              <span class="pd__priority-label">Priority</span>
+              <button class="pd__step">−</button>
+              <span class="pd__priority-value">10</span>
+              <button class="pd__step">+</button>
+            </div>
+            <button class="pd__close">×</button>
+          </header>
+
+          <div class="tabs" role="tablist">
+            <button role="tab" aria-selected="false" data-tab="brief">Brief</button>
+            <button role="tab" aria-selected="true" data-tab="cycle">
+              Cycle <span class="tabs__n" data-tabcount>17</span>
+            </button>
+          </div>
+
+          <div class="pane">
+            <div data-pane="brief">
+              <div class="md" data-brief></div>
+            </div>
+            <div data-pane="cycle" data-active>
+              <div data-cycle="b"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Variant switch (page convention) -->
+    <div class="switch">
+      <span class="switch__label">Layout</span>
+      <button data-variant-btn="a" aria-pressed="true">A · Stacked</button>
+      <button data-variant-btn="b" aria-pressed="false">B · Tabbed</button>
+      <a href="/mockups/">index</a>
+    </div>
+
+    <!-- State switch: the three things this section can honestly be. -->
+    <div class="switch switch--states">
+      <span class="switch__label">State</span>
+      <button data-state-btn="linked" aria-pressed="true">Linked</button>
+      <button data-state-btn="unlinked" aria-pressed="false">Not linked</button>
+      <button data-state-btn="empty" aria-pressed="false">No tickets</button>
+    </div>
+
+    <p class="note">
+      <b>Real data.</b> Every row is CerebralHelm's actual Cycle 2 (17–24 Aug), read from Linear.
+      Window drawn at its true 560 × 680. Rows are click-to-open in Linear; group order is
+      most-active-first, not Linear's own state order.
+    </p>
+
+    <script type="module">
+      /* -----------------------------------------------------------------------------------------
+         Data: CerebralHelm's real Cycle 2 issues. `color` is what Linear's own
+         `IssueState.color` returns for that workflow state — the real implementation must read it
+         from the API rather than hardcode a palette, because these statuses are user-defined and
+         renameable.
+
+         `type` is the Linear state TYPE (backlog | unstarted | started | completed | canceled),
+         which is the only stable thing to group and order on. Names are not.
+      ----------------------------------------------------------------------------------------- */
+      const STATES = {
+        "In Progress": { type: "started", color: "#e8b765", fill: 0.4 },
+        Testing: { type: "started", color: "#5fd2e8", fill: 0.7 },
+        "Next-Up": { type: "unstarted", color: "#9fb0c3", fill: 0 },
+        Todo: { type: "unstarted", color: "#6b7c90", fill: 0 },
+        "Ready to Deploy": { type: "completed", color: "#5b8def", fill: 1 },
+        Done: { type: "completed", color: "#34d399", fill: 1 },
+        Backlog: { type: "backlog", color: "#6b7c90", fill: 0 }
+      };
+
+      // Most-active-first. Deliberately NOT Linear's board order (backlog → done): in a glance
+      // surface the thing you are doing outranks the thing you finished.
+      const GROUP_ORDER = ["Testing", "In Progress", "Next-Up", "Todo", "Ready to Deploy", "Done", "Backlog"];
+
+      const LABEL_COLORS = {
+        Feature: "#a78bfa",
+        Bug: "#f2655e",
+        Improvement: "#5fd2e8",
+        "Tech Debt": "#e8b765"
+      };
+
+      const ISSUES = [
+        { id: "NIC-223", t: "News Widget Interests", s: "Testing", p: 2, e: 3, l: ["Improvement", "Feature"], a: null },
+        { id: "NIC-224", t: "Report types with bullet points FIX", s: "Testing", p: 0, e: 1, l: ["Bug"], a: "NS" },
+        { id: "NIC-221", t: "Linear Integration with Projects Widget in Exec Mode", s: "Next-Up", p: 3, e: 5, l: ["Feature"], a: "NS" },
+        { id: "NIC-227", t: "Grammar-constrained decoding", s: "Todo", p: 3, e: null, l: [], a: null },
+        { id: "NIC-247", t: "llama.cpp runtime adapter for the eval harness", s: "Todo", p: 0, e: 2, l: [], a: null },
+        { id: "NIC-249", t: "Wire inputSchema to grammar in the provider port", s: "Todo", p: 0, e: 2, l: [], a: null },
+        { id: "NIC-248", t: "Benchmark GBNF against Ollama structured output", s: "Todo", p: 0, e: 2, l: [], a: null },
+        { id: "NIC-246", t: "Describe remaining optional descriptor fields", s: "Ready to Deploy", p: 2, e: 2, l: [], a: null },
+        { id: "NIC-245", t: "Merge descriptor affordance branch", s: "Ready to Deploy", p: 2, e: 1, l: [], a: null },
+        { id: "NIC-226", t: "Tool descriptor model affordances", s: "Ready to Deploy", p: 2, e: null, l: [], a: null },
+        { id: "NIC-170", t: "Projects widget rows render with undefined React keys", s: "Ready to Deploy", p: 4, e: 1, l: ["Tech Debt"], a: "NS" },
+        { id: "NIC-222", t: "Fix Stock Ticker Selection", s: "Ready to Deploy", p: 3, e: 1, l: ["Bug"], a: null },
+        { id: "NIC-225", t: "Model provider port", s: "Done", p: 2, e: null, l: [], a: null },
+        { id: "NIC-241", t: "Define ModelProvider port in core", s: "Done", p: 0, e: 2, l: [], a: null },
+        { id: "NIC-242", t: "Ollama adapter at the app layer", s: "Done", p: 0, e: 2, l: [], a: null },
+        { id: "NIC-243", t: "Model lifecycle: residency and context sizing", s: "Done", p: 0, e: 2, l: [], a: null },
+        { id: "NIC-244", t: "ADR-005: model provider port", s: "Done", p: 0, e: 1, l: [], a: null }
+      ];
+
+      const BRIEF = `
+        <h1>CerebralHelm</h1>
+        <p><em>A local-first personal command layer for macOS, driven by the assistant Heimlich.</em></p>
+        <h2>Focus</h2>
+        <ul>
+          <li>Local LLM integration — the model provider port and the passive tier</li>
+          <li>Minor features and fixes on the shipped v1.0.0 app</li>
+          <li>Keep every model-facing change behind deterministic risk policy</li>
+        </ul>
+        <h2>Notes</h2>
+        <p>Shipped 2026-08-10 and in daily personal use. Free-tier, personal-use app: signed with an
+        Apple Development identity, never notarized.</p>`;
+
+      /* --- Icons -------------------------------------------------------------------------------
+         Linear's status donut, drawn honestly: a ring, with a pie wedge for how far through the
+         workflow the state sits, and a check once complete. Nothing here is decorative — the fill
+         fraction IS the status, which is what lets the list be read without the labels. */
+      function statusIcon(name) {
+        const st = STATES[name];
+        const c = st.color;
+        if (st.type === "completed") {
+          return `<svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
+            <circle cx="7" cy="7" r="6" fill="${c}"/>
+            <path d="M4.2 7.2 L6.1 9.1 L9.8 5.1" fill="none" stroke="#0b1220" stroke-width="1.6"
+              stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        }
+        if (st.type === "canceled") {
+          return `<svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
+            <circle cx="7" cy="7" r="6" fill="${c}" opacity="0.5"/>
+            <path d="M4.8 4.8 L9.2 9.2 M9.2 4.8 L4.8 9.2" stroke="#0b1220" stroke-width="1.6"
+              stroke-linecap="round"/></svg>`;
+        }
+        // Ring + wedge. The wedge is a stroked circle with a dash offset, so one number drives it.
+        const r = 3.1;
+        const circ = 2 * Math.PI * r;
+        const dash = circ * st.fill;
+        const ring =
+          st.type === "backlog"
+            ? `<circle cx="7" cy="7" r="5.4" fill="none" stroke="${c}" stroke-width="1.4"
+                 stroke-dasharray="2 2.2" opacity="0.8"/>`
+            : `<circle cx="7" cy="7" r="5.4" fill="none" stroke="${c}" stroke-width="1.4" opacity="0.9"/>`;
+        return `<svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
+          ${ring}
+          <circle cx="7" cy="7" r="${r}" fill="none" stroke="${c}" stroke-width="${r * 2}"
+            stroke-dasharray="${dash} ${circ}" transform="rotate(-90 7 7)"/></svg>`;
+      }
+
+      // Linear's priority glyph: three bars, filled up to the level. "No priority" is three dashes,
+      // deliberately quiet — most of the list has none and it must not add noise.
+      function priorityIcon(p) {
+        if (p === 0) {
+          return `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" opacity="0.42">
+            <rect x="1" y="5.4" width="10" height="1.3" rx="0.6" fill="#6b7c90"/></svg>`;
+        }
+        if (p === 1) {
+          return `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <rect x="1.6" y="1" width="8.8" height="10" rx="2" fill="#f2655e"/>
+            <rect x="5.4" y="3" width="1.2" height="4" rx="0.6" fill="#0b1220"/>
+            <rect x="5.4" y="8" width="1.2" height="1.3" rx="0.6" fill="#0b1220"/></svg>`;
+        }
+        const lit = { 2: 3, 3: 2, 4: 1 }[p] ?? 0;
+        const bar = (i, x, y, h) =>
+          `<rect x="${x}" y="${y}" width="2.4" height="${h}" rx="0.8"
+             fill="${i <= lit ? "#9fb0c3" : "#3a4757"}"/>`;
+        return `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          ${bar(1, 1, 7.2, 3.8)}${bar(2, 4.4, 4.6, 6.4)}${bar(3, 7.8, 2, 9)}</svg>`;
+      }
+
+      const GO = `<svg class="tk__go" width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+        <path d="M4 8 L8 4 M8 4 H5 M8 4 V7" fill="none" stroke="currentColor" stroke-width="1.3"
+          stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+      /* --- Rendering ------------------------------------------------------------------------- */
+      function rowHTML(issue) {
+        const labels = issue.l
+          .map((l) => `<span class="pill" style="--pill-color:${LABEL_COLORS[l] ?? "#6b7c90"}">${l}</span>`)
+          .join("");
+        const avatar = issue.a
+          ? `<span class="tk__av">${issue.a}</span>`
+          : `<span class="tk__av tk__av--none">·</span>`;
+        return `<button class="tk" title="${issue.id} — open in Linear">
+            <span class="tk__status">${priorityIcon(issue.p)}</span>
+            <span class="tk__id">${issue.id}</span>
+            <span class="tk__title">${issue.t}</span>
+            <span class="tk__meta">${labels}
+              <span class="tk__est">${issue.e ?? ""}</span>${avatar}${GO}
+            </span>
+          </button>`;
+      }
+
+      function listHTML() {
+        return GROUP_ORDER.map((name) => {
+          const rows = ISSUES.filter((i) => i.s === name);
+          if (!rows.length) return "";
+          return `<div class="grp">${statusIcon(name)}
+              <span class="grp__name">${name}</span>
+              <span class="grp__count">${rows.length}</span>
+            </div>${rows.map(rowHTML).join("")}`;
+        }).join("");
+      }
+
+      function cycleHTML() {
+        const total = ISSUES.length;
+        const done = ISSUES.filter((i) => STATES[i.s].type === "completed").length;
+        const started = ISSUES.filter((i) => STATES[i.s].type === "started").length;
+        const pct = (n) => `${((n / total) * 100).toFixed(1)}%`;
+
+        return `
+          <div class="s-linked">
+            <div class="cyc__head">
+              <div class="cyc__label">
+                <span class="cyc__name">Cycle 2</span>
+                <span class="cyc__dates">17–24 Aug · 4 days left</span>
+              </div>
+              <a class="cyc__link" href="#">Linear ↗</a>
+              <div class="cyc__progress">
+                <span class="cyc__bar">
+                  <i style="width:${pct(done)}"></i>
+                  <i style="left:${pct(done)};width:${pct(started)}"></i>
+                </span>
+                <span class="cyc__count">${done} / ${total} done</span>
+              </div>
+            </div>
+            ${listHTML()}
+          </div>
+
+          <div class="s-unlinked state">
+            <p class="state__title">Not linked to Linear</p>
+            <p class="state__note">
+              Add <code>linear_project: CerebralHelm</code> to this project's
+              <code>PROJECT.md</code> frontmatter — the same place <code>importance</code> already
+              lives — or pick one now and CerebralHelm writes the line for you.
+            </p>
+            <div class="picker">
+              <button>CerebralHelm</button>
+              <button>Ubility Website</button>
+              <button>Personal Tasks</button>
+            </div>
+          </div>
+
+          <div class="s-empty state">
+            <p class="state__title">Nothing in this cycle</p>
+            <p class="state__note">
+              Linked to <b>CerebralHelm</b>. No issues from this project are in Cycle 2
+              (17–24 Aug).
+            </p>
+            <div class="picker"><button>Open project in Linear ↗</button></div>
+          </div>`;
+      }
+
+      for (const host of document.querySelectorAll("[data-cycle]")) host.innerHTML = cycleHTML();
+      for (const brief of document.querySelectorAll("[data-brief]")) brief.innerHTML = BRIEF;
+      document.querySelector("[data-tabcount]").textContent = String(ISSUES.length);
+
+      /* --- Switches --------------------------------------------------------------------------- */
+      const root = document.documentElement;
+      const bind = (attr, target) => {
+        for (const button of document.querySelectorAll(`[${attr}]`)) {
+          button.addEventListener("click", () => {
+            root.dataset[target] = button.getAttribute(attr);
+            for (const other of document.querySelectorAll(`[${attr}]`)) {
+              other.setAttribute("aria-pressed", String(other === button));
+            }
+          });
+        }
+      };
+      bind("data-variant-btn", "variant");
+      bind("data-state-btn", "state");
+
+      // Measure the cycle header once it has laid out, so the group headers stack flush under it.
+      const measure = () => {
+        const head = document.querySelector(".v-a .cyc__head");
+        if (head) root.style.setProperty("--cyc-head-h", `${Math.round(head.getBoundingClientRect().height)}px`);
+      };
+      measure();
+      window.addEventListener("resize", measure);
+
+      for (const tab of document.querySelectorAll("[data-tab]")) {
+        tab.addEventListener("click", () => {
+          for (const other of document.querySelectorAll("[data-tab]")) {
+            other.setAttribute("aria-selected", String(other === tab));
+          }
+          for (const pane of document.querySelectorAll("[data-pane]")) {
+            pane.toggleAttribute("data-active", pane.dataset.pane === tab.dataset.tab);
+          }
+        });
+      }
+    </script>
+  </body>
+</html>

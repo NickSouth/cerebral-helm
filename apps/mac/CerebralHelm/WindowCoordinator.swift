@@ -666,7 +666,8 @@ final class WindowCoordinator: @unchecked Sendable {
 
     /// Open the expandable project detail window (NIC-129): reads the clicked project's
     /// `PROJECT.md` (constrained to the projects root) and renders it in its own window with a
-    /// placeholder live-status section. Built fresh each open (any existing one is replaced) so
+    /// placeholder live-status section. The descriptor's `linear_project` rides along (NIC-221)
+    /// so the window knows which Linear project it tracks; `nil` is the normal unlinked state. Built fresh each open (any existing one is replaced) so
     /// the descriptor is current. A no-op in recovery, or when the project has no readable
     /// descriptor — Increment 6 disables the row in that case, so the click shouldn't fire.
     func openProjectDetail(path: String) {
@@ -676,7 +677,8 @@ final class WindowCoordinator: @unchecked Sendable {
         let controller = ProjectDetailWindowController(
             dashboardRoot: dashboardRoot, session: session, projectPath: path,
             name: descriptor.name, markdownBody: descriptor.body,
-            importance: descriptor.importance ?? 0
+            importance: descriptor.importance ?? 0,
+            linearProject: descriptor.linearProject
         )
         controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
         projectDetail = controller
