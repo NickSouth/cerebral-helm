@@ -740,6 +740,11 @@ export enum CloudPolicy {
 
 /**
  * Defaults to private when unspecified.
+ *
+ * Privacy label recorded in the note's frontmatter. It is metadata, not access control -
+ * nothing today restricts reading a note based on it. Omitted degrades to `private`, which
+ * is the right answer unless the user's own words call for another; do not judge the
+ * content's sensitivity yourself.
  */
 export enum Sensitivity {
     Private = "private",
@@ -950,6 +955,12 @@ export interface QuickToggle {
     targets: Target[];
 }
 
+/**
+ * Which region of the target display's visible area the window fills. Halves and thirds are
+ * measured against that display rather than the window's current size, and `centered` is a
+ * three-quarter-size window inset from every edge, not a move that preserves the window's
+ * size. Only these named frames are accepted; arbitrary coordinates are not.
+ */
 export enum Frame {
     BottomHalf = "bottom-half",
     Centered = "centered",
@@ -1478,6 +1489,12 @@ export enum CerebralHelmAppQuitOutputStatus {
 }
 
 export interface CerebralHelmAppsListInput {
+    /**
+     * Whether to return each application's icon as a base64-encoded PNG alongside its name and
+     * bundle id. Omitted means `true`, which attaches an image payload for every installed
+     * application - pass `false` unless the caller is actually drawing them, since the encoded
+     * icons are large and carry nothing a caller can read.
+     */
     includeIcons?: boolean;
 }
 
@@ -1522,9 +1539,19 @@ export interface CerebralHelmCalendarCreateEventInput {
      * gave a duration rather than an end time, add it to the start; when they gave neither, a
      * one-hour default is reasonable.
      */
-    endsAt:    string;
+    endsAt: string;
+    /**
+     * Where the event takes place, in the user's own words - a room, an address, a meeting
+     * link. Omit unless they said one; a plausible-looking invented location is worse than an
+     * empty field.
+     */
     location?: string;
-    notes?:    string;
+    /**
+     * Longer detail stored on the event body - an agenda, a link, whatever the user asked to be
+     * recorded. Omit when there is nothing beyond the title; restating the title here adds
+     * nothing.
+     */
+    notes?: string;
     /**
      * Local wall-clock start time, `YYYY-MM-DDTHH:MM` (seconds optional). NOT UTC and never
      * carries a timezone offset or trailing `Z` — the time the user said is the time that is
@@ -1977,7 +2004,13 @@ export interface CerebralHelmNoteCaptureInput {
      * Optional project slug to file the note under. Omit unless the user named a project —
      * inventing one misfiles the note.
      */
-    project?:     string;
+    project?: string;
+    /**
+     * Privacy label recorded in the note's frontmatter. It is metadata, not access control -
+     * nothing today restricts reading a note based on it. Omitted degrades to `private`, which
+     * is the right answer unless the user's own words call for another; do not judge the
+     * content's sensitivity yourself.
+     */
     sensitivity?: Sensitivity;
     /**
      * The note's title, used as its heading and to derive its filename. Take the user's own
@@ -2147,6 +2180,12 @@ export interface CerebralHelmNoteReadOutput {
 }
 
 export interface CerebralHelmNoteSearchInput {
+    /**
+     * Caps the returned hits. Omitted means every match in the vault, which for a common word
+     * can be most of the library. Hits are ordered by note path, not by relevance, so a cap
+     * truncates alphabetically rather than keeping the best matches - the output reports
+     * `truncated`, so a caller is never silently shown a partial result.
+     */
     limit?: number;
     /**
      * Free text matched against note titles, metadata, and Markdown content. Use the user's own
@@ -2294,6 +2333,12 @@ export interface CerebralHelmSpotifyCreatePlaylistOutput {
 }
 
 export interface CerebralHelmSystemStatusReadInput {
+    /**
+     * Which metrics to read. Omitted or empty reads every supported metric; name a subset when
+     * the user asked about specific ones. A requested metric the host cannot supply comes back
+     * with an explicit unavailable state rather than being dropped, so a missing entry never
+     * has to be inferred.
+     */
     metrics?: MetricElement[];
 }
 
@@ -2531,6 +2576,12 @@ export interface Arrangement {
      * id, ask rather than guessing.
      */
     appId: string;
+    /**
+     * Which region of the target display's visible area the window fills. Halves and thirds are
+     * measured against that display rather than the window's current size, and `centered` is a
+     * three-quarter-size window inset from every edge, not a move that preserves the window's
+     * size. Only these named frames are accepted; arbitrary coordinates are not.
+     */
     frame: Frame;
 }
 

@@ -59,7 +59,7 @@ turn reports time-to-first-token separately for that reason.
 
 ## What it measures
 
-Four questions, each mapping to a case category:
+Five questions, each mapping to a case category:
 
 - **baseline / confusable-\*** — does it pick the right tool when several are similar?
   Four tools open things in a browser; five differ by one verb.
@@ -73,6 +73,13 @@ Four questions, each mapping to a case category:
   everything scores well on safety and is useless.
 - **unresolvable-id** — tools requiring identifiers natural language does not carry
   (`repoPath`, `linearTeamID`). Correct behaviour is to ask, never to invent.
+- **argument-restraint** — optional arguments the model must leave alone, or fill
+  because the user named a value: an invented `location`, a self-assigned
+  `sensitivity`, an unbounded `limit`, `includeIcons` left at a default that
+  attaches an icon for every installed app. These are the descriptor affordances
+  from the field audit, graded. A case expectation of `"!"` means the argument must
+  be **absent** — without that form an invented argument is invisible to scoring,
+  because a call is otherwise graded only on what it does contain.
 
 ## Reading the output
 

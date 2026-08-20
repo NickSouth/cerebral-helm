@@ -7,6 +7,7 @@
   "required": [],
   "properties": {
     "includeIcons": {
+      "description": "Whether to return each application's icon as a base64-encoded PNG alongside its name and bundle id. Omitted means `true`, which attaches an image payload for every installed application - pass `false` unless the caller is actually drawing them, since the encoded icons are large and carry nothing a caller can read.",
       "type": "boolean"
     }
   }

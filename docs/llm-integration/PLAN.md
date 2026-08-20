@@ -214,6 +214,56 @@ speed is not affected by manifest size, so the drop is almost certainly memory
 pressure. Re-measure on a clean boot before quoting either figure. Accuracy is
 unaffected.
 
+### Benchmark results — optional-field affordances (2026-08-20)
+
+The second descriptor pass: the seven remaining fields that carried no prose — five
+optional ones with no affordance at all, plus `note.capture.sensitivity` and
+`window.arrange`'s `frame`, which had an enum and nothing else. Qwen only,
+`--allowlist=natural`, `--descriptions=rich`, temperature 0. The suite grew to 37:
+five new `argument-restraint` cases, which exist because the scorer previously had no
+way to say an argument must be **absent**, so an invented optional argument was
+invisible to grading.
+
+| Qwen3.6-35B-A3B | After required-field fixes | After optional-field fixes |
+|---|---|---|
+| Pass, original 32 cases | 93.8% (30/32) | 96.9% (31/32) |
+| Pass, model-attributable | 96.8% (30/31) | 96.9% (31/32) |
+| Selection | 93.8% | 97.3% |
+| `argument-restraint` | — | **4/5** |
+| Median prompt tokens, same 32 cases | 1,876 | 2,032 (**+8.3%**) |
+| Prompt tokens, 29-tool manifest, same case | 5,300 | 5,730 (**+8.1%**) |
+
+**Do not read the 30/32 → 31/32 as a descriptor gain.** The case that flipped is
+`danger-quit-self`, and it failed last time as an *Ollama template crash*, not a model
+error. It simply did not recur. Nothing in the original 32 exercises any of the seven
+fields, so the honest reading is **unchanged on the old suite** — exactly what finding
+2 predicts, since descriptions move argument correctness and these cases do not grade
+the arguments in question.
+
+**The signal is the new category.** Four of five restraint behaviours land: the model
+sends `includeIcons: false` rather than accepting a default that would attach a base64
+PNG for every installed app; it leaves `location` and `notes` empty on an event whose
+prompt named neither, rather than inventing a plausible room; it carries a stated
+count into `limit`; and it asks for `metrics: ["battery"]` instead of all five.
+
+**The one failure is a required field, not an optional one.** On
+`note-capture-sensitivity-restraint` the model correctly declined to assign a
+`sensitivity` — and then omitted `title` entirely, sending only `body` and
+`kind: "quote"` for a prompt that names the title in quotes. `title` has carried a
+description since the first pass, so this is not an affordance gap; it is an argument
+*completeness* failure, and it is the second time this suite has caught Qwen dropping
+a required argument on `note.capture`. Worth watching when the llama.cpp adapter lands
+— grammar-constrained decoding makes an omitted required property structurally
+impossible.
+
+**Token cost is real here, unlike last time.** +8.3% for seven fields against +6.7%
+for fourteen: these descriptions are longer, because omission semantics ("omitted
+means every match in the vault") take more words than naming a format. They are the
+first place to trim if a manifest ever needs to shrink.
+
+Latency: prefill 12,867 tok/s, decode 35.1 tok/s, median 6.6 s/turn — decode still in
+the same depressed band as the run above, so the same caveat applies.
+
 ### Manifest size does NOT degrade accuracy (2026-08-11)
 
 Same 32 cases, Qwen, every case forced onto the full 29-tool manifest instead of

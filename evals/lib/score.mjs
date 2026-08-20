@@ -37,6 +37,10 @@ function validatorFor(entry) {
 ///
 /// - `"*"`        — present and non-empty. The value is the model's to choose (a
 ///                  search query, a note body) but omitting it makes the call useless.
+/// - `"!"`        — absent. Grades RESTRAINT on optional arguments: a location the
+///                  user never gave, a sensitivity label the model assigned itself.
+///                  Without this form an invented argument is invisible to scoring,
+///                  since a call is otherwise graded only on what it does contain.
 /// - `"~<regex>"` — matches the pattern. Use wherever the contract admits more than
 ///                  one correct spelling of the same value.
 /// - anything else — exact, case-insensitive match, for the cases with one right answer.
@@ -50,6 +54,13 @@ function argsMatch(expected, actual) {
 
     if (want === "*") {
       if (!present) return { ok: false, detail: `missing required argument "${key}"` };
+      continue;
+    }
+
+    if (want === "!") {
+      if (present) {
+        return { ok: false, detail: `${key}: should have been omitted, got ${JSON.stringify(got)}` };
+      }
       continue;
     }
 

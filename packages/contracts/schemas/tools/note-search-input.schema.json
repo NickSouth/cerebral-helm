@@ -12,6 +12,7 @@
       "minLength": 1
     },
     "limit": {
+      "description": "Caps the returned hits. Omitted means every match in the vault, which for a common word can be most of the library. Hits are ordered by note path, not by relevance, so a cap truncates alphabetically rather than keeping the best matches - the output reports `truncated`, so a caller is never silently shown a partial result.",
       "type": "integer",
       "minimum": 1
     }

@@ -2970,6 +2970,11 @@ public enum CloudPolicy: String, Codable {
 }
 
 /// Defaults to private when unspecified.
+///
+/// Privacy label recorded in the note's frontmatter. It is metadata, not access control -
+/// nothing today restricts reading a note based on it. Omitted degrades to `private`, which
+/// is the right answer unless the user's own words call for another; do not judge the
+/// content's sensitivity yourself.
 public enum Sensitivity: String, Codable {
     case secret = "secret"
     case sensitive = "sensitive"
@@ -3950,6 +3955,10 @@ public extension QuickToggle {
     }
 }
 
+/// Which region of the target display's visible area the window fills. Halves and thirds are
+/// measured against that display rather than the window's current size, and `centered` is a
+/// three-quarter-size window inset from every edge, not a move that preserves the window's
+/// size. Only these named frames are accepted; arbitrary coordinates are not.
 public enum Frame: String, Codable {
     case bottomHalf = "bottom-half"
     case centered = "centered"
@@ -5892,6 +5901,10 @@ public enum CerebralHelmAppQuitOutputStatus: String, Codable {
 
 // MARK: - CerebralHelmAppsListInput
 public struct CerebralHelmAppsListInput: Codable {
+    /// Whether to return each application's icon as a base64-encoded PNG alongside its name and
+    /// bundle id. Omitted means `true`, which attaches an image payload for every installed
+    /// application - pass `false` unless the caller is actually drawing them, since the encoded
+    /// icons are large and carry nothing a caller can read.
     public let includeIcons: Bool?
 
     public init(includeIcons: Bool?) {
@@ -6171,7 +6184,14 @@ public struct CerebralHelmCalendarCreateEventInput: Codable {
     /// gave a duration rather than an end time, add it to the start; when they gave neither, a
     /// one-hour default is reasonable.
     public let endsAt: String
-    public let location, notes: String?
+    /// Where the event takes place, in the user's own words - a room, an address, a meeting
+    /// link. Omit unless they said one; a plausible-looking invented location is worse than an
+    /// empty field.
+    public let location: String?
+    /// Longer detail stored on the event body - an agenda, a link, whatever the user asked to be
+    /// recorded. Omit when there is nothing beyond the title; restating the title here adds
+    /// nothing.
+    public let notes: String?
     /// Local wall-clock start time, `YYYY-MM-DDTHH:MM` (seconds optional). NOT UTC and never
     /// carries a timezone offset or trailing `Z` — the time the user said is the time that is
     /// meant, and the host resolves it in its own zone. If the user gave a relative time
@@ -8187,6 +8207,10 @@ public struct CerebralHelmNoteCaptureInput: Codable {
     /// Optional project slug to file the note under. Omit unless the user named a project —
     /// inventing one misfiles the note.
     public let project: String?
+    /// Privacy label recorded in the note's frontmatter. It is metadata, not access control -
+    /// nothing today restricts reading a note based on it. Omitted degrades to `private`, which
+    /// is the right answer unless the user's own words call for another; do not judge the
+    /// content's sensitivity yourself.
     public let sensitivity: Sensitivity?
     /// The note's title, used as its heading and to derive its filename. Take the user's own
     /// words where they gave a title; otherwise write a short descriptive one.
@@ -8789,6 +8813,10 @@ public extension CerebralHelmNoteReadOutput {
 
 // MARK: - CerebralHelmNoteSearchInput
 public struct CerebralHelmNoteSearchInput: Codable {
+    /// Caps the returned hits. Omitted means every match in the vault, which for a common word
+    /// can be most of the library. Hits are ordered by note path, not by relevance, so a cap
+    /// truncates alphabetically rather than keeping the best matches - the output reports
+    /// `truncated`, so a caller is never silently shown a partial result.
     public let limit: Int?
     /// Free text matched against note titles, metadata, and Markdown content. Use the user's own
     /// search terms; this is a literal text match, not a semantic one, so paraphrasing the
@@ -9448,6 +9476,10 @@ public extension CerebralHelmSpotifyCreatePlaylistOutput {
 
 // MARK: - CerebralHelmSystemStatusReadInput
 public struct CerebralHelmSystemStatusReadInput: Codable {
+    /// Which metrics to read. Omitted or empty reads every supported metric; name a subset when
+    /// the user asked about specific ones. A requested metric the host cannot supply comes back
+    /// with an explicit unavailable state rather than being dropped, so a missing entry never
+    /// has to be inferred.
     public let metrics: [MetricElement]?
 
     public init(metrics: [MetricElement]?) {
@@ -10594,6 +10626,10 @@ public struct Arrangement: Codable {
     /// a display name, bundle identifier, or path. If the user's words do not resolve to a known
     /// id, ask rather than guessing.
     public let appID: String
+    /// Which region of the target display's visible area the window fills. Halves and thirds are
+    /// measured against that display rather than the window's current size, and `centered` is a
+    /// three-quarter-size window inset from every edge, not a move that preserves the window's
+    /// size. Only these named frames are accepted; arbitrary coordinates are not.
     public let frame: Frame
 
     public enum CodingKeys: String, CodingKey {

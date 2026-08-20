@@ -29,6 +29,7 @@
       "minLength": 1
     },
     "sensitivity": {
+      "description": "Privacy label recorded in the note's frontmatter. It is metadata, not access control - nothing today restricts reading a note based on it. Omitted degrades to `private`, which is the right answer unless the user's own words call for another; do not judge the content's sensitivity yourself.",
       "type": "string",
       "enum": ["public", "private", "sensitive", "secret"]
     }

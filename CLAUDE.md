@@ -77,9 +77,9 @@ model-facing manifest.** `ActionProvenance` may not be weakened. Agent memory is
 domain state, never freeform model notes. Descriptors — not prompts — are the lever
 for model accuracy, and every descriptor change owes an eval re-run.
 
-_Unmerged:_ that README exists only on the working branch, and the descriptor-affordance
-commit (`ea666c1`, `fix/tool-descriptor-model-affordances`) is local-only and unpushed —
-yet every post-fix benchmark number in PLAN.md depends on it. _Known doc conflict:_
+_Both merged to `dev` 2026-08-18:_ the README and eval harness as `214813e` (#21), the
+descriptor-affordance work as `5e95795` (#20) — so the post-fix benchmark numbers in
+PLAN.md rest on descriptors that are now on `dev`. _Known doc conflict:_
 README decision 20 (owner override — Heimlich MAY hold both `finance.*` and
 `web.search`) contradicts PLAN.md's recommendation. **The owner's override wins**;
 PLAN.md is owed the correction.

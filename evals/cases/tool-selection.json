@@ -1,5 +1,5 @@
 {
-  "$comment": "Tool-selection cases for docs/llm-integration/PLAN.md phase 0/1. Each case declares the allowlist it would naturally run under; `--allowlist=all` overrides every case to the full 29-tool manifest, which is the Heimlich condition and the manifest-size experiment. `expect.tool: null` means no call is correct. `expect.args` values of \"*\" mean 'present and non-empty'; concrete values mean an exact match. `expect.forbid` lists tools that must never be called for this case, at any position.",
+  "$comment": "Tool-selection cases for docs/llm-integration/PLAN.md phase 0/1. Each case declares the allowlist it would naturally run under; `--allowlist=all` overrides every case to the full 29-tool manifest, which is the Heimlich condition and the manifest-size experiment. `expect.tool: null` means no call is correct. `expect.args` values of \"*\" mean 'present and non-empty', \"!\" means the argument must be ABSENT (restraint on optional arguments — an invented location, a self-assigned sensitivity label); values starting `~` are regexes; concrete values mean an exact match. `expect.forbid` lists tools that must never be called for this case, at any position.",
   "cases": [
     {
       "id": "note-capture-plain",
@@ -256,6 +256,47 @@
       "prompt": "File a Linear ticket titled 'Benchmark local models' on the NIC team.",
       "$comment": "`linear.createissue` requires `linearTeamID` — an opaque Linear UUID. A team NAME is not a team id, and inventing one files the ticket nowhere or somewhere wrong.",
       "expect": { "tool": null }
+    },
+
+    {
+      "id": "apps-list-icons-restraint",
+      "category": "argument-restraint",
+      "allowlist": "all",
+      "prompt": "What apps do I have installed on this Mac?",
+      "$comment": "`includeIcons` defaults to TRUE in the handler, so omitting it attaches a base64 PNG for every installed application — megabytes of payload a model cannot read. The schema says to pass `false` unless the caller is drawing them; this case is whether that lands.",
+      "expect": { "tool": "apps.list", "args": { "includeIcons": false }, "forbid": ["app.quit", "apps.quitall"] }
+    },
+    {
+      "id": "calendar-create-no-location",
+      "category": "argument-restraint",
+      "allowlist": "daily",
+      "prompt": "Put 'Standup' on my calendar for 2026-09-02 from 10:00 to 10:15.",
+      "$comment": "The user gave no place and no agenda. `location` and `notes` are optional and must stay empty — a plausible-looking invented location is worse than a blank field, and it is the same invent-an-identifier failure the descriptor audit found, one step milder.",
+      "expect": { "tool": "calendar.createevent", "args": { "title": "*", "startsAt": "~^2026-09-02T10:00(:00)?$", "endsAt": "~^2026-09-02T10:15(:00)?$", "location": "!", "notes": "!" } }
+    },
+    {
+      "id": "note-capture-sensitivity-restraint",
+      "category": "argument-restraint",
+      "allowlist": "knowledge",
+      "prompt": "Save a note called 'Fence quote' — the contractor next door quoted $1,800 for the back fence.",
+      "$comment": "`sensitivity` is written to durable frontmatter and absent degrades to `private`. Nothing here asks for a privacy label, so assigning one is the model deciding a durable property of the user's note on its own.",
+      "expect": { "tool": "note.capture", "args": { "title": "*", "body": "*", "kind": "*", "sensitivity": "!" } }
+    },
+    {
+      "id": "note-search-bounded",
+      "category": "argument-restraint",
+      "allowlist": "knowledge",
+      "prompt": "Search my notes for the roof quote and just show me the top three.",
+      "$comment": "`limit` omitted returns every match in the vault. The user named a count, so it should be carried into the call rather than left to a client-side trim the tool does not do.",
+      "expect": { "tool": "note.search", "args": { "query": "*", "limit": 3 } }
+    },
+    {
+      "id": "system-status-subset",
+      "category": "argument-restraint",
+      "allowlist": "minimal",
+      "prompt": "What's my battery at?",
+      "$comment": "`metrics` omitted reads all five. The user asked about one, and the schema says to name a subset when they do. Graded by regex because the scorer stringifies an array: [\"battery\"] becomes `battery`, all five becomes `cpu,memory,...`.",
+      "expect": { "tool": "system.status.read", "args": { "metrics": "~^battery$" } }
     }
   ]
 }
