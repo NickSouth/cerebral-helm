@@ -540,7 +540,6 @@ func newsPublisherCredentialsMissingBeatsCache() async throws {
     #expect(afterRemoval.all[0].contains("NewsData API key"))
     #expect(afterRemoval.all[0].contains("Markets steady") == false)
 }
-#endif
 
 // MARK: - Interest ranking (NIC-223)
 
@@ -680,3 +679,4 @@ func newsPublisherScopesInterestsToTheirProfile() async throws {
     #expect(byProfile["engineering"]?.first == "OpenAI ships a new reasoning model")
     #expect(byProfile["broad"]?.first == "Storm warning issued for the coast")
 }
+#endif
