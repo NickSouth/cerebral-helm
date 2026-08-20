@@ -129,12 +129,22 @@ public struct LinearProjectCycleInfo: Sendable, Equatable {
     /// The project's name as Linear spells it, or `nil` when the descriptor's `linear_project`
     /// matches no project — which must not be reported as an empty cycle.
     public let matchedProject: String?
+    /// Linear's own URL for the matched project, so the section can offer "open it in Linear"
+    /// without composing a URL from a name.
+    public let matchedProjectURL: String?
     public let cycle: Cycle?
     public let issues: [Issue]
     public let truncated: Bool
 
-    public init(matchedProject: String?, cycle: Cycle?, issues: [Issue], truncated: Bool) {
+    public init(
+        matchedProject: String?,
+        matchedProjectURL: String? = nil,
+        cycle: Cycle?,
+        issues: [Issue],
+        truncated: Bool
+    ) {
         self.matchedProject = matchedProject
+        self.matchedProjectURL = matchedProjectURL
         self.cycle = cycle
         self.issues = issues
         self.truncated = truncated
@@ -3743,6 +3753,7 @@ public final class BridgeSession: @unchecked Sendable {
         /// `nil` when the descriptor's `linear_project` matches no Linear project. Distinct from an
         /// empty `issues`, which means the project matched and has nothing in the cycle.
         let matchedProject: String?
+        let matchedProjectURL: String?
         let cycle: Cycle?
         let issues: [Issue]
         /// True when Linear had more issues than one page returned, so a cut list can say so.
@@ -3754,6 +3765,7 @@ public final class BridgeSession: @unchecked Sendable {
 
         init(_ info: LinearProjectCycleInfo) {
             matchedProject = info.matchedProject
+            matchedProjectURL = info.matchedProjectURL
             cycle = info.cycle.map(Cycle.init)
             issues = info.issues.map(Issue.init)
             truncated = info.truncated
@@ -3763,6 +3775,7 @@ public final class BridgeSession: @unchecked Sendable {
 
         private init(available: Bool, reason: String?) {
             matchedProject = nil
+            matchedProjectURL = nil
             cycle = nil
             issues = []
             truncated = false
@@ -3783,12 +3796,18 @@ public final class BridgeSession: @unchecked Sendable {
         // faithful to the declared type means the surface cannot be wrong about which state it
         // is in.
         enum CodingKeys: String, CodingKey {
-            case matchedProject, cycle, issues, truncated, available, reason
+            case matchedProject
+            // Swift spells it `URL`, JSON spells it `Url`. Mapped explicitly rather than renaming
+            // either side, and pinned by a test — a silent case mismatch here is a field the web
+            // layer reads as `undefined` forever.
+            case matchedProjectURL = "matchedProjectUrl"
+            case cycle, issues, truncated, available, reason
         }
 
         func encode(to encoder: any Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(matchedProject, forKey: .matchedProject)
+            try container.encode(matchedProjectURL, forKey: .matchedProjectURL)
             try container.encode(cycle, forKey: .cycle)
             try container.encode(issues, forKey: .issues)
             try container.encode(truncated, forKey: .truncated)

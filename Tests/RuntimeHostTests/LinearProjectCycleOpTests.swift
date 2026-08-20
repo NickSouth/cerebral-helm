@@ -62,6 +62,7 @@ private struct CycleResultDTO: Decodable {
         let endsAt: String
     }
     let matchedProject: String?
+    let matchedProjectUrl: String?
     let cycle: Cycle?
     let issues: [Issue]
     let truncated: Bool
@@ -82,6 +83,7 @@ private func sampleInfo(
 ) -> LinearProjectCycleInfo {
     LinearProjectCycleInfo(
         matchedProject: matchedProject,
+        matchedProjectURL: matchedProject.map { _ in "https://linear.app/nick-southey/project/ch" },
         cycle: LinearProjectCycleInfo.Cycle(
             id: "cycle-2", number: 2, name: nil,
             startsAt: "2026-08-17T04:00:00.000Z", endsAt: "2026-08-24T04:00:00.000Z"
@@ -160,7 +162,9 @@ func linearCycleFailureReportsReason() async throws {
 @Test("a name matching no project is distinguishable from an empty cycle")
 func linearCycleUnmatchedProject() async throws {
     let unmatched = try decodeCycleOp(await makeCycleOpSession(linearProjectCycle: { _ in
-        LinearProjectCycleInfo(matchedProject: nil, cycle: nil, issues: [], truncated: false)
+        LinearProjectCycleInfo(
+            matchedProject: nil, matchedProjectURL: nil, cycle: nil, issues: [], truncated: false
+        )
     }).execute(cycleOpRequest(#"{"project":"CerebralHlem"}"#)))
 
     let emptyButLinked = try decodeCycleOp(await makeCycleOpSession(linearProjectCycle: { _ in
@@ -174,6 +178,17 @@ func linearCycleUnmatchedProject() async throws {
     #expect(unmatched.matchedProject == nil)
     #expect(emptyButLinked.matchedProject == "CerebralHelm")
     #expect(emptyButLinked.cycle?.number == 2)
+}
+
+@Test("the project URL crosses the wire as matchedProjectUrl, not matchedProjectURL")
+func linearCycleProjectUrlKeyCasing() async throws {
+    // Swift writes `URL`, JSON writes `Url`. If these ever drift, the web layer reads `undefined`
+    // and silently loses the "open in Linear" affordance, with nothing failing anywhere else.
+    let session = try makeCycleOpSession(linearProjectCycle: { _ in sampleInfo() })
+    let response = await session.execute(cycleOpRequest(#"{"project":"CerebralHelm"}"#))
+    #expect(response.payload["matchedProjectUrl"] != nil)
+    #expect(response.payload["matchedProjectURL"] == nil)
+    #expect(try decodeCycleOp(response).matchedProjectUrl?.isEmpty == false)
 }
 
 @Test("a truncated page says so rather than looking complete")
@@ -201,7 +216,7 @@ func linearCycleIsShapedAsARead() async throws {
     })
     let response = await session.execute(cycleOpRequest(#"{"project":"CerebralHelm"}"#))
     #expect(Set(response.payload.keys) == [
-        "matchedProject", "cycle", "issues", "truncated", "available", "reason"
+        "matchedProject", "matchedProjectUrl", "cycle", "issues", "truncated", "available", "reason"
     ])
 }
 
@@ -211,13 +226,15 @@ func linearCycleEncodesExplicitNulls() async throws {
     // and separates a broken link from a quiet cycle with `matchedProject === null` — which is
     // silently false against `undefined`. So every key is present, whatever its value.
     let session = try makeCycleOpSession(linearProjectCycle: { _ in
-        LinearProjectCycleInfo(matchedProject: nil, cycle: nil, issues: [], truncated: false)
+        LinearProjectCycleInfo(
+            matchedProject: nil, matchedProjectURL: nil, cycle: nil, issues: [], truncated: false
+        )
     })
     let response = await session.execute(cycleOpRequest(#"{"project":"CerebralHlem"}"#))
 
     // Present-and-null, not missing: the same key set as the fully-populated case above.
     #expect(Set(response.payload.keys) == [
-        "matchedProject", "cycle", "issues", "truncated", "available", "reason"
+        "matchedProject", "matchedProjectUrl", "cycle", "issues", "truncated", "available", "reason"
     ])
     let json = String(decoding: try JSONEncoder().encode(response.payload), as: UTF8.self)
     #expect(json.contains("\"matchedProject\":null"))

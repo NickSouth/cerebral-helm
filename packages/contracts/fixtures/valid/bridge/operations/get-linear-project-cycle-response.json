@@ -7,6 +7,7 @@
   "error": null,
   "payload": {
     "matchedProject": "CerebralHelm",
+    "matchedProjectUrl": "https://linear.app/nick-southey/project/cerebralhelm-abc123",
     "cycle": {
       "id": "cycle-2",
       "number": 2,

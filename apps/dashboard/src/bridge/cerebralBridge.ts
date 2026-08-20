@@ -210,6 +210,8 @@ export interface GetLinearProjectCycleResult {
    *  matches no project. Null must not be rendered as an empty cycle — it means the link is
    *  wrong, which is fixable, whereas an empty cycle means there is simply nothing to do. */
   readonly matchedProject: string | null;
+  /** Linear's own URL for the matched project — never composed client-side from a name. */
+  readonly matchedProjectUrl: string | null;
   /** The active cycle, or null when none is running — between cycles is a real state. */
   readonly cycle: LinearCycle | null;
   readonly issues: readonly LinearCycleIssue[];

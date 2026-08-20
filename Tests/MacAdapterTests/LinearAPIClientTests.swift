@@ -223,16 +223,21 @@ func linearReportsUnmatchedProject() {
     // Live finding (2026-08-20): a misspelled `linear_project` returns zero issues, exactly like a
     // correctly-linked project with nothing in the cycle. Without the projects root the surface
     // would render a typo as "nothing to do" — an answer, and the wrong one.
-    #expect(LinearAPIClient.matchedProjectName(in: ["projects": ["nodes": []]]) == nil)
-    #expect(LinearAPIClient.matchedProjectName(in: [:]) == nil)
+    #expect(LinearAPIClient.matchedProject(in: ["projects": ["nodes": []]]) == nil)
+    #expect(LinearAPIClient.matchedProject(in: [:]) == nil)
 }
 
 @Test("the matched project reports Linear's own casing, not the descriptor's")
 func linearReportsCanonicalProjectName() {
     // `eqIgnoreCase` means "cerebralhelm" in a descriptor matches "CerebralHelm" in Linear
     // (verified live). The header echoes Linear's spelling so the match is visible.
-    let payload: [String: Any] = ["projects": ["nodes": [["id": "p1", "name": "CerebralHelm"]]]]
-    #expect(LinearAPIClient.matchedProjectName(in: payload) == "CerebralHelm")
+    let payload: [String: Any] = ["projects": ["nodes": [[
+        "id": "p1", "name": "CerebralHelm", "url": "https://linear.app/nick-southey/project/ch-abc"
+    ]]]]
+    let matched = LinearAPIClient.matchedProject(in: payload)
+    #expect(matched?.name == "CerebralHelm")
+    // Linear's own URL, never one composed from a workspace slug and a name.
+    #expect(matched?.url == "https://linear.app/nick-southey/project/ch-abc")
 }
 
 @Test("numeric fields decode whether Linear sends them as int or float")

@@ -140,6 +140,9 @@ public struct LinearProjectCycle: Equatable, Sendable {
     /// kind of wrong, because it looks like an answer. It also lets the header echo the canonical
     /// casing back, confirming which project was matched.
     public let matchedProject: String?
+    /// Linear's own URL for the matched project — taken from the API rather than composed from a
+    /// workspace slug and a name, which would break on Linear's slug-id scheme.
+    public let matchedProjectURL: String?
     /// The active cycle, or `nil` when there is none running — between cycles is a real state and
     /// reads differently from "a cycle is running and this project has nothing in it".
     public let cycle: Cycle?
@@ -148,8 +151,15 @@ public struct LinearProjectCycle: Equatable, Sendable {
     /// list silently cut at the page size reads as complete when it is not.
     public let truncated: Bool
 
-    public init(matchedProject: String?, cycle: Cycle?, issues: [Issue], truncated: Bool) {
+    public init(
+        matchedProject: String?,
+        matchedProjectURL: String? = nil,
+        cycle: Cycle?,
+        issues: [Issue],
+        truncated: Bool
+    ) {
         self.matchedProject = matchedProject
+        self.matchedProjectURL = matchedProjectURL
         self.cycle = cycle
         self.issues = issues
         self.truncated = truncated
@@ -292,8 +302,10 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding, 
         let issues = nodes.compactMap(Self.decodeIssue)
         let pageInfo = container?["pageInfo"] as? [String: Any]
 
+        let matched = Self.matchedProject(in: payload)
         return LinearProjectCycle(
-            matchedProject: Self.matchedProjectName(in: payload),
+            matchedProject: matched?.name,
+            matchedProjectURL: matched?.url,
             cycle: Self.resolveCycle(issueNodes: nodes, payload: payload),
             issues: issues,
             truncated: pageInfo?["hasNextPage"] as? Bool == true
@@ -406,7 +418,7 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding, 
     static let projectCycleQuery = """
     query CerebralHelmProjectCycle($project: String!) {
       projects(first: 1, filter: { name: { eqIgnoreCase: $project } }) {
-        nodes { id name }
+        nodes { id name url }
       }
       cycles(first: 1, filter: { isActive: { eq: true } }) {
         nodes { id number name startsAt endsAt }
@@ -539,13 +551,17 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding, 
         return nodes.compactMap(decodeCycle).first
     }
 
-    /// The matched project's name as Linear spells it, or `nil` when the name matched nothing.
-    static func matchedProjectName(in payload: [String: Any]) -> String? {
+    /// The matched project's name as Linear spells it and its own URL, or `nil` when the name
+    /// matched nothing at all.
+    static func matchedProject(in payload: [String: Any]) -> (name: String, url: String?)? {
         guard
             let projects = payload["projects"] as? [String: Any],
             let nodes = projects["nodes"] as? [[String: Any]]
         else { return nil }
-        return nodes.compactMap { $0["name"] as? String }.first
+        return nodes.compactMap { node -> (name: String, url: String?)? in
+            guard let name = node["name"] as? String else { return nil }
+            return (name, node["url"] as? String)
+        }.first
     }
 
     static func labelNames(in container: Any?) -> [String] {

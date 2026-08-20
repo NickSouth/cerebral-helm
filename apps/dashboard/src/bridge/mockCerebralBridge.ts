@@ -801,6 +801,7 @@ export function createMockCerebralBridge(
       if (project.toLowerCase() !== "cerebralhelm") {
         return Promise.resolve({
           matchedProject: null,
+          matchedProjectUrl: null,
           cycle: null,
           issues: [],
           truncated: false,
@@ -816,6 +817,7 @@ export function createMockCerebralBridge(
       });
       return Promise.resolve({
         matchedProject: "CerebralHelm",
+        matchedProjectUrl: "https://linear.app/mock/project/cerebralhelm",
         cycle: {
           id: "cycle-2",
           number: 2,

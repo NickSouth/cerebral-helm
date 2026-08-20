@@ -641,6 +641,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
                 formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
                 return LinearProjectCycleInfo(
                     matchedProject: status.matchedProject,
+                    matchedProjectURL: status.matchedProjectURL,
                     cycle: status.cycle.map { cycle in
                         LinearProjectCycleInfo.Cycle(
                             id: cycle.id,
