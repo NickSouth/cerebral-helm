@@ -37,19 +37,33 @@ public struct NewsProfileCatalog: Decodable, Equatable, Sendable {
     public let feeds: [String: [NewsFeed]]?
     /// The feeds used when a profile has no explicit list.
     public let defaultFeeds: [NewsFeed]?
+    /// Whether the user's interests are also sent to the metered provider as a `q=` search:
+    /// `"q"` (the default) or `"off"`. Optional so an older config file still decodes.
+    ///
+    /// A switch rather than a constant because the combination is the one part of NIC-223 that
+    /// depends on the provider's continued goodwill: `q` alongside `category` is verified to work
+    /// on the free tier today, but if it ever starts returning 422 every metered request would
+    /// silently fall through to the RSS source. Turning it off is then a one-line config edit, not
+    /// a rebuild.
+    public let interestQuery: String?
+
+    /// True when interest terms should ride along as a `q=` search.
+    public var sendsInterestQuery: Bool { (interestQuery ?? "q") == "q" }
 
     public init(
         language: String,
         defaultCategory: String,
         profiles: [String: String],
         feeds: [String: [NewsFeed]]? = nil,
-        defaultFeeds: [NewsFeed]? = nil
+        defaultFeeds: [NewsFeed]? = nil,
+        interestQuery: String? = nil
     ) {
         self.language = language
         self.defaultCategory = defaultCategory
         self.profiles = profiles
         self.feeds = feeds
         self.defaultFeeds = defaultFeeds
+        self.interestQuery = interestQuery
     }
 
     /// The category string for a mode's `newsProfile`, or ``defaultCategory`` when it has no

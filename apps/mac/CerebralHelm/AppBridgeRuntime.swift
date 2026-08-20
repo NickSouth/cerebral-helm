@@ -217,32 +217,6 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // Now that the publisher exists, point the control-refresh hook at it: a successful
         // play/pause/skip re-polls now-playing at once (NIC-133).
         spotifyRefreshSignal.setAction { Task { await spotify.refresh() } }
-        // The News producer (NIC-127): reads the NewsData key from the Keychain and fetches
-        // headlines per relevance profile declared in config/news/profiles.json. The profile →
-        // category mapping lives in that config (not hardcoded); when it can't be loaded there are
-        // no profiles to stream and the panel stays at its honest bootstrap "unavailable" state.
-        // The cache store makes the last headlines survive relaunch, so a cold start renders from
-        // disk instead of spending one of the provider's ~200 daily requests; a store that can't be
-        // opened simply means the publisher caches in memory only (one extra request per launch).
-        if let newsCatalog = NewsProfileCatalog.load(configDirectory: paths.configDirectory),
-           !newsCatalog.profiles.isEmpty {
-            let news = NewsPublisher(
-                profiles: newsCatalog.profiles.keys.sorted(),
-                secretStore: composition.secretStore,
-                // Metered first, free second: NewsData when its key and quota allow, otherwise the
-                // publishers' own RSS/Atom feeds — so a rate limit, an outage, or an unconfigured
-                // key degrades the panel's *source*, never the panel itself.
-                provider: FallbackNewsProvider([
-                    NewsDataProvider(catalog: newsCatalog),
-                    RSSNewsProvider(catalog: newsCatalog),
-                ]),
-                cacheStore: try? makeNewsCacheStore(paths),
-                emit: { relay.emit($0) }
-            )
-            newsPublisher = news
-        } else {
-            newsPublisher = nil
-        }
         displayObserver = DisplayTopologyObserver(emit: { relay.emit($0) })
         guard let runtime = try? makeCommandRuntime(paths: paths, phase: .macOS, capabilities: capabilities, onEvent: { event in
             let bridgeEvent = BridgeEventFactory.lifecycleEvent(event, id: BridgeEventFactory.newEventID())
@@ -284,6 +258,86 @@ final class AppBridgeRuntime: @unchecked Sendable {
             emit: { relay.emit($0) }
         )
         stocksPublisher = stocks
+        // The mode configs, loaded once and read by both the news interests map below and the
+        // mode-entry widget refresh further down. Falling back to the last known good config is the
+        // loader's own contract: a rejected edit must not cost the session its mode data.
+        // Type inferred rather than spelled: the mode config type lives in CerebralContracts, which
+        // this file does not import.
+        let configModes = {
+            switch ConfigLoader(workspace: paths).load() {
+            case let .activated(config): return config.modes
+            case let .rejected(_, lastKnownGood): return lastKnownGood?.modes ?? []
+            }
+        }()
+        // Which `newsProfile` each mode resolves to (config/modes, through the same layered loader
+        // bootstrap composes from), keyed by BOTH the mode's id and its label so the interests note
+        // may head a section `## Executive` or `## executive` and either resolves. Derived from the
+        // mode configs rather than copied into config/news/profiles.json: the calendar catalog
+        // duplicates its own mapping, and a third copy of the same four pairs is drift nothing
+        // gates against.
+        let newsModeProfiles: [String: String] = {
+            var map: [String: String] = [:]
+            for mode in configModes {
+                guard let profile = mode.newsProfile?.rawValue else { continue }
+                map[mode.id.lowercased()] = profile
+                map[mode.label.lowercased()] = profile
+            }
+            return map
+        }()
+        // The News producer (NIC-127): reads the NewsData key from the Keychain and fetches
+        // headlines per relevance profile declared in config/news/profiles.json. The profile →
+        // category mapping lives in that config (not hardcoded); when it can't be loaded there are
+        // no profiles to stream and the panel stays at its honest bootstrap "unavailable" state.
+        // The cache store makes the last headlines survive relaunch, so a cold start renders from
+        // disk instead of spending one of the provider's ~200 daily requests; a store that can't be
+        // opened simply means the publisher caches in memory only (one extra request per launch).
+        //
+        // Composed *after* the settings store because the interests note (NIC-223) lives under the
+        // EFFECTIVE knowledge root, which is the user's `knowledgeRootReference` when they have
+        // re-pointed the vault (NIC-138).
+        // The user's interests, per newsProfile, re-read on every use — like the stocks tickers and
+        // the calendar mode map — so editing the note in any Markdown editor takes effect on the
+        // next tick without a relaunch. Read by two callers a tick: the provider, to ask the source
+        // for these terms, and the publisher, to rank whatever comes back. Two reads of a small
+        // local file at a two-hour cadence is not worth a cache that could go stale against a file
+        // the user edits by hand. No note, an empty note, or a re-pointed vault that has none: no
+        // interests, which is exactly the pre-NIC-223 behaviour.
+        let newsInterests: @Sendable () -> [String: [NewsInterest]] = {
+            let stored = (try? settingsStore?.load()).flatMap { $0 } ?? StoredSettings()
+            let root = EffectiveSettings.knowledgeRootURL(
+                reference: stored.knowledgeRootReference, default: paths.knowledgeRoot
+            )
+            guard let note = NewsInterestNote.load(knowledgeRoot: root) else { return [:] }
+            return note.resolve(modeProfiles: newsModeProfiles)
+        }
+        if let newsCatalog = NewsProfileCatalog.load(configDirectory: paths.configDirectory),
+           !newsCatalog.profiles.isEmpty {
+            let news = NewsPublisher(
+                profiles: newsCatalog.profiles.keys.sorted(),
+                secretStore: composition.secretStore,
+                // Metered first, free second: NewsData when its key and quota allow, otherwise the
+                // publishers' own RSS/Atom feeds — so a rate limit, an outage, or an unconfigured
+                // key degrades the panel's *source*, never the panel itself.
+                provider: FallbackNewsProvider([
+                    NewsDataProvider(
+                        catalog: newsCatalog,
+                        interests: { profile in newsInterests()[profile] ?? [] }
+                    ),
+                    RSSNewsProvider(catalog: newsCatalog),
+                ]),
+                cacheStore: try? makeNewsCacheStore(paths),
+                // Re-read on every emit, like the stocks tickers and the calendar mode map, so
+                // editing the note in any Markdown editor re-ranks the panel on the next tick —
+                // without a relaunch and without spending a provider request. No note, an empty
+                // note, or a re-pointed vault that has none: no interests, which is exactly the
+                // pre-NIC-223 behaviour.
+                interests: newsInterests,
+                emit: { relay.emit($0) }
+            )
+            newsPublisher = news
+        } else {
+            newsPublisher = nil
+        }
         // The Schedule producer (NIC-126): reads the day's events from EventKit and the user's
         // calendar→mode map from the settings store each tick, resolves each event to a mode (a
         // `#[mode]` tag → the mapped calendar → the default mode), and emits one schedule.changed
@@ -443,17 +497,9 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let spotifySecretStore = composition.secretStore
         // Which widget ids each mode's left/right slots show (config/modes, through the same
         // layered loader bootstrap composes from) — drives the mode-entry widget refresh below.
-        let modeWidgetSlots: [String: Set<String>] = {
-            let modes = {
-                switch ConfigLoader(workspace: paths).load() {
-                case let .activated(config): return config.modes
-                case let .rejected(_, lastKnownGood): return lastKnownGood?.modes ?? []
-                }
-            }()
-            return Dictionary(uniqueKeysWithValues: modes.map {
-                ($0.id, Set([$0.widgets.widgetsLeft, $0.widgets.widgetsRight]))
-            })
-        }()
+        let modeWidgetSlots: [String: Set<String>] = Dictionary(uniqueKeysWithValues: configModes.map {
+            ($0.id, Set([$0.widgets.widgetsLeft, $0.widgets.widgetsRight]))
+        })
         session = BridgeSession(
             runtime: runtime,
             configDirectory: paths.configDirectory,

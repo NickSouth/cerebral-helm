@@ -29,7 +29,9 @@ public struct RSSNewsProvider: NewsProvider {
     public init(
         catalog: NewsProfileCatalog,
         session: URLSession? = nil,
-        limit: Int = 4,
+        // The candidate pool for interest ranking (NIC-223), not the panel's slot count. Free
+        // for RSS: these items were already fetched and parsed, then thrown away.
+        limit: Int = 10,
         maximumFeeds: Int = 4,
         resourceTimeout: TimeInterval = 12
     ) {
