@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_getLinearProjectCycleRes0001",
+  "type": "bridge.operation.response",
+  "operation": "getLinearProjectCycle",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "matchedProject": "CerebralHelm",
+    "matchedProjectUrl": "https://linear.app/nick-southey/project/cerebralhelm-abc123",
+    "cycle": {
+      "id": "cycle-2",
+      "number": 2,
+      "name": null,
+      "startsAt": "2026-08-17T04:00:00.000Z",
+      "endsAt": "2026-08-24T04:00:00.000Z"
+    },
+    "issues": [
+      {
+        "identifier": "NIC-221",
+        "title": "Linear Integration with Projects Widget in Exec Mode",
+        "url": "https://linear.app/nick-southey/issue/NIC-221/linear-integration",
+        "priority": 3,
+        "estimate": 5,
+        "sortOrder": -99.5,
+        "state": {
+          "name": "Next-Up",
+          "type": "unstarted",
+          "color": "#e2e2e2",
+          "position": 2
+        },
+        "labels": [
+          "Feature"
+        ],
+        "assignee": "nickrsouthey",
+        "assigneeInitials": "NS"
+      }
+    ],
+    "truncated": false,
+    "available": true,
+    "reason": null
+  }
+}

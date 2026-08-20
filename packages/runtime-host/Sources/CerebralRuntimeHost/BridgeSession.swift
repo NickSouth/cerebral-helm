@@ -51,6 +51,107 @@ public struct LinearWorkspaceInfo: Sendable, Equatable {
     }
 }
 
+/// One project's standing in the currently-active cycle, as the project detail window needs it
+/// (NIC-221). The host-facing shape: `CerebralRuntimeHost` stays free of the Linear client, so the
+/// mac adapter maps its own type onto this.
+///
+/// Timestamps are **ISO-8601 strings, not `Date`** — bridge operation payloads go through a plain
+/// `JSONEncoder` (see `encodePayload`), which would render a `Date` as a numeric reference-date
+/// offset. Formatting once, explicitly, at the edge that produces them keeps the wire shape from
+/// depending on an encoder default.
+public struct LinearProjectCycleInfo: Sendable, Equatable {
+    public struct State: Sendable, Equatable {
+        public let name: String
+        /// `backlog` | `unstarted` | `started` | `completed` | `canceled` — the only stable thing
+        /// to group on, since a status name is the user's to rename.
+        public let type: String
+        /// Linear's own colour for the status, so the surface never invents one.
+        public let color: String
+        public let position: Double
+
+        public init(name: String, type: String, color: String, position: Double) {
+            self.name = name
+            self.type = type
+            self.color = color
+            self.position = position
+        }
+    }
+
+    public struct Issue: Sendable, Equatable {
+        public let identifier: String
+        public let title: String
+        public let url: String
+        public let priority: Int
+        public let estimate: Int?
+        public let sortOrder: Double
+        public let state: State
+        public let labels: [String]
+        /// Linear's handle for the assignee, or `nil` when unassigned.
+        public let assignee: String?
+        /// Linear's initials for the assignee — what an avatar draws.
+        public let assigneeInitials: String?
+
+        public init(
+            identifier: String, title: String, url: String, priority: Int, estimate: Int?,
+            sortOrder: Double, state: State, labels: [String], assignee: String?,
+            assigneeInitials: String?
+        ) {
+            self.identifier = identifier
+            self.title = title
+            self.url = url
+            self.priority = priority
+            self.estimate = estimate
+            self.sortOrder = sortOrder
+            self.state = state
+            self.labels = labels
+            self.assignee = assignee
+            self.assigneeInitials = assigneeInitials
+        }
+    }
+
+    public struct Cycle: Sendable, Equatable {
+        public let id: String
+        public let number: Int
+        public let name: String?
+        /// ISO-8601, formatted by the producer. See the note on this type.
+        public let startsAt: String
+        public let endsAt: String
+
+        public init(id: String, number: Int, name: String?, startsAt: String, endsAt: String) {
+            self.id = id
+            self.number = number
+            self.name = name
+            self.startsAt = startsAt
+            self.endsAt = endsAt
+        }
+    }
+
+    /// The project's name as Linear spells it, or `nil` when the descriptor's `linear_project`
+    /// matches no project — which must not be reported as an empty cycle.
+    public let matchedProject: String?
+    /// Linear's own URL for the matched project, so the section can offer "open it in Linear"
+    /// without composing a URL from a name.
+    public let matchedProjectURL: String?
+    public let cycle: Cycle?
+    public let issues: [Issue]
+    public let truncated: Bool
+
+    public init(
+        matchedProject: String?,
+        matchedProjectURL: String? = nil,
+        cycle: Cycle?,
+        issues: [Issue],
+        truncated: Bool
+    ) {
+        self.matchedProject = matchedProject
+        self.matchedProjectURL = matchedProjectURL
+        self.cycle = cycle
+        self.issues = issues
+        self.truncated = truncated
+    }
+}
+
+
 /// A folder the user picked in a native open panel (quick-actions phase 4, `git-clone`).
 ///
 /// `relativePath` is the selection expressed relative to the projects root — the empty string when
@@ -268,6 +369,13 @@ public final class BridgeSession: @unchecked Sendable {
     /// `linear.createissue` tool that writes, so listing options can never reach the write path.
     private let linearWorkspace: (@Sendable () async throws -> LinearWorkspaceInfo)?
 
+    /// Reads one project's active-cycle standing for `getLinearProjectCycle` (NIC-221) — the
+    /// project detail window's cycle section. Optional: a host without the Linear client reports
+    /// the surface unavailable. A **third** read closure, separate from both `linearWorkspace` and
+    /// the `linear.createissue` tool, so a surface that renders a project's status can never reach
+    /// the one that files tickets.
+    private let linearProjectCycle: (@Sendable (String) async throws -> LinearProjectCycleInfo)?
+
     /// Reads current sports events for `listSportsEvents` (quick-actions phase 4) — the
     /// `check-scoreboard` picker and the report it opens. Optional: a host without the provider
     /// reports the surface unavailable. A read, never the command bus: the user is choosing games
@@ -372,6 +480,7 @@ public final class BridgeSession: @unchecked Sendable {
         spotifyConnect: (@Sendable () async throws -> SpotifyConnectionInfo)? = nil,
         chooseFolder: (@Sendable () async -> FolderSelectionInfo)? = nil,
         linearWorkspace: (@Sendable () async throws -> LinearWorkspaceInfo)? = nil,
+        linearProjectCycle: (@Sendable (String) async throws -> LinearProjectCycleInfo)? = nil,
         sportsEvents: (@Sendable () async throws -> [SportsEvent])? = nil,
         messageRecipients: (@Sendable () async throws -> [MessageRecipient])? = nil,
         canvasStatus: (@Sendable () async -> CanvasStatusInfo)? = nil,
@@ -406,6 +515,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.spotifyConnect = spotifyConnect
         self.chooseFolder = chooseFolder
         self.linearWorkspace = linearWorkspace
+        self.linearProjectCycle = linearProjectCycle
         self.sportsEvents = sportsEvents
         self.messageRecipients = messageRecipients
         self.canvasStatus = canvasStatus
@@ -552,6 +662,8 @@ public final class BridgeSession: @unchecked Sendable {
             return await chooseFolderOperation(request)
         case .listLinearOptions:
             return await listLinearOptions(request)
+        case .getLinearProjectCycle:
+            return await getLinearProjectCycle(request)
         case .listSportsEvents:
             return await listSportsEvents(request)
         case .listMessageRecipients:
@@ -2225,6 +2337,35 @@ public final class BridgeSession: @unchecked Sendable {
         }
     }
 
+    /// Reads one project's standing in the active cycle for the project detail window (NIC-221).
+    ///
+    /// A read that never touches the command bus, for the same reason as `listLinearOptions`: the
+    /// user is looking at a window, not acting on the world, and routing it through the executor
+    /// would put a command in the log every time a project is opened.
+    ///
+    /// Three distinguishable outcomes, none of which may collapse into another:
+    /// `available: false` (this host has no Linear client at all), a populated `reason` (the read
+    /// was attempted and failed), and `matchedProject: nil` (the name matches no project — which
+    /// would otherwise render exactly like an empty cycle).
+    private func getLinearProjectCycle(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: LinearProjectCycleInput = decodePayload(request),
+              !input.project.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "getLinearProjectCycle requires a project name.")
+        }
+        guard let linearProjectCycle else {
+            return ok(request, payload: LinearProjectCycleResult.unavailable)
+        }
+        do {
+            return ok(request, payload: LinearProjectCycleResult(try await linearProjectCycle(input.project)))
+        } catch {
+            // "We could not read it" is not "there is nothing in it" — the section says which.
+            return ok(request, payload: LinearProjectCycleResult.failed(reason: "\(error)"))
+        }
+    }
+
     /// Creates a project folder from the `create-project` form.
     ///
     /// Structured for the same reason as the others: a name, a location, a summary and an
@@ -3517,6 +3658,162 @@ public final class BridgeSession: @unchecked Sendable {
         /// Present when the workspace could not be read, so the form can say so rather than
         /// rendering empty dropdowns that look like the user has no teams.
         let reason: String?
+    }
+
+    private struct LinearProjectCycleInput: Decodable {
+        let project: String
+    }
+
+    private struct LinearProjectCycleResult: Encodable {
+        struct State: Encodable {
+            let name: String
+            let type: String
+            let color: String
+            let position: Double
+        }
+
+        struct Issue: Encodable {
+            let identifier: String
+            let title: String
+            let url: String
+            let priority: Int
+            let estimate: Int?
+            let sortOrder: Double
+            let state: State
+            let labels: [String]
+            let assignee: String?
+            let assigneeInitials: String?
+
+            enum CodingKeys: String, CodingKey {
+                case identifier, title, url, priority, estimate, sortOrder
+                case state, labels, assignee, assigneeInitials
+            }
+
+            /// Explicit nulls, for the reason given on the enclosing type.
+            func encode(to encoder: any Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(identifier, forKey: .identifier)
+                try container.encode(title, forKey: .title)
+                try container.encode(url, forKey: .url)
+                try container.encode(priority, forKey: .priority)
+                try container.encode(estimate, forKey: .estimate)
+                try container.encode(sortOrder, forKey: .sortOrder)
+                try container.encode(state, forKey: .state)
+                try container.encode(labels, forKey: .labels)
+                try container.encode(assignee, forKey: .assignee)
+                try container.encode(assigneeInitials, forKey: .assigneeInitials)
+            }
+
+            init(_ issue: LinearProjectCycleInfo.Issue) {
+                identifier = issue.identifier
+                title = issue.title
+                url = issue.url
+                priority = issue.priority
+                estimate = issue.estimate
+                sortOrder = issue.sortOrder
+                state = State(
+                    name: issue.state.name, type: issue.state.type,
+                    color: issue.state.color, position: issue.state.position
+                )
+                labels = issue.labels
+                assignee = issue.assignee
+                assigneeInitials = issue.assigneeInitials
+            }
+        }
+
+        struct Cycle: Encodable {
+            let id: String
+            let number: Int
+            let name: String?
+            let startsAt: String
+            let endsAt: String
+
+            enum CodingKeys: String, CodingKey { case id, number, name, startsAt, endsAt }
+
+            /// Explicit nulls, for the reason given on the enclosing type — a cycle is usually
+            /// unnamed, so `name` is the common case rather than the rare one.
+            func encode(to encoder: any Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(id, forKey: .id)
+                try container.encode(number, forKey: .number)
+                try container.encode(name, forKey: .name)
+                try container.encode(startsAt, forKey: .startsAt)
+                try container.encode(endsAt, forKey: .endsAt)
+            }
+
+            init(_ cycle: LinearProjectCycleInfo.Cycle) {
+                id = cycle.id
+                number = cycle.number
+                name = cycle.name
+                startsAt = cycle.startsAt
+                endsAt = cycle.endsAt
+            }
+        }
+
+        /// `nil` when the descriptor's `linear_project` matches no Linear project. Distinct from an
+        /// empty `issues`, which means the project matched and has nothing in the cycle.
+        let matchedProject: String?
+        let matchedProjectURL: String?
+        let cycle: Cycle?
+        let issues: [Issue]
+        /// True when Linear had more issues than one page returned, so a cut list can say so.
+        let truncated: Bool
+        /// False on a host with no Linear client at all — a different fact from an empty cycle.
+        let available: Bool
+        /// Present when the read was attempted and failed.
+        let reason: String?
+
+        init(_ info: LinearProjectCycleInfo) {
+            matchedProject = info.matchedProject
+            matchedProjectURL = info.matchedProjectURL
+            cycle = info.cycle.map(Cycle.init)
+            issues = info.issues.map(Issue.init)
+            truncated = info.truncated
+            available = true
+            reason = nil
+        }
+
+        private init(available: Bool, reason: String?) {
+            matchedProject = nil
+            matchedProjectURL = nil
+            cycle = nil
+            issues = []
+            truncated = false
+            self.available = available
+            self.reason = reason
+        }
+
+        static let unavailable = LinearProjectCycleResult(available: false, reason: nil)
+        static func failed(reason: String) -> LinearProjectCycleResult {
+            LinearProjectCycleResult(available: true, reason: reason)
+        }
+
+        // Encoded by hand so that a nil optional lands on the wire as an explicit `null` rather
+        // than as an ABSENT KEY, which is what Swift's synthesized `Codable` does (it uses
+        // `encodeIfPresent`). The difference is not cosmetic: the web layer declares these as
+        // `T | null`, and a `matchedProject === null` check — the one that separates a broken
+        // link from a quiet cycle — is silently false against `undefined`. Keeping the wire
+        // faithful to the declared type means the surface cannot be wrong about which state it
+        // is in.
+        enum CodingKeys: String, CodingKey {
+            case matchedProject
+            // Swift spells it `URL`, JSON spells it `Url`. Mapped explicitly rather than renaming
+            // either side, and pinned by a test — a silent case mismatch here is a field the web
+            // layer reads as `undefined` forever.
+            case matchedProjectURL = "matchedProjectUrl"
+            case cycle, issues, truncated, available, reason
+        }
+
+        func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(matchedProject, forKey: .matchedProject)
+            try container.encode(matchedProjectURL, forKey: .matchedProjectURL)
+            try container.encode(cycle, forKey: .cycle)
+            try container.encode(issues, forKey: .issues)
+            try container.encode(truncated, forKey: .truncated)
+            try container.encode(available, forKey: .available)
+            try container.encode(reason, forKey: .reason)
+        }
     }
 
     private struct ScaffoldProjectInput: Decodable {

@@ -628,6 +628,51 @@ final class AppBridgeRuntime: @unchecked Sendable {
                     )
                 })
             },
+            // The project detail window's cycle section (NIC-221): one project's issues in the
+            // currently-active cycle. A THIRD read closure, again separate from the write tool —
+            // a surface that renders a project's status must not reach the one that files tickets.
+            // The client is captured directly rather than through `composition`, which is not
+            // Sendable, matching the workspace closure above.
+            linearProjectCycle: { project in
+                let status = try await linearClient.projectCycle(named: project)
+                // Dates become ISO-8601 here, at the edge that produces them: bridge payloads go
+                // through a plain JSONEncoder, which would render a Date as a numeric offset.
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                return LinearProjectCycleInfo(
+                    matchedProject: status.matchedProject,
+                    matchedProjectURL: status.matchedProjectURL,
+                    cycle: status.cycle.map { cycle in
+                        LinearProjectCycleInfo.Cycle(
+                            id: cycle.id,
+                            number: cycle.number,
+                            name: cycle.name,
+                            startsAt: formatter.string(from: cycle.startsAt),
+                            endsAt: formatter.string(from: cycle.endsAt)
+                        )
+                    },
+                    issues: status.issues.map { issue in
+                        LinearProjectCycleInfo.Issue(
+                            identifier: issue.identifier,
+                            title: issue.title,
+                            url: issue.url,
+                            priority: issue.priority,
+                            estimate: issue.estimate,
+                            sortOrder: issue.sortOrder,
+                            state: LinearProjectCycleInfo.State(
+                                name: issue.state.name,
+                                type: issue.state.type,
+                                color: issue.state.color,
+                                position: issue.state.position
+                            ),
+                            labels: issue.labels,
+                            assignee: issue.assignee,
+                            assigneeInitials: issue.assigneeInitials
+                        )
+                    },
+                    truncated: status.truncated
+                )
+            },
             // The `check-scoreboard` picker and the report it opens (quick-actions phase 4):
             // current NFL games and PGA tournaments from ESPN's public site API. A read, fetched
             // on demand — golf's payload is a megabyte and cannot be narrowed at the source, so

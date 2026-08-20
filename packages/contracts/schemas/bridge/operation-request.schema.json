@@ -82,7 +82,8 @@
         "createCourseNote",
         "runSystemChecks",
         "connectGmail",
-        "listUnreadMail"
+        "listUnreadMail",
+        "getLinearProjectCycle"
       ]
     },
     "payload": {

@@ -2279,6 +2279,7 @@ public enum Operation: String, Codable {
     case deleteSecret = "deleteSecret"
     case getBootstrapState = "getBootstrapState"
     case getCanvasStatus = "getCanvasStatus"
+    case getLinearProjectCycle = "getLinearProjectCycle"
     case getRecentActivity = "getRecentActivity"
     case getSecretStatus = "getSecretStatus"
     case getSettings = "getSettings"

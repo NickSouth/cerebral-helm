@@ -666,7 +666,8 @@ final class WindowCoordinator: @unchecked Sendable {
 
     /// Open the expandable project detail window (NIC-129): reads the clicked project's
     /// `PROJECT.md` (constrained to the projects root) and renders it in its own window with a
-    /// placeholder live-status section. Built fresh each open (any existing one is replaced) so
+    /// placeholder live-status section. The descriptor's `linear_project` rides along (NIC-221)
+    /// so the window knows which Linear project it tracks; `nil` is the normal unlinked state. Built fresh each open (any existing one is replaced) so
     /// the descriptor is current. A no-op in recovery, or when the project has no readable
     /// descriptor — Increment 6 disables the row in that case, so the click shouldn't fire.
     func openProjectDetail(path: String) {
@@ -676,7 +677,8 @@ final class WindowCoordinator: @unchecked Sendable {
         let controller = ProjectDetailWindowController(
             dashboardRoot: dashboardRoot, session: session, projectPath: path,
             name: descriptor.name, markdownBody: descriptor.body,
-            importance: descriptor.importance ?? 0
+            importance: descriptor.importance ?? 0,
+            linearProject: descriptor.linearProject
         )
         controller.onShellControl = { [weak self] body in self?.handleShellControl(body) }
         projectDetail = controller
@@ -699,6 +701,14 @@ final class WindowCoordinator: @unchecked Sendable {
     /// producer's next scan; the stepper already updated its own number optimistically.
     func setProjectImportance(path: String, importance: Int) {
         ProjectImportanceWriter.write(projectPath: path, importance: importance)
+    }
+
+    /// Link a project to a Linear project (NIC-221): the detail window's picker posts the chosen
+    /// name and this writes it into the project's `PROJECT.md` frontmatter (constrained to the
+    /// projects root, blank refused). The section re-reads Linear on its own once the write is
+    /// posted; the descriptor is re-read the next time the window opens.
+    func setProjectLinearProject(path: String, project: String) {
+        ProjectLinearLinkWriter.write(projectPath: path, linearProject: project)
     }
 
     /// Open the transparent mode-swap dropdown above the bottom bar's mode control
@@ -885,6 +895,10 @@ final class WindowCoordinator: @unchecked Sendable {
             guard let path = body["path"] as? String,
                   let importance = body["importance"] as? Int else { return }
             setProjectImportance(path: path, importance: importance)
+        case "setProjectLinearProject":
+            guard let path = body["path"] as? String,
+                  let project = body["project"] as? String else { return }
+            setProjectLinearProject(path: path, project: project)
         case "openModeMenu":
             openModeMenu(anchor: body["anchor"] as? [String: Any], from: source)
         case "closeModeMenu":

@@ -82,6 +82,15 @@ public struct FileSystemActiveProjectsProvider: ActiveProjectsProvider {
     public static let descriptorFilename = "PROJECT.md"
     /// The frontmatter key whose integer value orders the list (higher = more important).
     public static let importanceKey = "importance"
+    /// The frontmatter key naming the Linear project this folder tracks, by its human-readable
+    /// name (NIC-221) — e.g. `linear_project: CerebralHelm`. A name rather than a UUID because a
+    /// descriptor is hand-authored, and an opaque id in a file the user edits is unmaintainable;
+    /// the resolution from name to project happens at the API boundary.
+    ///
+    /// Deliberately **not** read by this reader: the widget's list and its ordering do not depend
+    /// on it, so a project without the key is simply unlinked rather than incomplete. Only
+    /// ``ProjectDescriptor`` reads it, for the detail window.
+    public static let linearProjectKey = "linear_project"
 
     private let root: URL
     private let limit: Int

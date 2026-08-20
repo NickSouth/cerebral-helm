@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Markdown } from "./Markdown";
+import { ProjectCycleSection } from "./ProjectCycleSection";
 
 /** The data the native shell injects for the expanded project detail window (NIC-129). */
 export interface ProjectDetailData {
@@ -7,23 +8,40 @@ export interface ProjectDetailData {
   readonly markdownBody: string;
   /** The project's current `importance` (higher = more important); edited by the stepper. */
   readonly importance: number;
+  /** The Linear project this folder tracks (NIC-221), or null when the descriptor declares none.
+   *  Null is a normal state — the cycle section renders it as an invitation to link. */
+  readonly linearProject: string | null;
 }
 
 /**
- * The expanded project detail view (NIC-129): a project's `PROJECT.md` rendered as markdown,
- * an editable priority (`importance`) stepper in the top bar, and a placeholder "Live status"
- * section a later increment will populate (local repo signals first, Linear integration
- * eventually — the ticket defers both). Presentational: the native `ProjectDetailWindowController`
- * supplies the data and hosts this in its own window; `ProjectDetailApp` wires the close and
- * set-importance actions to the shell-control channel.
+ * The expanded project detail view (NIC-129, NIC-221): a project's `PROJECT.md` rendered as
+ * markdown, an editable priority (`importance`) stepper in the top bar, and — where the "Live
+ * status" placeholder used to sit — the project's live Linear cycle.
+ *
+ * **Stacked, one scroll** (owner decision, 2026-08-20, chosen from a live mockup against the
+ * tabbed alternative): the brief and the cycle share a single scroll container, so the brief is
+ * always what you see first and the tickets are what you scroll into. That means the markdown body
+ * no longer owns the scroll — the wrapper does — or the two would scroll independently and the
+ * cycle's sticky headers would have nothing to stick to.
+ *
+ * Presentational apart from the cycle section, which fetches its own data: the native
+ * `ProjectDetailWindowController` supplies the descriptor and hosts this in its own window, and
+ * `ProjectDetailApp` wires close and set-importance to the shell-control channel.
  */
 export function ProjectDetail({
   name,
   markdownBody,
   importance,
+  linearProject,
   onClose,
-  onSetImportance
-}: ProjectDetailData & { onClose: () => void; onSetImportance: (value: number) => void }) {
+  onSetImportance,
+  onSetLinearProject
+}: ProjectDetailData & {
+  onClose: () => void;
+  onSetImportance: (value: number) => void;
+  /** Persist a Linear project chosen from the cycle section's picker (NIC-221). */
+  onSetLinearProject?: (project: string) => void;
+}) {
   // Optimistic: the stepper owns the displayed number and reports each change; the native side
   // persists it and the widget reorders on its next scan (floored at 0, matching the writer).
   const [priority, setPriority] = useState(importance);
@@ -70,15 +88,15 @@ export function ProjectDetail({
           ×
         </button>
       </header>
-      <div className="project-detail__body">
-        <Markdown source={markdownBody} />
+      <div className="project-detail__scroll">
+        <div className="project-detail__body">
+          <Markdown source={markdownBody} />
+        </div>
+        <ProjectCycleSection
+          linearProject={linearProject}
+          onSetLinearProject={onSetLinearProject}
+        />
       </div>
-      <section className="project-detail__status" aria-label="Live status">
-        <h2 className="project-detail__status-title">Live status</h2>
-        <p className="project-detail__status-note">
-          Live status is coming soon — project state will appear here.
-        </p>
-      </section>
     </div>
   );
 }

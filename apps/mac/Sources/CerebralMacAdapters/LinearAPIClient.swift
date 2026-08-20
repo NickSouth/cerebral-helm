@@ -42,6 +42,139 @@ public struct LinearWorkspace: Equatable, Sendable {
     }
 }
 
+/// One project's position in the **currently-active cycle** (NIC-221): the cycle itself, and the
+/// issues of that project which sit in it.
+///
+/// Shapes verified against Linear's generated schema (`@linear/sdk` 90.0.0, read 2026-08-20), not
+/// inferred: `IssueFilter.project` is a `NullableProjectFilter` carrying a `StringComparator`,
+/// `IssueFilter.cycle` is a `NullableCycleFilter` carrying `isActive: BooleanComparator`, and
+/// every selected field exists on `Issue`/`WorkflowState`/`Cycle` with the spelling used here.
+public struct LinearProjectCycle: Equatable, Sendable {
+    /// A workflow state as Linear defines it. `type` is the only stable thing to group on — it is
+    /// one of `backlog`, `unstarted`, `started`, `completed`, `canceled`, and unlike `name` it
+    /// survives the user renaming a status. `color` is Linear's own, so the surface never invents
+    /// a palette for statuses it does not own; `position` orders states within a type.
+    public struct State: Equatable, Sendable {
+        public let name: String
+        public let type: String
+        public let color: String
+        public let position: Double
+
+        public init(name: String, type: String, color: String, position: Double) {
+            self.name = name
+            self.type = type
+            self.color = color
+            self.position = position
+        }
+    }
+
+    /// One issue as the cycle list renders it. Deliberately **no description**: the surface shows
+    /// titles, and the less of an issue's prose crosses the bridge the better.
+    public struct Issue: Equatable, Sendable {
+        public let identifier: String
+        public let title: String
+        /// Linear's own issue URL — the row opens this rather than composing one from the id.
+        public let url: String
+        /// Linear's scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low.
+        public let priority: Int
+        public let estimate: Int?
+        public let sortOrder: Double
+        public let state: State
+        public let labels: [String]
+        /// The assignee's display name, or `nil` when unassigned. Verified live 2026-08-20: this
+        /// is Linear's **handle** (`nickrsouthey`), not a person's name — it labels the row for
+        /// assistive tech, while ``assigneeInitials`` is what an avatar should draw.
+        public let assignee: String?
+        /// Linear's own initials for the assignee (`NS`), or `nil` when unassigned. Taken from the
+        /// API rather than derived from the handle, which would render "n".
+        public let assigneeInitials: String?
+
+        public init(
+            identifier: String,
+            title: String,
+            url: String,
+            priority: Int,
+            estimate: Int?,
+            sortOrder: Double,
+            state: State,
+            labels: [String],
+            assignee: String?,
+            assigneeInitials: String?
+        ) {
+            self.identifier = identifier
+            self.title = title
+            self.url = url
+            self.priority = priority
+            self.estimate = estimate
+            self.sortOrder = sortOrder
+            self.state = state
+            self.labels = labels
+            self.assignee = assignee
+            self.assigneeInitials = assigneeInitials
+        }
+    }
+
+    public struct Cycle: Equatable, Sendable {
+        public let id: String
+        public let number: Int
+        /// Cycles are usually unnamed; the surface falls back to "Cycle <number>".
+        public let name: String?
+        public let startsAt: Date
+        public let endsAt: Date
+
+        public init(id: String, number: Int, name: String?, startsAt: Date, endsAt: Date) {
+            self.id = id
+            self.number = number
+            self.name = name
+            self.startsAt = startsAt
+            self.endsAt = endsAt
+        }
+    }
+
+    /// The project's name as **Linear** spells it, or `nil` when no project matches the descriptor's
+    /// `linear_project` at all.
+    ///
+    /// This exists because of a live finding (2026-08-20): a misspelled project name returns zero
+    /// issues, which is byte-identical to a correctly-linked project that simply has nothing in the
+    /// cycle. Without this the surface would quietly render a typo as "nothing to do" — the worst
+    /// kind of wrong, because it looks like an answer. It also lets the header echo the canonical
+    /// casing back, confirming which project was matched.
+    public let matchedProject: String?
+    /// Linear's own URL for the matched project — taken from the API rather than composed from a
+    /// workspace slug and a name, which would break on Linear's slug-id scheme.
+    public let matchedProjectURL: String?
+    /// The active cycle, or `nil` when there is none running — between cycles is a real state and
+    /// reads differently from "a cycle is running and this project has nothing in it".
+    public let cycle: Cycle?
+    public let issues: [Issue]
+    /// True when Linear had more issues than one page returned. Surfaced rather than swallowed: a
+    /// list silently cut at the page size reads as complete when it is not.
+    public let truncated: Bool
+
+    public init(
+        matchedProject: String?,
+        matchedProjectURL: String? = nil,
+        cycle: Cycle?,
+        issues: [Issue],
+        truncated: Bool
+    ) {
+        self.matchedProject = matchedProject
+        self.matchedProjectURL = matchedProjectURL
+        self.cycle = cycle
+        self.issues = issues
+        self.truncated = truncated
+    }
+}
+
+/// Reads one project's active-cycle issues (NIC-221). A **third** port, separate again from both
+/// ``LinearWorkspaceProviding`` and the write capability: a surface that renders a project's
+/// status must not be able to reach the one that files tickets.
+public protocol LinearProjectCycleProviding: Sendable {
+    /// - Parameter projectName: the Linear project name, matched case-insensitively, as declared
+    ///   by a descriptor's `linear_project` frontmatter key.
+    func projectCycle(named projectName: String) async throws -> LinearProjectCycle
+}
+
 /// Reading the workspace is a **separate port** from writing an issue (``LinearIssueCapability``),
 /// the same split as `CalendarProvider` versus `CalendarWritingCapability`: the form's dropdowns
 /// must not reach the path that files a ticket.
@@ -72,7 +205,7 @@ public enum LinearAPIError: Error, Equatable, Sendable {
 /// GraphQL always answers `200`, so a request that "succeeded" can still carry an `errors` array;
 /// this treats a populated `errors` as a failure, because a caller reading only the HTTP status
 /// would otherwise report a ticket that was never filed.
-public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding {
+public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding, LinearProjectCycleProviding {
     public static let secretReference = "linear_api_token"
 
     private let session: URLSession
@@ -150,6 +283,33 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding {
             throw LinearAPIError.providerFailed("Linear returned no teams.")
         }
         return LinearWorkspace(teams: nodes.compactMap(Self.decodeTeam))
+    }
+
+    // MARK: - LinearProjectCycleProviding (read)
+
+    public func projectCycle(named projectName: String) async throws -> LinearProjectCycle {
+        let name = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A blank name would ask Linear for a project called "" and get an empty answer that reads
+        // as "nothing in this cycle". Refused here so the caller cannot mistake one for the other.
+        guard !name.isEmpty else {
+            throw LinearAPIError.providerFailed("No Linear project name was given.")
+        }
+
+        let payload = try await send(query: Self.projectCycleQuery, variables: ["project": name])
+
+        let container = payload["issues"] as? [String: Any]
+        let nodes = container?["nodes"] as? [[String: Any]] ?? []
+        let issues = nodes.compactMap(Self.decodeIssue)
+        let pageInfo = container?["pageInfo"] as? [String: Any]
+
+        let matched = Self.matchedProject(in: payload)
+        return LinearProjectCycle(
+            matchedProject: matched?.name,
+            matchedProjectURL: matched?.url,
+            cycle: Self.resolveCycle(issueNodes: nodes, payload: payload),
+            issues: issues,
+            truncated: pageInfo?["hasNextPage"] as? Bool == true
+        )
     }
 
     // MARK: - Transport
@@ -238,6 +398,55 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding {
     }
     """
 
+    /// One project's issues in the active cycle, plus the active cycle itself (NIC-221).
+    ///
+    /// Three root fields in one document rather than three round trips, and each earns its place
+    /// by separating a state that would otherwise collapse into another:
+    ///
+    /// - `projects` distinguishes **"no such project"** from "this project has nothing in the
+    ///   cycle" — verified live (2026-08-20) to be the same zero-issue response otherwise, which
+    ///   would render a misspelled `linear_project` as "nothing to do".
+    /// - `cycles` answers the **empty** case: with no issues there is no issue to read the cycle
+    ///   off, and "there is no active cycle" must not collapse into "the cycle is running and this
+    ///   project has nothing in it".
+    ///
+    /// The project is matched with `eqIgnoreCase` because the name is hand-typed into a
+    /// `PROJECT.md` frontmatter key, where casing is not something to fail a lookup over.
+    ///
+    /// `first: 250` is Linear's page ceiling; `pageInfo.hasNextPage` rides along so a truncated
+    /// list can say so instead of looking complete.
+    static let projectCycleQuery = """
+    query CerebralHelmProjectCycle($project: String!) {
+      projects(first: 1, filter: { name: { eqIgnoreCase: $project } }) {
+        nodes { id name url }
+      }
+      cycles(first: 1, filter: { isActive: { eq: true } }) {
+        nodes { id number name startsAt endsAt }
+      }
+      issues(
+        first: 250
+        filter: {
+          project: { name: { eqIgnoreCase: $project } }
+          cycle: { isActive: { eq: true } }
+        }
+      ) {
+        pageInfo { hasNextPage }
+        nodes {
+          identifier
+          title
+          url
+          priority
+          estimate
+          sortOrder
+          state { name type color position }
+          labels(first: 10) { nodes { name } }
+          assignee { displayName initials }
+          cycle { id number name startsAt endsAt }
+        }
+      }
+    }
+    """
+
     /// Reports Linear's own first message. A partially-shaped team is dropped rather than rendered
     /// with blanks, so a dropdown never offers an option that cannot be filed against.
     static func decodeTeam(_ node: [String: Any]) -> LinearWorkspace.Team? {
@@ -264,6 +473,128 @@ public struct LinearAPIClient: LinearIssueCapability, LinearWorkspaceProviding {
             guard let id = node["id"] as? String, let name = node["name"] as? String else { return nil }
             return LinearWorkspace.NamedOption(id: id, name: name)
         }
+    }
+
+    // MARK: - Project-cycle decoding (NIC-221)
+
+    /// Decodes one issue node, or `nil` when a field the row cannot render without is missing.
+    /// Dropping a partial issue is the same rule the team decoder follows: a row rendered with
+    /// blanks claims to be an issue you can act on, and this one would not open.
+    static func decodeIssue(_ node: [String: Any]) -> LinearProjectCycle.Issue? {
+        guard
+            let identifier = node["identifier"] as? String,
+            let title = node["title"] as? String,
+            let url = node["url"] as? String,
+            let stateNode = node["state"] as? [String: Any],
+            let state = decodeState(stateNode)
+        else { return nil }
+
+        let assignee = node["assignee"] as? [String: Any]
+        return LinearProjectCycle.Issue(
+            identifier: identifier,
+            title: title,
+            url: url,
+            // Linear types priority and estimate as Float; they are whole numbers in practice, and
+            // the surface shows them as such.
+            priority: Int(number(node["priority"]) ?? 0),
+            estimate: number(node["estimate"]).map(Int.init),
+            sortOrder: number(node["sortOrder"]) ?? 0,
+            state: state,
+            labels: labelNames(in: node["labels"]),
+            assignee: assignee?["displayName"] as? String,
+            assigneeInitials: assignee?["initials"] as? String
+        )
+    }
+
+    static func decodeState(_ node: [String: Any]) -> LinearProjectCycle.State? {
+        guard
+            let name = node["name"] as? String,
+            let type = node["type"] as? String,
+            let color = node["color"] as? String
+        else { return nil }
+        return LinearProjectCycle.State(
+            name: name, type: type, color: color, position: number(node["position"]) ?? 0
+        )
+    }
+
+    static func decodeCycle(_ node: [String: Any]) -> LinearProjectCycle.Cycle? {
+        guard
+            let id = node["id"] as? String,
+            let number = number(node["number"]),
+            let startsAt = date(node["startsAt"]),
+            let endsAt = date(node["endsAt"])
+        else { return nil }
+        return LinearProjectCycle.Cycle(
+            id: id,
+            number: Int(number),
+            name: node["name"] as? String,
+            startsAt: startsAt,
+            endsAt: endsAt
+        )
+    }
+
+    /// The cycle to report: the one the returned issues are actually in, falling back to the
+    /// workspace's active cycle when the project has none in it. Preferring the issues' own cycle
+    /// means the header can never name a different cycle from the rows beneath it.
+    static func resolveCycle(
+        issueNodes: [[String: Any]], payload: [String: Any]
+    ) -> LinearProjectCycle.Cycle? {
+        for node in issueNodes {
+            if let cycleNode = node["cycle"] as? [String: Any], let cycle = decodeCycle(cycleNode) {
+                return cycle
+            }
+        }
+        guard
+            let cycles = payload["cycles"] as? [String: Any],
+            let nodes = cycles["nodes"] as? [[String: Any]]
+        else { return nil }
+        return nodes.compactMap(decodeCycle).first
+    }
+
+    /// The matched project's name as Linear spells it and its own URL, or `nil` when the name
+    /// matched nothing at all.
+    static func matchedProject(in payload: [String: Any]) -> (name: String, url: String?)? {
+        guard
+            let projects = payload["projects"] as? [String: Any],
+            let nodes = projects["nodes"] as? [[String: Any]]
+        else { return nil }
+        return nodes.compactMap { node -> (name: String, url: String?)? in
+            guard let name = node["name"] as? String else { return nil }
+            return (name, node["url"] as? String)
+        }.first
+    }
+
+    static func labelNames(in container: Any?) -> [String] {
+        guard
+            let container = container as? [String: Any],
+            let nodes = container["nodes"] as? [[String: Any]]
+        else { return [] }
+        return nodes.compactMap { $0["name"] as? String }
+    }
+
+    /// JSON numbers arrive as `NSNumber`, and whether they bridge to `Int` or `Double` depends on
+    /// how the value was written — so both are accepted rather than guessed at.
+    static func number(_ value: Any?) -> Double? {
+        if let double = value as? Double { return double }
+        if let int = value as? Int { return Double(int) }
+        if let number = value as? NSNumber { return number.doubleValue }
+        return nil
+    }
+
+    /// Parses one Linear `DateTime`. Built per call rather than held in a `static let`: an
+    /// `ISO8601DateFormatter` is a reference type with mutable options, and a shared one inside a
+    /// `Sendable` client is a data race waiting for two windows to open at once. A response carries
+    /// at most a handful of dates, so the allocation is not worth the risk.
+    static func date(_ value: Any?) -> Date? {
+        guard let text = value as? String else { return nil }
+        let withFractional = ISO8601DateFormatter()
+        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let parsed = withFractional.date(from: text) { return parsed }
+        // Linear sends fractional seconds today, but the format is not promised — a plain
+        // internet date-time must still parse rather than blanking the cycle header.
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return plain.date(from: text)
     }
 
     /// Maps a Linear failure onto the tool boundary's error type. A missing key is `notFound` with
