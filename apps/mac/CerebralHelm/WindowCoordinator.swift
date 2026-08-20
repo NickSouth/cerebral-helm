@@ -703,6 +703,14 @@ final class WindowCoordinator: @unchecked Sendable {
         ProjectImportanceWriter.write(projectPath: path, importance: importance)
     }
 
+    /// Link a project to a Linear project (NIC-221): the detail window's picker posts the chosen
+    /// name and this writes it into the project's `PROJECT.md` frontmatter (constrained to the
+    /// projects root, blank refused). The section re-reads Linear on its own once the write is
+    /// posted; the descriptor is re-read the next time the window opens.
+    func setProjectLinearProject(path: String, project: String) {
+        ProjectLinearLinkWriter.write(projectPath: path, linearProject: project)
+    }
+
     /// Open the transparent mode-swap dropdown above the bottom bar's mode control
     /// (NIC-144). Built fresh each open (any existing one is replaced) so its active-mode
     /// highlight is current — a transient menu, not a warm panel. `anchor` is the mode
@@ -887,6 +895,10 @@ final class WindowCoordinator: @unchecked Sendable {
             guard let path = body["path"] as? String,
                   let importance = body["importance"] as? Int else { return }
             setProjectImportance(path: path, importance: importance)
+        case "setProjectLinearProject":
+            guard let path = body["path"] as? String,
+                  let project = body["project"] as? String else { return }
+            setProjectLinearProject(path: path, project: project)
         case "openModeMenu":
             openModeMenu(anchor: body["anchor"] as? [String: Any], from: source)
         case "closeModeMenu":

@@ -5237,6 +5237,54 @@ button.deadline-row__open:not(:disabled):hover {
   color: var(--ch-text-primary);
 }
 
+/* The link picker (NIC-221): the workspace's Linear projects, offered where the section has no
+   list to show — unlinked, or linked to a name Linear does not know. */
+.cyc__picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2);
+  margin-top: var(--ch-space-3);
+}
+
+/* The button that precedes the picker sits in the same place the picker will, so revealing the
+   list does not shift the copy above it. */
+.cyc__state-note > .cyc__state-action {
+  margin-top: var(--ch-space-3);
+}
+
+.cyc__picker-option {
+  font: inherit;
+  font-size: var(--ch-font-size-label);
+  cursor: pointer;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--ch-radius-sm);
+  border: 1px solid var(--ch-panel-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ch-text-muted);
+  transition: all var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.cyc__picker-option:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+  color: var(--ch-text-primary);
+}
+
+.cyc__picker-option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cyc__picker-option:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
+.cyc__bone-chip {
+  height: 1.5rem;
+  width: 6rem;
+  border-radius: var(--ch-radius-sm);
+}
+
 .cyc__truncated {
   margin: 0;
   padding: var(--ch-space-2) var(--ch-space-4) var(--ch-space-4);

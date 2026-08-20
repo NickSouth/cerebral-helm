@@ -15,11 +15,12 @@ import type { GetLinearProjectCycleResult, LinearCycleIssue } from "../bridge/ce
  *  here — a confident wrong answer that looks like an answer. */
 
 const getLinearProjectCycle = vi.fn();
+const listLinearOptions = vi.fn();
 const submitCommand = vi.fn(() => Promise.resolve({ accepted: true }));
 let readOnly = false;
 
 vi.mock("../state/BridgeProvider", () => ({
-  useBridge: () => ({ getLinearProjectCycle, submitCommand })
+  useBridge: () => ({ getLinearProjectCycle, listLinearOptions, submitCommand })
 }));
 vi.mock("../state/useUiPosture", () => ({ useUiPosture: () => ({ readOnly }) }));
 
@@ -58,20 +59,42 @@ function result(overrides: Partial<GetLinearProjectCycleResult> = {}): GetLinear
   };
 }
 
-const renderSection = (linearProject: string | null = "CerebralHelm") =>
-  render(<ProjectCycleSection linearProject={linearProject} />);
+const renderSection = (
+  linearProject: string | null = "CerebralHelm",
+  onSetLinearProject?: (project: string) => void
+) => render(<ProjectCycleSection linearProject={linearProject} onSetLinearProject={onSetLinearProject} />);
+
+const workspace = {
+  teams: [
+    {
+      id: "t1",
+      key: "NIC",
+      name: "Nick's Projects",
+      projects: [
+        { id: "p1", name: "Ubility Website" },
+        { id: "p2", name: "CerebralHelm" }
+      ],
+      labels: []
+    }
+  ],
+  available: true,
+  reason: null
+};
 
 beforeEach(() => {
   readOnly = false;
   getLinearProjectCycle.mockReset();
+  listLinearOptions.mockReset();
   submitCommand.mockClear();
   getLinearProjectCycle.mockResolvedValue(result());
+  listLinearOptions.mockResolvedValue(workspace);
 });
 
 describe("ProjectCycleSection — the states that are not a list", () => {
   it("an unlinked project asks to be linked, and never calls the bridge", () => {
     renderSection(null);
-    expect(screen.getByText(/Not linked to Linear/i)).toBeTruthy();
+    expect(screen.getByText(/Not currently linked to a Linear project/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Link here" })).toBeTruthy();
     expect(getLinearProjectCycle).not.toHaveBeenCalled();
   });
 
@@ -256,5 +279,91 @@ describe("cycle header formatting", () => {
   it("does not crash on an unparseable timestamp", () => {
     expect(formatCycleRange("not-a-date", "also-not")).toBe("");
     expect(daysRemaining("not-a-date")).toBeNull();
+  });
+});
+
+describe("the link picker (Increment 6)", () => {
+  it("offers the workspace's projects once linking is asked for, sorted and de-duplicated", async () => {
+    renderSection(null);
+    fireEvent.click(screen.getByRole("button", { name: "Link here" }));
+    // The descriptor stores a NAME, so a name appearing in two teams would be ambiguous to write.
+    expect(await screen.findByRole("button", { name: "CerebralHelm" })).toBeTruthy();
+    const options = screen
+      .getByRole("group", { name: /Link to a Linear project/i })
+      .querySelectorAll("button");
+    expect([...options].map((option) => option.textContent)).toEqual([
+      "CerebralHelm",
+      "Ubility Website"
+    ]);
+  });
+
+  it("reports the pick and shows that project's cycle without reopening the window", async () => {
+    const onSetLinearProject = vi.fn();
+    getLinearProjectCycle.mockResolvedValue(result({ issues: [issue({ identifier: "NIC-9" })] }));
+    renderSection(null, onSetLinearProject);
+
+    fireEvent.click(screen.getByRole("button", { name: "Link here" }));
+    fireEvent.click(await screen.findByRole("button", { name: "CerebralHelm" }));
+
+    // Persisted...
+    expect(onSetLinearProject).toHaveBeenCalledWith("CerebralHelm");
+    // ...and the section advances on its own, rather than waiting for the descriptor to be
+    // re-read on the next open.
+    expect(await screen.findByText("NIC-9")).toBeTruthy();
+    expect(getLinearProjectCycle).toHaveBeenCalledWith("CerebralHelm");
+  });
+
+  it("offers the picker as the fix for a name Linear does not know", async () => {
+    getLinearProjectCycle.mockResolvedValue(
+      result({ matchedProject: null, matchedProjectUrl: null, cycle: null })
+    );
+    renderSection("CerebralHlem");
+    expect(await screen.findByText(/No Linear project by that name/i)).toBeTruthy();
+    // The typo state is the one place a picker is most useful — it is the repair.
+    expect(await screen.findByRole("button", { name: "CerebralHelm" })).toBeTruthy();
+  });
+
+  it("renders nothing rather than an empty picker when the workspace cannot be read", async () => {
+    listLinearOptions.mockResolvedValue({ teams: [], available: false, reason: null });
+    renderSection(null);
+    fireEvent.click(screen.getByRole("button", { name: "Link here" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("group", { name: /Link to a Linear project/i })).toBeNull()
+    );
+  });
+
+  it("survives a rejected options read without breaking the state around it", async () => {
+    listLinearOptions.mockRejectedValue(new Error("no"));
+    renderSection(null);
+    fireEvent.click(screen.getByRole("button", { name: "Link here" }));
+    // The state around it survives — the copy is still there, just with no list to offer.
+    expect(await screen.findByText(/Not currently linked to a Linear project/i)).toBeTruthy();
+  });
+
+  it("read-only recovery disables linking at the button, before any list is offered", async () => {
+    readOnly = true;
+    const onSetLinearProject = vi.fn();
+    renderSection(null, onSetLinearProject);
+    const cta = screen.getByRole("button", { name: "Link here" });
+    expect((cta as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(cta);
+    expect(screen.queryByRole("group", { name: /Link to a Linear project/i })).toBeNull();
+    expect(onSetLinearProject).not.toHaveBeenCalled();
+  });
+
+  it("does not load the workspace until linking is actually asked for", () => {
+    renderSection(null);
+    // The button states the offer; the request only happens once it is taken up.
+    expect(listLinearOptions).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Link here" }));
+    expect(listLinearOptions).toHaveBeenCalled();
+  });
+
+  it("does not load options for a project that is already linked and rendering", async () => {
+    getLinearProjectCycle.mockResolvedValue(result({ issues: [issue()] }));
+    renderSection();
+    await screen.findByText("NIC-1");
+    // The common case must not pay for a request it never shows.
+    expect(listLinearOptions).not.toHaveBeenCalled();
   });
 });

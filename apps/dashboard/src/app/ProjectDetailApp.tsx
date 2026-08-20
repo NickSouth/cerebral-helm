@@ -8,7 +8,10 @@ import { BridgeProvider } from "../state/BridgeProvider";
 import { AppearanceProvider } from "../state/AppearanceProvider";
 import { ThemeProvider } from "./ThemeProvider";
 import { postShellControl } from "../shell/shellControl";
-import { submitSetProjectImportance } from "../shell/openProjectDetail";
+import {
+  submitSetProjectImportance,
+  submitSetProjectLinearProject
+} from "../shell/openProjectDetail";
 import { createDashboardRuntime } from "../state/bootstrapStore";
 
 /** The per-project payload the native shell injects before load (NIC-129, Increment 5). */
@@ -79,6 +82,9 @@ export function ProjectDetailApp() {
               linearProject={detail.linearProject}
               onClose={() => postShellControl("closeProjectDetail")}
               onSetImportance={(value) => submitSetProjectImportance(detail.path, value)}
+              onSetLinearProject={(project) =>
+                submitSetProjectLinearProject(detail.path, project)
+              }
             />
           </ThemeProvider>
         </AppearanceProvider>

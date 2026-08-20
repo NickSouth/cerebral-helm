@@ -34,8 +34,14 @@ export function ProjectDetail({
   importance,
   linearProject,
   onClose,
-  onSetImportance
-}: ProjectDetailData & { onClose: () => void; onSetImportance: (value: number) => void }) {
+  onSetImportance,
+  onSetLinearProject
+}: ProjectDetailData & {
+  onClose: () => void;
+  onSetImportance: (value: number) => void;
+  /** Persist a Linear project chosen from the cycle section's picker (NIC-221). */
+  onSetLinearProject?: (project: string) => void;
+}) {
   // Optimistic: the stepper owns the displayed number and reports each change; the native side
   // persists it and the widget reorders on its next scan (floored at 0, matching the writer).
   const [priority, setPriority] = useState(importance);
@@ -86,7 +92,10 @@ export function ProjectDetail({
         <div className="project-detail__body">
           <Markdown source={markdownBody} />
         </div>
-        <ProjectCycleSection linearProject={linearProject} />
+        <ProjectCycleSection
+          linearProject={linearProject}
+          onSetLinearProject={onSetLinearProject}
+        />
       </div>
     </div>
   );

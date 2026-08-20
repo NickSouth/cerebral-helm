@@ -238,7 +238,9 @@ function CycleState({
   return (
     <div className="cyc__state">
       <p className="cyc__state-title">{title}</p>
-      <p className="cyc__state-note">{children}</p>
+      {/* A div, not a p: the picker is a block element and some states nest it in here, which a
+          paragraph cannot legally contain. */}
+      <div className="cyc__state-note">{children}</div>
       {action ? (
         <button
           type="button"
@@ -255,17 +257,144 @@ function CycleState({
   );
 }
 
-export function ProjectCycleSection({ linearProject }: { linearProject: string | null }) {
+/**
+ * Offers the workspace's Linear projects and reports the chosen one (NIC-221, Increment 6).
+ *
+ * Reads through `listLinearOptions`, the read closure the create-ticket form already uses, rather
+ * than a new surface: it returns every team with its projects, which is exactly the list needed
+ * here. Names are flattened and de-duplicated because the descriptor stores a NAME — two projects
+ * sharing one across teams would be ambiguous to write down, so they are shown once.
+ *
+ * Loads its options only when the picker is actually rendered, which is the unlinked and
+ * broken-link states — the common case never pays for a request it does not use.
+ */
+function LinearProjectPicker({ onPick }: { onPick: (project: string) => void }) {
+  const bridge = useBridge();
+  const { readOnly } = useUiPosture();
+  const [projects, setProjects] = useState<readonly string[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    bridge
+      .listLinearOptions()
+      .then((options) => {
+        if (!live) return;
+        if (!options.available) {
+          setFailed(true);
+          return;
+        }
+        const names = new Set<string>();
+        for (const team of options.teams) {
+          for (const project of team.projects) names.add(project.name);
+        }
+        setProjects([...names].sort((a, b) => a.localeCompare(b)));
+      })
+      .catch(() => {
+        if (live) setFailed(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [bridge]);
+
+  if (failed) return null;
+  if (!projects) {
+    return (
+      <div className="cyc__picker" aria-hidden="true">
+        <SkeletonBone className="cyc__bone-chip" />
+        <SkeletonBone className="cyc__bone-chip" />
+      </div>
+    );
+  }
+  if (projects.length === 0) return null;
+
+  return (
+    <div className="cyc__picker" role="group" aria-label="Link to a Linear project">
+      {projects.map((project) => (
+        <button
+          key={project}
+          type="button"
+          className="cyc__picker-option"
+          disabled={readOnly}
+          title={
+            readOnly
+              ? "Linking is paused while the dashboard is read-only"
+              : `Link this project to ${project}`
+          }
+          onClick={() => {
+            onPick(project);
+          }}
+        >
+          {project}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The link affordance for a project that has no Linear link yet (NIC-221, Increment 6).
+ *
+ * A single button first, the list of projects only once asked for. An unlinked project is the
+ * FIRST thing you see in a window you opened to read a brief, and a row of every project in the
+ * workspace is a decision demanded before you have said you want to make one. The button states
+ * the offer; the list answers it.
+ */
+function LinkAffordance({ onPick }: { onPick: (project: string) => void }) {
+  const { readOnly } = useUiPosture();
+  const [picking, setPicking] = useState(false);
+
+  if (picking) return <LinearProjectPicker onPick={onPick} />;
+
+  return (
+    <button
+      type="button"
+      className="cyc__state-action"
+      disabled={readOnly}
+      title={
+        readOnly
+          ? "Linking is paused while the dashboard is read-only"
+          : "Choose the Linear project this tracks"
+      }
+      onClick={() => {
+        setPicking(true);
+      }}
+    >
+      Link here
+    </button>
+  );
+}
+
+export function ProjectCycleSection({
+  linearProject,
+  onSetLinearProject
+}: {
+  linearProject: string | null;
+  /** Persist a newly-picked Linear project into `PROJECT.md` (NIC-221, Increment 6). Absent in a
+   *  browser preview, where there is no descriptor to write to. */
+  onSetLinearProject?: (project: string) => void;
+}) {
   const bridge = useBridge();
   const { readOnly } = useUiPosture();
   const [result, setResult] = useState<GetLinearProjectCycleResult | null>(null);
   const [failed, setFailed] = useState(false);
+  // The link the section is currently showing. Seeded from the descriptor and advanced when the
+  // user picks one, so the cycle appears immediately rather than on the next window open — the
+  // native side re-reads the descriptor, but this window already knows the answer.
+  const [project, setProject] = useState(linearProject);
 
   useEffect(() => {
-    if (!linearProject) return;
+    setProject(linearProject);
+  }, [linearProject]);
+
+  useEffect(() => {
+    if (!project) return;
     let live = true;
+    setResult(null);
+    setFailed(false);
     bridge
-      .getLinearProjectCycle(linearProject)
+      .getLinearProjectCycle(project)
       .then((next) => {
         if (live) setResult(next);
       })
@@ -275,7 +404,12 @@ export function ProjectCycleSection({ linearProject }: { linearProject: string |
     return () => {
       live = false;
     };
-  }, [bridge, linearProject]);
+  }, [bridge, project]);
+
+  const link = (picked: string) => {
+    onSetLinearProject?.(picked);
+    setProject(picked);
+  };
 
   // The group headers stack under the cycle header, so their sticky offset is its real height.
   // Measured rather than hardcoded: the height moves with the root font size, which this app
@@ -303,11 +437,12 @@ export function ProjectCycleSection({ linearProject }: { linearProject: string |
   };
 
   const body = () => {
-    if (!linearProject) {
+    if (!project) {
       return (
-        <CycleState title="Not linked to Linear">
-          Add <code>linear_project: Your Project</code> to this project&rsquo;s{" "}
-          <code>PROJECT.md</code> frontmatter — the same place <code>importance</code> lives.
+        <CycleState title="Not currently linked to a Linear project">
+          Link it here and CerebralHelm writes <code>linear_project</code> into this
+          project&rsquo;s <code>PROJECT.md</code> — the same place <code>importance</code> lives.
+          <LinkAffordance onPick={link} />
         </CycleState>
       );
     }
@@ -336,8 +471,9 @@ export function ProjectCycleSection({ linearProject }: { linearProject: string |
       // because it is otherwise byte-identical to an empty cycle.
       return (
         <CycleState title="No Linear project by that name">
-          Nothing in Linear is called <code>{linearProject}</code>. Check the{" "}
+          Nothing in Linear is called <code>{project}</code>. Pick the right one, or fix the{" "}
           <code>linear_project</code> key in this project&rsquo;s <code>PROJECT.md</code>.
+          <LinearProjectPicker onPick={link} />
         </CycleState>
       );
     }
