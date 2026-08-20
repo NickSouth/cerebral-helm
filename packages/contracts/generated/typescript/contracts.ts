@@ -531,6 +531,7 @@ export enum Operation {
     DeleteSecret = "deleteSecret",
     GetBootstrapState = "getBootstrapState",
     GetCanvasStatus = "getCanvasStatus",
+    GetLinearProjectCycle = "getLinearProjectCycle",
     GetRecentActivity = "getRecentActivity",
     GetSecretStatus = "getSecretStatus",
     GetSettings = "getSettings",

@@ -790,6 +790,118 @@ export function createMockCerebralBridge(
         reason: null
       });
     },
+    getLinearProjectCycle(project: string) {
+      // A representative cycle for browser previews of the project detail window's cycle section
+      // (NIC-221): issues spread across started / unstarted / completed so the status grouping,
+      // labels, estimates and avatars all have something to render.
+      //
+      // Any project name other than the known one answers `matchedProject: null`, so the
+      // "your link points at nothing" state is reachable in a plain browser without a typo in a
+      // real PROJECT.md — it is otherwise indistinguishable from an empty cycle.
+      if (project.toLowerCase() !== "cerebralhelm") {
+        return Promise.resolve({
+          matchedProject: null,
+          cycle: null,
+          issues: [],
+          truncated: false,
+          available: true,
+          reason: null
+        });
+      }
+      const state = (name: string, type: string, color: string, position: number) => ({
+        name,
+        type,
+        color,
+        position
+      });
+      return Promise.resolve({
+        matchedProject: "CerebralHelm",
+        cycle: {
+          id: "cycle-2",
+          number: 2,
+          name: null,
+          startsAt: "2026-08-17T04:00:00.000Z",
+          endsAt: "2026-08-24T04:00:00.000Z"
+        },
+        issues: [
+          {
+            identifier: "NIC-223",
+            title: "News Widget Interests",
+            url: "https://linear.app/mock/issue/NIC-223",
+            priority: 2,
+            estimate: 3,
+            sortOrder: 1,
+            state: state("Testing", "started", "#f2994a", 907.65),
+            labels: ["Improvement", "Feature"],
+            assignee: null,
+            assigneeInitials: null
+          },
+          {
+            identifier: "NIC-224",
+            title: "Report types with bullet points FIX",
+            url: "https://linear.app/mock/issue/NIC-224",
+            priority: 0,
+            estimate: 1,
+            sortOrder: 2,
+            state: state("Testing", "started", "#f2994a", 907.65),
+            labels: ["Bug"],
+            assignee: "nickrsouthey",
+            assigneeInitials: "NS"
+          },
+          {
+            identifier: "NIC-221",
+            title: "Linear Integration with Projects Widget in Exec Mode",
+            url: "https://linear.app/mock/issue/NIC-221",
+            priority: 3,
+            estimate: 5,
+            sortOrder: 3,
+            state: state("Next-Up", "unstarted", "#e2e2e2", 2),
+            labels: ["Feature"],
+            assignee: "nickrsouthey",
+            assigneeInitials: "NS"
+          },
+          {
+            identifier: "NIC-227",
+            title: "Grammar-constrained decoding",
+            url: "https://linear.app/mock/issue/NIC-227",
+            priority: 3,
+            estimate: null,
+            sortOrder: 4,
+            state: state("Todo", "unstarted", "#e2e2e2", 1),
+            labels: [],
+            assignee: null,
+            assigneeInitials: null
+          },
+          {
+            identifier: "NIC-222",
+            title: "Fix Stock Ticker Selection",
+            url: "https://linear.app/mock/issue/NIC-222",
+            priority: 3,
+            estimate: 1,
+            sortOrder: 5,
+            state: state("Ready to Deploy", "completed", "#5b8def", 1200),
+            labels: ["Bug"],
+            assignee: null,
+            assigneeInitials: null
+          },
+          {
+            identifier: "NIC-225",
+            title: "Model provider port",
+            url: "https://linear.app/mock/issue/NIC-225",
+            priority: 2,
+            estimate: null,
+            sortOrder: 6,
+            state: state("Done", "completed", "#34d399", 1300),
+            labels: [],
+            assignee: null,
+            assigneeInitials: null
+          }
+        ],
+        truncated: false,
+        available: true,
+        reason: null
+      });
+    },
     createLinearIssue(input: { title: string }) {
       // The browser files nothing. It reports a synthetic identifier — and reports it as created
       // rather than pending, because the mock never gates; the policy engine lives in Swift.

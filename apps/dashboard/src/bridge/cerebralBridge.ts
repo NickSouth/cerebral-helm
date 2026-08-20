@@ -165,6 +165,62 @@ export interface ListLinearOptionsResult {
   readonly reason: string | null;
 }
 
+/** One workflow state as Linear defines it (NIC-221). */
+export interface LinearIssueState {
+  readonly name: string;
+  /** `backlog` | `unstarted` | `started` | `completed` | `canceled`. The only stable thing to
+   *  group on — a status NAME is the user's to rename, its type is not. */
+  readonly type: string;
+  /** Linear's own colour for the status, so the surface never invents a palette for statuses it
+   *  does not own. */
+  readonly color: string;
+  readonly position: number;
+}
+
+/** One issue as the cycle list renders it (NIC-221). Carries no description by design. */
+export interface LinearCycleIssue {
+  readonly identifier: string;
+  readonly title: string;
+  /** Linear's own issue URL — the row opens this rather than composing one. */
+  readonly url: string;
+  /** Linear's scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low. */
+  readonly priority: number;
+  readonly estimate: number | null;
+  readonly sortOrder: number;
+  readonly state: LinearIssueState;
+  readonly labels: readonly string[];
+  /** Linear's handle (e.g. `nickrsouthey`), or null when unassigned — label it, don't draw it. */
+  readonly assignee: string | null;
+  /** Linear's initials (e.g. `NS`) — what an avatar draws. */
+  readonly assigneeInitials: string | null;
+}
+
+export interface LinearCycle {
+  readonly id: string;
+  readonly number: number;
+  /** Cycles are usually unnamed; fall back to `Cycle <number>`. */
+  readonly name: string | null;
+  /** ISO-8601. */
+  readonly startsAt: string;
+  readonly endsAt: string;
+}
+
+export interface GetLinearProjectCycleResult {
+  /** The project's name as LINEAR spells it, or null when the descriptor's `linear_project`
+   *  matches no project. Null must not be rendered as an empty cycle — it means the link is
+   *  wrong, which is fixable, whereas an empty cycle means there is simply nothing to do. */
+  readonly matchedProject: string | null;
+  /** The active cycle, or null when none is running — between cycles is a real state. */
+  readonly cycle: LinearCycle | null;
+  readonly issues: readonly LinearCycleIssue[];
+  /** True when Linear had more issues than one page returned; say so rather than looking complete. */
+  readonly truncated: boolean;
+  /** False on a host with no Linear client at all — different from an empty cycle. */
+  readonly available: boolean;
+  /** Present when the read was attempted and failed. */
+  readonly reason: string | null;
+}
+
 export interface CreateLinearIssueInput {
   readonly title: string;
   readonly description?: string;
@@ -931,6 +987,10 @@ export interface CerebralBridge {
   /** Read the Linear workspace for the `create-ticket` form's dropdowns (quick actions phase 4).
    *  A read that never touches the command bus, like `listCalendars`. */
   listLinearOptions(): Promise<ListLinearOptionsResult>;
+  /** One project's standing in the currently-active Linear cycle (NIC-221) — the project detail
+   *  window's cycle section. A read that never touches the command bus, like `listLinearOptions`;
+   *  `project` is the descriptor's `linear_project`, matched case-insensitively. */
+  getLinearProjectCycle(project: string): Promise<GetLinearProjectCycleResult>;
   /** Create one Linear issue from the `create-ticket` form. */
   createLinearIssue(input: CreateLinearIssueInput): Promise<CreateLinearIssueResult>;
   /** Create one Spotify playlist from the `create-playlist` form (quick actions phase 4). Rejects
