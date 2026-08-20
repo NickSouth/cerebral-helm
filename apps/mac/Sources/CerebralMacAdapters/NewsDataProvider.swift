@@ -14,7 +14,8 @@ import CerebralCore
 /// ``NewsProfileCatalog`` (loaded from `config/news/profiles.json`), satisfying AC5. The endpoint
 /// is `/api/1/latest?category=<categories>&language=<lang>`. Any transport, non-2xx, or decode
 /// failure throws ``NewsError/providerFailed(_:)`` so the panel degrades to an honest "unavailable"
-/// — never a fabricated list. Headlines are capped at `limit` (default four); an item without a
+/// — never a fabricated list. Up to `limit` headlines are returned — the *candidate pool* interest
+/// ranking then picks the panel's four from, not the panel's own slot count; an item without a
 /// title is skipped, and a missing link yields a nil `url` (non-clickable, never fabricated).
 public struct NewsDataProvider: NewsProvider {
     private let session: URLSession
@@ -26,7 +27,10 @@ public struct NewsDataProvider: NewsProvider {
         catalog: NewsProfileCatalog,
         session: URLSession? = nil,
         host: String = "https://newsdata.io",
-        limit: Int = 4,
+        // The candidate pool, not the panel's slot count: interest ranking (NIC-223) picks the
+        // four the panel shows from everything returned here. Ten is the free tier's page size,
+        // so a fuller pool costs no extra credit.
+        limit: Int = 10,
         resourceTimeout: TimeInterval = 15
     ) {
         if let session {

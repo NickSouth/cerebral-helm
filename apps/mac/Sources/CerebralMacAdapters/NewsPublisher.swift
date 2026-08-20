@@ -48,6 +48,13 @@ import CerebralTools
 ///   only up to `maximumCacheAge` (default 12h, matching the free tier's own article delay), past
 ///   which the panel degrades to its honest unavailable state. A *missing credential* is never
 ///   masked by the cache: it always surfaces the "add your key" guidance.
+///
+/// ## Interest ranking
+///
+/// The providers hand back roughly ten candidates per profile and the panel shows four. Which four
+/// is decided by the user's `News Interests` note (NIC-223), read fresh on every emit: headlines
+/// matching that mode's terms sort to the top and the rest backfill, so the panel is never emptier
+/// than it would have been without the note.
 public actor NewsPublisher {
     private let profiles: [String]
     private let secretStore: any SecretStoreManaging
@@ -57,6 +64,7 @@ public actor NewsPublisher {
     private let minimumFetchInterval: TimeInterval
     private let maximumCacheAge: TimeInterval
     private let cacheStore: (any NewsCacheStore)?
+    private let interests: @Sendable () -> [String: [NewsInterest]]
     private let now: @Sendable () -> Date
     private let emit: @Sendable (String) -> Void
 
@@ -84,6 +92,10 @@ public actor NewsPublisher {
         // staler than a live fetch would have been. Past it, stale headlines stop being served.
         maximumCacheAgeMs: Int = 43_200_000,
         cacheStore: (any NewsCacheStore)? = nil,
+        // Read on every emit, not captured once: the interests live in a Markdown note the user
+        // edits by hand, so an edit must land on the next tick the way a Settings edit does for the
+        // stocks and calendar producers. Defaults to none, which is the pre-NIC-223 behaviour.
+        interests: @escaping @Sendable () -> [String: [NewsInterest]] = { [:] },
         now: @escaping @Sendable () -> Date = { Date() },
         emit: @escaping @Sendable (String) -> Void
     ) {
@@ -95,6 +107,7 @@ public actor NewsPublisher {
         self.minimumFetchInterval = TimeInterval(minimumFetchIntervalMs ?? (intervalMs * 9 / 10)) / 1000
         self.maximumCacheAge = TimeInterval(maximumCacheAgeMs) / 1000
         self.cacheStore = cacheStore
+        self.interests = interests
         self.now = now
         self.emit = emit
     }
@@ -260,9 +273,18 @@ public actor NewsPublisher {
 
     /// Emits one event per profile from the cache — the single emit path, whether this tick fetched
     /// or was blocked by the floor.
+    ///
+    /// Interest ranking happens **here** rather than at fetch time, and that placement is the point:
+    /// the cache holds every candidate the provider returned, so editing the interests note re-orders
+    /// the panel on the very next tick without spending a provider request. Ranking at fetch time
+    /// would have made a note edit wait out the two-hour cadence.
     private func emitFromCache(at instant: Date) {
+        let interestsByProfile = interests()
         for profile in profiles {
-            let region = BridgeEventFactory.news(from: outcome(for: profile, at: instant), now: instant)
+            let ranked = outcome(for: profile, at: instant).map {
+                NewsInterestRanker.rank($0, by: interestsByProfile[profile] ?? [])
+            }
+            let region = BridgeEventFactory.news(from: ranked, now: instant)
             let event = BridgeEventFactory.newsChangedEvent(
                 region: region,
                 profile: profile,
