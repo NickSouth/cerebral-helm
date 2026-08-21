@@ -200,6 +200,37 @@ Every number below came from this repo's real descriptors on this machine. Re-ru
 with `evals/`. Hardware: MacBook Pro, M5 Pro, 18 cores, 64 GB, ~307 GB/s, default
 GPU allocation ~48 GB.
 
+> **⚠ Correction (2026-08-20, NIC-227). Every number measured through the tool
+> manifest below is contaminated and must not be quoted until re-run.** The
+> projection in `evals/lib/catalog.mjs` stripped `title` at every depth — including
+> where `title` is a **property name** — so `note.capture` and `calendar.createEvent`
+> reached the model declaring `title` *required* while never defining it. No model
+> could satisfy that. The dropped-`title` failure recorded below and in NIC-227 was a
+> **harness artifact, not a model failure**: against a corrected manifest a *4B* model
+> emitted `title` on 3/3 runs at temperature 0 **and** 0.7.
+>
+> Note this file numbers two findings **8**. They are affected differently, so they
+> are named rather than numbered here.
+>
+> **Contaminated** — everything routed through `evals/lib/catalog.mjs`
+> (`run.mjs`, `run-conversation.mjs`, `chat.mjs`): *Descriptors were the bottleneck*
+> (1), *Descriptions fix arguments, not selection* (2), *Manifest size does not
+> degrade accuracy* (3), ***Restraint on optional arguments*** (the **first** 8),
+> *Multi-turn holds up* (7), *The 29-tool manifest costs ~4,535 prompt tokens* (9),
+> and the per-turn latency half of (10).
+>
+> **Not contaminated** — never touches the projection: ***Ollama's structured output
+> does not enforce leaf types*** (the **second** 8) came from `run-report.mjs`, which
+> builds its schema straight from `report-document.schema.json`. It stands, and it is
+> independently confirmed: llama.cpp's grammar **does** enforce those leaf types.
+> Findings 4, 5 and 6 concern composition and cache behaviour rather than manifest
+> correctness and are unaffected.
+>
+> The bug is fixed and gated (`scripts/evals-catalog.test.mjs`). The *direction* of
+> finding 1 survives — descriptors did fix real failures — but the magnitude is
+> unknown until the re-baseline lands. Re-baseline before `NIC-248` compares runtimes,
+> or the benchmark measures the bug.
+
 **1. Descriptors were the bottleneck, not models.** An audit found 14 required
 fields with no enum, description or examples. Adding them: **90.6% → 93.8%** for
 **+6.7% prompt tokens**. `note.capture`'s `kind` — required, pattern-constrained, no

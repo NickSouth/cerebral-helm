@@ -102,5 +102,10 @@ carefully, not a reason to discount them — confirmation fatigue is its own fai
 - The descriptor → manifest projection in `lib/catalog.mjs` is a **prototype** of
   what phase 2 builds in Swift. When the Swift projection lands, this should call
   out to it rather than be kept in sync by hand.
+  Prototype or not, it is **gated** by `scripts/evals-catalog.test.mjs`, which runs
+  inside `node scripts/test.mjs` even though the suite itself does not. A projection
+  defect does not fail a run — it corrupts every number the run produces, and those
+  numbers get written down as findings. That already happened once: see the
+  correction under "Measured findings" in `docs/llm-integration/README.md`.
 - Only the Ollama runtime exists. The llama.cpp adapter is what settles the
   grammar-constrained-decoding question in the plan.
