@@ -198,6 +198,7 @@ private func makeQuotaPublisher(
     secretStore: any SecretStoreManaging = MockSecretStore(values: ["newsdata_api_key": "tok"]),
     minimumFetchIntervalMs: Int = 2_700_000,
     maximumCacheAgeMs: Int = 43_200_000,
+    interests: @escaping @Sendable () -> [String: [NewsInterest]] = { [:] },
     collector: NewsEventCollector
 ) -> NewsPublisher {
     NewsPublisher(
@@ -208,6 +209,7 @@ private func makeQuotaPublisher(
         minimumFetchIntervalMs: minimumFetchIntervalMs,
         maximumCacheAgeMs: maximumCacheAgeMs,
         cacheStore: cacheStore,
+        interests: interests,
         now: { clock.now() },
         emit: { collector.collect($0) }
     )
@@ -537,5 +539,144 @@ func newsPublisherCredentialsMissingBeatsCache() async throws {
     #expect(afterRemoval.all[0].contains("\"state\":\"unavailable\""))
     #expect(afterRemoval.all[0].contains("NewsData API key"))
     #expect(afterRemoval.all[0].contains("Markets steady") == false)
+}
+
+// MARK: - Interest ranking (NIC-223)
+
+/// More candidates than the panel's four slots, so which four reach it is a real decision. The two
+/// the interests below match sit deliberately at the back of the provider's own order.
+private func newsInterestCandidates() -> [NewsHeadline] {
+    [
+        NewsHeadline(id: "c1", title: "Storm warning issued for the coast", source: "Wire", url: nil),
+        NewsHeadline(id: "c2", title: "Council debates parking levy", source: "Wire", url: nil),
+        NewsHeadline(id: "c3", title: "Ferry timetable changes on Monday", source: "Wire", url: nil),
+        NewsHeadline(id: "c4", title: "Markets close mixed on earnings", source: "Wire", url: nil),
+        NewsHeadline(id: "c5", title: "OpenAI ships a new reasoning model", source: "Wire", url: nil),
+        NewsHeadline(id: "c6", title: "Fed holds interest rates steady", source: "Wire", url: nil),
+    ]
+}
+
+/// The headline titles of one emitted `news.changed`, in the order the panel would render them.
+private func newsEmittedTitles(_ json: String) throws -> [String] {
+    let root = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+    let payload = root?["payload"] as? [String: Any]
+    let news = payload?["news"] as? [String: Any]
+    let headlines = news?["headlines"] as? [[String: Any]] ?? []
+    return headlines.compactMap { $0["title"] as? String }
+}
+
+/// A swappable interests source, so a test can edit the note between two emits.
+private final class NewsInterestsBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: [String: [NewsInterest]]
+    init(_ value: [String: [NewsInterest]] = [:]) { self.value = value }
+    var current: [String: [NewsInterest]] {
+        get { lock.lock(); defer { lock.unlock() }; return value }
+        set { lock.lock(); value = newValue; lock.unlock() }
+    }
+}
+
+@Test("interest-matched headlines take the panel's slots, and the rest backfill behind them")
+func newsPublisherRanksMatchesIntoThePanel() async throws {
+    let collector = NewsEventCollector()
+    let clock = TestClock()
+    let publisher = makeQuotaPublisher(
+        provider: CountingNewsProvider(items: newsInterestCandidates()),
+        cacheStore: InMemoryNewsCacheStore(),
+        clock: clock,
+        interests: {
+            ["broad": [
+                NewsInterest(term: "OpenAI"),
+                NewsInterest(term: "interest rates", isPhrase: true),
+            ]]
+        },
+        collector: collector
+    )
+
+    await resume(publisher)
+
+    let titles = try newsEmittedTitles(#require(collector.all.first))
+    // The panel still shows four — ranking reorders, it never filters — and the two matches lead.
+    #expect(titles.count == 4)
+    #expect(titles[0] == "OpenAI ships a new reasoning model")
+    #expect(titles[1] == "Fed holds interest rates steady")
+    #expect(titles[2] == "Storm warning issued for the coast")
+}
+
+@Test("with no interests the provider's own order reaches the panel unchanged")
+func newsPublisherWithoutInterestsPreservesProviderOrder() async throws {
+    let collector = NewsEventCollector()
+    let clock = TestClock()
+    let publisher = makeQuotaPublisher(
+        provider: CountingNewsProvider(items: newsInterestCandidates()),
+        cacheStore: InMemoryNewsCacheStore(),
+        clock: clock,
+        collector: collector
+    )
+
+    await resume(publisher)
+
+    let titles = try newsEmittedTitles(#require(collector.all.first))
+    #expect(titles == [
+        "Storm warning issued for the coast",
+        "Council debates parking levy",
+        "Ferry timetable changes on Monday",
+        "Markets close mixed on earnings",
+    ])
+}
+
+@Test("editing the interests note re-ranks on the next tick, from cache, spending no request")
+func newsPublisherReRanksFromCacheAfterANoteEdit() async throws {
+    let collector = NewsEventCollector()
+    let clock = TestClock()
+    let provider = CountingNewsProvider(items: newsInterestCandidates())
+    let box = NewsInterestsBox(["broad": [NewsInterest(term: "OpenAI")]])
+    let publisher = makeQuotaPublisher(
+        provider: provider,
+        cacheStore: InMemoryNewsCacheStore(),
+        clock: clock,
+        interests: { box.current },
+        collector: collector
+    )
+
+    await resume(publisher)
+    #expect(await provider.callCount == 1)
+    #expect(try newsEmittedTitles(#require(collector.all.first)).first == "OpenAI ships a new reasoning model")
+
+    // The user edits the note. The next tick is well inside the fetch floor, so it emits from the
+    // cache — and the new terms must still take effect, which is the whole reason ranking happens
+    // at emit time rather than at fetch time.
+    box.current = ["broad": [NewsInterest(term: "ferry")]]
+    clock.advance(120)
+    await resume(publisher)
+
+    #expect(await provider.callCount == 1, "a note edit must not cost a provider request")
+    #expect(collector.count == 2)
+    #expect(try newsEmittedTitles(#require(collector.all[1])).first == "Ferry timetable changes on Monday")
+}
+
+@Test("a profile with no interests of its own is unaffected by another profile's terms")
+func newsPublisherScopesInterestsToTheirProfile() async throws {
+    let collector = NewsEventCollector()
+    let clock = TestClock()
+    let publisher = makeQuotaPublisher(
+        profiles: ["broad", "engineering"],
+        provider: CountingNewsProvider(items: newsInterestCandidates()),
+        cacheStore: InMemoryNewsCacheStore(),
+        clock: clock,
+        interests: { ["engineering": [NewsInterest(term: "OpenAI")]] },
+        collector: collector
+    )
+
+    await resume(publisher)
+
+    #expect(collector.count == 2)
+    let byProfile = Dictionary(uniqueKeysWithValues: try collector.all.map { json -> (String, [String]) in
+        let payload = (try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])?["payload"]
+        let profile = (payload as? [String: Any])?["profile"] as? String ?? ""
+        return (profile, try newsEmittedTitles(json))
+    })
+    #expect(byProfile["engineering"]?.first == "OpenAI ships a new reasoning model")
+    #expect(byProfile["broad"]?.first == "Storm warning issued for the coast")
 }
 #endif

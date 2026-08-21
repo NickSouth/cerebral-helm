@@ -1,11 +1,26 @@
 import { useEffect, type RefObject } from "react";
 
-/** Reveal rate. Fast enough that a long brief does not become a waiting game, slow enough to read
- *  as writing rather than as a render glitch. */
-const CHARS_PER_SECOND = 62;
+/** The unhurried rate, and the one a SHORT document keeps: fast enough not to be a waiting game,
+ *  slow enough to read as writing rather than as a render glitch. Only a document too long to fit
+ *  the budget below at this rate types faster. */
+const BASE_CHARS_PER_SECOND = 62;
+/**
+ * What the whole run is allowed to take, near enough.
+ *
+ * A brief is not a short story: at a fixed rate a long one takes tens of seconds, and the reader
+ * either waits or scrolls past the animation, which makes it a cost rather than a quality. So
+ * length buys speed — the rate rises to fit the document into this budget, and a long report reads
+ * as a fast sweep down the page instead of a crawl. Short documents never take the full budget;
+ * they simply finish sooner at the base rate.
+ */
+const TARGET_DURATION_MS = 1000;
 /** The beat between one text run and the next — what makes it read as composed lines rather than
- *  one undifferentiated stream of characters. */
-const RUN_PAUSE_MS = 120;
+ *  one undifferentiated stream of characters. Shrinks with the run count, see below. */
+const BASE_RUN_PAUSE_MS = 120;
+/** The share of the budget the beats may spend. A forty-block report at the full beat would pause
+ *  for nearly five seconds before a single character was written, so the beat is divided across
+ *  however many runs there are and the writing keeps the rest. */
+const PAUSE_BUDGET_SHARE = 0.25;
 /** How close to the bottom counts as "following along". Past this the reader has scrolled up
  *  deliberately and must not be yanked back. */
 const FOLLOW_SLOP_PX = 48;
@@ -18,34 +33,71 @@ interface Run {
 }
 
 /**
- * Every text node under `root`, in document order, with its offset into the combined text.
+ * A painted element, with the character position it sits at.
+ *
+ * These are the parts of a report that carry no text of their own — a calendar event's colour dot,
+ * a scoreboard's team accent, a proposal's pill border. They are invisible to a text walk, so
+ * before this they all appeared on the first frame: the reader saw a column of coloured dots and
+ * empty pills, then watched the words arrive around them. Every element is timed, not just the
+ * empty ones, because a box drawn around text is the same bug — the pill must arrive with its
+ * label, not ahead of it.
+ */
+interface Ornament {
+  readonly element: HTMLElement;
+  /** The offset of the first character AT OR AFTER this element opens. Revealing at `chars > at`
+   *  puts the paint and its first character on the same frame. */
+  readonly at: number;
+}
+
+/**
+ * Every text node under `root`, in document order, with its offset into the combined text — plus
+ * every element, tagged with the offset it opens at.
  *
  * Walking the rendered DOM rather than the source data is what makes this work for **every** block
  * kind — metrics, checklists, scoreboards, and anything added later — with the block renderer
  * untouched. A typewriter that understood report blocks would need extending every time one is.
  */
-function collectRuns(root: HTMLElement): { runs: Run[]; total: number } {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+function collectTimeline(
+  root: HTMLElement,
+  exclude: Element | null
+): { runs: Run[]; ornaments: Ornament[]; total: number } {
+  const walker = document.createTreeWalker(
+    root,
+    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT
+  );
   const runs: Run[] = [];
+  const ornaments: Ornament[] = [];
   let total = 0;
   while (walker.nextNode()) {
-    const node = walker.currentNode as Text;
-    const text = node.data;
+    const node = walker.currentNode;
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const element = node as HTMLElement;
+      // The caret is the hook's own instrument, not part of the document. It is also driven by
+      // `display`, so hiding it here would fight the rule that shows it.
+      if (element === exclude || exclude?.contains(element)) {
+        continue;
+      }
+      ornaments.push({ element, at: total });
+      continue;
+    }
+    const text = (node as Text).data;
     if (!text) {
       continue;
     }
-    runs.push({ node, text, start: total, end: total + text.length });
+    runs.push({ node: node as Text, text, start: total, end: total + text.length });
     total += text.length;
   }
-  return { runs, total };
+  return { runs, ornaments, total };
 }
 
 /**
  * Type a rendered subtree in, character by character, the way a model writes it.
  *
- * Only text node *contents* are touched — never structure — so React keeps ownership of the tree
- * and this cannot desynchronise it. If React re-renders mid-run the worst case is the full text
- * appearing at once, which is the same state the animation was heading for anyway.
+ * Only text node *contents* and element `visibility` are touched — never structure — so React keeps
+ * ownership of the tree and this cannot desynchronise it. `visibility` rather than `display` is
+ * deliberate: hidden elements keep their geometry, so nothing reflows as the document reveals and
+ * the caret's range measurements stay valid throughout. If React re-renders mid-run the worst case
+ * is the full text appearing at once, which is the same state the animation was heading for anyway.
  *
  * Restores the complete text on cleanup, so an unmount or a document change never strands a report
  * half-written. Skipped entirely when motion is reduced: the text is simply there, which is the
@@ -67,12 +119,23 @@ export function useTypewriter(
       return;
     }
 
-    const { runs, total } = collectRuns(root);
+    const caret = caretRef?.current ?? null;
+    const { runs, ornaments, total } = collectTimeline(root, caret);
     if (!total) {
       return;
     }
 
-    const caret = caretRef?.current ?? null;
+    // Pacing is decided per document, from its actual length, because a fixed rate cannot serve
+    // both a one-line greeting and a forty-block brief. The beats are budgeted first — they are
+    // the part that scales with block count rather than with characters — and the writing takes
+    // whatever is left, at no less than the base rate so short documents stay unhurried.
+    const gaps = Math.max(0, runs.length - 1);
+    const runPauseMs = gaps
+      ? Math.min(BASE_RUN_PAUSE_MS, (TARGET_DURATION_MS * PAUSE_BUDGET_SHARE) / gaps)
+      : 0;
+    const writingMs = Math.max(1, TARGET_DURATION_MS - runPauseMs * gaps);
+    const charsPerSecond = Math.max(BASE_CHARS_PER_SECOND, (total * 1000) / writingMs);
+
     const scroller = root.closest<HTMLElement>(
       ".report-region__scroll, .input-region__scroll"
     );
@@ -81,30 +144,41 @@ export function useTypewriter(
       for (const run of runs) {
         run.node.data = run.text;
       }
+      // Remove the property rather than clearing the style: these elements carry React's own
+      // inline colours (an event's dot, a team's accent) and must keep them.
+      for (const ornament of ornaments) {
+        ornament.element.style.removeProperty("visibility");
+      }
       root.removeAttribute("aria-busy");
       caret?.removeAttribute("data-on");
     };
 
     let shown = 0;
     let runIndex = 0;
+    // Ornaments come out of a document-order walk, so their offsets only ever increase and a single
+    // advancing cursor reveals them — no per-frame sweep over every element in the report.
+    let ornamentIndex = 0;
     let pauseUntil = 0;
     let last = 0;
     let raf = 0;
     let started = false;
 
     /**
-     * Hiding the text happens on the FIRST FRAME, not here.
+     * Hiding the document happens on the FIRST FRAME, not here.
      *
      * If it happened up front, then anywhere `requestAnimationFrame` never runs — a hidden tab, a
      * detached render, a test environment — the report would be blanked and stay blanked. Deferring
-     * it means the failure mode is "the text is simply there", which is the same graceful end state
-     * as reduced motion rather than an empty surface.
+     * it means the failure mode is "the report is simply there", which is the same graceful end
+     * state as reduced motion rather than an empty surface.
      */
     const begin = (now: number) => {
       started = true;
       last = now;
       for (const run of runs) {
         run.node.data = "";
+      }
+      for (const ornament of ornaments) {
+        ornament.element.style.visibility = "hidden";
       }
       // The document is being written; a screen reader should be told rather than read a text that
       // keeps changing under it.
@@ -146,7 +220,7 @@ export function useTypewriter(
       const delta = now - last;
       last = now;
       if (now >= pauseUntil) {
-        shown = Math.min(total, shown + (delta * CHARS_PER_SECOND) / 1000);
+        shown = Math.min(total, shown + (delta * charsPerSecond) / 1000);
       }
       const chars = Math.floor(shown);
 
@@ -157,10 +231,16 @@ export function useTypewriter(
         }
       }
 
+      // Paint arrives with the first character it belongs to, never before it.
+      while (ornamentIndex < ornaments.length && chars > ornaments[ornamentIndex].at) {
+        ornaments[ornamentIndex].element.style.removeProperty("visibility");
+        ornamentIndex += 1;
+      }
+
       // A completed run earns a beat before the next one starts.
       while (runIndex < runs.length && chars >= runs[runIndex].end) {
         runIndex += 1;
-        pauseUntil = now + RUN_PAUSE_MS;
+        pauseUntil = now + runPauseMs;
       }
 
       placeCaret(chars);

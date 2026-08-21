@@ -531,6 +531,7 @@ export enum Operation {
     DeleteSecret = "deleteSecret",
     GetBootstrapState = "getBootstrapState",
     GetCanvasStatus = "getCanvasStatus",
+    GetLinearProjectCycle = "getLinearProjectCycle",
     GetRecentActivity = "getRecentActivity",
     GetSecretStatus = "getSecretStatus",
     GetSettings = "getSettings",
@@ -740,6 +741,11 @@ export enum CloudPolicy {
 
 /**
  * Defaults to private when unspecified.
+ *
+ * Privacy label recorded in the note's frontmatter. It is metadata, not access control -
+ * nothing today restricts reading a note based on it. Omitted degrades to `private`, which
+ * is the right answer unless the user's own words call for another; do not judge the
+ * content's sensitivity yourself.
  */
 export enum Sensitivity {
     Private = "private",
@@ -950,6 +956,12 @@ export interface QuickToggle {
     targets: Target[];
 }
 
+/**
+ * Which region of the target display's visible area the window fills. Halves and thirds are
+ * measured against that display rather than the window's current size, and `centered` is a
+ * three-quarter-size window inset from every edge, not a move that preserves the window's
+ * size. Only these named frames are accepted; arbitrary coordinates are not.
+ */
 export enum Frame {
     BottomHalf = "bottom-half",
     Centered = "centered",
@@ -994,6 +1006,96 @@ export interface Theme {
 export interface Widgets {
     left:  string;
     right: string;
+}
+
+/**
+ * Which model serves each capability profile, how much context it may allocate, and how
+ * long it stays resident (ADR-009). Product logic addresses profiles; exact model ids are
+ * resolved here so that no named local model becomes an architectural dependency. Optional:
+ * with no such file the app runs exactly as it does today, with no model attached.
+ */
+export interface CerebralHelmModelProfileCatalog {
+    extensions?:   { [key: string]: any };
+    modelProfiles: ModelProfile[];
+    /**
+     * Advisory only, never enforced: how much model weight this machine can hold resident
+     * before it swaps. Measured at ~48 GB on the target Mac (default GPU allocation); two
+     * resident 30B models came to ~51 GB and drove 18 GB of swap. Recorded so the figure is not
+     * rediscovered the hard way.
+     */
+    residentBudgetGigabytes?: number;
+    schemaVersion:            string;
+}
+
+export interface ModelProfile {
+    /**
+     * Context window to allocate. A memory lever, not only a capability one: left unset a
+     * runtime allocates the model's full advertised window (131K/262K), which took a 21 GB
+     * model to 29 GB resident. Capping to 16K recovered ~6 GB.
+     */
+    contextTokens: number;
+    extensions?:   { [key: string]: any };
+    /**
+     * The capability profile product logic asks for. 'local' is not a capability but a policy:
+     * a surface that must never leave this machine even if a cloud escape hatch is later
+     * enabled.
+     */
+    id: ModelProfileID;
+    /**
+     * The runtime's own tag for the model, e.g. 'qwen3.6:35b-mlx'.
+     */
+    modelId: string;
+    /**
+     * pinned for an always-on surface, where a ~70 s cold reload would be felt every time;
+     * evictAfterUse for a rare specialist that would otherwise hold tens of gigabytes.
+     */
+    residency: Residency;
+    /**
+     * Required when residency is 'bounded', and rejected otherwise.
+     */
+    residencyIdleSeconds?: number;
+    /**
+     * Advisory estimate of this model's resident footprint, counted once per distinct model id.
+     * An owner-maintained figure that drifts with quantisation; never enforced.
+     */
+    residentGigabytes?: number;
+    /**
+     * Which inference runtime serves it — 'ollama', 'llama.cpp', 'mlx'. A pattern rather than
+     * an enum so adding a runtime is a config change, not a schema change.
+     */
+    runtimeId: string;
+    /**
+     * Whether the model may deliberate. Off everywhere except deep research: composition from a
+     * typed snapshot is rendering, not reasoning, and leaving it on cost 79-130 s against 9-17
+     * s.
+     */
+    thinking: boolean;
+    /**
+     * Wall-clock budget for one request. Defaults to 120 when absent.
+     */
+    timeoutSeconds?: number;
+}
+
+/**
+ * The capability profile product logic asks for. 'local' is not a capability but a policy:
+ * a surface that must never leave this machine even if a cloud escape hatch is later
+ * enabled.
+ */
+export enum ModelProfileID {
+    Balanced = "balanced",
+    Deep = "deep",
+    Fast = "fast",
+    Local = "local",
+}
+
+/**
+ * pinned for an always-on surface, where a ~70 s cold reload would be felt every time;
+ * evictAfterUse for a rare specialist that would otherwise hold tens of gigabytes.
+ */
+export enum Residency {
+    Bounded = "bounded",
+    EvictAfterUse = "evictAfterUse",
+    Pinned = "pinned",
 }
 
 export interface CerebralHelmSettingsPatch {
@@ -1139,6 +1241,17 @@ export interface Reference {
  * whole shared contracts module. Hence the kind-prefixed field names on a block.
  */
 export interface CerebralHelmReportDocument {
+    /**
+     * The document's blocks, in render order. `maxItems` is a SAFETY BOUND, not a design limit:
+     * real reports use well under 30, and the cap exists because a grammar-constrained model
+     * composing this document will happily emit valid blocks forever. Measured: one composition
+     * produced 123 blocks — `line` and `metric` alternating, every optional field filled,
+     * nonsense values throughout — until it exhausted the context and truncated mid-token,
+     * which is UNPARSEABLE rather than merely invalid. Every array and string in this schema is
+     * bounded for the same reason. A grammar enforces exactly what the schema says and removes
+     * the model's incentive to be plausible, so anything left unbounded here becomes reachable
+     * there.
+     */
     blocks: Block[];
     /**
      * Whether this report was composed from a fetch the reader can repeat. The region shows a
@@ -1388,6 +1501,12 @@ export enum CerebralHelmAppQuitOutputStatus {
 }
 
 export interface CerebralHelmAppsListInput {
+    /**
+     * Whether to return each application's icon as a base64-encoded PNG alongside its name and
+     * bundle id. Omitted means `true`, which attaches an image payload for every installed
+     * application - pass `false` unless the caller is actually drawing them, since the encoded
+     * icons are large and carry nothing a caller can read.
+     */
     includeIcons?: boolean;
 }
 
@@ -1432,9 +1551,19 @@ export interface CerebralHelmCalendarCreateEventInput {
      * gave a duration rather than an end time, add it to the start; when they gave neither, a
      * one-hour default is reasonable.
      */
-    endsAt:    string;
+    endsAt: string;
+    /**
+     * Where the event takes place, in the user's own words - a room, an address, a meeting
+     * link. Omit unless they said one; a plausible-looking invented location is worse than an
+     * empty field.
+     */
     location?: string;
-    notes?:    string;
+    /**
+     * Longer detail stored on the event body - an agenda, a link, whatever the user asked to be
+     * recorded. Omit when there is nothing beyond the title; restating the title here adds
+     * nothing.
+     */
+    notes?: string;
     /**
      * Local wall-clock start time, `YYYY-MM-DDTHH:MM` (seconds optional). NOT UTC and never
      * carries a timezone offset or trailing `Z` — the time the user said is the time that is
@@ -1887,7 +2016,13 @@ export interface CerebralHelmNoteCaptureInput {
      * Optional project slug to file the note under. Omit unless the user named a project —
      * inventing one misfiles the note.
      */
-    project?:     string;
+    project?: string;
+    /**
+     * Privacy label recorded in the note's frontmatter. It is metadata, not access control -
+     * nothing today restricts reading a note based on it. Omitted degrades to `private`, which
+     * is the right answer unless the user's own words call for another; do not judge the
+     * content's sensitivity yourself.
+     */
     sensitivity?: Sensitivity;
     /**
      * The note's title, used as its heading and to derive its filename. Take the user's own
@@ -2057,6 +2192,12 @@ export interface CerebralHelmNoteReadOutput {
 }
 
 export interface CerebralHelmNoteSearchInput {
+    /**
+     * Caps the returned hits. Omitted means every match in the vault, which for a common word
+     * can be most of the library. Hits are ordered by note path, not by relevance, so a cap
+     * truncates alphabetically rather than keeping the best matches - the output reports
+     * `truncated`, so a caller is never silently shown a partial result.
+     */
     limit?: number;
     /**
      * Free text matched against note titles, metadata, and Markdown content. Use the user's own
@@ -2204,10 +2345,16 @@ export interface CerebralHelmSpotifyCreatePlaylistOutput {
 }
 
 export interface CerebralHelmSystemStatusReadInput {
-    metrics?: ID[];
+    /**
+     * Which metrics to read. Omitted or empty reads every supported metric; name a subset when
+     * the user asked about specific ones. A requested metric the host cannot supply comes back
+     * with an explicit unavailable state rather than being dropped, so a missing entry never
+     * has to be inferred.
+     */
+    metrics?: MetricElement[];
 }
 
-export enum ID {
+export enum MetricElement {
     Battery = "battery",
     CPU = "cpu",
     Display = "display",
@@ -2221,7 +2368,7 @@ export interface CerebralHelmSystemStatusReadOutput {
 
 export interface Metric {
     availability: AvailabilityEnum;
-    id:           ID;
+    id:           MetricElement;
     sampledAt?:   string;
     unit?:        string;
     value?:       number;
@@ -2441,6 +2588,12 @@ export interface Arrangement {
      * id, ask rather than guessing.
      */
     appId: string;
+    /**
+     * Which region of the target display's visible area the window fills. Halves and thirds are
+     * measured against that display rather than the window's current size, and `centered` is a
+     * three-quarter-size window inset from every edge, not a move that preserves the window's
+     * size. Only these named frames are accepted; arbitrary coordinates are not.
+     */
     frame: Frame;
 }
 

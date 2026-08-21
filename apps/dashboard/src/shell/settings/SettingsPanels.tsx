@@ -30,9 +30,25 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /** A label + value/control row. `hint` explains scope (e.g. "applied on next launch"). */
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+function Field({
+  label,
+  hint,
+  stack,
+  children
+}: {
+  label: string;
+  hint?: string;
+  /**
+   * Stack the label above a full-width control instead of the default label-left/control-right
+   * row. Set this when the control is a wide, growing editor (a chip list, a per-row map) rather
+   * than a single compact input — the row layout never lets a control shrink, so a growing one
+   * runs off the right edge of the panel (NIC-222).
+   */
+  stack?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <div className="settings-field">
+    <div className={stack ? "settings-field settings-field--stack" : "settings-field"}>
       <div className="settings-field__text">
         <span className="settings-field__label">{label}</span>
         {hint ? <span className="settings-field__hint">{hint}</span> : null}
@@ -1109,6 +1125,7 @@ function StocksTickersField() {
 
   return (
     <Field
+      stack
       label="Tracked tickers"
       hint="Symbols shown in the Executive Stocks widget, four to a page. Uppercased automatically; up to 20."
     >
@@ -1220,6 +1237,7 @@ function CalendarModeMapField() {
 
   return (
     <Field
+      stack
       label="Calendar → mode"
       hint="Map each calendar to a mode so the Today panel shows the right events per mode. Unmapped calendars show under Executive. Tip: add #executive, #developer, #school, or #entertainment to an event's notes to override per event."
     >

@@ -77,7 +77,8 @@ const bridgeOperations = new Set([
   "createCourseNote",
   "runSystemChecks",
   "connectGmail",
-  "listUnreadMail"
+  "listUnreadMail",
+  "getLinearProjectCycle"
 ]);
 
 function readJson(filePath) {

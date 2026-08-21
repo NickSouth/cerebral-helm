@@ -8,6 +8,7 @@
     "docs/adr/ADR-005-vendored-sqlite-engine.md",
     "docs/adr/ADR-006-sqlite-single-source-of-truth.md",
     "docs/adr/ADR-007-executive-default-mode.md",
+    "docs/adr/ADR-009-model-provider-port.md",
     ".agent/spec/MVP-PRD.md",
     ".agent/spec/TECH-STACK.md",
     ".agent/spec/UI-CONSTITUTION.md",

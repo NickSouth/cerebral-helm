@@ -23,6 +23,7 @@ import type {
   SendMessageResult,
   ScaffoldProjectResult,
   ListLinearOptionsResult,
+  GetLinearProjectCycleResult,
   CloneRepositoryResult,
   CreateCalendarEventResult,
   CanvasStatus,
@@ -360,6 +361,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     listLinearOptions() {
       return operation<ListLinearOptionsResult>("listLinearOptions", {});
+    },
+    getLinearProjectCycle(project) {
+      return operation<GetLinearProjectCycleResult>("getLinearProjectCycle", { project });
     },
     createLinearIssue(input) {
       return operation<CreateLinearIssueResult>("createLinearIssue", { ...input });

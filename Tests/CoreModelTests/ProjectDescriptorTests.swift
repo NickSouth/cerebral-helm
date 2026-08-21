@@ -55,6 +55,70 @@ func refusesPathOutsideRoot() throws {
     #expect(ProjectDescriptor.read(projectPath: folder.path, root: root) == nil)
 }
 
+// MARK: - The Linear link (NIC-221)
+
+@Test("reads the linked Linear project from frontmatter")
+func readsLinearProject() throws {
+    let root = try temporaryProjectsRoot()
+    let folder = try makeProject(
+        in: root, name: "CerebralHelm",
+        descriptor: "---\nimportance: 10\nlinear_project: CerebralHelm\n---\n# CerebralHelm\n"
+    )
+
+    let content = ProjectDescriptor.read(projectPath: folder.path, root: root)
+    #expect(content?.linearProject == "CerebralHelm")
+    // The key is frontmatter, so it never reaches the rendered body.
+    #expect(content?.body.contains("linear_project") == false)
+}
+
+@Test("a project name with spaces survives, and the value is trimmed")
+func readsLinearProjectWithSpaces() throws {
+    // "Ubility Website" is a real project name — an unquoted value containing spaces has to
+    // arrive whole, and trailing whitespace must not become part of the lookup name.
+    let root = try temporaryProjectsRoot()
+    let folder = try makeProject(
+        in: root, name: "Ubility",
+        descriptor: "---\nlinear_project:   Ubility Website  \n---\nBody.\n"
+    )
+
+    #expect(ProjectDescriptor.read(projectPath: folder.path, root: root)?.linearProject == "Ubility Website")
+}
+
+@Test("a quoted project name is unquoted, matching the frontmatter grammar")
+func readsQuotedLinearProject() throws {
+    let root = try temporaryProjectsRoot()
+    let folder = try makeProject(
+        in: root, name: "Quoted",
+        descriptor: "---\nlinear_project: \"Personal Tasks\"\n---\nBody.\n"
+    )
+
+    #expect(ProjectDescriptor.read(projectPath: folder.path, root: root)?.linearProject == "Personal Tasks")
+}
+
+@Test("a descriptor with no linear_project is unlinked, not empty-named")
+func absentLinearProjectIsNil() throws {
+    let root = try temporaryProjectsRoot()
+    let folder = try makeProject(
+        in: root, name: "Unlinked", descriptor: "---\nimportance: 3\n---\nBody.\n"
+    )
+
+    let content = ProjectDescriptor.read(projectPath: folder.path, root: root)
+    #expect(content?.linearProject == nil)
+    // The rest of the descriptor still reads normally — the key is optional, not required.
+    #expect(content?.importance == 3)
+}
+
+@Test("a declared-but-blank linear_project reads as unlinked")
+func blankLinearProjectIsNil() throws {
+    // Otherwise the empty string would reach the API as a genuine lookup for a project named "".
+    let root = try temporaryProjectsRoot()
+    let folder = try makeProject(
+        in: root, name: "Blank", descriptor: "---\nlinear_project:   \n---\nBody.\n"
+    )
+
+    #expect(ProjectDescriptor.read(projectPath: folder.path, root: root)?.linearProject == nil)
+}
+
 @Test("a descriptor with no frontmatter returns the whole file as the body")
 func noFrontmatterReturnsWholeBody() throws {
     let root = try temporaryProjectsRoot()

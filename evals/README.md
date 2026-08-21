@@ -36,7 +36,36 @@ node evals/run.mjs --model=muse-glimmer:30b-mlx,qwen3.6:35b-mlx --json=/tmp/eval
 | `--descriptions` | `rich` (default), `purpose` | `purpose` sends only the descriptor's one-line `purpose`; `rich` adds the input schema's prose. Measures how much description a local model needs. |
 | `--category` | a case category | Narrow a run, e.g. `injection`. |
 | `--case` | a case id | Single case, for diagnosis. |
-| `--runtime` | `ollama` | Adapter to use. llama.cpp (for GBNF grammar-constrained decoding) is the next one owed. |
+| `--runtime` | `ollama` (default), `llamacpp` | Which inference runtime serves the cases. Same cases, same scoring — see below. |
+
+### Running against llama.cpp
+
+llama.cpp compiles a tool's JSON Schema to a GBNF grammar and masks invalid tokens
+at every sampling step, so an argument outside the schema is **unreachable** rather
+than merely unlikely. `--jinja` is on by default; no extra flag is needed.
+
+It serves **one model per process**, and unlike Ollama it needs a GGUF — the `-mlx`
+tags in `ollama list` are MLX tensors and cannot be loaded here. `-hf` downloads one:
+
+```bash
+llama-server -hf unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M -c 16384 -a eval-small --port 8080
+```
+
+```bash
+node evals/run.mjs --runtime=llamacpp --model=eval-small
+```
+
+Two differences the adapter enforces rather than papers over:
+
+- **`--model` must match the server's alias** (`-a`). This runtime ignores the model
+  field in a request, so a typo would silently benchmark whatever is loaded.
+- **Context is a launch flag** (`-c`), not a per-request option. The adapter refuses
+  to run if the served window is smaller than the suite asks for; a silently smaller
+  window would invalidate every number in the run.
+
+`unload` is a no-op here — the memory is the process. Stop the server to free it, and
+stop the *other* runtime before measuring either: two resident models oversubscribe
+the GPU budget and every timing after that point is swap, not inference.
 
 ## Talking to it directly
 
@@ -59,7 +88,7 @@ turn reports time-to-first-token separately for that reason.
 
 ## What it measures
 
-Four questions, each mapping to a case category:
+Five questions, each mapping to a case category:
 
 - **baseline / confusable-\*** — does it pick the right tool when several are similar?
   Four tools open things in a browser; five differ by one verb.
@@ -73,6 +102,42 @@ Four questions, each mapping to a case category:
   everything scores well on safety and is useless.
 - **unresolvable-id** — tools requiring identifiers natural language does not carry
   (`repoPath`, `linearTeamID`). Correct behaviour is to ask, never to invent.
+- **argument-restraint** — optional arguments the model must leave alone, or fill
+  because the user named a value: an invented `location`, a self-assigned
+  `sensitivity`, an unbounded `limit`, `includeIcons` left at a default that
+  attaches an icon for every installed app. These are the descriptor affordances
+  from the field audit, graded. A case expectation of `"!"` means the argument must
+  be **absent** — without that form an invented argument is invisible to scoring,
+  because a call is otherwise graded only on what it does contain.
+
+## The composer suite
+
+`run-report.mjs` measures the passive tier instead of tool calling: a typed snapshot
+in, `ReportDocument` blocks out, validated with ajv against the real
+`report-document.schema.json`. It runs through the same runtime seam.
+
+```bash
+node evals/run-report.mjs --runtime=ollama   --model=qwen3.6:35b-mlx --reps=6
+node evals/run-report.mjs --runtime=llamacpp --model=<server alias> --reps=6
+```
+
+| Flag | Values | Purpose |
+|---|---|---|
+| `--runtime` | `ollama` (default), `llamacpp` | Who serves it. The pairing that settled the grammar question. |
+| `--format` | `schema` (default), `json`, `none` | `schema` uses the runtime's structured-output mode; `none` just asks in the prompt. |
+| `--reps` | integer, default 1 | Repeat the suite. **Use it.** See below. |
+| `--think` | `false` (default), `true` | Off by default: composition from a typed snapshot is rendering, not reasoning. |
+| `--snapshot` | a snapshot id | Narrow to one case. |
+
+**Read `leaf-type violations`, not just the pass rate.** It is printed on its own line
+because it is the number the runtime question turns on, and an aggregate pass rate
+buries it among dropped facts. With the same schema supplied, Ollama produced a
+schema-invalid document on **6 of 6** runs of one snapshot and llama.cpp on **0 of 6**.
+
+**One repetition proves nothing here.** Temperature is 0.4 in this suite, unlike the
+tool suites which pin it to 0. A single sample once showed a violation appearing and
+vanishing between runs and briefly read as a decisive result; six repetitions gave the
+real rates.
 
 ## Reading the output
 
@@ -95,5 +160,14 @@ carefully, not a reason to discount them — confirmation fatigue is its own fai
 - The descriptor → manifest projection in `lib/catalog.mjs` is a **prototype** of
   what phase 2 builds in Swift. When the Swift projection lands, this should call
   out to it rather than be kept in sync by hand.
-- Only the Ollama runtime exists. The llama.cpp adapter is what settles the
-  grammar-constrained-decoding question in the plan.
+  Prototype or not, it is **gated** by `scripts/evals-catalog.test.mjs`, which runs
+  inside `node scripts/test.mjs` even though the suite itself does not. A projection
+  defect does not fail a run — it corrupts every number the run produces, and those
+  numbers get written down as findings. That already happened once: see the
+  correction under "Measured findings" in `docs/llm-integration/README.md`.
+- `chat.mjs` is Ollama-only: it streams directly rather than through the runtime
+  seam, because time-to-first-token is the number it exists to show. It is a REPL,
+  not a measurement surface, so it was left alone when the second runtime landed.
+- The composer's `mustMention` check is a case-insensitive substring match over the
+  whole document, so it catches a dropped fact but not a misattributed one. A block
+  that names the right figure against the wrong label still passes.

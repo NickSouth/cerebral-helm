@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_getLinearProjectCycleReq0001",
+  "type": "bridge.operation.request",
+  "operation": "getLinearProjectCycle",
+  "payload": {
+    "project": "CerebralHelm"
+  }
+}

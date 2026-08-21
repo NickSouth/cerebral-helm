@@ -79,4 +79,203 @@ func linearReportsGraphQLErrors() {
     #expect(message.contains("Team not found"))
     #expect(LinearAPIClient.message(from: [[:]]).isEmpty == false)
 }
+
+// MARK: - Project cycle (NIC-221)
+
+@Test("the project-cycle query filters on project name and the active cycle, via variables")
+func linearProjectCycleQueryIsFiltered() {
+    let query = LinearAPIClient.projectCycleQuery
+    // The project name is a variable, never interpolated: a name containing a brace or a quote is
+    // data, not syntax — the same rule the create mutation follows.
+    #expect(query.contains("$project: String!"))
+    #expect(query.contains("eqIgnoreCase: $project"))
+    // Both halves of the filter must be present; either alone returns the wrong set entirely.
+    #expect(query.contains("cycle: { isActive: { eq: true } }"))
+    // The cycles root exists so the empty case can still name the cycle, and the projects root
+    // so a misspelled name is not rendered as "nothing to do".
+    #expect(query.contains("cycles(first: 1"))
+    #expect(query.contains("projects(first: 1"))
+    // A truncated page has to be detectable.
+    #expect(query.contains("hasNextPage"))
+    // Issue descriptions are deliberately not requested.
+    #expect(query.contains("description") == false)
+}
+
+@Test("an issue decodes with its state, labels, estimate and assignee")
+func linearDecodesIssue() throws {
+    let node: [String: Any] = [
+        "identifier": "NIC-221",
+        "title": "Linear Integration with Projects Widget in Exec Mode",
+        "url": "https://linear.app/nick-southey/issue/NIC-221/linear-integration",
+        "priority": 3,
+        "estimate": 5,
+        "sortOrder": -99.5,
+        "state": ["name": "Next-Up", "type": "unstarted", "color": "#e2e2e2", "position": 2],
+        "labels": ["nodes": [["name": "Feature"]]],
+        "assignee": ["displayName": "nickrsouthey", "initials": "NS"]
+    ]
+
+    let issue = try #require(LinearAPIClient.decodeIssue(node))
+    #expect(issue.identifier == "NIC-221")
+    #expect(issue.priority == 3)
+    #expect(issue.estimate == 5)
+    #expect(issue.sortOrder == -99.5)
+    #expect(issue.labels == ["Feature"])
+    // displayName is Linear's handle; the avatar draws the initials it supplies, never a letter
+    // sliced off the handle (verified live 2026-08-20).
+    #expect(issue.assignee == "nickrsouthey")
+    #expect(issue.assigneeInitials == "NS")
+    // The state's TYPE is what grouping keys off — the name is user-renameable.
+    #expect(issue.state.type == "unstarted")
+    #expect(issue.state.color == "#e2e2e2")
+}
+
+@Test("an unassigned, unestimated, unlabelled issue still decodes")
+func linearDecodesSparseIssue() throws {
+    // The common shape in a personal workspace — none of these absences is an error.
+    let node: [String: Any] = [
+        "identifier": "NIC-227",
+        "title": "Grammar-constrained decoding",
+        "url": "https://linear.app/nick-southey/issue/NIC-227/grammar",
+        "priority": 0,
+        "state": ["name": "Todo", "type": "unstarted", "color": "#bec2c8"]
+    ]
+
+    let issue = try #require(LinearAPIClient.decodeIssue(node))
+    #expect(issue.estimate == nil)
+    #expect(issue.assignee == nil)
+    #expect(issue.assigneeInitials == nil)
+    #expect(issue.labels.isEmpty)
+    #expect(issue.priority == 0)
+}
+
+@Test("an issue missing a field the row cannot render is dropped, not blanked")
+func linearDropsPartialIssue() {
+    // A row rendered with blanks claims to be an issue you can open; this one would not open.
+    #expect(LinearAPIClient.decodeIssue(["title": "No identifier", "url": "https://x"]) == nil)
+    #expect(LinearAPIClient.decodeIssue([
+        "identifier": "NIC-1", "title": "No state", "url": "https://x"
+    ]) == nil)
+}
+
+@Test("a cycle decodes its number and both ISO-8601 timestamps")
+func linearDecodesCycle() throws {
+    let cycle = try #require(LinearAPIClient.decodeCycle([
+        "id": "cycle-2",
+        "number": 2,
+        "startsAt": "2026-08-17T04:00:00.000Z",
+        "endsAt": "2026-08-24T04:00:00.000Z"
+    ]))
+    #expect(cycle.number == 2)
+    #expect(cycle.name == nil) // cycles are usually unnamed
+    #expect(cycle.endsAt.timeIntervalSince(cycle.startsAt) == 7 * 24 * 60 * 60)
+}
+
+@Test("a timestamp without fractional seconds still parses")
+func linearDecodesCycleWithoutFractionalSeconds() throws {
+    // Linear sends fractional seconds today, but the format is not promised — falling back keeps
+    // the cycle header from blanking if it ever changes.
+    let cycle = try #require(LinearAPIClient.decodeCycle([
+        "id": "c", "number": 9, "startsAt": "2026-08-17T04:00:00Z", "endsAt": "2026-08-24T04:00:00Z"
+    ]))
+    #expect(cycle.number == 9)
+}
+
+@Test("the reported cycle is the one the issues are actually in")
+func linearResolvesCycleFromIssues() throws {
+    // The header must never name a different cycle from the rows beneath it, so the issues' own
+    // cycle wins over the workspace-wide active one.
+    let issueNodes: [[String: Any]] = [[
+        "cycle": [
+            "id": "from-issue", "number": 2,
+            "startsAt": "2026-08-17T04:00:00.000Z", "endsAt": "2026-08-24T04:00:00.000Z"
+        ]
+    ]]
+    let payload: [String: Any] = ["cycles": ["nodes": [[
+        "id": "from-root", "number": 7,
+        "startsAt": "2026-08-17T04:00:00.000Z", "endsAt": "2026-08-24T04:00:00.000Z"
+    ]]]]
+
+    let cycle = try #require(LinearAPIClient.resolveCycle(issueNodes: issueNodes, payload: payload))
+    #expect(cycle.id == "from-issue")
+}
+
+@Test("with no issues, the cycle still comes back from the cycles root")
+func linearResolvesCycleWhenProjectHasNoIssues() throws {
+    // This is what separates "no active cycle" from "a cycle is running and this project has
+    // nothing in it" — the empty state names the cycle rather than claiming there is none.
+    let payload: [String: Any] = ["cycles": ["nodes": [[
+        "id": "from-root", "number": 2,
+        "startsAt": "2026-08-17T04:00:00.000Z", "endsAt": "2026-08-24T04:00:00.000Z"
+    ]]]]
+
+    let cycle = try #require(LinearAPIClient.resolveCycle(issueNodes: [], payload: payload))
+    #expect(cycle.number == 2)
+}
+
+@Test("between cycles, there is no cycle to report")
+func linearResolvesNoCycle() {
+    #expect(LinearAPIClient.resolveCycle(issueNodes: [], payload: ["cycles": ["nodes": []]]) == nil)
+}
+
+@Test("a name that matches no Linear project is distinguishable from an empty cycle")
+func linearReportsUnmatchedProject() {
+    // Live finding (2026-08-20): a misspelled `linear_project` returns zero issues, exactly like a
+    // correctly-linked project with nothing in the cycle. Without the projects root the surface
+    // would render a typo as "nothing to do" — an answer, and the wrong one.
+    #expect(LinearAPIClient.matchedProject(in: ["projects": ["nodes": []]]) == nil)
+    #expect(LinearAPIClient.matchedProject(in: [:]) == nil)
+}
+
+@Test("the matched project reports Linear's own casing, not the descriptor's")
+func linearReportsCanonicalProjectName() {
+    // `eqIgnoreCase` means "cerebralhelm" in a descriptor matches "CerebralHelm" in Linear
+    // (verified live). The header echoes Linear's spelling so the match is visible.
+    let payload: [String: Any] = ["projects": ["nodes": [[
+        "id": "p1", "name": "CerebralHelm", "url": "https://linear.app/nick-southey/project/ch-abc"
+    ]]]]
+    let matched = LinearAPIClient.matchedProject(in: payload)
+    #expect(matched?.name == "CerebralHelm")
+    // Linear's own URL, never one composed from a workspace slug and a name.
+    #expect(matched?.url == "https://linear.app/nick-southey/project/ch-abc")
+}
+
+@Test("numeric fields decode whether Linear sends them as int or float")
+func linearDecodesMixedNumberTypes() throws {
+    // Not hypothetical: across one real cycle response `sortOrder` and `state.position` each
+    // arrived as BOTH int and float depending on the issue (verified live 2026-08-20).
+    let asInt = try #require(LinearAPIClient.decodeIssue([
+        "identifier": "NIC-1", "title": "t", "url": "u", "priority": 3, "sortOrder": -77240,
+        "state": ["name": "Todo", "type": "unstarted", "color": "#e2e2e2", "position": 1]
+    ]))
+    let asFloat = try #require(LinearAPIClient.decodeIssue([
+        "identifier": "NIC-2", "title": "t", "url": "u", "priority": 0, "sortOrder": 49.16,
+        "state": ["name": "Testing", "type": "started", "color": "#f2994a", "position": 907.65]
+    ]))
+    #expect(asInt.sortOrder == -77240)
+    #expect(asInt.state.position == 1)
+    #expect(asFloat.sortOrder == 49.16)
+    #expect(asFloat.state.position == 907.65)
+}
+
+@Test("a blank project name is refused before any request is made")
+func linearRefusesBlankProjectName() async {
+    // Otherwise Linear is asked for a project called "" and answers with an empty set, which the
+    // surface would render as "nothing in this cycle" — a different fact.
+    let client = LinearAPIClient(secretStore: FailingSecretStore())
+    await #expect(throws: LinearAPIError.self) {
+        _ = try await client.projectCycle(named: "   ")
+    }
+}
+
+/// A store that never yields a value — enough to prove the blank-name guard runs *before* the
+/// credential read, since a name that got past it would fail with `credentialsMissing` instead.
+private struct FailingSecretStore: SecretStoreManaging {
+    func store(reference: String, value: String) async throws {}
+    func readValue(reference: String) async throws -> String {
+        throw LinearAPIError.credentialsMissing
+    }
+    func delete(reference: String) async throws {}
+}
+
 #endif

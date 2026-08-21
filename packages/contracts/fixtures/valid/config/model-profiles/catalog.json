@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0.0",
+  "residentBudgetGigabytes": 48,
+  "modelProfiles": [
+    {
+      "id": "balanced",
+      "modelId": "qwen3.6:35b-mlx",
+      "runtimeId": "ollama",
+      "contextTokens": 16384,
+      "residency": "pinned",
+      "thinking": false,
+      "residentGigabytes": 21
+    },
+    {
+      "id": "deep",
+      "modelId": "qwen3.6:35b-mlx",
+      "runtimeId": "llama.cpp",
+      "contextTokens": 32768,
+      "residency": "evictAfterUse",
+      "thinking": true,
+      "timeoutSeconds": 600
+    }
+  ]
+}

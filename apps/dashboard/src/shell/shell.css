@@ -4923,29 +4923,391 @@ button.deadline-row__open:not(:disabled):hover {
   color: var(--ch-text-primary);
 }
 
-.project-detail__body {
+/* Stacked, one scroll (NIC-221): the WRAPPER scrolls, not the markdown body. If the body kept
+   its own scroll the brief and the cycle would move independently and the cycle's sticky headers
+   would have nothing to stick to. */
+.project-detail__scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+}
+
+.project-detail__body {
   padding: var(--ch-space-4);
 }
 
-.project-detail__status {
+/* ===========================================================================================
+   The Linear cycle section (NIC-221) — this project's issues in the active cycle, stacked by
+   status the way Linear's own list view stacks them.
+   ======================================================================================== */
+.cyc {
+  display: block;
   border-top: 1px solid var(--ch-panel-border);
+  margin-top: var(--ch-space-2);
+}
+
+/* Sticky, so ten rows in you still know which cycle you are looking at. */
+.cyc__head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--ch-space-2) var(--ch-space-3);
+  padding: var(--ch-space-3) var(--ch-space-4);
+  background: color-mix(in srgb, rgb(var(--ch-surface-panel-rgb)) 88%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--ch-panel-border);
+}
+
+.cyc__label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ch-space-2);
+  min-width: 0;
+}
+
+.cyc__name {
+  font-size: var(--ch-font-size-label);
+  text-transform: uppercase;
+  letter-spacing: var(--ch-font-label-tracking);
+  color: var(--ch-text-primary);
+  font-weight: var(--ch-font-weight-medium);
+}
+
+.cyc__dates {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-faint);
+  white-space: nowrap;
+}
+
+.cyc__link {
+  justify-self: end;
+  font: inherit;
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-faint);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--ch-radius-sm);
+  padding: 0.15rem 0.4rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cyc__link:hover:not(:disabled) {
+  color: var(--ch-accent-primary);
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 40%, transparent);
+}
+
+/* A hairline, not a chart: the number carries the meaning, the bar gives it a shape you can read
+   without reading. Two segments — done, then in-flight. */
+.cyc__progress {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-3);
+}
+
+.cyc__bar {
+  position: relative;
+  flex: 1;
+  height: 3px;
+  border-radius: var(--ch-radius-pill);
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+
+.cyc__bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--ch-radius-pill);
+  background: var(--ch-status-success);
+}
+
+.cyc__bar i + i {
+  background: var(--ch-status-warning);
+  opacity: 0.55;
+}
+
+.cyc__count {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Group header — Linear's stacked-by-status divider. Its sticky offset is set at runtime from the
+   cycle header's measured height (`--cyc-head-h`), because a hardcoded value leaves a sliver the
+   rows scroll through once the root font size changes. */
+.cyc-grp {
+  position: sticky;
+  top: var(--cyc-head-h, 4.5rem);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+  padding: var(--ch-space-2) var(--ch-space-4);
+  background: color-mix(in srgb, rgb(var(--ch-surface-panel-rgb)) 92%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-block: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: var(--ch-font-size-label);
+}
+
+.cyc-grp__name {
+  color: var(--ch-text-primary);
+  font-weight: var(--ch-font-weight-medium);
+}
+
+.cyc-grp__count {
+  color: var(--ch-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.cyc-icon {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+/* Ticket row. Four columns: priority · identifier · title · trailing meta. The title is the only
+   flexible one, so the identifier column stays a straight edge down the list — which is what makes
+   a stack of these scannable rather than merely dense. */
+.cyc-tk {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--ch-space-2);
+  width: 100%;
+  padding: 0.42rem var(--ch-space-4);
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    background var(--ch-motion-fast) var(--ch-ease-standard),
+    border-color var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.cyc-tk:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.045);
+  border-left-color: var(--ch-accent-primary);
+}
+
+.cyc-tk:disabled {
+  cursor: default;
+}
+
+.cyc-tk:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: calc(var(--ch-focus-ring-offset) * -1);
+}
+
+.cyc-tk__pri {
+  display: inline-flex;
+  color: var(--ch-text-muted);
+}
+
+.cyc-pri {
+  width: 12px;
+  height: 12px;
+}
+
+.cyc-tk__id {
+  font-family: var(--ch-font-mono);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.cyc-tk__title {
+  font-size: var(--ch-font-size-sm);
+  color: var(--ch-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cyc-tk__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.cyc-tk__label {
+  font-size: 0.62rem;
+  line-height: 1;
+  padding: 0.22rem 0.4rem;
+  border-radius: var(--ch-radius-pill);
+  border: 1px solid var(--ch-panel-border);
+  color: var(--ch-text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+}
+
+.cyc-tk__est {
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-faint);
+  font-variant-numeric: tabular-nums;
+  min-width: 1ch;
+  text-align: right;
+}
+
+.cyc-tk__av {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: var(--ch-radius-pill);
+  font-size: 0.56rem;
+  font-weight: var(--ch-font-weight-semibold);
+  color: var(--ch-bg-base);
+  background: var(--ch-accent-secondary);
+}
+
+/* Holds the column so the right edge stays straight, but draws nothing. */
+.cyc-tk__av--none {
+  background: transparent;
+}
+
+/* Present in the layout at all times so nothing reflows on hover; it only gains opacity. */
+.cyc-tk__go {
+  width: 0.85rem;
+  font-size: 0.7rem;
+  color: var(--ch-text-faint);
+  opacity: 0;
+  transition: opacity var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.cyc-tk:hover:not(:disabled) .cyc-tk__go {
+  opacity: 1;
+}
+
+/* The named non-list states. Each is a different fact; none of them is "nothing to do". */
+.cyc__state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ch-space-3);
+  padding: var(--ch-space-5) var(--ch-space-4);
+}
+
+.cyc__state-title {
+  margin: 0;
+  font-size: var(--ch-font-size-sm);
+  font-weight: var(--ch-font-weight-medium);
+  color: var(--ch-text-primary);
+}
+
+.cyc__state-note {
+  margin: 0;
+  font-size: var(--ch-font-size-label);
+  line-height: 1.6;
+  color: var(--ch-text-muted);
+}
+
+.cyc__state-note code {
+  font-family: var(--ch-font-mono);
+  color: var(--ch-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+}
+
+.cyc__state-action {
+  font: inherit;
+  font-size: var(--ch-font-size-label);
+  cursor: pointer;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--ch-radius-sm);
+  border: 1px solid var(--ch-panel-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ch-text-muted);
+  transition: all var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.cyc__state-action:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+  color: var(--ch-text-primary);
+}
+
+/* The link picker (NIC-221): the workspace's Linear projects, offered where the section has no
+   list to show — unlinked, or linked to a name Linear does not know. */
+.cyc__picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2);
+  margin-top: var(--ch-space-3);
+}
+
+/* The button that precedes the picker sits in the same place the picker will, so revealing the
+   list does not shift the copy above it. */
+.cyc__state-note > .cyc__state-action {
+  margin-top: var(--ch-space-3);
+}
+
+.cyc__picker-option {
+  font: inherit;
+  font-size: var(--ch-font-size-label);
+  cursor: pointer;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--ch-radius-sm);
+  border: 1px solid var(--ch-panel-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ch-text-muted);
+  transition: all var(--ch-motion-fast) var(--ch-ease-standard);
+}
+
+.cyc__picker-option:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ch-accent-primary) 55%, transparent);
+  color: var(--ch-text-primary);
+}
+
+.cyc__picker-option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cyc__picker-option:focus-visible {
+  outline: var(--ch-focus-ring-width) solid var(--ch-focus-ring-color);
+  outline-offset: var(--ch-focus-ring-offset);
+}
+
+.cyc__bone-chip {
+  height: 1.5rem;
+  width: 6rem;
+  border-radius: var(--ch-radius-sm);
+}
+
+.cyc__truncated {
+  margin: 0;
+  padding: var(--ch-space-2) var(--ch-space-4) var(--ch-space-4);
+  font-size: var(--ch-font-size-label);
+  color: var(--ch-text-faint);
+}
+
+/* Same shape as the loaded section, so nothing jumps when the data lands (NIC-136 convention). */
+.cyc__loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
   padding: var(--ch-space-3) var(--ch-space-4);
 }
 
-.project-detail__status-title {
-  margin: 0 0 var(--ch-space-1);
-  font-size: var(--ch-font-size-label);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ch-text-muted);
+.cyc__bone-head {
+  height: 0.75rem;
+  width: 60%;
 }
 
-.project-detail__status-note {
-  margin: 0;
-  font-size: var(--ch-font-size-sm);
-  color: var(--ch-text-muted);
+.cyc__bone-row {
+  height: 1.1rem;
+  width: 100%;
 }
 
 /* Minimal markdown block styles (NIC-129) — the small subset the in-house renderer emits. */

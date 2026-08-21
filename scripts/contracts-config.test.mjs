@@ -18,6 +18,7 @@ const expectedSchemaNames = new Set([
   "config-validation-error.schema.json",
   "mode.schema.json",
   "mode-override.schema.json",
+  "model-profiles.schema.json",
   "settings-patch.schema.json"
 ]);
 

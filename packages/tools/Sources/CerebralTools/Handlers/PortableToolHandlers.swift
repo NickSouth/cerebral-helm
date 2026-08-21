@@ -384,7 +384,7 @@ public struct SystemStatusReadHandler: ToolHandler {
             let metrics = readings.map { reading in
                 Metric(
                     availability: AvailabilityEnum(rawValue: reading.availability.rawValue) ?? .unavailable,
-                    id: ID(rawValue: reading.id.rawValue) ?? .cpu,
+                    id: MetricElement(rawValue: reading.id.rawValue) ?? .cpu,
                     sampledAt: nil,
                     unit: reading.unit,
                     value: reading.value

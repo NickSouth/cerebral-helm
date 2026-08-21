@@ -61,6 +61,81 @@ public enum MarkdownFrontmatter {
         return (frontmatter, body)
     }
 
+    /// Returns `markdown` with frontmatter `key` set to `value`, preserving every other byte.
+    ///
+    /// The write counterpart of ``parse(_:)``, kept in the same type so the two cannot drift: a
+    /// value this writes must be a value that reader reads back. Three cases, matching what a
+    /// hand-authored descriptor can actually look like —
+    ///
+    /// - the key exists: its line is replaced, and no other line moves;
+    /// - the block exists without the key: the line is inserted directly after the opening fence;
+    /// - there is no block, or an unterminated one: a real block is prepended and the original
+    ///   content is kept intact below it (an unterminated fence is not frontmatter, so it is body).
+    ///
+    /// `value` is written verbatim — the caller owns any quoting, because only the caller knows
+    /// whether its value needs it. Use ``scalar(_:)`` to serialize an arbitrary string safely.
+    public static func setting(
+        _ markdown: String, key: String, value: String
+    ) -> String {
+        let line = "\(key): \(value)"
+        let lines = markdown.components(separatedBy: "\n")
+
+        // No frontmatter block: prepend a real one and keep the body untouched.
+        guard lines.first == "---" else {
+            return "---\n\(line)\n---\n\n" + markdown
+        }
+
+        var closeIndex: Int?
+        var keyIndex: Int?
+        var index = 1
+        while index < lines.count {
+            if lines[index] == "---" { closeIndex = index; break }
+            if keyIndex == nil, let colon = lines[index].firstIndex(of: ":") {
+                let existing = String(lines[index][..<colon]).trimmingCharacters(in: .whitespaces)
+                if existing == key { keyIndex = index }
+            }
+            index += 1
+        }
+
+        // An unterminated block is not a real block — prepend one rather than editing inside it.
+        guard closeIndex != nil else {
+            return "---\n\(line)\n---\n\n" + markdown
+        }
+
+        var updated = lines
+        if let keyIndex {
+            updated[keyIndex] = line
+        } else {
+            updated.insert(line, at: 1)
+        }
+        return updated.joined(separator: "\n")
+    }
+
+    /// Serializes `value` as a frontmatter scalar, quoting only when it has to.
+    ///
+    /// Unquoted is preferred because a descriptor is a file the user reads and edits, and
+    /// `linear_project: CerebralHelm` is plainly nicer than the quoted form. Quoting kicks in only
+    /// where the grammar in ``parse(_:)`` would otherwise read something different back:
+    ///
+    /// - a value already wrapped in double quotes would be **unquoted** on read, losing them;
+    /// - a value containing a newline would end the line, and possibly the block.
+    ///
+    /// A value containing an inner colon needs no quoting: the parser splits on the FIRST colon,
+    /// so everything after it is the value.
+    public static func scalar(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasNewline = trimmed.contains("\n") || trimmed.contains("\r")
+        let looksQuoted = trimmed.count >= 2 && trimmed.hasPrefix("\"") && trimmed.hasSuffix("\"")
+        guard hasNewline || looksQuoted else { return trimmed }
+        let escaped = trimmed
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+        return "\"\(escaped)\""
+    }
+
     private static func unquote(_ value: String) -> String {
         guard value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") else { return value }
         return String(value.dropFirst().dropLast())

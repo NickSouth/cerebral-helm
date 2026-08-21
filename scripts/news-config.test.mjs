@@ -17,6 +17,15 @@ test("news profiles config is well formed", () => {
   assert.equal(typeof config.defaultCategory, "string");
   assert.ok(config.defaultCategory.length > 0, "defaultCategory must be non-empty");
   assert.equal(typeof config.profiles, "object");
+  // NIC-223: the interest `q=` switch. Optional (an older file decodes without it and keeps the
+  // default), but a typo must not silently disable the feature — the Swift catalog treats anything
+  // that is not exactly "q" as off.
+  if ("interestQuery" in config) {
+    assert.ok(
+      ["q", "off"].includes(config.interestQuery),
+      `interestQuery must be "q" or "off", got ${JSON.stringify(config.interestQuery)}`
+    );
+  }
   for (const [profile, category] of Object.entries(config.profiles)) {
     assert.equal(typeof category, "string", `profile ${profile} must map to a string`);
     assert.ok(category.length > 0, `profile ${profile} must map to a non-empty category`);

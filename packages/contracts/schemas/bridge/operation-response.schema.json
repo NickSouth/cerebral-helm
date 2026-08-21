@@ -84,7 +84,8 @@
         "createCourseNote",
         "runSystemChecks",
         "connectGmail",
-        "listUnreadMail"
+        "listUnreadMail",
+        "getLinearProjectCycle"
       ]
     },
     "status": {

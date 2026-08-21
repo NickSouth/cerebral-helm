@@ -116,3 +116,54 @@ test("dashboard fixtures are story-ready and come from the canonical catalog", (
     assert.equal(Number.isInteger(fixture.dashboardState.pendingConfirmations), true);
   }
 });
+
+/**
+ * The `projects` widget payload must mirror the live `ProjectWidgetItem` shape
+ * (`apps/dashboard/src/widgets/widgetData.ts`) that the NIC-129 producer streams.
+ *
+ * NIC-170: the mock items had drifted to `{ name, status }` — no `id`, so every row in the
+ * dashboard preview rendered with `key={undefined}` and logged a React key error; no `path`,
+ * so a row click would have dispatched `openProjectDetail(undefined)`; and no `hasDescriptor`,
+ * so every mock row rendered disabled. The unit tests never caught it because they build their
+ * own correct items, and the native app never caught it because the live producer streams the
+ * real shape. Only the fixture-backed mock bridge was wrong, which is exactly what this guards.
+ *
+ * Unknown keys are rejected too: `status` was dead fixture data that nothing renders, and a
+ * fixture that carries fields the contract does not have is the same lie in the other direction.
+ */
+const projectItemRequired = { id: "string", name: "string", path: "string", hasDescriptor: "boolean" };
+const projectItemOptional = { descriptorPath: "string" };
+
+test("projects widget fixtures match the live ProjectWidgetItem contract (NIC-170)", () => {
+  let checked = 0;
+
+  for (const fixture of catalog().fixtures.filter((entry) => entry.dashboardState)) {
+    const slots = fixture.dashboardState.regions?.widgets ?? {};
+
+    for (const [slotName, slot] of Object.entries(slots)) {
+      if (slot?.widgetId !== "projects") continue;
+      const where = `${fixture.canonicalKey} ${slotName}`;
+
+      for (const item of slot.data?.items ?? []) {
+        for (const [field, expectedType] of Object.entries(projectItemRequired)) {
+          assert.equal(typeof item[field], expectedType, `${where} project item is missing ${field}: ${expectedType}`);
+        }
+        assert.notEqual(item.id, "", `${where} project item has an empty id — rows would share a React key.`);
+
+        for (const field of Object.keys(item)) {
+          const known = field in projectItemRequired || field in projectItemOptional;
+          assert.equal(known, true, `${where} project item carries unknown field "${field}" — not in ProjectWidgetItem.`);
+        }
+        if (item.descriptorPath !== undefined) {
+          assert.equal(typeof item.descriptorPath, "string", `${where} project item has a non-string descriptorPath.`);
+        }
+        checked += 1;
+      }
+
+      const ids = (slot.data?.items ?? []).map((item) => item.id);
+      assert.equal(new Set(ids).size, ids.length, `${where} project items reuse an id — rows would share a React key.`);
+    }
+  }
+
+  assert.ok(checked >= 2, "Expected the catalog to carry projects widget items to validate.");
+});

@@ -521,12 +521,19 @@ describe("create-ticket in the region", () => {
           reason: null
         })
     });
-    const project = (await within(region).findByLabelText("Project")) as HTMLSelectElement;
+    const team = (await within(region).findByLabelText(/Team/)) as HTMLSelectElement;
+    // The workspace is read asynchronously, so wait for its teams to reach the DOM before
+    // asserting anything about scoping. Without this the assertion below passes vacuously — no
+    // projects are offered simply because nothing has loaded — and the change is dispatched at a
+    // select with no matching option, which drops it silently and strands the waitFor.
+    await waitFor(() => expect([...team.options]).toHaveLength(3));
+
+    const project = within(region).getByLabelText("Project") as HTMLSelectElement;
     // Two teams, no selection: a flat list would offer both projects and produce a write Linear
     // rejects.
     expect([...project.options].map((option) => option.textContent)).toEqual(["No project"]);
 
-    fireEvent.change(within(region).getByLabelText(/Team/), { target: { value: "b" } });
+    fireEvent.change(team, { target: { value: "b" } });
     await waitFor(() =>
       expect([...project.options].map((option) => option.textContent)).toEqual(["No project", "Beta"])
     );

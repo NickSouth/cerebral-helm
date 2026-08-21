@@ -11,40 +11,16 @@ import CerebralShared
 /// is constrained to the projects root.
 public enum ProjectImportanceWriter {
     /// Returns `contents` with the frontmatter `importance` set to `importance`. Pure: no IO.
+    ///
+    /// The surgical edit itself lives in ``MarkdownFrontmatter/setting(_:key:value:)``, beside the
+    /// parser that has to read it back — two copies of that algorithm would drift, and its edge
+    /// cases (no block, unterminated block, key absent) are exactly where drift hides.
     public static func apply(to contents: String, importance: Int) -> String {
-        let importanceLine = "\(FileSystemActiveProjectsProvider.importanceKey): \(importance)"
-        let lines = contents.components(separatedBy: "\n")
-
-        // No frontmatter block (or an unterminated one): prepend a real block, keep the body.
-        guard lines.first == "---" else {
-            return "---\n\(importanceLine)\n---\n\n" + contents
-        }
-
-        var closeIndex: Int?
-        var importanceIndex: Int?
-        var index = 1
-        while index < lines.count {
-            if lines[index] == "---" { closeIndex = index; break }
-            if importanceIndex == nil, let colon = lines[index].firstIndex(of: ":") {
-                let key = String(lines[index][..<colon]).trimmingCharacters(in: .whitespaces)
-                if key == FileSystemActiveProjectsProvider.importanceKey { importanceIndex = index }
-            }
-            index += 1
-        }
-
-        guard closeIndex != nil else {
-            // Unterminated frontmatter is not a real block — prepend one.
-            return "---\n\(importanceLine)\n---\n\n" + contents
-        }
-
-        var updated = lines
-        if let importanceIndex {
-            updated[importanceIndex] = importanceLine
-        } else {
-            // Insert as the first frontmatter line, right after the opening fence.
-            updated.insert(importanceLine, at: 1)
-        }
-        return updated.joined(separator: "\n")
+        MarkdownFrontmatter.setting(
+            contents,
+            key: FileSystemActiveProjectsProvider.importanceKey,
+            value: String(importance)
+        )
     }
 
     /// Reads `<projectPath>/PROJECT.md`, sets its `importance` (floored at 0), and writes it

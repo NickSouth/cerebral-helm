@@ -344,6 +344,28 @@
   flex: none;
 }
 
+/* A field whose control is a wide, growing editor (a chip list, a per-row map) rather than a
+   single compact input. `.settings-field__control` is `flex: none` — sized at max-content and
+   never allowed to shrink — which is correct for a toggle or a select, but means a growing list
+   has no width to lay itself out against: `flex-wrap` never wraps, and the control simply runs
+   off the right edge of the panel. Past ~12 tickers that carried the field's own Save/Cancel
+   buttons out of the panel, where the Y-only scroll could not reach them (NIC-222).
+
+   Stacking the label above a full-width control gives wrapping (and any `text-overflow`) the
+   definite width it needs. Opt in per field via `<Field stack>` — the row default stays intact
+   for every compact control. */
+.settings-field--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--ch-space-2);
+}
+
+.settings-field--stack .settings-field__control {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
 .settings-readonly {
   color: var(--ch-text-muted);
   font-size: var(--ch-font-size-base);
