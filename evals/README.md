@@ -36,7 +36,36 @@ node evals/run.mjs --model=muse-glimmer:30b-mlx,qwen3.6:35b-mlx --json=/tmp/eval
 | `--descriptions` | `rich` (default), `purpose` | `purpose` sends only the descriptor's one-line `purpose`; `rich` adds the input schema's prose. Measures how much description a local model needs. |
 | `--category` | a case category | Narrow a run, e.g. `injection`. |
 | `--case` | a case id | Single case, for diagnosis. |
-| `--runtime` | `ollama` | Adapter to use. llama.cpp (for GBNF grammar-constrained decoding) is the next one owed. |
+| `--runtime` | `ollama` (default), `llamacpp` | Which inference runtime serves the cases. Same cases, same scoring — see below. |
+
+### Running against llama.cpp
+
+llama.cpp compiles a tool's JSON Schema to a GBNF grammar and masks invalid tokens
+at every sampling step, so an argument outside the schema is **unreachable** rather
+than merely unlikely. `--jinja` is on by default; no extra flag is needed.
+
+It serves **one model per process**, and unlike Ollama it needs a GGUF — the `-mlx`
+tags in `ollama list` are MLX tensors and cannot be loaded here. `-hf` downloads one:
+
+```bash
+llama-server -hf unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M -c 16384 -a eval-small --port 8080
+```
+
+```bash
+node evals/run.mjs --runtime=llamacpp --model=eval-small
+```
+
+Two differences the adapter enforces rather than papers over:
+
+- **`--model` must match the server's alias** (`-a`). This runtime ignores the model
+  field in a request, so a typo would silently benchmark whatever is loaded.
+- **Context is a launch flag** (`-c`), not a per-request option. The adapter refuses
+  to run if the served window is smaller than the suite asks for; a silently smaller
+  window would invalidate every number in the run.
+
+`unload` is a no-op here — the memory is the process. Stop the server to free it, and
+stop the *other* runtime before measuring either: two resident models oversubscribe
+the GPU budget and every timing after that point is swap, not inference.
 
 ## Talking to it directly
 
@@ -107,5 +136,10 @@ carefully, not a reason to discount them — confirmation fatigue is its own fai
   defect does not fail a run — it corrupts every number the run produces, and those
   numbers get written down as findings. That already happened once: see the
   correction under "Measured findings" in `docs/llm-integration/README.md`.
-- Only the Ollama runtime exists. The llama.cpp adapter is what settles the
-  grammar-constrained-decoding question in the plan.
+- `chat.mjs` is Ollama-only: it streams directly rather than through the runtime
+  seam, because time-to-first-token is the number it exists to show. It is a REPL,
+  not a measurement surface, so it was left alone when the second runtime landed.
+- `run-report.mjs` is Ollama-only too, and it is the one that still matters: the
+  composer is where Ollama's structured output was measured failing to enforce leaf
+  types. Putting it behind the seam is what lets that failure be tested against a
+  grammar rather than argued about.

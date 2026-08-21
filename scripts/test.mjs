@@ -22,6 +22,7 @@ runCommand("node", ["--test", "./scripts/fixture-catalog.test.mjs"]);
 // manifest projection is pure and gated here: a defect in it does not fail an eval
 // run, it silently corrupts every number the run produces.
 runCommand("node", ["--test", "./scripts/evals-catalog.test.mjs"]);
+runCommand("node", ["--test", "./scripts/evals-runtime.test.mjs"]);
 runCommand("node", ["--test", "./scripts/validate-docs.test.mjs"]);
 runCommand("swift", ["test"]);
 runCommand("corepack", ["pnpm", "--dir", "apps/dashboard", "test", "--run"]);

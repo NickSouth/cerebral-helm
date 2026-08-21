@@ -9,7 +9,7 @@
     "url": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^https://",
+      "pattern": "^https://.*$",
       "description": "The absolute https web address to open in the browser. The adapter validates the scheme (https only) and a present host host-side, so an unresolvable or non-https link is refused rather than opened. Unlike url.open (which resolves a configured reference id), this opens an arbitrary destination — used for news article links — so the constraint lives in the adapter, not in an allowlist."
     }
   }
