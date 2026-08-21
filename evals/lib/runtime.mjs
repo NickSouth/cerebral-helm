@@ -91,6 +91,55 @@ async function ollamaChat({
   };
 }
 
+/// One composition turn: prose in, a structured document out, no tools.
+///
+/// Separate from ``chat`` because the passive tier is a different shape of request —
+/// it carries a response format and a thinking flag and offers no tools — and because
+/// the composer is where the runtimes actually differ. Constraining generation is
+/// best-effort here and enforced there, which is the whole measurement.
+async function ollamaCompose({
+  model,
+  system,
+  user,
+  responseSchema,
+  formatMode = "schema",
+  think = false,
+  temperature = 0.4,
+  contextTokens = 16384,
+}) {
+  const started = performance.now();
+
+  const body = {
+    model,
+    // Top-level, not inside `options` — this runtime reads it there.
+    think,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    stream: false,
+    options: { temperature, num_ctx: contextTokens },
+  };
+  if (formatMode === "schema" && responseSchema) body.format = responseSchema;
+  else if (formatMode === "json") body.format = "json";
+
+  const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`Ollama ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  }
+
+  const payload = await response.json();
+  return {
+    text: payload.message?.content ?? "",
+    wallMs: Math.round(performance.now() - started),
+    outputTokens: payload.eval_count ?? null,
+  };
+}
+
 /// Evicts a model from memory immediately.
 ///
 /// MUST be called between models. Ollama's default `keep_alive` is 5 minutes, so a
@@ -253,6 +302,64 @@ async function llamaChat({ model, system, prompt, messages, tools, signal }) {
   };
 }
 
+/// One composition turn against llama.cpp. See ``ollamaCompose`` for why this is
+/// separate from ``chat``.
+///
+/// Unlike Ollama's `format:`, the schema here is compiled to a GBNF grammar and
+/// enforced token by token — measured at 0 leaf-type violations in 18 compositions
+/// against Ollama's 6 with the same schema supplied.
+async function llamaCompose({
+  model,
+  system,
+  user,
+  responseSchema,
+  formatMode = "schema",
+  think = false,
+  temperature = 0.4,
+}) {
+  const started = performance.now();
+
+  const body = {
+    model,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    stream: false,
+    temperature,
+    // NOT `reasoning_budget`. That flag is documented as "0 for immediate end" and
+    // does not disable thinking — probed at 173 completion tokens with reasoning
+    // still emitted, against 2 tokens and none for the template kwarg below. Getting
+    // this wrong costs ~3,500 tokens and 80-100 s per composition, and reads as a
+    // slow runtime rather than a deliberating model.
+    chat_template_kwargs: { enable_thinking: think },
+  };
+  if (formatMode === "schema" && responseSchema) {
+    body.response_format = {
+      type: "json_schema",
+      json_schema: { name: "document", schema: responseSchema, strict: true },
+    };
+  } else if (formatMode === "json") {
+    body.response_format = { type: "json_object" };
+  }
+
+  const response = await fetch(`${LLAMA_HOST}/v1/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`llama.cpp ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  }
+
+  const payload = await response.json();
+  return {
+    text: payload.choices?.[0]?.message?.content ?? "",
+    wallMs: Math.round(performance.now() - started),
+    outputTokens: payload.usage?.completion_tokens ?? null,
+  };
+}
+
 /// No-op: with llama.cpp the memory IS the process.
 ///
 /// Present so the seam stays uniform — `run.mjs` calls `unload?.()` between models,
@@ -301,8 +408,20 @@ async function llamaReady(model, { contextTokens = 16384 } = {}) {
 }
 
 export const RUNTIMES = {
-  ollama: { id: "ollama", chat: ollamaChat, unload: ollamaUnload, ready: ollamaReady },
-  llamacpp: { id: "llamacpp", chat: llamaChat, unload: llamaUnload, ready: llamaReady },
+  ollama: {
+    id: "ollama",
+    chat: ollamaChat,
+    compose: ollamaCompose,
+    unload: ollamaUnload,
+    ready: ollamaReady,
+  },
+  llamacpp: {
+    id: "llamacpp",
+    chat: llamaChat,
+    compose: llamaCompose,
+    unload: llamaUnload,
+    ready: llamaReady,
+  },
 };
 
 /// Fails fast with an actionable message rather than 29 identical connection errors.

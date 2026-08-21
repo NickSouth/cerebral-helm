@@ -16,7 +16,10 @@ import { toOpenAITurns, RUNTIMES } from "../evals/lib/runtime.mjs";
 test("every runtime exposes the same seam", () => {
   for (const [id, runtime] of Object.entries(RUNTIMES)) {
     assert.equal(runtime.id, id, `${id} disagrees with its own key`);
-    for (const member of ["chat", "unload", "ready"]) {
+    // `compose` is as load-bearing as `chat`: the composer is the surface where the
+    // runtimes measurably differ, so a runtime that only implements half the seam
+    // would silently drop out of the comparison it exists to be part of.
+    for (const member of ["chat", "compose", "unload", "ready"]) {
       assert.equal(typeof runtime[member], "function", `${id} is missing ${member}()`);
     }
   }

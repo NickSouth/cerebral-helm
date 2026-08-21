@@ -110,6 +110,35 @@ Five questions, each mapping to a case category:
   be **absent** — without that form an invented argument is invisible to scoring,
   because a call is otherwise graded only on what it does contain.
 
+## The composer suite
+
+`run-report.mjs` measures the passive tier instead of tool calling: a typed snapshot
+in, `ReportDocument` blocks out, validated with ajv against the real
+`report-document.schema.json`. It runs through the same runtime seam.
+
+```bash
+node evals/run-report.mjs --runtime=ollama   --model=qwen3.6:35b-mlx --reps=6
+node evals/run-report.mjs --runtime=llamacpp --model=<server alias> --reps=6
+```
+
+| Flag | Values | Purpose |
+|---|---|---|
+| `--runtime` | `ollama` (default), `llamacpp` | Who serves it. The pairing that settled the grammar question. |
+| `--format` | `schema` (default), `json`, `none` | `schema` uses the runtime's structured-output mode; `none` just asks in the prompt. |
+| `--reps` | integer, default 1 | Repeat the suite. **Use it.** See below. |
+| `--think` | `false` (default), `true` | Off by default: composition from a typed snapshot is rendering, not reasoning. |
+| `--snapshot` | a snapshot id | Narrow to one case. |
+
+**Read `leaf-type violations`, not just the pass rate.** It is printed on its own line
+because it is the number the runtime question turns on, and an aggregate pass rate
+buries it among dropped facts. With the same schema supplied, Ollama produced a
+schema-invalid document on **6 of 6** runs of one snapshot and llama.cpp on **0 of 6**.
+
+**One repetition proves nothing here.** Temperature is 0.4 in this suite, unlike the
+tool suites which pin it to 0. A single sample once showed a violation appearing and
+vanishing between runs and briefly read as a decisive result; six repetitions gave the
+real rates.
+
 ## Reading the output
 
 - **pass** — right tool, schema-valid arguments, expected values.
@@ -139,7 +168,6 @@ carefully, not a reason to discount them — confirmation fatigue is its own fai
 - `chat.mjs` is Ollama-only: it streams directly rather than through the runtime
   seam, because time-to-first-token is the number it exists to show. It is a REPL,
   not a measurement surface, so it was left alone when the second runtime landed.
-- `run-report.mjs` is Ollama-only too, and it is the one that still matters: the
-  composer is where Ollama's structured output was measured failing to enforce leaf
-  types. Putting it behind the seam is what lets that failure be tested against a
-  grammar rather than argued about.
+- The composer's `mustMention` check is a case-insensitive substring match over the
+  whole document, so it catches a dropped fact but not a misattributed one. A block
+  that names the right figure against the wrong label still passes.
