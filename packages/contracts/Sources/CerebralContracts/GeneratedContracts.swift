@@ -5063,6 +5063,15 @@ public extension Reference {
 /// whole shared contracts module. Hence the kind-prefixed field names on a block.
 // MARK: - CerebralHelmReportDocument
 public struct CerebralHelmReportDocument: Codable {
+    /// The document's blocks, in render order. `maxItems` is a SAFETY BOUND, not a design limit:
+    /// real reports use well under 30, and the cap exists because a grammar-constrained model
+    /// composing this document will happily emit valid blocks forever. Measured: one composition
+    /// produced 123 blocks — `line` and `metric` alternating, every optional field filled,
+    /// nonsense values throughout — until it exhausted the context and truncated mid-token,
+    /// which is UNPARSEABLE rather than merely invalid. Every array and string in this schema is
+    /// bounded for the same reason. A grammar enforces exactly what the schema says and removes
+    /// the model's incentive to be plausible, so anything left unbounded here becomes reachable
+    /// there.
     public let blocks: [Block]
     /// Whether this report was composed from a fetch the reader can repeat. The region shows a
     /// refresh control only for a report that says so — offering one on a document composed from
@@ -5166,7 +5175,8 @@ public struct Block: Codable {
     public let reportActions: [ReportActionElement]?
     /// A `scoreboard` block's two sides, away first.
     public let scoreboardSides: [ScoreboardSide]?
-    public let text, value: String?
+    public let text: String?
+    public let value: String?
 
     public init(blockKind: BlockKind, greetingSize: GreetingSize?, label: String?, leaderboardPreview: Int?, leaderboardRows: [LeaderboardRow]?, lineEmphasis: LineEmphasis?, listItems: [ListItem]?, metricTone: MetricTone?, reportAction: PurpleReportAction?, reportActions: [ReportActionElement]?, scoreboardSides: [ScoreboardSide]?, text: String?, value: String?) {
         self.blockKind = blockKind
@@ -5337,7 +5347,8 @@ public enum LineEmphasis: String, Codable {
 
 // MARK: - ListItem
 public struct ListItem: Codable {
-    public let color, meta: String?
+    public let color: String?
+    public let meta: String?
     /// A clickable destination inside a report. It is NEVER a URL — it names a registered quick
     /// action, resolved through the dispatch registry. Two reasons this is non-negotiable:
     /// opening a destination in a specific Chrome profile is a profile-scoped reference

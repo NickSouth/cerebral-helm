@@ -1241,6 +1241,17 @@ export interface Reference {
  * whole shared contracts module. Hence the kind-prefixed field names on a block.
  */
 export interface CerebralHelmReportDocument {
+    /**
+     * The document's blocks, in render order. `maxItems` is a SAFETY BOUND, not a design limit:
+     * real reports use well under 30, and the cap exists because a grammar-constrained model
+     * composing this document will happily emit valid blocks forever. Measured: one composition
+     * produced 123 blocks — `line` and `metric` alternating, every optional field filled,
+     * nonsense values throughout — until it exhausted the context and truncated mid-token,
+     * which is UNPARSEABLE rather than merely invalid. Every array and string in this schema is
+     * bounded for the same reason. A grammar enforces exactly what the schema says and removes
+     * the model's incentive to be plausible, so anything left unbounded here becomes reachable
+     * there.
+     */
     blocks: Block[];
     /**
      * Whether this report was composed from a fetch the reader can repeat. The region shows a

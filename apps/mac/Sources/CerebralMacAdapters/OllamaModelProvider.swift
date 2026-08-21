@@ -358,18 +358,5 @@ public struct OllamaModelProvider: ModelProvider {
     }
 }
 
-private extension JSONValue {
-    /// The `JSONSerialization`-compatible form, so a structural schema or argument object can ride
-    /// the request without a second encoding pass.
-    var anyValue: Any {
-        switch self {
-        case .null: return NSNull()
-        case let .bool(value): return value
-        case let .number(value): return value
-        case let .string(value): return value
-        case let .array(values): return values.map(\.anyValue)
-        case let .object(values): return values.mapValues(\.anyValue)
-        }
-    }
-}
+// `JSONValue.anyValue` now lives in ModelWireValue.swift — every provider concrete needs it.
 #endif

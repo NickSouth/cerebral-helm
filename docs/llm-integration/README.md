@@ -25,11 +25,19 @@ two disagree, PLAN.md and the charters win, and this file should be corrected.
   `llamacpp` adapter sits behind `evals/lib/runtime.mjs` alongside Ollama, gated by
   `scripts/evals-runtime.test.mjs`. `NIC-248` is measured: findings **11–15** below,
   with a standing recommendation to keep Ollama by default and require a grammar only
-  where document validity is load-bearing. `NIC-249` (the Swift `LlamaCPPModelProvider`)
-  is **not** built, and there is still no production caller for it — `NIC-250` remains
-  Backlog. Two shipped schemas were repaired to compile under GBNF at all; see the
-  converter trap under *Traps that cost time* before adding any `pattern` to a
-  model-facing input schema.
+  where document validity is load-bearing. `NIC-249` is built:
+  `apps/mac/Sources/CerebralMacAdapters/LlamaCPPModelProvider.swift`, the first provider
+  to report `enforcesResponseSchema: true` and the first to have earned it, with 20
+  offline tests plus an opt-in live one (`CEREBRAL_LLAMACPP_TESTS=1`). **Nothing calls
+  it** — `NIC-250` remains Backlog — which is the same shape phase 0 shipped the Ollama
+  adapter in. No model profile points at it either: `profiles.json` keys are a fixed
+  capability enum, so adopting this runtime means repointing an existing profile, and
+  that is a product decision rather than a consequence of the adapter existing.
+
+  Two shipped schemas were repaired to compile under GBNF at all, and the report block
+  schema was bounded to stop a grammar running away in it. See the converter trap under
+  *Traps that cost time* before adding any `pattern` to a model-facing input schema, and
+  finding 16 before pointing a grammar at any schema.
 - **Phase 0 is underway.** `NIC-225`: ADR-009 is written and the `ModelProvider` port
   exists in `packages/core/Sources/CerebralCore/Model/` (`NIC-241`, 2026-08-18) — protocol,
   request/usage types, `ModelDeadline`, `MockModelProvider`. The profile catalog is configuration
@@ -379,16 +387,30 @@ mirror of the benefit in finding 12. Ollama never produced this failure: its enf
 is too weak to follow the schema into the corner, which is an accidental point in its
 favour, not a designed one.
 
-**Consequences, none of them optional if a grammar reaches production:**
+**Consequences:**
 - Any grammar-constrained caller **must** set `ModelGenerationOptions.maxOutputTokens`.
-  The port already carries it; nothing currently sets it.
-- `report-document.schema.json` wants `maxItems` on `blocks`, a `maximum` on
-  `leaderboardPreview`, and ideally a per-kind discriminated union so optional fields
-  are not universally legal. **All three are contract changes and none has been made** —
-  the schema is unchanged as of this writing.
+  The port already carries it; nothing currently sets it. Still owed.
 - A truncated document is **unparseable, not invalid**, so a caller that only validates
   against the schema will not distinguish "the model was cut off" from "the model was
-  wrong." Those need different recovery.
+  wrong." Those need different recovery. Still owed.
+
+**Fixed 2026-08-20 — the schema is now bounded, and it worked.** Every array, free-text
+string and integer in `report-document.schema.json` carries a bound: `blocks` at 64
+(deterministic composers use well under 30), `scoreboardSides` at 2 (semantic — away and
+home), `leaderboardRows` at 256 (deliberately generous: that array is the *complete*
+field, and a full golf field runs to ~156), `leaderboardPreview` at 100, and lengths from
+32 to 2048 on the strings. Re-measured over 18 compositions: **0 unparseable, 0 leaf-type
+violations, max 13 blocks against the cap of 64, and peak output down from 15,655 tokens
+to 790.** `scripts/contracts-report.test.mjs` gates it, scoped to this schema alone.
+
+> **Correction — the discriminated union recommended in the first draft of this finding
+> was wrong, and was not made.** The schema's own documentation rules it out: *"a union
+> would make adding a block kind a breaking contract change, and the renderer already has
+> to survive a malformed block once a model writes these."* The renderer skips a kind it
+> does not know, which is what stops a model breaking the dashboard. The flat shape is a
+> deliberate design decision, the correct fix was bounding rather than restructuring, and
+> the gate now asserts the flat shape stays. Bounds are validation-only, so the generated
+> TypeScript and Swift changed by doc comment alone — a union would have rewritten both.
 
 #### Runtime recommendation
 
@@ -405,9 +427,10 @@ a document's validity is load-bearing.** The evidence supports exactly that and 
   where an invalid document is not a caught error but a broken dashboard.
   `ModelRuntimeCapabilities.enforcesResponseSchema` exists precisely so a caller can
   require this, and it is now measured rather than assumed: `false` for Ollama is the
-  honest value, `true` for llama.cpp is earned. **But see finding 16** — pointing a
-  grammar at the block schema as it stands trades a 33% leaf-type failure rate for a
-  ~7% runaway rate. The bounds come first; the grammar is only a win afterwards.
+  honest value, `true` for llama.cpp is earned. The prerequisite from finding 16 is now
+  met — the block schema is bounded, and the grammar path measured 0 invalid and 0
+  unparseable over 18 compositions. **A token cap is still owed**; nothing sets
+  `maxOutputTokens` yet.
 - **What this does not settle.** Whether llama.cpp's ~40% slower composition is
   acceptable on a dashboard is a product judgement nobody has made yet, and it may be
   cheaper to keep Ollama and *repair* invalid documents than to switch runtimes for the
@@ -418,6 +441,13 @@ a document's validity is load-bearing.** The evidence supports exactly that and 
 
 ## Traps that cost time
 
+- **A streamed tool call from llama.cpp arrives as argument FRAGMENTS, not a whole
+  call.** Six chunks keyed by `index` — `{`, `"title":"`, `Stand`, `up`, `"`, `}` — where
+  Ollama sends one complete call per chunk. An adapter that treats a fragment as a call
+  emits six malformed proposals instead of one good one. Worse, the **terminal chunk
+  carries an empty `choices` array** alongside the usage accounting, so indexing
+  `choices[0]` crashes on exactly the chunk that reports the cost. Both verified by probe
+  before the Swift adapter was written, and both are covered by its tests.
 - **llama.cpp's JSON-Schema→GBNF converter is stricter than the schemas this repo
   ships**, and it fails the whole request, not the offending field. Two constructs it
   rejects: a `pattern` that is not fully anchored (`^https://` → *"Pattern must start

@@ -17,6 +17,7 @@ runCommand("node", ["--test", "./scripts/config-token-resolution.test.mjs"]);
 runCommand("node", ["--test", "./scripts/config-reference-resolution.test.mjs"]);
 runCommand("node", ["--test", "./scripts/quick-action-registry.test.mjs"]);
 runCommand("node", ["--test", "./scripts/contracts-tool.test.mjs"]);
+runCommand("node", ["--test", "./scripts/contracts-report.test.mjs"]);
 runCommand("node", ["--test", "./scripts/fixture-catalog.test.mjs"]);
 // The eval SUITE stays opt-in (it needs ~45 GB of models), but its descriptor ->
 // manifest projection is pure and gated here: a defect in it does not fail an eval

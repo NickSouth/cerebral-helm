@@ -13,18 +13,22 @@
   "properties": {
     "schemaVersion": {
       "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "maxLength": 16
     },
     "reportId": {
       "description": "The quick-action id this document was composed for, so the renderer can key its reveal and the region can title itself.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$"
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "maxLength": 128
     },
     "blocks": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/reportBlock"
-      }
+      },
+      "maxItems": 64,
+      "description": "The document's blocks, in render order. `maxItems` is a SAFETY BOUND, not a design limit: real reports use well under 30, and the cap exists because a grammar-constrained model composing this document will happily emit valid blocks forever. Measured: one composition produced 123 blocks \u2014 `line` and `metric` alternating, every optional field filled, nonsense values throughout \u2014 until it exhausted the context and truncated mid-token, which is UNPARSEABLE rather than merely invalid. Every array and string in this schema is bounded for the same reason. A grammar enforces exactly what the schema says and removes the model's incentive to be plausible, so anything left unbounded here becomes reachable there."
     },
     "refreshable": {
       "description": "Whether this report was composed from a fetch the reader can repeat. The region shows a refresh control only for a report that says so \u2014 offering one on a document composed from ambient state would promise something it cannot do.",
@@ -43,7 +47,8 @@
       "properties": {
         "action": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*$"
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 128
         },
         "params": {
           "type": "object",
@@ -117,13 +122,16 @@
       "properties": {
         "text": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 512
         },
         "meta": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 128
         },
         "color": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 32
         },
         "status": {
           "$ref": "#/$defs/reportItemStatus"
@@ -146,13 +154,16 @@
           "$ref": "#/$defs/reportBlockKind"
         },
         "text": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 2048
         },
         "label": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 128
         },
         "value": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 128
         },
         "greetingSize": {
           "$ref": "#/$defs/reportGreetingSize"
@@ -167,7 +178,8 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/reportListItem"
-          }
+          },
+          "maxItems": 64
         },
         "reportAction": {
           "$ref": "#/$defs/reportActionReference"
@@ -176,26 +188,30 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/reportActionReference"
-          }
+          },
+          "maxItems": 8
         },
         "scoreboardSides": {
           "description": "A `scoreboard` block's two sides, away first.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/reportScoreboardSide"
-          }
+          },
+          "maxItems": 2
         },
         "leaderboardRows": {
           "description": "A `leaderboard` block's ranked field, complete rather than truncated: `leaderboardPreview` decides how many show, so expanding needs no second fetch.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/reportLeaderboardRow"
-          }
+          },
+          "maxItems": 256
         },
         "leaderboardPreview": {
           "description": "How many rows show before the reader expands. Absent shows all of them.",
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 100
         }
       }
     },
@@ -211,23 +227,28 @@
       "properties": {
         "sideAbbreviation": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 64
         },
         "sideName": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 64
         },
         "sideScore": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 64
         },
         "sideColor": {
           "type": "string",
-          "description": "Bare hex, no leading '#', as the provider supplies it."
+          "description": "Bare hex, no leading '#', as the provider supplies it.",
+          "maxLength": 64
         },
         "sideIsHome": {
           "type": "boolean"
         },
         "sideRecord": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 64
         }
       }
     },
@@ -242,18 +263,22 @@
       "properties": {
         "rowPosition": {
           "type": "string",
-          "description": "Displayed position ('T4'). Absent on a finished or unranked field."
+          "description": "Displayed position ('T4'). Absent on a finished or unranked field.",
+          "maxLength": 64
         },
         "rowName": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 64
         },
         "rowScore": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 64
         },
         "rowThru": {
           "type": "string",
-          "description": "Holes played, only while a round is in progress."
+          "description": "Holes played, only while a round is in progress.",
+          "maxLength": 64
         }
       }
     }
