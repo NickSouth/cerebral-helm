@@ -46,19 +46,46 @@ export function loadCatalog() {
     .sort((a, b) => a.descriptor.id.localeCompare(b.descriptor.id));
 }
 
+/// JSON Schema keywords that describe the document rather than the shape.
+///
+/// They cost prompt tokens and some runtimes reject them outright.
+const META_KEYWORDS = new Set(["$schema", "$id", "title"]);
+
+/// Keywords whose value is a MAP from author-chosen names to subschemas.
+///
+/// The distinction is load-bearing, not pedantry. Inside one of these the keys are
+/// PROPERTY NAMES, not keywords, and filtering them by keyword deletes real fields:
+/// stripping `title` at every depth removed the required `title` property from both
+/// `note.capture` and `calendar.createEvent`, so the manifest required a field it
+/// never defined and no model could satisfy it. That was mistaken for a model
+/// failure and cited as evidence for grammar-constrained decoding. `description`
+/// under `--descriptions=purpose` is the same bug waiting for a schema to trip it.
+const SCHEMA_MAP_KEYWORDS = new Set(["properties", "$defs", "definitions", "patternProperties"]);
+
 /// Strips the JSON Schema keywords a tool-calling API rejects or ignores.
 ///
-/// `$schema`/`$id`/`title` are meta, not shape. They cost prompt tokens and some
-/// runtimes reject them outright. `description` is kept: it is load-bearing for a
-/// local model choosing between four near-identical browser-opening tools.
+/// `description` is kept in `rich` mode: it is load-bearing for a local model
+/// choosing between four near-identical browser-opening tools.
 function sanitiseSchema(schema, { keepDescriptions }) {
   if (schema === null || typeof schema !== "object") return schema;
   if (Array.isArray(schema)) return schema.map((item) => sanitiseSchema(item, { keepDescriptions }));
 
   const out = {};
   for (const [key, value] of Object.entries(schema)) {
-    if (key === "$schema" || key === "$id" || key === "title") continue;
+    if (META_KEYWORDS.has(key)) continue;
     if (key === "description" && !keepDescriptions) continue;
+
+    if (SCHEMA_MAP_KEYWORDS.has(key) && value !== null && typeof value === "object" && !Array.isArray(value)) {
+      // Recurse into each subschema; never keyword-filter the name that addresses it.
+      out[key] = Object.fromEntries(
+        Object.entries(value).map(([name, subschema]) => [
+          name,
+          sanitiseSchema(subschema, { keepDescriptions }),
+        ])
+      );
+      continue;
+    }
+
     out[key] = sanitiseSchema(value, { keepDescriptions });
   }
   return out;

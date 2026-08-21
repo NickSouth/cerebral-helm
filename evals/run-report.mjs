@@ -13,15 +13,21 @@
 //   3. Is it fast enough to sit on a dashboard?
 //   4. Is the prose any good? Not automatable — printed for a human to judge.
 //
-// `--format=schema` uses the runtime's structured-output mode (the schema constrains
-// decoding); `--format=none` asks for JSON in the prompt and parses whatever comes
-// back. Comparing the two previews the grammar-constrained-decoding question that
-// the llama.cpp adapter exists to settle.
+// `--format=schema` uses the runtime's structured-output mode; `--format=none` asks
+// for JSON in the prompt and parses whatever comes back. `--runtime` chooses who
+// serves it, and that pairing is what settled the grammar question: with the SAME
+// schema supplied, Ollama produced a schema-invalid document on 6 of 6 runs of one
+// snapshot and llama.cpp on 0 of 6, because only the latter compiles the schema to a
+// grammar. Ollama's constrained mode scored no better than its unconstrained one.
+//
+// Which is why `leaf-type violations` is reported on its own line: it is the number
+// the runtime question turns on, and an aggregate pass rate buries it among dropped
+// facts. Use `--reps` — temperature is 0.4 here and one sample decides nothing.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import Ajv2020 from "ajv/dist/2020.js";
+import { RUNTIMES, assertRuntimeReady } from "./lib/runtime.mjs";
 
-const OLLAMA_HOST = process.env.OLLAMA_HOST ?? "http://localhost:11434";
 const SCHEMA_PATH = new URL(
   "../packages/contracts/schemas/reports/report-document.schema.json",
   import.meta.url
@@ -76,11 +82,30 @@ function parseArgs(argv) {
   // spends thousands of tokens deliberating before emitting the document — measured
   // at 80–130s per report, which is unusable on a dashboard. Composition from an
   // already-typed snapshot is not a reasoning task; it is a rendering task.
-  const options = { model: "qwen3.6:35b-mlx", format: "schema", snapshot: null, json: null, think: "false" };
+  //
+  // `reps` defaults to 1 for a quick look, but a single composition proves nothing:
+  // temperature is 0.4 here, unlike the tool suites which pin it to 0. One sample once
+  // showed a leaf-type violation appearing and vanishing between runs and briefly read
+  // as a decisive result; six repetitions gave the real rates. Use `--reps` before
+  // drawing any conclusion.
+  const options = {
+    runtime: "ollama",
+    model: "qwen3.6:35b-mlx",
+    format: "schema",
+    snapshot: null,
+    json: null,
+    think: "false",
+    reps: "1",
+  };
   for (const arg of argv) {
     const [key, value] = arg.replace(/^--/, "").split("=");
     if (key in options) options[key] = value;
     else throw new Error(`Unknown option: ${arg}`);
+  }
+  if (!(options.runtime in RUNTIMES)) {
+    throw new Error(
+      `Unknown runtime "${options.runtime}". Known: ${Object.keys(RUNTIMES).join(", ")}`
+    );
   }
   return options;
 }
@@ -159,41 +184,23 @@ function renderPreview(document) {
   return lines.join("\n");
 }
 
-async function compose({ model, snapshot, formatMode, schema, think }) {
-  const started = performance.now();
-  const body = {
+/// The snapshot as the model receives it.
+function userContent(snapshot) {
+  return (
+    `reportId: ${snapshot.reportId}\n\n${snapshot.instruction}\n\n` +
+    `SNAPSHOT:\n${JSON.stringify(snapshot.snapshot, null, 2)}`
+  );
+}
+
+async function compose({ runtime, model, snapshot, formatMode, schema, think }) {
+  return RUNTIMES[runtime].compose({
     model,
+    system: SYSTEM_PROMPT,
+    user: userContent(snapshot),
+    responseSchema: schema,
+    formatMode,
     think,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content:
-          `reportId: ${snapshot.reportId}\n\n${snapshot.instruction}\n\n` +
-          `SNAPSHOT:\n${JSON.stringify(snapshot.snapshot, null, 2)}`,
-      },
-    ],
-    stream: false,
-    options: { temperature: 0.4, num_ctx: 16384 },
-  };
-  if (formatMode === "schema") body.format = schema;
-  else if (formatMode === "json") body.format = "json";
-
-  const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
   });
-  if (!response.ok) {
-    throw new Error(`Ollama ${response.status}: ${(await response.text()).slice(0, 300)}`);
-  }
-
-  const payload = await response.json();
-  return {
-    text: payload.message?.content ?? "",
-    wallMs: Math.round(performance.now() - started),
-    outputTokens: payload.eval_count ?? null,
-  };
 }
 
 async function main() {
@@ -226,15 +233,27 @@ async function main() {
   if (options.snapshot) snapshots = snapshots.filter((s) => s.id === options.snapshot);
   if (!snapshots.length) throw new Error("No snapshots matched.");
 
-  console.log(`${snapshots.length} snapshots · ${options.model} · format=${options.format}\n`);
+  await assertRuntimeReady(options.runtime, options.model);
+
+  const reps = Math.max(1, Number(options.reps) || 1);
+  console.log(
+    `${snapshots.length} snapshots · ${options.runtime} · ${options.model} · ` +
+      `format=${options.format} · think=${options.think} · ${reps} rep${reps === 1 ? "" : "s"}\n`
+  );
 
   const rows = [];
+  // Repetitions are the OUTER loop so a run reads as successive passes over the same
+  // suite rather than the same snapshot several times in a row. Composer results vary
+  // at temperature 0.4; the summary reports the rate, not the last sample.
+  for (let rep = 0; rep < reps; rep += 1) {
+    if (reps > 1) console.log(`${BOLD}── rep ${rep + 1}/${reps}${RESET}`);
   for (const snapshot of snapshots) {
     process.stdout.write(`${BOLD}── ${snapshot.id}${RESET}\n`);
 
     let result;
     try {
       result = await compose({
+        runtime: options.runtime,
         model: options.model,
         snapshot,
         formatMode: options.format,
@@ -243,7 +262,7 @@ async function main() {
       });
     } catch (error) {
       console.log(`  ${YELLOW}error: ${error.message}${RESET}\n`);
-      rows.push({ id: snapshot.id, outcome: "error", detail: error.message });
+      rows.push({ id: snapshot.id, rep, outcome: "error", detail: error.message });
       continue;
     }
 
@@ -288,32 +307,62 @@ async function main() {
     if (unsourced.length) {
       console.log(`  ${YELLOW}REVIEW — numbers with no source in snapshot: ${unsourced.join(", ")}${RESET}`);
     }
-    if (document) console.log(`\n${renderPreview(document)}\n`);
+    // The rendered preview exists for a human to judge the prose. Over repetitions it
+    // is noise, so only a single-rep run prints it.
+    if (document && reps === 1) console.log(`\n${renderPreview(document)}\n`);
 
     rows.push({
       id: snapshot.id,
+      rep,
       outcome,
+      // The specific defect the grammar question turns on: a leaf typed as string
+      // arriving as a number. Recorded separately from the outcome because it is the
+      // measurement, and an aggregate pass rate buries it.
+      leafTypeErrors: schemaErrors.filter((e) => e.keyword === "type").map((e) => `${e.instancePath} ${e.message}`),
       wallMs: result.wallMs,
+      outputTokens: result.outputTokens ?? null,
       blocks: document?.blocks?.length ?? 0,
       unsourced,
-      document,
+      // The raw text, but only when it could not be parsed. Same reasoning the tool
+      // suite records `actualArgs`: without it an unparseable outcome has to be
+      // reproduced by hand, and a rare one may not reproduce at all. Truncation, an
+      // empty completion, and a fenced document are three different bugs that look
+      // identical in the outcome column.
+      rawText: parseError ? result.text : undefined,
+      document: reps === 1 ? document : undefined,
     });
+  }
   }
 
   const passed = rows.filter((row) => row.outcome === "pass").length;
+  const leafViolations = rows.filter((row) => row.leafTypeErrors?.length).length;
+  const wall = rows.map((row) => row.wallMs).filter(Boolean).sort((a, b) => a - b);
   console.log(`${"=".repeat(60)}`);
-  console.log(`${passed}/${rows.length} composed cleanly · format=${options.format}`);
+  console.log(
+    `${passed}/${rows.length} composed cleanly · ${options.runtime} · format=${options.format}`
+  );
+  // Called out on its own line: this is the number the runtime comparison turns on,
+  // and it is invisible in a pass rate that also counts dropped facts.
+  console.log(
+    `leaf-type violations: ${leafViolations}/${rows.length}` +
+      (wall.length ? `   median ${wall[Math.floor(wall.length / 2)]}ms` : "")
+  );
+  if (reps > 1) {
+    const byOutcome = {};
+    for (const row of rows) byOutcome[row.outcome] = (byOutcome[row.outcome] ?? 0) + 1;
+    console.log(
+      `outcomes: ${Object.entries(byOutcome).map(([k, v]) => `${k} ${v}`).join(" · ")}`
+    );
+  }
 
   if (options.json) {
     writeFileSync(options.json, JSON.stringify({ options, rows }, null, 2));
     console.log(`wrote ${options.json}`);
   }
 
-  await fetch(`${OLLAMA_HOST}/api/generate`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ model: options.model, keep_alive: 0 }),
-  }).catch(() => {});
+  // Leave the machine as we found it. A no-op on llama.cpp, where the memory is the
+  // process — stopping the server is the operator's job, not the harness's.
+  await RUNTIMES[options.runtime].unload?.(options.model);
 }
 
 main().catch((error) => {

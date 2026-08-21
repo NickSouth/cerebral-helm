@@ -472,8 +472,27 @@ compilation, masking invalid tokens at every sampling step. MLX has no core
 equivalent — constrained decoding is a bolt-on (Outlines, lm-format-enforcer) —
 but MLX runs 15–30% faster and ~10% leaner on Apple Silicon.
 
-This is guaranteed-valid tool calls versus speed, and it is unresolved. It is
-settled by measurement in phase 1, and it is the reason **the provider port must
+~~This is guaranteed-valid tool calls versus speed, and it is unresolved.~~
+
+**Resolved 2026-08-20 by measurement — and the framing above was wrong.** There is no
+accuracy-versus-speed trade on tool calling: the two runtimes scored **identically**
+(36/37, the same single failure, the same per-category results), and llama.cpp finished
+a *faster* median turn (3401 ms vs 4065 ms) despite decoding ~23% slower per token,
+because a grammar leaves no room for tokens outside a valid call.
+
+The real cost lands on **composition**, where llama.cpp ran ~40% slower — and that is
+precisely the surface where the grammar earns its keep: over six repetitions of the same
+composer snapshot, Ollama's `format: <schema>` mode produced a schema-invalid document
+**6 times out of 6**, and llama.cpp **0 out of 6**. Ollama's constrained mode was
+statistically indistinguishable from no constraint at all (6 violations vs 5).
+
+Scope the claim carefully: a grammar guarantees **structural validity only**. It does
+not prevent an omitted fact, a wrong value, or a schema-valid but incorrect tool choice
+— all three were observed under a grammar.
+
+The measured numbers, the quantisation caveat, and the standing recommendation (keep
+Ollama by default; require a grammar where document validity is load-bearing) are in
+[README.md](README.md), findings 11–15. This remains the reason **the provider port must
 abstract the runtime, not merely the model.**
 
 ### What is expected to churn
