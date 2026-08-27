@@ -196,6 +196,14 @@ let package = Package(
             path: "Tests/ToolsTests"
         ),
         .testTarget(
+            name: "CoreReportsTests",
+            dependencies: [
+                "CerebralCore",
+                "CerebralContracts",
+            ],
+            path: "Tests/CoreReportsTests"
+        ),
+        .testTarget(
             name: "ConfigTests",
             dependencies: [
                 "CerebralCore",
