@@ -18,6 +18,7 @@ const expectedSchemaNames = new Set([
   "config-validation-error.schema.json",
   "mode.schema.json",
   "mode-override.schema.json",
+  "model-composer.schema.json",
   "model-profiles.schema.json",
   "settings-patch.schema.json"
 ]);
@@ -182,4 +183,38 @@ test("valid settings and validation-error fixtures cover supported shape", () =>
   assert.equal(validationError.file, "modes/developer.json");
   assert.equal(validationError.field, "/label");
   assert.equal(validationError.expected, "string");
+});
+
+// The composer's editorial block cap sits BENEATH the report contract's own safety cap. The two
+// live in different schema families and nothing else relates them, so a later widening of one
+// could silently outrun the other — a composer allowed sixty-five blocks against a document that
+// permits sixty-four is configuration that validates and then produces an invalid report.
+test("the composer block cap can never exceed the report document's own", () => {
+  const composerSchema = readJson(path.join(schemasRoot, "model-composer.schema.json"));
+  const reportSchema = readJson(
+    path.join(contractsRoot, "schemas", "reports", "report-document.schema.json")
+  );
+
+  const composerCap =
+    composerSchema.$defs.composerReport.properties.composerMaxBlocks.maximum;
+  const documentCap = reportSchema.properties.blocks.maxItems;
+
+  assert.equal(typeof composerCap, "number");
+  assert.equal(typeof documentCap, "number");
+  assert.ok(
+    composerCap <= documentCap,
+    `composerMaxBlocks maximum (${composerCap}) must not exceed the report document's blocks cap (${documentCap})`
+  );
+});
+
+// AC-11: a grammar over an under-constrained schema emits valid output forever — measured at 123
+// blocks and 15,655 tokens before the context wall truncated the document mid-token. Requiring the
+// cap in the SCHEMA is what stops a caller shipping without one, so the requirement is pinned here
+// rather than left to whoever writes the next composer entry.
+test("every composer entry is required to cap its output tokens", () => {
+  const composerSchema = readJson(path.join(schemasRoot, "model-composer.schema.json"));
+  const required = new Set(composerSchema.$defs.composerReport.required);
+
+  assert.ok(required.has("composerMaxOutputTokens"));
+  assert.ok(required.has("composerMaxBlocks"));
 });

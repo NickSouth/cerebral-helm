@@ -94,7 +94,8 @@ public struct ConfigLoader {
             modes: mergedModes,
             agents: base.agents,
             toolIDs: base.toolIDs,
-            modelProfiles: base.modelProfiles
+            modelProfiles: base.modelProfiles,
+            modelComposers: base.modelComposers
         )
         persistLastKnownGood(active)
         persistSettingsMetadata(SettingsMetadata(

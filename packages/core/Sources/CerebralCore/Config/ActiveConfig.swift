@@ -17,24 +17,38 @@ public struct ActiveConfig: Codable {
     /// existed — silently discarding a working configuration, which is exactly what the
     /// last-known-good mechanism is there to prevent.
     public let modelProfiles: CerebralHelmModelProfileCatalog?
+    /// How a model composes each report (NIC-250, NIC-252), or nil when none is configured.
+    ///
+    /// Optional for the same reason `modelProfiles` is, and it matters for the same reason: this
+    /// snapshot is persisted as the last-known-good configuration, so a required field would fail
+    /// to decode every snapshot written before this existed — discarding a working configuration.
+    public let modelComposers: CerebralHelmModelComposerCatalog?
 
     public init(
         defaults: CerebralHelmApplicationDefaults,
         modes: [CerebralHelmModeConfig],
         agents: [CerebralHelmAgentSurfaceConfig],
         toolIDs: [String],
-        modelProfiles: CerebralHelmModelProfileCatalog? = nil
+        modelProfiles: CerebralHelmModelProfileCatalog? = nil,
+        modelComposers: CerebralHelmModelComposerCatalog? = nil
     ) {
         self.defaults = defaults
         self.modes = modes
         self.agents = agents
         self.toolIDs = toolIDs
         self.modelProfiles = modelProfiles
+        self.modelComposers = modelComposers
     }
 
     /// The resolved profile catalog in the port's own vocabulary, or nil when none is configured.
     public var modelProfileCatalog: ModelProfileCatalog? {
         modelProfiles.map(ModelProfileCatalog.init)
+    }
+
+    /// The composer configured for `reportID`, or nil when that report is composed
+    /// deterministically. A report with no entry is how a surface opts out of model composition.
+    public func modelComposer(reportID: String) -> ComposerReport? {
+        modelComposers?.composerReports.first { $0.composerReportID == reportID }
     }
 
     /// The merged mode config for `id`, or nil if no such mode is configured.

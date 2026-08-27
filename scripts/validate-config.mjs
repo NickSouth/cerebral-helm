@@ -454,6 +454,53 @@ function validateModelProfiles(document, relativePath, errors) {
   }
 }
 
+// Model composers (NIC-250 / NIC-252). Also OPTIONAL: with no catalog no report is
+// model-composed. What is checked here is what the JSON Schema cannot state alone — one
+// entry per report, and a capability profile that actually resolves. A composer naming a
+// profile no catalog defines is configuration that cannot run, and it would fail at the
+// moment the user opened the report rather than at validation.
+function validateModelComposers(document, relativePath, errors, configuredProfileIds) {
+  assert(typeof document.schemaVersion === "string", `${relativePath}: schemaVersion must be a string.`, errors);
+  assert(
+    typeof document.composerSystemPrompt === "string" && document.composerSystemPrompt.length > 0,
+    `${relativePath}: composerSystemPrompt must be a non-empty string.`,
+    errors
+  );
+  assert(Array.isArray(document.composerReports), `${relativePath}: composerReports must be an array.`, errors);
+
+  const seen = new Set();
+  for (const composer of document.composerReports ?? []) {
+    const id = composer?.composerReportId;
+    assert(typeof id === "string", `${relativePath}: every composer needs a composerReportId.`, errors);
+    assert(!seen.has(id), `${relativePath}: report "${id}" is composed more than once.`, errors);
+    seen.add(id);
+
+    assert(
+      typeof composer?.composerInstruction === "string" && composer.composerInstruction.length > 0,
+      `${relativePath}: report "${id}" must carry a composerInstruction.`,
+      errors
+    );
+    // Required, not defaulted. A grammar over an under-constrained schema emits valid output
+    // forever — measured at 123 blocks and 15,655 tokens before the context wall truncated the
+    // document mid-token, which is unparseable rather than merely invalid.
+    assert(
+      Number.isInteger(composer?.composerMaxOutputTokens),
+      `${relativePath}: report "${id}" must cap composerMaxOutputTokens — an uncapped composition can run to the context wall and truncate mid-token.`,
+      errors
+    );
+    assert(
+      Number.isInteger(composer?.composerMaxBlocks),
+      `${relativePath}: report "${id}" must cap composerMaxBlocks.`,
+      errors
+    );
+    assert(
+      configuredProfileIds.size === 0 || configuredProfileIds.has(composer?.modelProfileId),
+      `${relativePath}: report "${id}" names modelProfileId "${composer?.modelProfileId}", which no model profile configures.`,
+      errors
+    );
+  }
+}
+
 function validateTool(document, relativePath, errors) {
   assert(typeof document.id === "string", `${relativePath}: id must be a string.`, errors);
   assert(typeof document.risk === "string", `${relativePath}: risk must be a string.`, errors);
@@ -499,8 +546,22 @@ export function validateRepositoryConfig() {
   const agentFiles = collectJsonFiles(path.join(configRoot, "agents"));
   const toolFiles = collectJsonFiles(path.join(configRoot, "tools"));
   const descriptorFiles = collectJsonFiles(path.join(configRoot, "tools", "descriptors"));
-  const modelProfilesDir = path.join(configRoot, "models");
-  const modelProfileFiles = fs.existsSync(modelProfilesDir) ? collectJsonFiles(modelProfilesDir) : [];
+  // `config/models/` holds two DIFFERENT document families, so it is routed by filename rather
+  // than validated wholesale. Before this, every JSON file here was checked as a profile catalog,
+  // which meant a second family dropped in beside it would be reported as a malformed catalog —
+  // and, worse, an unrecognised filename would be validated as one silently. Both are named now.
+  const modelsDir = path.join(configRoot, "models");
+  const modelFiles = fs.existsSync(modelsDir) ? collectJsonFiles(modelsDir) : [];
+  const modelProfileFiles = modelFiles.filter((filePath) => path.basename(filePath) === "profiles.json");
+  const modelComposerFiles = modelFiles.filter((filePath) => path.basename(filePath) === "composer.json");
+  for (const filePath of modelFiles) {
+    const name = path.basename(filePath);
+    assert(
+      name === "profiles.json" || name === "composer.json",
+      `models/${name}: unrecognised model config file. Expected profiles.json or composer.json.`,
+      errors
+    );
+  }
   const workflowsDir = path.join(configRoot, "workflows");
   const workflowFiles = fs.existsSync(workflowsDir) ? collectJsonFiles(workflowsDir) : [];
   const simulationFiles = collectJsonFiles(path.join(fixtureRoot, "simulations"));
@@ -521,6 +582,20 @@ export function validateRepositoryConfig() {
 
   for (const filePath of modelProfileFiles) {
     validateModelProfiles(readJson(filePath), path.relative(configRoot, filePath), errors);
+  }
+
+  // The profiles a composer may name. Empty when this machine ships no catalog, in which case the
+  // cross-reference is skipped rather than failing every composer — a machine with no model
+  // configured is a valid machine, and the composer file is inert there.
+  const configuredProfileIds = new Set(
+    modelProfileFiles.flatMap((filePath) =>
+      (readJson(filePath).modelProfiles ?? []).map((profile) => profile?.id).filter(Boolean)
+    )
+  );
+  for (const filePath of modelComposerFiles) {
+    validateModelComposers(
+      readJson(filePath), path.relative(configRoot, filePath), errors, configuredProfileIds
+    );
   }
 
   for (const filePath of simulationFiles) {
@@ -571,7 +646,8 @@ export function validateRepositoryConfig() {
     toolCount: toolFiles.length,
     workflowCount: workflowFiles.length,
     simulationCount: simulationFiles.length,
-    modelProfileFileCount: modelProfileFiles.length
+    modelProfileFileCount: modelProfileFiles.length,
+    modelComposerFileCount: modelComposerFiles.length
   };
 }
 
@@ -579,7 +655,7 @@ export function main() {
   const summary = validateRepositoryConfig();
 
   console.log(
-    `Validated ${summary.modeCount} modes, ${summary.agentCount} agents, ${summary.toolCount} tools, ${summary.workflowCount} workflows, ${summary.simulationCount} simulations, and ${summary.modelProfileFileCount} model-profile files.`
+    `Validated ${summary.modeCount} modes, ${summary.agentCount} agents, ${summary.toolCount} tools, ${summary.workflowCount} workflows, ${summary.simulationCount} simulations, ${summary.modelProfileFileCount} model-profile files, and ${summary.modelComposerFileCount} model-composer files.`
   );
   console.log(`Defaults file: ${summary.defaultsPath}`);
 }

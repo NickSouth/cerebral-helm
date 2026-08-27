@@ -1009,6 +1009,104 @@ export interface Widgets {
 }
 
 /**
+ * How a model composes each Report-archetype document: the shared system prompt, and the
+ * per-report instruction, capability profile and generation budget. The passive tier
+ * composes prose and proposals and executes nothing, so nothing here grants capability — it
+ * is editorial direction plus a budget.
+ *
+ * One file rather than a prompt embedded in Swift, because two consumers read it: the host
+ * composer and `evals/run-report.mjs`. A gate measuring a different prompt from the one
+ * that ships is not a gate. Eval THRESHOLDS deliberately do not live here — they are the
+ * harness's own policy, the app never reads them, and shipping them inside the packaged app
+ * buys nothing.
+ *
+ * Optional, like the profile catalog: with no such file no report is model-composed and the
+ * app runs exactly as it does today.
+ */
+export interface CerebralHelmModelComposerCatalog {
+    composerReports: ComposerReport[];
+    /**
+     * Shared across every composed report, so all of them hit one prefix-cache prefix. Steady
+     * state measured 98.7% cached, turning ~46 s of cold prefill into ~1.5 s; interleaving
+     * distinct prefixes dropped a 1,819-token cached prefix to 345. A per-report system prompt
+     * would forfeit that, which is why editorial direction goes in `composerInstruction`
+     * instead.
+     */
+    composerSystemPrompt: string;
+    extensions?:          { [key: string]: any };
+    schemaVersion:        string;
+}
+
+export interface ComposerReport {
+    /**
+     * Editorial direction for this one report — what to lead with, what to do when there is
+     * nothing to report, when to propose. Per-report rather than in the system prompt so every
+     * composer shares one cache prefix.
+     */
+    composerInstruction: string;
+    /**
+     * How many blocks this report may contain. A second, tighter bound beneath the report
+     * schema's own `blocks` cap of 64: that one is a safety limit against a runaway, this one
+     * is editorial — a brief holding thirty blocks is a failure of judgement rather than of
+     * validity. `scripts/contracts-config.test.mjs` asserts this maximum never exceeds the
+     * report schema's.
+     */
+    composerMaxBlocks: number;
+    /**
+     * REQUIRED, deliberately. A grammar over an under-constrained schema will emit valid output
+     * forever: one measured composition produced 123 blocks and ran to 15,655 tokens before it
+     * hit the context wall and truncated mid-token — UNPARSEABLE rather than merely invalid.
+     * Real compositions emit ~250 tokens and peaked at 790 once the report schema was bounded,
+     * so this is headroom, not a target.
+     */
+    composerMaxOutputTokens: number;
+    /**
+     * The quick-action id this composer writes, matching `reportId` in
+     * report-document.schema.json. A report with no entry here is composed deterministically,
+     * which is how a surface opts out.
+     */
+    composerReportId: string;
+    /**
+     * Defaults to 0.4 when absent. Note that composition at any non-zero temperature makes a
+     * SINGLE run prove nothing: one sample flipped a leaf-type violation on and off and briefly
+     * read as a decisive result, where six repetitions gave the real rates. Tool-selection
+     * cases pin temperature to 0 and are far more stable — do not carry that intuition here.
+     */
+    composerTemperature?: number;
+    extensions?:          { [key: string]: any };
+    /**
+     * The capability profile product logic asks for. 'local' is not a capability but a policy:
+     * a surface that must never leave this machine even if a cloud escape hatch is later
+     * enabled.
+     *
+     * Defined once and referenced, here and from model-composer.schema.json, because there is
+     * one capability-profile vocabulary rather than two that happen to agree. Stating it twice
+     * would also mint two generated enums with identical cases, which codegen then unifies
+     * under whichever property name it reaches first — silently renaming the other schema's
+     * type.
+     */
+    modelProfileId: ModelProfileID;
+}
+
+/**
+ * The capability profile product logic asks for. 'local' is not a capability but a policy:
+ * a surface that must never leave this machine even if a cloud escape hatch is later
+ * enabled.
+ *
+ * Defined once and referenced, here and from model-composer.schema.json, because there is
+ * one capability-profile vocabulary rather than two that happen to agree. Stating it twice
+ * would also mint two generated enums with identical cases, which codegen then unifies
+ * under whichever property name it reaches first — silently renaming the other schema's
+ * type.
+ */
+export enum ModelProfileID {
+    Balanced = "balanced",
+    Deep = "deep",
+    Fast = "fast",
+    Local = "local",
+}
+
+/**
  * Which model serves each capability profile, how much context it may allocate, and how
  * long it stays resident (ADR-009). Product logic addresses profiles; exact model ids are
  * resolved here so that no named local model becomes an architectural dependency. Optional:
@@ -1039,6 +1137,12 @@ export interface ModelProfile {
      * The capability profile product logic asks for. 'local' is not a capability but a policy:
      * a surface that must never leave this machine even if a cloud escape hatch is later
      * enabled.
+     *
+     * Defined once and referenced, here and from model-composer.schema.json, because there is
+     * one capability-profile vocabulary rather than two that happen to agree. Stating it twice
+     * would also mint two generated enums with identical cases, which codegen then unifies
+     * under whichever property name it reaches first — silently renaming the other schema's
+     * type.
      */
     id: ModelProfileID;
     /**
@@ -1074,18 +1178,6 @@ export interface ModelProfile {
      * Wall-clock budget for one request. Defaults to 120 when absent.
      */
     timeoutSeconds?: number;
-}
-
-/**
- * The capability profile product logic asks for. 'local' is not a capability but a policy:
- * a surface that must never leave this machine even if a cloud escape hatch is later
- * enabled.
- */
-export enum ModelProfileID {
-    Balanced = "balanced",
-    Deep = "deep",
-    Fast = "fast",
-    Local = "local",
 }
 
 /**
@@ -2351,10 +2443,10 @@ export interface CerebralHelmSystemStatusReadInput {
      * with an explicit unavailable state rather than being dropped, so a missing entry never
      * has to be inferred.
      */
-    metrics?: MetricElement[];
+    metrics?: ID[];
 }
 
-export enum MetricElement {
+export enum ID {
     Battery = "battery",
     CPU = "cpu",
     Display = "display",
@@ -2368,7 +2460,7 @@ export interface CerebralHelmSystemStatusReadOutput {
 
 export interface Metric {
     availability: AvailabilityEnum;
-    id:           MetricElement;
+    id:           ID;
     sampledAt?:   string;
     unit?:        string;
     value?:       number;
