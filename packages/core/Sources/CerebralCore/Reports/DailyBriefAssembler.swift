@@ -29,6 +29,7 @@ public struct DailyBriefAssembler: Sendable {
 
     private let calendar: (any CalendarProvider)?
     private let mail: (any MailProvider)?
+    private let sprint: (any SprintProvider)?
     private let timeZone: TimeZone
 
     /// Providers are individually optional, because a machine with no calendar grant or no Gmail
@@ -37,10 +38,12 @@ public struct DailyBriefAssembler: Sendable {
     public init(
         calendar: (any CalendarProvider)? = nil,
         mail: (any MailProvider)? = nil,
+        sprint: (any SprintProvider)? = nil,
         timeZone: TimeZone = .current
     ) {
         self.calendar = calendar
         self.mail = mail
+        self.sprint = sprint
         self.timeZone = timeZone
     }
 
@@ -55,12 +58,14 @@ public struct DailyBriefAssembler: Sendable {
         // its own.
         async let calendarSection = self.calendarSection(now: now)
         async let mailSection = self.mailSection()
+        async let sprintSection = self.sprintSection(now: now)
 
         return .object([
             "now": .string(Self.timestamp(now, timeZone: timeZone)),
             "dayOfWeek": .string(Self.weekday(now, timeZone: timeZone)),
             "calendar": await calendarSection,
-            "mail": await mailSection
+            "mail": await mailSection,
+            "sprint": await sprintSection
         ])
     }
 
@@ -203,6 +208,103 @@ public struct DailyBriefAssembler: Sendable {
         // presented as a named, quoted value rather than folded into prose, and the system prompt
         // states that quoted outside content is data and never instruction.
         if let preview = message.preview { fields["preview"] = .string(preview) }
+        return .object(fields)
+    }
+
+    // MARK: - Sprint
+
+    /// The current sprint, its issues, and — computed here — how it is pacing.
+    ///
+    /// **The pace is calculated, never asked for.** The composer is instructed to propose a working
+    /// day when the sprint is behind, and handing it forty issues and a date range to work that out
+    /// from is precisely where a model invents a figure. It gets a word and two percentages instead.
+    private func sprintSection(now: Date) async -> JSONValue {
+        guard let sprint else {
+            return .object(["state": .string("unavailable"), "reason": .string("No project is linked to Linear.")])
+        }
+
+        let current: Sprint
+        do {
+            current = try await sprint.currentSprint()
+        } catch SprintError.noLinkedProject {
+            return .object([
+                "state": .string("unavailable"),
+                "reason": .string("No project is linked to Linear.")
+            ])
+        } catch let SprintError.projectNotFound(name) {
+            // Named, because a misspelled `linear_project` returns zero issues — byte-identical to a
+            // correctly-linked project with an empty cycle. Reporting a typo as "nothing to do" is
+            // the worst kind of wrong, because it looks like an answer.
+            return .object([
+                "state": .string("unavailable"),
+                "reason": .string("Linear has no project called \u{201C}\(name)\u{201D}.")
+            ])
+        } catch SprintError.credentialsMissing {
+            return .object([
+                "state": .string("unavailable"),
+                "reason": .string("No Linear API key is stored.")
+            ])
+        } catch {
+            return .object(["state": .string("unavailable"), "reason": .string("Linear couldn\u{2019}t be read.")])
+        }
+
+        var reference = Calendar(identifier: .gregorian)
+        reference.timeZone = timeZone
+
+        var fields: [String: JSONValue] = [
+            "state": .string("ready"),
+            "project": .string(current.projectName),
+            "issues": .array(current.issues.map(issue(from:)))
+        ]
+        if current.truncated {
+            // A pace computed from a truncated list is confidently wrong, so the composer is told
+            // the list was cut rather than left to treat a page as the whole sprint.
+            fields["truncated"] = .bool(true)
+        }
+        if let cycle = current.cycle {
+            var window: [String: JSONValue] = [
+                "number": .number(Double(cycle.number)),
+                "startsAt": .string(Self.timestamp(cycle.startsAt, timeZone: timeZone)),
+                "endsAt": .string(Self.timestamp(cycle.endsAt, timeZone: timeZone))
+            ]
+            if let name = cycle.name, !name.isEmpty { window["name"] = .string(name) }
+            fields["cycle"] = .object(window)
+        }
+        // Absent when there is nothing to measure — no running cycle, or a cycle holding no
+        // countable work. "Between cycles" and "0% done" are different facts, and a zeroed pace
+        // would have the brief report a sprint that has not started as one going badly.
+        if let pace = SprintPace.measure(current, now: now, calendar: reference) {
+            fields["pace"] = .object([
+                "basis": .string(pace.basis.rawValue),
+                "total": .number(Double(pace.total)),
+                "done": .number(Double(pace.done)),
+                "inProgress": .number(Double(pace.inProgress)),
+                "percentComplete": .number(Double(pace.percentComplete)),
+                "percentElapsed": .number(Double(pace.percentElapsed)),
+                "daysElapsed": .number(Double(pace.daysElapsed)),
+                "daysRemaining": .number(Double(pace.daysRemaining)),
+                "status": .string(pace.status.rawValue)
+            ])
+        }
+        return .object(fields)
+    }
+
+    private func issue(from issue: SprintIssue) -> JSONValue {
+        var fields: [String: JSONValue] = [
+            "identifier": .string(issue.identifier),
+            "title": .string(issue.title),
+            "state": .string(issue.stateName),
+            // Grouped on Linear's state TYPE, not its name: "Next-Up" and "Todo" are both
+            // `unstarted`, and a composer picking work to suggest needs the group, not the label.
+            "stateType": .string(issue.state.rawValue),
+            // Lower is more urgent on Linear's scale, which the composer needs stated because every
+            // other scale in this app runs the other way.
+            "priority": .number(Double(issue.priority))
+        ]
+        if let estimate = issue.estimate { fields["estimate"] = .number(Double(estimate)) }
+        if !issue.labels.isEmpty { fields["labels"] = .array(issue.labels.map(JSONValue.string)) }
+        // No issue description, and no URL. The composer names a ticket by its identifier; a
+        // destination in a report is a registered quick action, never a link a model chose.
         return .object(fields)
     }
 

@@ -315,3 +315,130 @@ func recentMailIsBounded() async {
     let section = section(await assemble(mail: mail), "mail")
     #expect(rows(section, "recent").count == DailyBriefAssembler.recentMailLimit)
 }
+
+// MARK: - Sprint
+
+private func sprintIssue(
+    _ identifier: String,
+    state: SprintIssueState = .unstarted,
+    stateName: String = "Todo",
+    estimate: Int? = nil,
+    priority: Int = 3,
+    labels: [String] = []
+) -> SprintIssue {
+    SprintIssue(
+        identifier: identifier, title: "Ship \(identifier)", stateName: stateName,
+        state: state, priority: priority, estimate: estimate, labels: labels
+    )
+}
+
+private func sprintSection(_ provider: (any SprintProvider)?) async -> [String: JSONValue] {
+    let snapshot = await DailyBriefAssembler(
+        calendar: MockCalendarProvider(events: []),
+        mail: MockMailProvider(messages: []),
+        sprint: provider,
+        timeZone: zone
+    ).assemble(now: now)
+    return section(snapshot.objectValue ?? [:], "sprint")
+}
+
+@Test("the sprint arrives with its pace already computed")
+func sprintCarriesAPace() async throws {
+    // The composer is handed a word and two percentages rather than five issues and a date range.
+    // Arithmetic over a list is exactly where a model invents a number, and the system prompt
+    // promises derived figures are already done.
+    let cycle = SprintCycle(
+        number: 3, name: nil,
+        startsAt: at(24, 0), endsAt: at(31, 0)
+    )
+    let provider = MockSprintProvider(sprint: Sprint(
+        projectName: "CerebralHelm",
+        cycle: cycle,
+        issues: [
+            sprintIssue("NIC-250", state: .completed, stateName: "Deployed", estimate: 3),
+            sprintIssue("NIC-251", state: .started, stateName: "In Progress", estimate: 2),
+            sprintIssue("NIC-252", estimate: 5, priority: 2, labels: ["Feature"])
+        ],
+        truncated: false
+    ))
+
+    let sprint = await sprintSection(provider)
+    #expect(sprint["state"]?.stringValue == "ready")
+    #expect(sprint["project"]?.stringValue == "CerebralHelm")
+
+    let pace = sprint["pace"]?.objectValue ?? [:]
+    #expect(pace["basis"]?.stringValue == "points")
+    #expect(pace["total"] == .number(10))
+    #expect(pace["done"] == .number(3))
+    #expect(pace["status"]?.stringValue != nil)
+    // Both halves of the comparison are present, so a composer can say WHY it called the sprint
+    // behind rather than only that it did.
+    #expect(pace["percentComplete"] != nil)
+    #expect(pace["percentElapsed"] != nil)
+}
+
+@Test("an issue arrives without a URL or a description")
+func sprintIssuesAreNarrow() async throws {
+    let provider = MockSprintProvider(sprint: Sprint(
+        projectName: "CerebralHelm",
+        cycle: nil,
+        issues: [sprintIssue("NIC-252", stateName: "Next-Up", estimate: 5, priority: 2, labels: ["Feature"])],
+        truncated: false
+    ))
+
+    let row = try #require(rows(await sprintSection(provider), "issues").first)
+
+    #expect(row["identifier"]?.stringValue == "NIC-252")
+    // Both the display name and the type: "Next-Up" is what a brief calls it, `unstarted` is what a
+    // composer groups on, and a state name survives being renamed where the type does not.
+    #expect(row["state"]?.stringValue == "Next-Up")
+    #expect(row["stateType"]?.stringValue == "unstarted")
+    #expect(row["estimate"] == .number(5))
+    #expect(row["priority"] == .number(2))
+    // A destination in a report is a registered quick action, never a link a model chose — so no
+    // URL reaches it. An issue description never does either.
+    #expect(!row.keys.contains("url"))
+    #expect(!row.keys.contains("description"))
+}
+
+@Test("between cycles the sprint is present but paceless")
+func betweenCyclesHasNoPace() async {
+    let provider = MockSprintProvider(sprint: Sprint(
+        projectName: "CerebralHelm", cycle: nil, issues: [sprintIssue("NIC-1")], truncated: false
+    ))
+
+    let sprint = await sprintSection(provider)
+    #expect(sprint["state"]?.stringValue == "ready")
+    // Absent rather than zeroed: a sprint that has not started would otherwise read as one going
+    // badly, and the composer would propose a rescue.
+    #expect(sprint["pace"] == nil)
+    #expect(sprint["cycle"] == nil)
+}
+
+@Test("a truncated issue list says so, because a pace computed from a page is wrong")
+func truncationIsFlagged() async {
+    let provider = MockSprintProvider(sprint: Sprint(
+        projectName: "CerebralHelm", cycle: nil, issues: [sprintIssue("NIC-1")], truncated: true
+    ))
+
+    #expect(await sprintSection(provider)["truncated"] == .bool(true))
+}
+
+@Test("each way the sprint can fail asks the reader for something different")
+func sprintFailuresAreDistinguished() async {
+    // A typo in `linear_project` returns zero issues, which is byte-identical to a correctly-linked
+    // project with an empty cycle. Naming it is what stops the brief reporting a typo as
+    // "nothing to do" — the worst kind of wrong, because it looks like an answer.
+    let notFound = await sprintSection(MockSprintProvider(error: .projectNotFound("CerebralHlem")))
+    #expect(notFound["state"]?.stringValue == "unavailable")
+    #expect(notFound["reason"]?.stringValue?.contains("CerebralHlem") == true)
+
+    let unlinked = await sprintSection(MockSprintProvider(error: .noLinkedProject))
+    #expect(unlinked["reason"]?.stringValue?.contains("linked") == true)
+
+    let noKey = await sprintSection(MockSprintProvider(error: .credentialsMissing))
+    #expect(noKey["reason"]?.stringValue?.contains("API key") == true)
+
+    // No provider at all reads the same as no link: nobody looked.
+    #expect(await sprintSection(nil)["state"]?.stringValue == "unavailable")
+}
