@@ -16,12 +16,25 @@ import CerebralCore
 ///
 /// Every request is a GET. Nothing here marks read, archives, labels, or sends; the adapter has no
 /// method that could.
+///
+/// **What it reads of a message is headers plus Gmail's own snippet** — see ``metadataHeaders``.
+/// Bodies are still never fetched: `format=metadata` returns no `payload.parts`, and nothing here
+/// asks for `full` or `raw`.
 public struct GmailAPIProvider: MailProvider {
     /// Headers worth asking for. `format=metadata` with an explicit allowlist means Gmail returns
-    /// only these — the body is not fetched, so it cannot end up in memory, a log, or a report.
-    /// `Message-ID` is here so a report row can link to the message: Gmail's web UI addresses
-    /// mail by an opaque per-account id the API never returns, and the RFC 5322 header is the only
-    /// stable handle there is. Still headers only — the body is never fetched.
+    /// only these headers, and never the message body: `payload.parts` is absent under this format,
+    /// so no body text can end up in memory, a log, or a report.
+    ///
+    /// `Message-ID` is here so a report row can link to the message: Gmail's web UI addresses mail
+    /// by an opaque per-account id the API never returns, and the RFC 5322 header is the only
+    /// stable handle there is.
+    ///
+    /// **A preview comes back alongside these, and that is now wanted** (owner decision,
+    /// 2026-08-26). `snippet` is a top-level field of the Message resource rather than part of
+    /// `payload`, so it is unaffected by the header allowlist. Reading it is a decision, not an
+    /// accident: the daily brief is asked to say which mail needs the reader, and a subject line
+    /// alone cannot support that judgement. The format stays `metadata`, so this remains the only
+    /// message text the adapter can see — a preview, not a body. See ``MailMessage/preview``.
     static let metadataHeaders = ["From", "Subject", "Date", "Message-ID"]
 
     /// Gmail's Primary tab. Its inbox categories are system labels (`CATEGORY_PERSONAL`,
@@ -314,7 +327,16 @@ public struct GmailAPIProvider: MailProvider {
             // internalDate is a plain epoch and is always present.
             receivedAt: Self.parseInternalDate(root["internalDate"])
                 ?? header("Date").flatMap(Self.parseRFC2822),
-            rfc822MessageID: header("Message-ID")?.trimmingCharacters(in: CharacterSet(charactersIn: "<> "))
+            rfc822MessageID: header("Message-ID")?.trimmingCharacters(in: CharacterSet(charactersIn: "<> ")),
+            // Gmail's own preview of the message text. A TOP-LEVEL field of the Message resource,
+            // not part of `payload`, so the header allowlist above does not govern it.
+            //
+            // Note that Google's reference describes `metadata` as returning "only email message
+            // ID, labels, and email headers" and does not list `snippet` among them. Read
+            // defensively for that reason: absent is a normal outcome here, never an error, and a
+            // brief composed without previews is a thinner brief rather than a broken one. The
+            // live probe in GmailAPIProviderTests is what settles which way this account behaves.
+            preview: root["snippet"] as? String
         )
     }
 

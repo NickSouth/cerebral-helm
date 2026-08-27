@@ -448,6 +448,17 @@ a document's validity is load-bearing.** The evidence supports exactly that and 
   carries an empty `choices` array** alongside the usage accounting, so indexing
   `choices[0]` crashes on exactly the chunk that reports the cost. Both verified by probe
   before the Swift adapter was written, and both are covered by its tests.
+- **Gmail returns `snippet` under `format=metadata`, and its own reference says it does not.**
+  Google documents that format as returning *"only email message ID, labels, and email headers"*
+  and does not list `snippet` among them. Probed against the owner's live account 2026-08-26:
+  **3 of 3 messages carried one**, longest 199 characters. `snippet` is a top-level field of the
+  Message resource rather than part of `payload`, which is why the header allowlist does not
+  govern it. This is the difference between previews costing nothing — no extra request, no format
+  change, no re-consent — and needing `format=full` plus MIME-part walking and HTML stripping, so
+  it was settled by probe before anything was built on it (`CEREBRAL_GMAIL_TESTS=1 swift test
+  --filter gmailSnippetProbe`, which reports rather than asserts). Related: the granted scope is
+  already `gmail.readonly`, so **the metadata restriction was self-imposed, never a scope limit** —
+  reading bodies later needs no new consent, only a decision.
 - **llama.cpp's JSON-Schema→GBNF converter is stricter than the schemas this repo
   ships**, and it fails the whole request, not the offending field. Two constructs it
   rejects: a `pattern` that is not fully anchored (`^https://` → *"Pattern must start

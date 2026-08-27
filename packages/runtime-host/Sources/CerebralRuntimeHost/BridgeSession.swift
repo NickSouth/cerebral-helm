@@ -3228,6 +3228,11 @@ public final class BridgeSession: @unchecked Sendable {
     private struct ListUnreadMailInput: Decodable {
         let limit: Int?
     }
+    /// **`MailMessage.preview` is deliberately absent here.** The message previews the daily brief
+    /// composes from stay host-side: the composer runs in Swift, so nothing needs them in the web
+    /// layer, and a field that never crosses cannot be rendered, logged by a browser, or read out
+    /// of a devtools tree. Adding it is a decision to be taken deliberately, not a mapping to be
+    /// completed for symmetry.
     private struct UnreadMailItemDTO: Encodable {
         let id: String
         let byline: String
