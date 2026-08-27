@@ -158,3 +158,37 @@ public enum MailError: Error, Equatable, Sendable {
     case reconnectRequired
     case providerFailed(String)
 }
+
+/// A fixed-outcome ``MailProvider`` for tests and for any build with no account attached: it
+/// ignores the limit and yields the messages (or throws the error) it was constructed with.
+///
+/// Follows the convention every other port in this package uses — `MockCalendarProvider`,
+/// `MockWeatherProvider`, `MockModelProvider`. It does not record what it was asked; a test that
+/// needs that declares its own recorder.
+public struct MockMailProvider: MailProvider {
+    private let messages: Result<[MailMessage], MailError>
+    private let summary: Result<MailUnreadSummary, MailError>
+
+    public init(
+        messages: [MailMessage],
+        summary: MailUnreadSummary? = nil
+    ) {
+        self.messages = .success(messages)
+        // Defaults to a count that agrees with the listing, because the real provider derives both
+        // from one query and the two cannot disagree there either.
+        self.summary = .success(
+            summary ?? MailUnreadSummary(count: messages.count, isCapped: false, scope: .primary)
+        )
+    }
+
+    public init(error: MailError) {
+        self.messages = .failure(error)
+        self.summary = .failure(error)
+    }
+
+    public func unreadSummary() async throws -> MailUnreadSummary { try summary.get() }
+
+    public func unread(limit: Int) async throws -> [MailMessage] {
+        Array(try messages.get().prefix(max(0, limit)))
+    }
+}
