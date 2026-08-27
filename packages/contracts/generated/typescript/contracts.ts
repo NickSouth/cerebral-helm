@@ -376,8 +376,24 @@ export interface DashboardWeatherChannel {
      * Short condition phrase, e.g. "Partly Cloudy".
      */
     condition?: string;
-    label:      string;
-    state:      DashboardRegionState;
+    /**
+     * Today's forecast high in °F, when known. Added for the daily brief (NIC-228): at 07:00
+     * the current temperature is the least useful number weather has, and the high is what
+     * decides whether a free afternoon is worth protecting.
+     */
+    highF?: number;
+    label:  string;
+    /**
+     * Today's forecast low in °F, when known.
+     */
+    lowF?: number;
+    /**
+     * Today's maximum chance of precipitation as a percentage, when known. A number rather than
+     * a phrase: "70" and "a chance of rain" are different claims, and only one of them is the
+     * provider's.
+     */
+    precipitationChance?: number;
+    state:                DashboardRegionState;
     /**
      * Temperature in °F, when known.
      */

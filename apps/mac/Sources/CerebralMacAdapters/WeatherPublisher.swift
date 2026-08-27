@@ -24,6 +24,14 @@ public actor WeatherPublisher {
 
     private var loop: Task<Void, Never>?
     private var active = true
+    /// The last successful reading, typed.
+    ///
+    /// Kept alongside the verbatim event JSON rather than parsed back out of it, for the daily
+    /// brief (NIC-228): the brief needs a `WeatherReading`, and re-decoding the event would mean
+    /// reconstructing a value this actor already had. Only a SUCCESS is retained — a failed tick
+    /// leaves the previous sample in place, because the brief asking "is it clear today" is better
+    /// served by a reading from fifteen minutes ago than by nothing at all.
+    private var lastSuccessfulReading: WeatherReading?
     /// The last event emitted, kept verbatim so ``resend()`` can replay it to a surface that came
     /// up after it was sent. Nil until the first tick completes.
     private var lastEventJSON: String?
@@ -85,6 +93,15 @@ public actor WeatherPublisher {
         emit(json)
     }
 
+    /// The most recent successful sample, or nil before the first one lands.
+    ///
+    /// **Deliberately the last sample rather than a fresh fetch.** The loop already runs every
+    /// fifteen minutes, so a brief opened at any moment reads weather at most that old — ample for
+    /// "high of 78, clear". Fetching on demand instead would mean a second CoreLocation fix, which
+    /// can take seconds and is the one part of this path that can prompt, plus a second API call,
+    /// all to refine a number that is a forecast for the whole day.
+    public func lastReading() async -> WeatherReading? { lastSuccessfulReading }
+
     private func tickIfActive() async {
         guard active else { return }
         await tick()
@@ -95,6 +112,7 @@ public actor WeatherPublisher {
         do {
             let fix = try await location.currentLocation()
             let reading = try await weather.currentWeather(latitude: fix.latitude, longitude: fix.longitude)
+            lastSuccessfulReading = reading
             result = .success(reading)
         } catch is LocationError {
             // A denied/undetermined grant or no fix: the channel reads "Location unavailable".

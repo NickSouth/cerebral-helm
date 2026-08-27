@@ -31,6 +31,7 @@ public struct DailyBriefAssembler: Sendable {
     private let mail: (any MailProvider)?
     private let sprint: (any SprintProvider)?
     private let profile: ProfileContextReader?
+    private let weather: (@Sendable () async -> WeatherReading?)?
     private let timeZone: TimeZone
 
     /// Providers are individually optional, because a machine with no calendar grant or no Gmail
@@ -41,12 +42,17 @@ public struct DailyBriefAssembler: Sendable {
         mail: (any MailProvider)? = nil,
         sprint: (any SprintProvider)? = nil,
         profile: ProfileContextReader? = nil,
+        // A closure rather than a `WeatherProvider`, because what the brief wants is the AMBIENT
+        // sample the bottom bar is already taking, not a fresh fetch. Fetching here would mean a
+        // second CoreLocation fix and a second API call to refine a whole-day forecast.
+        weather: (@Sendable () async -> WeatherReading?)? = nil,
         timeZone: TimeZone = .current
     ) {
         self.calendar = calendar
         self.mail = mail
         self.sprint = sprint
         self.profile = profile
+        self.weather = weather
         self.timeZone = timeZone
     }
 
@@ -63,10 +69,12 @@ public struct DailyBriefAssembler: Sendable {
         async let mailSection = self.mailSection()
         async let sprintSection = self.sprintSection(now: now)
         async let profileSection = self.profileSection()
+        async let weatherSection = self.weatherSection()
 
         return .object([
             "now": .string(Self.timestamp(now, timeZone: timeZone)),
             "dayOfWeek": .string(Self.weekday(now, timeZone: timeZone)),
+            "weather": await weatherSection,
             "calendar": await calendarSection,
             "mail": await mailSection,
             "sprint": await sprintSection,
@@ -336,6 +344,38 @@ public struct DailyBriefAssembler: Sendable {
                 "reason": .string("The knowledge vault couldn\u{2019}t be read.")
             ])
         }
+    }
+
+    // MARK: - Weather
+
+    /// The ambient sample, forecast included.
+    ///
+    /// Also rendered deterministically in the brief's header, and carried here as well on purpose:
+    /// the header states the weather, and the snapshot lets the model REASON with it. "Clear, high
+    /// of 78" beside an empty calendar and a profile saying he golfs is what produced a suggestion
+    /// rather than a recitation in the measurements, and the model cannot make that connection from
+    /// a header it never sees.
+    private func weatherSection() async -> JSONValue {
+        guard let weather, let reading = await weather() else {
+            return .object([
+                "state": .string("unavailable"),
+                "reason": .string("The weather couldn\u{2019}t be read.")
+            ])
+        }
+
+        var fields: [String: JSONValue] = [
+            "state": .string("ready"),
+            "temperatureF": .number(Double(Int(reading.temperatureF.rounded()))),
+            "condition": .string(reading.condition)
+        ]
+        // Each omitted rather than defaulted when the provider did not supply it: a fabricated high
+        // is a number the composer would state as a fact, and a zero chance of rain is a promise.
+        if let high = reading.highF { fields["highF"] = .number(Double(Int(high.rounded()))) }
+        if let low = reading.lowF { fields["lowF"] = .number(Double(Int(low.rounded()))) }
+        if let chance = reading.precipitationChance {
+            fields["precipitationChance"] = .number(Double(chance))
+        }
+        return .object(fields)
     }
 
     // MARK: - Formatting

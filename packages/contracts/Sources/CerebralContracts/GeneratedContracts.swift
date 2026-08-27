@@ -1597,14 +1597,27 @@ public enum UIState: String, Codable {
 public struct DashboardWeatherChannel: Codable {
     /// Short condition phrase, e.g. "Partly Cloudy".
     public let condition: String?
+    /// Today's forecast high in °F, when known. Added for the daily brief (NIC-228): at 07:00
+    /// the current temperature is the least useful number weather has, and the high is what
+    /// decides whether a free afternoon is worth protecting.
+    public let highF: Double?
     public let label: String
+    /// Today's forecast low in °F, when known.
+    public let lowF: Double?
+    /// Today's maximum chance of precipitation as a percentage, when known. A number rather than
+    /// a phrase: "70" and "a chance of rain" are different claims, and only one of them is the
+    /// provider's.
+    public let precipitationChance: Int?
     public let state: DashboardRegionState
     /// Temperature in °F, when known.
     public let temperatureF: Double?
 
-    public init(condition: String?, label: String, state: DashboardRegionState, temperatureF: Double?) {
+    public init(condition: String?, highF: Double?, label: String, lowF: Double?, precipitationChance: Int?, state: DashboardRegionState, temperatureF: Double?) {
         self.condition = condition
+        self.highF = highF
         self.label = label
+        self.lowF = lowF
+        self.precipitationChance = precipitationChance
         self.state = state
         self.temperatureF = temperatureF
     }
@@ -1630,13 +1643,19 @@ public extension DashboardWeatherChannel {
 
     func with(
         condition: String?? = nil,
+        highF: Double?? = nil,
         label: String? = nil,
+        lowF: Double?? = nil,
+        precipitationChance: Int?? = nil,
         state: DashboardRegionState? = nil,
         temperatureF: Double?? = nil
     ) -> DashboardWeatherChannel {
         return DashboardWeatherChannel(
             condition: condition ?? self.condition,
+            highF: highF ?? self.highF,
             label: label ?? self.label,
+            lowF: lowF ?? self.lowF,
+            precipitationChance: precipitationChance ?? self.precipitationChance,
             state: state ?? self.state,
             temperatureF: temperatureF ?? self.temperatureF
         )

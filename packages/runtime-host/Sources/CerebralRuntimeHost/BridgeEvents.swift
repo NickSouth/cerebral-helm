@@ -501,7 +501,13 @@ public enum BridgeEventFactory {
             let rounded = Int(reading.temperatureF.rounded())
             return DashboardWeatherChannel(
                 condition: reading.condition,
+                highF: reading.highF.map { Double(Int($0.rounded())) },
+                // The bottom bar's label is UNCHANGED. The forecast rides alongside it as data for
+                // the daily brief's header to compose; folding a high into this string would rewrite
+                // a shipped surface as a side effect of adding a field to another one.
                 label: "\(rounded)°F · \(reading.condition)",
+                lowF: reading.lowF.map { Double(Int($0.rounded())) },
+                precipitationChance: reading.precipitationChance,
                 state: .ready,
                 temperatureF: Double(rounded)
             )
@@ -509,7 +515,10 @@ public enum BridgeEventFactory {
             let isLocation = (error as? WeatherError).map { $0 == .locationUnavailable } ?? false
             return DashboardWeatherChannel(
                 condition: nil,
+                highF: nil,
                 label: isLocation ? "Location unavailable" : "Weather unavailable",
+                lowF: nil,
+                precipitationChance: nil,
                 state: .unavailable,
                 temperatureF: nil
             )

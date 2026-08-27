@@ -51,13 +51,29 @@ public struct OpenMeteoWeatherProvider: WeatherProvider {
 
     // MARK: - Pure helpers (unit-tested)
 
-    /// Builds the Open-Meteo current-conditions request for a coordinate, in °F.
+    /// Builds the Open-Meteo request for a coordinate, in °F: current conditions plus today's
+    /// high, low and chance of rain.
+    ///
+    /// **`timezone=auto` is load-bearing, not tidiness.** Open-Meteo defaults to GMT and its own
+    /// documentation states the parameter is *required* when daily variables are requested: a daily
+    /// aggregate needs a midnight-to-midnight window, and without this one it would be computed over
+    /// a GMT day. In New England that window runs from 20:00 the previous evening, so every brief
+    /// composed after dark would report the wrong day's high — a plausible number, quietly for
+    /// yesterday.
+    ///
+    /// `forecast_days=1` because the brief asks about today and Open-Meteo otherwise returns seven.
     static func requestURL(host: String, latitude: Double, longitude: Double) -> URL? {
         guard var components = URLComponents(string: "\(host)/v1/forecast") else { return nil }
         components.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
             URLQueryItem(name: "current", value: "temperature_2m,weather_code"),
+            URLQueryItem(
+                name: "daily",
+                value: "temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+            ),
+            URLQueryItem(name: "timezone", value: "auto"),
+            URLQueryItem(name: "forecast_days", value: "1"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit")
         ]
         return components.url
@@ -72,7 +88,23 @@ public struct OpenMeteoWeatherProvider: WeatherProvider {
                 case weatherCode = "weather_code"
             }
         }
+        /// Daily aggregates arrive as PARALLEL ARRAYS, one element per forecast day, rather than as
+        /// an array of objects. Every field is optional: a station without precipitation data still
+        /// returns the block, with nulls in it.
+        struct Daily: Decodable {
+            let highF: [Double?]?
+            let lowF: [Double?]?
+            let precipitationChance: [Int?]?
+            enum CodingKeys: String, CodingKey {
+                case highF = "temperature_2m_max"
+                case lowF = "temperature_2m_min"
+                case precipitationChance = "precipitation_probability_max"
+            }
+        }
         let current: Current
+        /// Absent when the request asked for no daily variables, which every response predating
+        /// this change did — so an old cached body still decodes rather than failing the read.
+        let daily: Daily?
     }
 
     /// Decodes an Open-Meteo current-conditions payload into a ``WeatherReading``, mapping the
@@ -85,7 +117,13 @@ public struct OpenMeteoWeatherProvider: WeatherProvider {
             return WeatherReading(
                 temperatureF: decoded.current.temperatureF,
                 condition: conditionForWMO(decoded.current.weatherCode),
-                observedAt: now
+                observedAt: now,
+                // `forecast_days=1`, so today is the only element. Read positionally with a bounds
+                // check rather than assumed: a forecast block that came back empty must leave the
+                // fields absent, not crash the one read the bottom bar depends on.
+                highF: decoded.daily?.highF?.first ?? nil,
+                lowF: decoded.daily?.lowF?.first ?? nil,
+                precipitationChance: decoded.daily?.precipitationChance?.first ?? nil
             )
         } catch {
             throw WeatherError.providerFailed("Could not parse the weather response.")

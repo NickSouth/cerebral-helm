@@ -518,3 +518,54 @@ func unreadableVaultIsUnavailable() async {
 func absentVaultIsUnavailable() async {
     #expect(await profileSection(nil)["state"]?.stringValue == "unavailable")
 }
+
+// MARK: - Weather
+
+private func weatherSection(_ reading: WeatherReading?) async -> [String: JSONValue] {
+    let snapshot = await DailyBriefAssembler(
+        calendar: MockCalendarProvider(events: []),
+        mail: MockMailProvider(messages: []),
+        weather: reading.map { sample in { @Sendable in sample } },
+        timeZone: zone
+    ).assemble(now: now)
+    return section(snapshot.objectValue ?? [:], "weather")
+}
+
+@Test("the model gets the forecast, not just the current temperature")
+func weatherCarriesTheForecast() async {
+    // Also rendered deterministically in the brief's header — and carried here as well on purpose.
+    // The header STATES the weather; the snapshot lets the model REASON with it. "Clear, high of 78"
+    // beside an empty calendar and a profile saying he golfs is what produced a suggestion rather
+    // than a recitation, and the model cannot make that connection from a header it never sees.
+    let weather = await weatherSection(WeatherReading(
+        temperatureF: 62.4, condition: "Clear", observedAt: now,
+        highF: 78.4, lowF: 55.1, precipitationChance: 5
+    ))
+
+    #expect(weather["state"]?.stringValue == "ready")
+    #expect(weather["temperatureF"] == .number(62))
+    #expect(weather["condition"]?.stringValue == "Clear")
+    #expect(weather["highF"] == .number(78))
+    #expect(weather["lowF"] == .number(55))
+    #expect(weather["precipitationChance"] == .number(5))
+}
+
+@Test("a provider that supplies no forecast leaves those fields absent, never zero")
+func absentForecastIsOmitted() async {
+    // A fabricated high is a number the composer would state as a fact, and a zero chance of rain
+    // is a promise. Both are worse than a brief that simply does not mention them.
+    let weather = await weatherSection(
+        WeatherReading(temperatureF: 62.4, condition: "Clear", observedAt: now)
+    )
+
+    #expect(weather["state"]?.stringValue == "ready")
+    #expect(weather["temperatureF"] == .number(62))
+    #expect(weather["highF"] == nil)
+    #expect(weather["lowF"] == nil)
+    #expect(weather["precipitationChance"] == nil)
+}
+
+@Test("no sample yet is unavailable, like every other source that could not be read")
+func absentWeatherIsUnavailable() async {
+    #expect(await weatherSection(nil)["state"]?.stringValue == "unavailable")
+}
