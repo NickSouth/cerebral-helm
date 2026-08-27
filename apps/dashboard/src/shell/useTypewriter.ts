@@ -140,9 +140,31 @@ export function useTypewriter(
       ".report-region__scroll, .input-region__scroll"
     );
 
+    /**
+     * Whether this run's node still holds text this hook wrote.
+     *
+     * `run.text` was captured when the timeline was collected, and the DOM can move on afterwards:
+     * React reuses a text node and rewrites it when a document's content changes under a STABLE
+     * key — which is exactly what a model-composed report does when its body replaces the line
+     * saying it was being written (NIC-228). Writing to that node afterwards, whether mid-run or on
+     * restore, puts the stale capture back and DELETES the new content: the reader is left looking
+     * at "Writing your brief…" with the finished brief rendered underneath it.
+     *
+     * The only edit this hook makes is truncation, so what it wrote is always a PREFIX of what it
+     * captured. A node still holding a prefix is ours to finish; a node holding anything else
+     * belongs to React now and is left alone.
+     *
+     * Deliberately NOT a check on whether the node is still attached. A node detached by an unmount
+     * is still this hook's to restore — React may reuse those very nodes, and handing them back
+     * truncated is how a report comes back half-written.
+     */
+    const isOurs = (run: Run) => run.text.startsWith(run.node.data);
+
     const restore = () => {
       for (const run of runs) {
-        run.node.data = run.text;
+        if (isOurs(run)) {
+          run.node.data = run.text;
+        }
       }
       // Remove the property rather than clearing the style: these elements carry React's own
       // inline colours (an event's dot, a team's accent) and must keep them.
@@ -226,7 +248,9 @@ export function useTypewriter(
 
       for (const run of runs) {
         const want = Math.max(0, Math.min(run.text.length, chars - run.start));
-        if (run.node.data.length !== want) {
+        // Same rule as `restore`, and it matters here too: a body that lands while the header is
+        // still being written would otherwise be overwritten a frame later.
+        if (run.node.data.length !== want && isOurs(run)) {
           run.node.data = run.text.slice(0, want);
         }
       }

@@ -269,4 +269,50 @@ describe("useTypewriter", () => {
       expect(textOf(doc).length).toBe(31);
     });
   });
+
+  it("leaves alone a text node whose content changed under it", () => {
+    // The failure this pins was found in the browser, not in a test. A model-composed brief renders
+    // "Writing your brief…" while it waits and replaces that line with the model's own when it
+    // lands — under a STABLE key, because re-keying would blank the header the reader is already
+    // looking at (NIC-228). React reuses the text node and rewrites it; this hook still holds the
+    // text it captured when it collected its timeline.
+    //
+    // Writing to that node afterwards put the stale capture back and DELETED the model's line: the
+    // reader saw "Writing your brief…" with the finished brief rendered underneath it.
+    //
+    // React's own update is simulated directly here rather than driven through `rerender`, so the
+    // case under test is the hook's behaviour and not React's reconciliation timing.
+    const { getByTestId } = render(<Host paragraphs={[FIRST]} />);
+    const doc = getByTestId("doc");
+
+    frame(0);
+    frame(200);
+    expect(textOf(doc).length).toBeLessThan(FIRST.length);
+
+    // Content changes under the hook, exactly as React does it.
+    const node = doc.querySelector("p")!.firstChild as Text;
+    node.data = SECOND;
+
+    // Neither the remaining frames nor the restore at the end may touch it again.
+    frame(400);
+    expect(textOf(doc)).toBe(SECOND);
+    frame(5000);
+    expect(textOf(doc)).toBe(SECOND);
+  });
+
+  it("still finishes a run it alone has been editing", () => {
+    // The other half of the same rule: a node still holding a PREFIX of the capture is this hook's
+    // own partial write, and leaving it truncated would strand the report half-written.
+    const { getByTestId } = render(<Host paragraphs={[FIRST]} />);
+    const doc = getByTestId("doc");
+
+    frame(0);
+    frame(200);
+    expect(textOf(doc).length).toBeLessThan(FIRST.length);
+    expect(FIRST.startsWith(textOf(doc))).toBe(true);
+
+    frame(1500);
+    expect(textOf(doc)).toBe(FIRST);
+  });
+
 });

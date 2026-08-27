@@ -49,6 +49,34 @@ const RECENT_ACTIVITY = (recentActivityResponse.payload as { recentActivity: Rec
  */
 const WIDGET_ARRIVAL_DELAY_MS = readWidgetArrivalDelay();
 
+/**
+ * Model the real host's composition wait (NIC-228), opt-in via `?composedelay[=ms]`.
+ *
+ * The same shape as `?widgetdelay` above, and for the same reason: a real composition takes around
+ * nine seconds against a local model, and a mock that answers instantly hides every question the
+ * wait raises — whether the header renders on its own, what the region says meanwhile, and whether
+ * the body's arrival disturbs text the reader has already started.
+ *
+ * OFF by default, which is not a preference but a requirement: the test suite drives this bridge,
+ * and a multi-second pending timer on every render of the daily brief made unrelated report tests
+ * flaky. Previews opt in; tests get an immediate answer.
+ *
+ * A bare `?composedelay` is 4500ms rather than the true nine seconds — long enough to outlast the
+ * region's own ~2.4s opening handover, which an earlier 900ms default did not, so the "writing"
+ * state was unreachable in the preview.
+ */
+function readComposeDelay(): number {
+  if (typeof window === "undefined") {
+    return 0;
+  }
+  const raw = new URLSearchParams(window.location.search).get("composedelay");
+  if (raw === null) {
+    return 0;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 4500;
+}
+
 function readWidgetArrivalDelay(): number {
   if (typeof window === "undefined") {
     return 0;
@@ -1094,10 +1122,8 @@ export function createMockCerebralBridge(
       });
     },
     composeReport(reportId: string) {
-      // A representative composition for browser previews (NIC-228). Deliberately NOT instant and
-      // deliberately not perfect prose: the real thing takes around nine seconds against a local
-      // model, and a mock that returns immediately would hide every layout question the wait
-      // actually raises.
+      // A representative composition for browser previews (NIC-228). The wait is opt-in via
+      // `?composedelay` — see `readComposeDelay` for why it must be off by default.
       if (reportId !== "daily-brief") {
         return Promise.resolve<ComposeReportResult>({
           state: "unavailable",
@@ -1109,7 +1135,7 @@ export function createMockCerebralBridge(
           resolve({
             state: "ready",
             attempts: 1,
-            totalMs: 900,
+            totalMs: readComposeDelay() || 8700,
             document: {
               schemaVersion: "1.0.0",
               reportId: "daily-brief",
@@ -1134,7 +1160,7 @@ export function createMockCerebralBridge(
               ]
             }
           });
-        }, 900);
+        }, readComposeDelay());
       });
     },
     runSystemChecks() {

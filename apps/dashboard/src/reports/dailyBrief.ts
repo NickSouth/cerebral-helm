@@ -8,16 +8,22 @@ import { type UnreadFacts, unreadLabel, unreadValue } from "./unreadCount";
 import { formatEventTime } from "../shell/format";
 
 /**
- * `daily-brief` — the first Report, and the one that proves the format.
+ * `daily-brief` — the first Report, and the one the model now composes (NIC-228).
  *
- * Split deliberately into **assemble** (providers -> typed snapshot) and **compose** (snapshot ->
- * document), because that seam is the whole point of the archetype: v2 replaces `composeDailyBrief`
- * with a model and keeps `assembleDailyBrief` and the renderer untouched. Everything here is
- * deterministic — same snapshot, same document — so the formula is testable without a clock, a
- * calendar, or a network.
+ * **The document is now two halves.** The HEADER — greeting, date, weather — stays deterministic
+ * and stays here, because it is the part with no judgement in it and because it must render the
+ * instant the report opens: a model takes around nine seconds, and a reader should not wait that
+ * long to be told what time it is. The BODY is composed by the model from a snapshot assembled
+ * host-side, and everything below the header is its work.
  *
- * News and stocks are deliberately **not** in the formula (owner decision): both remain live
- * providers, so handing them to a future model composer to include when relevant stays cheap.
+ * The old formula did not disappear; it **shrank**. `deterministicBody` is what it used to emit
+ * below the header, and it is now the last-resort path: when no model is configured, the runtime is
+ * down, or a composition fails twice, the brief is still a brief. That is the only way the formula
+ * is reachable — it is not a setting, and a working model always composes.
+ *
+ * News and stocks are deliberately **not** in the deterministic formula (owner decision). The model
+ * gets a far richer snapshot than this file ever assembled — mail previews, the sprint's pace, the
+ * profile — because the host assembles for it rather than the web layer.
  */
 
 /** The typed data the composer reads. Nothing in here is presentation. */
@@ -27,6 +33,8 @@ export interface DailyBriefSnapshot {
     readonly state: RegionState;
     readonly temperatureF?: number;
     readonly condition?: string;
+    /** Today's forecast high, when the provider supplied one (NIC-228). */
+    readonly highF?: number;
   } | null;
   readonly schedule: {
     readonly state: RegionState;
@@ -67,7 +75,12 @@ function weatherBlock(snapshot: DailyBriefSnapshot): ReportBlock | null {
   }
   const parts = [
     weather.temperatureF === undefined ? null : `${Math.round(weather.temperatureF)}°F`,
-    weather.condition ?? null
+    weather.condition ?? null,
+    // The forecast high (NIC-228). At 07:00 the current temperature is the least useful number
+    // weather has to offer: "63°F" says nothing about whether the afternoon is worth protecting,
+    // and "high 78" says all of it. Appended rather than substituted, because the current reading
+    // is still what you feel when you step outside.
+    weather.highF === undefined ? null : `high ${Math.round(weather.highF)}°`
   ].filter((part): part is string => part !== null);
 
   return parts.length > 0
@@ -112,19 +125,85 @@ function unreadBlock(snapshot: DailyBriefSnapshot): ReportBlock | null {
   };
 }
 
-/** v1: the formula, in code. v2 swaps this for a model and changes nothing else. */
-export function composeDailyBrief(snapshot: DailyBriefSnapshot): ReportDocument {
-  const blocks: (ReportBlock | null)[] = [
+/**
+ * The deterministic header: who is reading, when, and what it is like outside.
+ *
+ * Rendered immediately on open and never rewritten. It is also the reason a composition failing is
+ * survivable — whatever happens below, the brief still opens with something true.
+ */
+export function headerBlocks(snapshot: DailyBriefSnapshot): ReportBlock[] {
+  return [
     { blockKind: "greeting", text: greetingFor(snapshot.now), greetingSize: "hero" },
     { blockKind: "line", text: formatNow(snapshot.now), lineEmphasis: "normal" },
-    weatherBlock(snapshot),
-    scheduleBlock(snapshot),
-    unreadBlock(snapshot)
-  ];
+    weatherBlock(snapshot)
+  ].filter((block): block is ReportBlock => block !== null);
+}
 
+/**
+ * What the brief says below the header when no model composed it.
+ *
+ * The old v1 formula, unchanged in substance: the schedule and the unread count, stated plainly.
+ * Reachable only when a composition could not be produced — this is a degradation path, not a mode.
+ */
+export function deterministicBody(snapshot: DailyBriefSnapshot): ReportBlock[] {
+  return [scheduleBlock(snapshot), unreadBlock(snapshot)]
+    .filter((block): block is ReportBlock => block !== null);
+}
+
+/**
+ * Wraps blocks in the envelope. The model never writes one; neither does the fallback.
+ *
+ * `refreshable` is true exactly when a composition was attempted. The rule for that control is that
+ * a report offers it only when it was composed from a fetch the reader can repeat — which a
+ * composition is, and which the old ambient-state formula was not. It also matters more here than
+ * anywhere: the commonest reason a brief comes back unavailable is a daemon that was still starting,
+ * and re-running is the whole remedy.
+ */
+export function dailyBriefDocument(
+  blocks: readonly ReportBlock[],
+  refreshable = false
+): ReportDocument {
   return {
     schemaVersion: REPORT_DOCUMENT_SCHEMA_VERSION,
     reportId: "daily-brief",
-    blocks: blocks.filter((block): block is ReportBlock => block !== null)
+    blocks: [...blocks],
+    refreshable
   };
+}
+
+/**
+ * The whole brief: the deterministic header, then whatever the model wrote.
+ *
+ * `composed` is the model's document when there is one. While a composition is in flight the body
+ * is a single muted line — nine seconds of nothing at all reads as a broken report, and the header
+ * alone gives no sign that more is coming.
+ */
+export function composeDailyBrief(
+  snapshot: DailyBriefSnapshot,
+  composed: { status: string; document: ReportDocument | null; reason: string | null } | null = null
+): ReportDocument {
+  const header = headerBlocks(snapshot);
+
+  if (composed === null) {
+    // No composition was attempted, so there is nothing to re-run.
+    return dailyBriefDocument([...header, ...deterministicBody(snapshot)]);
+  }
+  if (composed.status === "composing" || composed.status === "idle") {
+    return dailyBriefDocument([
+      ...header,
+      { blockKind: "line", text: "Writing your brief…", lineEmphasis: "muted" }
+    ], true);
+  }
+  if (composed.status === "ready" && composed.document) {
+    return dailyBriefDocument([...header, ...composed.document.blocks], true);
+  }
+  // Unavailable: say why, then fall back to the facts the web layer can state on its own. A reason
+  // without a brief would be a worse report than the one this app shipped with.
+  return dailyBriefDocument([
+    ...header,
+    ...(composed.reason
+      ? [{ blockKind: "line", text: composed.reason, lineEmphasis: "muted" } as ReportBlock]
+      : []),
+    ...deterministicBody(snapshot)
+  ], true);
 }
