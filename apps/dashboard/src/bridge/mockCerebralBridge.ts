@@ -5,6 +5,7 @@ import type {
   BridgeEventListener,
   CerebralBridge,
   ChromeProfile,
+  ComposeReportResult,
   LayoutSession,
   RecentActivity,
   SettingsSnapshot,
@@ -1090,6 +1091,50 @@ export function createMockCerebralBridge(
         root: "/Users/you/CerebralHelm/knowledge",
         total: notes.length,
         notes: limit === undefined ? notes : notes.slice(0, limit)
+      });
+    },
+    composeReport(reportId: string) {
+      // A representative composition for browser previews (NIC-228). Deliberately NOT instant and
+      // deliberately not perfect prose: the real thing takes around nine seconds against a local
+      // model, and a mock that returns immediately would hide every layout question the wait
+      // actually raises.
+      if (reportId !== "daily-brief") {
+        return Promise.resolve<ComposeReportResult>({
+          state: "unavailable",
+          reason: "This report isn\u2019t composed by a model."
+        });
+      }
+      return new Promise<ComposeReportResult>((resolve) => {
+        setTimeout(() => {
+          resolve({
+            state: "ready",
+            attempts: 1,
+            totalMs: 900,
+            document: {
+              schemaVersion: "1.0.0",
+              reportId: "daily-brief",
+              blocks: [
+                {
+                  blockKind: "line",
+                  text: "Your investor call is at 9:30 \u2014 the only fixed thing today.",
+                  lineEmphasis: "normal"
+                },
+                {
+                  blockKind: "list",
+                  listItems: [
+                    { text: "Billing: invoice 4021, due Friday", meta: "09:04" },
+                    { text: "Anna: reschedule Thursday?", meta: "08:12" }
+                  ]
+                },
+                {
+                  blockKind: "line",
+                  text: "The sprint is on pace, so the afternoon is genuinely free. It\u2019s clear and 78 later.",
+                  lineEmphasis: "normal"
+                }
+              ]
+            }
+          });
+        }, 900);
       });
     },
     runSystemChecks() {

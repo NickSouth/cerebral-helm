@@ -25,6 +25,11 @@ public struct DailyBriefAssembler: Sendable {
     /// snippets it costs roughly 400 tokens — affordable beside a calendar, a sprint and a profile
     /// in a 16K window. It is also eight `messages.get` requests against a personal quota, which is
     /// why it is a small number rather than a generous one.
+    /// The quick-action id this assembler gathers for. Named here rather than written as a string
+    /// at each wiring site, because the composer configuration keys on the same value and a typo
+    /// between the two would read as "this report is not model-composed".
+    public static let reportID = "daily-brief"
+
     public static let recentMailLimit = 8
 
     private let calendar: (any CalendarProvider)?

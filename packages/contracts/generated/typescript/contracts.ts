@@ -537,6 +537,7 @@ export enum Operation {
     CloseAllWindows = "closeAllWindows",
     CloseLayout = "closeLayout",
     CloseWindow = "closeWindow",
+    ComposeReport = "composeReport",
     ConnectGmail = "connectGmail",
     ConnectSpotify = "connectSpotify",
     CreateCalendarEvent = "createCalendarEvent",

@@ -30,6 +30,7 @@ import type {
   KnowledgeRebuildResult,
   ListNotesResult,
   ListCoursesResult,
+  ComposeReportResult,
   RunSystemChecksResult,
   ConnectGmailInput,
   ConnectGmailResult,
@@ -334,6 +335,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     rebuildKnowledgeIndex() {
       return operation<KnowledgeRebuildResult>("rebuildKnowledgeIndex", {});
+    },
+    composeReport(reportId: string) {
+      return operation<ComposeReportResult>("composeReport", { reportId });
     },
     runSystemChecks() {
       return operation<RunSystemChecksResult>("runSystemChecks", {});

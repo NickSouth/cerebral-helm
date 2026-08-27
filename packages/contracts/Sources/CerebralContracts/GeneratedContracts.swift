@@ -2289,6 +2289,7 @@ public enum Operation: String, Codable {
     case closeAllWindows = "closeAllWindows"
     case closeLayout = "closeLayout"
     case closeWindow = "closeWindow"
+    case composeReport = "composeReport"
     case connectGmail = "connectGmail"
     case connectSpotify = "connectSpotify"
     case createCalendarEvent = "createCalendarEvent"

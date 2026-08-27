@@ -401,6 +401,13 @@ public final class BridgeSession: @unchecked Sendable {
     /// files are the source of truth. Optional: a host without a workspace reports
     /// the surface honestly unavailable rather than claiming a rebuild happened.
     private let knowledgeRebuild: (@Sendable () async throws -> KnowledgeRebuildInfo)?
+    /// Composes one Report with a model (NIC-228), or nil on a host with no model configured.
+    ///
+    /// Injected as a closure rather than assembled here for the usual reason: the composer needs a
+    /// concrete `ModelProvider`, an Assembler wired to platform providers, and the profile catalog,
+    /// none of which this AppKit-free file can build. What it does own is the marshalling — and the
+    /// rule that a host without one answers honestly rather than pretending.
+    private let composeReport: (@Sendable (String) async -> ReportCompositionOutcome)?
     /// The health checks this host can run (quick actions phase 5). Injected rather than built
     /// here: the inventory is platform-specific (macOS permissions, installed apps) and this file
     /// stays AppKit-free. A host with none simply has no checks to run and says so.
@@ -488,6 +495,7 @@ public final class BridgeSession: @unchecked Sendable {
         canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)? = nil,
         knowledgeRebuild: (@Sendable () async throws -> KnowledgeRebuildInfo)? = nil,
         systemChecks: (@Sendable () -> [any HealthCheck])? = nil,
+        composeReport: (@Sendable (String) async -> ReportCompositionOutcome)? = nil,
         gmailConnect: (@Sendable () async throws -> GmailConnectionInfo)? = nil,
         gmailDisconnect: (@Sendable () async throws -> Void)? = nil,
         unreadMail: (@Sendable (Int) async throws -> [MailMessage])? = nil,
@@ -523,6 +531,7 @@ public final class BridgeSession: @unchecked Sendable {
         self.canvasSetHidden = canvasSetHidden
         self.knowledgeRebuild = knowledgeRebuild
         self.systemChecks = systemChecks
+        self.composeReport = composeReport
         self.gmailConnect = gmailConnect
         self.gmailDisconnect = gmailDisconnect
         self.unreadMail = unreadMail
@@ -692,6 +701,8 @@ public final class BridgeSession: @unchecked Sendable {
             return await createCourseNote(request)
         case .runSystemChecks:
             return await runSystemChecks(request)
+        case .composeReport:
+            return await composeReport(request)
         case .connectGmail:
             return await connectGmail(request)
         case .listUnreadMail:
@@ -2812,6 +2823,52 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: SystemChecksResult(started: true, checkCount: checks.count))
     }
 
+    /// Composes a Report with a model (NIC-228).
+    ///
+    /// **Everything the model reads is gathered on this side of the bridge.** The request carries a
+    /// report id and nothing else: the Assembler runs here, so message previews, profile notes and
+    /// sprint detail never enter the web layer at all. What comes back is the composed document —
+    /// prose the user is about to be shown anyway.
+    ///
+    /// Awaited rather than streamed, in this increment. A composition takes around nine seconds, and
+    /// nine seconds of silence and nine seconds of visible arrival feel nothing alike — but the
+    /// buffered path is what makes the surface work at all, and streaming is a perceived-speed
+    /// change layered on top of it rather than a prerequisite.
+    ///
+    /// Never an error response. Every way this fails is a state the report region has to render, and
+    /// a `status: "error"` would send the dashboard down its generic failure path instead of showing
+    /// the reader what actually happened.
+    private func composeReport(
+        _ request: CerebralHelmBridgeOperationRequest
+    ) async -> CerebralHelmBridgeOperationResponse {
+        guard let input: ComposeReportInput = decodePayload(request),
+              !input.reportID.trimmingCharacters(in: .whitespaces).isEmpty
+        else {
+            return invalidInput(request, "composeReport requires a reportId.")
+        }
+        guard let composeReport else {
+            return ok(request, payload: ComposeReportResult.unavailable(
+                "No model is configured on this machine."
+            ))
+        }
+
+        let started = Date()
+        let outcome = await composeReport(input.reportID)
+        let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+
+        switch outcome {
+        case let .composed(report):
+            return ok(request, payload: ComposeReportResult(report, totalMs: elapsed))
+        case let .failed(failure):
+            // The reader-facing sentence, never the decoder's complaint: nobody can act on
+            // `/blocks/3/value expected String`, and a report rendering it is worse than one saying
+            // it could not be written.
+            return ok(request, payload: ComposeReportResult.unavailable(
+                failure.readerFacingMessage, totalMs: elapsed
+            ))
+        }
+    }
+
     /// Claims the single run slot, or reports that one is already going.
     private func claimSystemCheckRun() -> Bool {
         systemCheckLock.lock()
@@ -3280,6 +3337,45 @@ public final class BridgeSession: @unchecked Sendable {
         let scope: String?
         let canRefresh: Bool
     }
+    private struct ComposeReportInput: Decodable {
+        let reportID: String
+        enum CodingKeys: String, CodingKey { case reportID = "reportId" }
+    }
+
+    /// A composed report, or an honest reason there is none.
+    ///
+    /// `state` carries the distinction an absent document cannot: "the model is not running" and
+    /// "the model wrote nothing" would otherwise look identical to the region.
+    private struct ComposeReportResult: Encodable {
+        let state: String
+        let reason: String?
+        let attempts: Int?
+        let totalMs: Int?
+        let document: CerebralHelmReportDocument?
+
+        init(_ report: ComposedReport, totalMs: Int) {
+            self.state = "ready"
+            self.reason = nil
+            // Surfaced rather than swallowed: a composer that silently needs two attempts every
+            // time is a prompt problem wearing a success.
+            self.attempts = report.attempts
+            self.totalMs = totalMs
+            self.document = report.document
+        }
+
+        private init(state: String, reason: String?, totalMs: Int?) {
+            self.state = state
+            self.reason = reason
+            self.attempts = nil
+            self.totalMs = totalMs
+            self.document = nil
+        }
+
+        static func unavailable(_ reason: String, totalMs: Int? = nil) -> ComposeReportResult {
+            ComposeReportResult(state: "unavailable", reason: reason, totalMs: totalMs)
+        }
+    }
+
     private struct SystemChecksResult: Encodable {
         let started: Bool
         let checkCount: Int

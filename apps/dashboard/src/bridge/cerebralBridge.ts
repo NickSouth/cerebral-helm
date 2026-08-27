@@ -1,4 +1,5 @@
 import type { DashboardBootstrapState } from "./types";
+import type { ReportDocument } from "../reports/reportDocument";
 
 /**
  * The `CerebralBridge` is the single contract every dashboard component and the state
@@ -542,6 +543,22 @@ export interface UnreadMailResult {
   readonly reason?: string | null;
 }
 
+/**
+ * A model-composed report, or an honest reason there is none (NIC-228).
+ *
+ * `state` carries the distinction an absent document cannot: "no model is running" and "the model
+ * wrote nothing" would otherwise look identical to the region. `reason` is reader-facing prose —
+ * never a decoder's complaint, which nobody can act on.
+ */
+export interface ComposeReportResult {
+  readonly state: "ready" | "unavailable";
+  readonly reason?: string | null;
+  /** How many completions it took. Above one means the first was retried. */
+  readonly attempts?: number | null;
+  readonly totalMs?: number | null;
+  readonly document?: ReportDocument | null;
+}
+
 export interface ConnectGmailInput {
   readonly disconnect?: boolean;
 }
@@ -1032,6 +1049,14 @@ export interface CerebralBridge {
    *  inventory reaches several third parties and a caller awaiting one response would show
    *  nothing while the interesting part (which checks exist) is already known. */
   runSystemChecks(): Promise<RunSystemChecksResult>;
+  /**
+   * Composes one Report with the local model (NIC-228).
+   *
+   * Takes a report id and nothing else: the snapshot is assembled host-side, so message previews,
+   * profile notes and sprint detail never enter the web layer. What comes back is prose the reader
+   * is about to be shown anyway.
+   */
+  composeReport(reportId: string): Promise<ComposeReportResult>;
   /** Create one templated note in a course (quick actions phase 5), minting the course folder on
    *  first use. The caller names a COURSE, never a folder: the host derives the folder inside the
    *  school root, so a note can only ever land there. Never overwrites an existing note. */

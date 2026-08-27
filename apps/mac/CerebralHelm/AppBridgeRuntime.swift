@@ -442,6 +442,60 @@ final class AppBridgeRuntime: @unchecked Sendable {
         let mail = MailPublisher(provider: gmailProvider, emit: { relay.emit($0) })
         mailPublisher = mail
 
+        // The daily brief's composer (NIC-228) — the FIRST caller of the model provider port.
+        //
+        // Everything the model reads is gathered on this side of the bridge: the Assembler reads
+        // the calendar, the inbox, Linear and the profile vault here, so previews and profile notes
+        // never enter the web layer. Weather comes from the publisher's last ambient sample rather
+        // than a fresh fetch, which would mean a second CoreLocation fix.
+        //
+        // Every part is optional and the whole thing degrades to nil: no profile catalog, no
+        // composer configuration, or a runtime this build cannot serve all mean the report region
+        // says so honestly rather than the app failing to start.
+        let weatherForBrief = weatherPublisher
+        let linearForBrief = composition.linear
+        let composeReportClosure: (@Sendable (String) async -> ReportCompositionOutcome)? = {
+            guard case let .valid(config) = ConfigValidator.validate(
+                configDirectory: paths.configDirectory
+            ) else { return nil }
+            guard let catalog = config.modelProfiles.map(ModelProfileCatalog.init),
+                  let composers = config.modelComposers
+            else { return nil }
+
+            // Which runtime serves composition is configuration, resolved through the profile the
+            // composer names — never hardcoded here. Lifted out of the guard because a trailing
+            // closure cannot appear in a guard condition.
+            let profile = composers.composerReports
+                .first { $0.composerReportID == DailyBriefAssembler.reportID }
+                .flatMap { ModelCapabilityProfile(rawValue: $0.modelProfileID.rawValue) }
+            guard let profile,
+                  let resolution = catalog.resolve(profile),
+                  let modelProvider = ModelProviderFactory.provider(for: resolution.runtime)
+            else { return nil }
+
+            let assembler = DailyBriefAssembler(
+                calendar: EventKitCalendarProvider(),
+                mail: gmailProvider,
+                sprint: LinearSprintProvider(
+                    projects: FileSystemActiveProjectsProvider(), cycles: linearForBrief
+                ),
+                // `.local` because every profile resolves to a local runtime today. The destination
+                // is stated rather than assumed, so opening a cloud escape hatch later is a change
+                // to this line and not a search for where the filter was not applied.
+                profile: (try? makeKnowledgeService(paths)).map {
+                    ProfileContextReader(knowledge: $0, destination: .local)
+                },
+                weather: { await weatherForBrief.lastReading() }
+            )
+            let service = ReportCompositionService(
+                assemblers: [DailyBriefAssembler.reportID: { now in await assembler.assemble(now: now) }],
+                composer: ReportComposer(
+                    provider: modelProvider, profiles: catalog, composers: composers
+                )
+            )
+            return { reportID in await service.compose(reportID: reportID, now: Date()) }
+        }()
+
         let systemChecksClosure: @Sendable () -> [any HealthCheck] = {
             SystemHealthChecks.all(
                 permissions: MacPermissionChecker(),
@@ -705,6 +759,9 @@ final class AppBridgeRuntime: @unchecked Sendable {
             },
             // The system-health inventory (quick actions phase 5), built above.
             systemChecks: systemChecksClosure,
+            // The daily brief's model composer (NIC-228), built above. Nil on a machine with no
+            // model configured, which the report region renders honestly.
+            composeReport: composeReportClosure,
             // Runs the Gmail OAuth connect for the `connectGmail` op. The Client ID is read from the
             // Keychain by the coordinator, not from `.env` — a built `.app` cannot read the
             // developer's environment file (the lesson NIC-133 increment 6 paid for).
