@@ -30,6 +30,7 @@ public struct DailyBriefAssembler: Sendable {
     private let calendar: (any CalendarProvider)?
     private let mail: (any MailProvider)?
     private let sprint: (any SprintProvider)?
+    private let profile: ProfileContextReader?
     private let timeZone: TimeZone
 
     /// Providers are individually optional, because a machine with no calendar grant or no Gmail
@@ -39,11 +40,13 @@ public struct DailyBriefAssembler: Sendable {
         calendar: (any CalendarProvider)? = nil,
         mail: (any MailProvider)? = nil,
         sprint: (any SprintProvider)? = nil,
+        profile: ProfileContextReader? = nil,
         timeZone: TimeZone = .current
     ) {
         self.calendar = calendar
         self.mail = mail
         self.sprint = sprint
+        self.profile = profile
         self.timeZone = timeZone
     }
 
@@ -59,13 +62,15 @@ public struct DailyBriefAssembler: Sendable {
         async let calendarSection = self.calendarSection(now: now)
         async let mailSection = self.mailSection()
         async let sprintSection = self.sprintSection(now: now)
+        async let profileSection = self.profileSection()
 
         return .object([
             "now": .string(Self.timestamp(now, timeZone: timeZone)),
             "dayOfWeek": .string(Self.weekday(now, timeZone: timeZone)),
             "calendar": await calendarSection,
             "mail": await mailSection,
-            "sprint": await sprintSection
+            "sprint": await sprintSection,
+            "profile": await profileSection
         ])
     }
 
@@ -306,6 +311,31 @@ public struct DailyBriefAssembler: Sendable {
         // No issue description, and no URL. The composer names a ticket by its identifier; a
         // destination in a report is a registered quick action, never a link a model chose.
         return .object(fields)
+    }
+
+    // MARK: - Profile
+
+    /// The durable "who I am" layer, filtered and budgeted.
+    ///
+    /// The highest-leverage part of the brief: roughly a hundred tokens of it is what turns a
+    /// recitation of metrics into a suggestion, with deliberation still off and at no latency cost.
+    /// It carries no `notes` key when the folder is empty. An empty string is a fact a composer
+    /// would dutifully describe, and "nothing written yet" simply means nothing to personalise from.
+    private func profileSection() async -> JSONValue {
+        guard let profile else {
+            return .object(["state": .string("unavailable"), "reason": .string("No knowledge vault is configured.")])
+        }
+        do {
+            guard let notes = try await profile.read() else {
+                return .object(["state": .string("ready")])
+            }
+            return .object(["state": .string("ready"), "notes": .string(notes)])
+        } catch {
+            return .object([
+                "state": .string("unavailable"),
+                "reason": .string("The knowledge vault couldn\u{2019}t be read.")
+            ])
+        }
     }
 
     // MARK: - Formatting

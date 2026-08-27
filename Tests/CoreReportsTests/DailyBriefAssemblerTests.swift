@@ -442,3 +442,79 @@ func sprintFailuresAreDistinguished() async {
     // No provider at all reads the same as no link: nobody looked.
     #expect(await sprintSection(nil)["state"]?.stringValue == "unavailable")
 }
+
+// MARK: - Profile
+
+private struct EmptyKnowledge: KnowledgeService {
+    var failure: KnowledgeServiceError?
+    var entries: [NoteListEntry] = []
+    var body = ""
+
+    func list(_ request: NoteListRequest) async throws -> NoteListOutcome {
+        if let failure { throw failure }
+        return NoteListOutcome(root: "/vault", entries: entries, total: entries.count, truncated: false)
+    }
+    func read(_ request: NoteReadRequest) async throws -> NoteReadOutcome {
+        NoteReadOutcome(
+            root: "/vault", path: request.path, title: "About Me", noteID: "about-me",
+            frontmatter: ["sensitivity": "sensitive", "cloudPolicy": "deny"], body: body, updated: nil
+        )
+    }
+    func capture(_ request: NoteCaptureRequest) async throws -> NoteCaptureOutcome {
+        throw KnowledgeServiceError.rootReadOnly
+    }
+    func search(_ request: NoteSearchRequest) async throws -> NoteSearchOutcome {
+        NoteSearchOutcome(hits: [], truncated: false)
+    }
+    func locate(_ request: NoteReadRequest) async throws -> NoteLocation {
+        NoteLocation(root: "/vault", path: request.path, absolutePath: "/vault")
+    }
+}
+
+private func profileSection(_ knowledge: (any KnowledgeService)?) async -> [String: JSONValue] {
+    let snapshot = await DailyBriefAssembler(
+        calendar: MockCalendarProvider(events: []),
+        mail: MockMailProvider(messages: []),
+        profile: knowledge.map { ProfileContextReader(knowledge: $0) },
+        timeZone: zone
+    ).assemble(now: now)
+    return section(snapshot.objectValue ?? [:], "profile")
+}
+
+@Test("profile notes reach the snapshot as one block of prose")
+func profileReachesTheSnapshot() async {
+    let vault = EmptyKnowledge(
+        entries: [NoteListEntry(
+            path: "profile/about-me.md", title: "About Me", noteID: "about-me", folder: "profile",
+            project: nil, sensitivity: "sensitive", updated: nil
+        )],
+        body: "Golfs whenever the weather allows."
+    )
+
+    let profile = await profileSection(vault)
+    #expect(profile["state"]?.stringValue == "ready")
+    #expect(profile["notes"]?.stringValue?.contains("Golfs whenever") == true)
+}
+
+@Test("an empty vault is ready with nothing to personalise from")
+func emptyProfileIsReadyWithoutNotes() async {
+    let profile = await profileSection(EmptyKnowledge())
+
+    // Ready, because the vault was read fine — there is simply nothing written. `notes` is omitted
+    // rather than empty: an empty string is a fact the composer would dutifully describe.
+    #expect(profile["state"]?.stringValue == "ready")
+    #expect(profile["notes"] == nil)
+}
+
+@Test("a vault that cannot be read is unavailable, which is a different fact")
+func unreadableVaultIsUnavailable() async {
+    let profile = await profileSection(EmptyKnowledge(failure: .rootUnavailable))
+
+    #expect(profile["state"]?.stringValue == "unavailable")
+    #expect(profile["reason"]?.stringValue?.contains("couldn\u{2019}t be read") == true)
+}
+
+@Test("no vault configured reads the same as every other absent provider")
+func absentVaultIsUnavailable() async {
+    #expect(await profileSection(nil)["state"]?.stringValue == "unavailable")
+}
