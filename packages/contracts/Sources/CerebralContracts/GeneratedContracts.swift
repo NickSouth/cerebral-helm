@@ -1817,6 +1817,7 @@ public enum CerebralHelmBridgeEventType: String, Codable {
     case modeQuickappsChanged = "mode.quickapps.changed"
     case modeWindowcollapseChanged = "mode.windowcollapse.changed"
     case newsChanged = "news.changed"
+    case reportCompositionChanged = "report.composition.changed"
     case scheduleChanged = "schedule.changed"
     case settingsChanged = "settings.changed"
     case systemChecksChanged = "system.checks.changed"

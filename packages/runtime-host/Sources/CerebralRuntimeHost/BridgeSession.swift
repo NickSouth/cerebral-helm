@@ -407,7 +407,7 @@ public final class BridgeSession: @unchecked Sendable {
     /// concrete `ModelProvider`, an Assembler wired to platform providers, and the profile catalog,
     /// none of which this AppKit-free file can build. What it does own is the marshalling — and the
     /// rule that a host without one answers honestly rather than pretending.
-    private let composeReport: (@Sendable (String) async -> ReportCompositionOutcome)?
+    private let composeReport: (@Sendable (String, @escaping @Sendable ([Block]) -> Void) async -> ReportCompositionOutcome)?
     /// The health checks this host can run (quick actions phase 5). Injected rather than built
     /// here: the inventory is platform-specific (macOS permissions, installed apps) and this file
     /// stays AppKit-free. A host with none simply has no checks to run and says so.
@@ -424,6 +424,11 @@ public final class BridgeSession: @unchecked Sendable {
     /// section is two field accesses, and the surrounding session is not isolated.
     private let systemCheckLock = NSLock()
     private var systemCheckRunning = false
+    /// Which reports have a composition in flight (NIC-253). Keyed by report id rather than a single
+    /// flag: the daily brief and a future email report are independent work, and one must not lock
+    /// the other out.
+    private let compositionLock = NSLock()
+    private var composingReports: Set<String> = []
 
     /// Hides a layout's app windows on `closeLayout` (NIC-142) — the same
     /// permission-free `NSRunningApplication` primitive "Windows Stored by Mode"
@@ -495,7 +500,7 @@ public final class BridgeSession: @unchecked Sendable {
         canvasSetHidden: (@Sendable (String, Bool) async -> CanvasStatusInfo)? = nil,
         knowledgeRebuild: (@Sendable () async throws -> KnowledgeRebuildInfo)? = nil,
         systemChecks: (@Sendable () -> [any HealthCheck])? = nil,
-        composeReport: (@Sendable (String) async -> ReportCompositionOutcome)? = nil,
+        composeReport: (@Sendable (String, @escaping @Sendable ([Block]) -> Void) async -> ReportCompositionOutcome)? = nil,
         gmailConnect: (@Sendable () async throws -> GmailConnectionInfo)? = nil,
         gmailDisconnect: (@Sendable () async throws -> Void)? = nil,
         unreadMail: (@Sendable (Int) async throws -> [MailMessage])? = nil,
@@ -2823,21 +2828,22 @@ public final class BridgeSession: @unchecked Sendable {
         return ok(request, payload: SystemChecksResult(started: true, checkCount: checks.count))
     }
 
-    /// Composes a Report with a model (NIC-228).
+    /// Composes a Report with a model, streaming the blocks as they arrive (NIC-228, NIC-253).
     ///
     /// **Everything the model reads is gathered on this side of the bridge.** The request carries a
     /// report id and nothing else: the Assembler runs here, so message previews, profile notes and
-    /// sprint detail never enter the web layer at all. What comes back is the composed document —
+    /// sprint detail never enter the web layer at all. What goes back is the composed document —
     /// prose the user is about to be shown anyway.
     ///
-    /// Awaited rather than streamed, in this increment. A composition takes around nine seconds, and
-    /// nine seconds of silence and nine seconds of visible arrival feel nothing alike — but the
-    /// buffered path is what makes the surface work at all, and streaming is a perceived-speed
-    /// change layered on top of it rather than a prerequisite.
+    /// **Streamed rather than awaited**, exactly like the health-check run above and for the same
+    /// reason, only more so: a composition takes around nine seconds, and nine seconds of silence and
+    /// nine seconds of visible arrival feel nothing alike. The operation returns as soon as the
+    /// composition has started; each block reaches the surface as a `report.composition.changed`
+    /// event carrying the whole set so far, and a terminal emission carries the outcome.
     ///
-    /// Never an error response. Every way this fails is a state the report region has to render, and
-    /// a `status: "error"` would send the dashboard down its generic failure path instead of showing
-    /// the reader what actually happened.
+    /// One composition at a time per report: a second press while one is in flight is answered with
+    /// the one already going rather than starting a competitor, because two would interleave their
+    /// emissions and the reader would watch the brief rewrite itself between two truths.
     private func composeReport(
         _ request: CerebralHelmBridgeOperationRequest
     ) async -> CerebralHelmBridgeOperationResponse {
@@ -2851,22 +2857,66 @@ public final class BridgeSession: @unchecked Sendable {
                 "No model is configured on this machine."
             ))
         }
-
-        let started = Date()
-        let outcome = await composeReport(input.reportID)
-        let elapsed = Int(Date().timeIntervalSince(started) * 1000)
-
-        switch outcome {
-        case let .composed(report):
-            return ok(request, payload: ComposeReportResult(report, totalMs: elapsed))
-        case let .failed(failure):
-            // The reader-facing sentence, never the decoder's complaint: nobody can act on
-            // `/blocks/3/value expected String`, and a report rendering it is worse than one saying
-            // it could not be written.
-            return ok(request, payload: ComposeReportResult.unavailable(
-                failure.readerFacingMessage, totalMs: elapsed
-            ))
+        let reportID = input.reportID
+        guard claimComposition(reportID) else {
+            return ok(request, payload: ComposeReportResult.started)
         }
+
+        // Detached from the request: the response returns now and the emissions continue.
+        Task { [weak self] in
+            let started = Date()
+            let firstBlockAt = FirstBlockClock()
+            // Bound once, outside the progress closure. `weak self` cannot be captured by a
+            // `@Sendable` closure that runs concurrently, and a strong reference here is bounded by
+            // the composition itself rather than held indefinitely.
+            guard let session = self else { return }
+
+            let outcome = await composeReport(reportID) { blocks in
+                firstBlockAt.markIfUnset(Date())
+                session.emit(BridgeEventFactory.reportCompositionEvent(
+                    reportID: reportID, blocks: blocks, complete: false,
+                    id: BridgeEventFactory.newEventID(), timestamp: Date()
+                ))
+            }
+
+            let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+            let firstBlockMs = firstBlockAt.milliseconds(since: started)
+
+            switch outcome {
+            case let .composed(report):
+                session.emit(BridgeEventFactory.reportCompositionEvent(
+                    reportID: reportID, blocks: report.document.blocks, complete: true,
+                    firstBlockMs: firstBlockMs, totalMs: elapsed,
+                    id: BridgeEventFactory.newEventID(), timestamp: Date()
+                ))
+            case let .failed(failure):
+                // The reader-facing sentence, never the decoder's complaint, and NO blocks: whatever
+                // streamed before a failure came from an attempt that did not survive validation, so
+                // showing it as final would render a document the composer rejected.
+                session.emit(BridgeEventFactory.reportCompositionEvent(
+                    reportID: reportID, blocks: [], complete: true,
+                    reason: failure.readerFacingMessage,
+                    firstBlockMs: firstBlockMs, totalMs: elapsed,
+                    id: BridgeEventFactory.newEventID(), timestamp: Date()
+                ))
+            }
+            session.releaseComposition(reportID)
+        }
+
+        return ok(request, payload: ComposeReportResult.started)
+    }
+
+    /// Claims the single composition slot for `reportID`, or reports that one is already going.
+    private func claimComposition(_ reportID: String) -> Bool {
+        compositionLock.lock()
+        defer { compositionLock.unlock() }
+        return composingReports.insert(reportID).inserted
+    }
+
+    private func releaseComposition(_ reportID: String) {
+        compositionLock.lock()
+        composingReports.remove(reportID)
+        compositionLock.unlock()
     }
 
     /// Claims the single run slot, or reports that one is already going.
@@ -3342,37 +3392,44 @@ public final class BridgeSession: @unchecked Sendable {
         enum CodingKeys: String, CodingKey { case reportID = "reportId" }
     }
 
-    /// A composed report, or an honest reason there is none.
+    /// The answer to *starting* a composition — not to finishing one.
     ///
-    /// `state` carries the distinction an absent document cannot: "the model is not running" and
-    /// "the model wrote nothing" would otherwise look identical to the region.
+    /// The document arrives as `report.composition.changed` events, so this says only whether the
+    /// work began. `state` still distinguishes "no model here" from "under way", because a surface
+    /// that got neither a document nor a reason would have nothing to render.
     private struct ComposeReportResult: Encodable {
         let state: String
         let reason: String?
-        let attempts: Int?
-        let totalMs: Int?
-        let document: CerebralHelmReportDocument?
 
-        init(_ report: ComposedReport, totalMs: Int) {
-            self.state = "ready"
-            self.reason = nil
-            // Surfaced rather than swallowed: a composer that silently needs two attempts every
-            // time is a prompt problem wearing a success.
-            self.attempts = report.attempts
-            self.totalMs = totalMs
-            self.document = report.document
+        static let started = ComposeReportResult(state: "composing", reason: nil)
+
+        static func unavailable(_ reason: String) -> ComposeReportResult {
+            ComposeReportResult(state: "unavailable", reason: reason)
+        }
+    }
+
+    /// Records when the first block arrived, once.
+    ///
+    /// A lock rather than an actor, and that is the point rather than a preference: the progress
+    /// callback is synchronous, so an actor would have to be marked from a detached `Task` — which
+    /// is not guaranteed to have run by the time the terminal emission reads it. That race left
+    /// `firstBlockMs` nil under parallel load, which is exactly the shape of bug that reaches
+    /// production reported as "sometimes the timing is missing".
+    ///
+    /// Time-to-first-block is kept apart from the total deliberately: they answer different
+    /// questions, and the first is what decides whether nine seconds reads as arrival or as a stall.
+    private final class FirstBlockClock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var at: Date?
+
+        func markIfUnset(_ date: Date) {
+            lock.lock(); defer { lock.unlock() }
+            if at == nil { at = date }
         }
 
-        private init(state: String, reason: String?, totalMs: Int?) {
-            self.state = state
-            self.reason = reason
-            self.attempts = nil
-            self.totalMs = totalMs
-            self.document = nil
-        }
-
-        static func unavailable(_ reason: String, totalMs: Int? = nil) -> ComposeReportResult {
-            ComposeReportResult(state: "unavailable", reason: reason, totalMs: totalMs)
+        func milliseconds(since start: Date) -> Int? {
+            lock.lock(); defer { lock.unlock() }
+            return at.map { Int($0.timeIntervalSince(start) * 1000) }
         }
     }
 

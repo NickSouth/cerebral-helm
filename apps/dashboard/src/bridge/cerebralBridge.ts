@@ -1,5 +1,5 @@
 import type { DashboardBootstrapState } from "./types";
-import type { ReportDocument } from "../reports/reportDocument";
+import type { ReportBlock } from "../reports/reportDocument";
 
 /**
  * The `CerebralBridge` is the single contract every dashboard component and the state
@@ -28,6 +28,7 @@ export type BridgeEventType =
   | "mail.changed"
   | "schedule.changed"
   | "system.checks.changed"
+  | "report.composition.changed"
   | "apps.changed";
 
 export interface BridgeEvent {
@@ -544,19 +545,30 @@ export interface UnreadMailResult {
 }
 
 /**
- * A model-composed report, or an honest reason there is none (NIC-228).
+ * The answer to *starting* a composition — not to finishing one (NIC-228, NIC-253).
  *
- * `state` carries the distinction an absent document cannot: "no model is running" and "the model
- * wrote nothing" would otherwise look identical to the region. `reason` is reader-facing prose —
- * never a decoder's complaint, which nobody can act on.
+ * The blocks arrive as `report.composition.changed` events, so this says only whether the work
+ * began. `state` still distinguishes "no model here" from "under way", because a surface that got
+ * neither blocks nor a reason would have nothing to render. `reason` is reader-facing prose — never
+ * a decoder's complaint, which nobody can act on.
  */
 export interface ComposeReportResult {
-  readonly state: "ready" | "unavailable";
+  readonly state: "composing" | "unavailable";
   readonly reason?: string | null;
-  /** How many completions it took. Above one means the first was retried. */
-  readonly attempts?: number | null;
+}
+
+/** One emission of a composition in progress, folded from `report.composition.changed`. */
+export interface ReportCompositionPayload {
+  readonly reportId: string;
+  readonly state: "composing" | "ready" | "unavailable";
+  /** EVERY block so far, not the new ones — the emission replaces rather than appends. */
+  readonly blocks: readonly ReportBlock[];
+  readonly complete: boolean;
+  readonly reason?: string | null;
+  /** Time to the first block, reported apart from the total: they answer different questions, and
+   *  this is the one that decides whether a long composition reads as arrival or as a stall. */
+  readonly firstBlockMs?: number | null;
   readonly totalMs?: number | null;
-  readonly document?: ReportDocument | null;
 }
 
 export interface ConnectGmailInput {
@@ -1050,11 +1062,11 @@ export interface CerebralBridge {
    *  nothing while the interesting part (which checks exist) is already known. */
   runSystemChecks(): Promise<RunSystemChecksResult>;
   /**
-   * Composes one Report with the local model (NIC-228).
+   * Starts composing one Report with the local model (NIC-228, NIC-253).
    *
    * Takes a report id and nothing else: the snapshot is assembled host-side, so message previews,
-   * profile notes and sprint detail never enter the web layer. What comes back is prose the reader
-   * is about to be shown anyway.
+   * profile notes and sprint detail never enter the web layer. Returns as soon as the composition
+   * has STARTED; the blocks follow as `report.composition.changed` events.
    */
   composeReport(reportId: string): Promise<ComposeReportResult>;
   /** Create one templated note in a course (quick actions phase 5), minting the course folder on

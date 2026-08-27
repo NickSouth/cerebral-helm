@@ -433,6 +433,7 @@ export enum CerebralHelmBridgeEventType {
     ModeQuickappsChanged = "mode.quickapps.changed",
     ModeWindowcollapseChanged = "mode.windowcollapse.changed",
     NewsChanged = "news.changed",
+    ReportCompositionChanged = "report.composition.changed",
     ScheduleChanged = "schedule.changed",
     SettingsChanged = "settings.changed",
     SystemChecksChanged = "system.checks.changed",

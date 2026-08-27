@@ -1,4 +1,5 @@
 import Foundation
+import CerebralContracts
 
 /// Joins an Assembler to the Composer, per report (NIC-228).
 ///
@@ -31,12 +32,19 @@ public struct ReportCompositionService: Sendable {
     /// Never throws, for the same reason ``ReportComposer/compose(_:)`` does not: every failure here
     /// is a state a surface has to render honestly, and an error escaping would make "Ollama is not
     /// running" indistinguishable from a bug.
-    public func compose(reportID: String, now: Date) async -> ReportCompositionOutcome {
+    /// - Parameter onBlocks: called as blocks arrive, with every block so far. Omit for a buffered
+    ///   composition.
+    public func compose(
+        reportID: String,
+        now: Date,
+        onBlocks: (@Sendable ([Block]) -> Void)? = nil
+    ) async -> ReportCompositionOutcome {
         guard let assemble = assemblers[reportID] else {
             return .failed(.unavailable("This report isn\u{2019}t composed by a model."))
         }
         return await composer.compose(
-            ReportCompositionRequest(reportID: reportID, snapshot: await assemble(now))
+            ReportCompositionRequest(reportID: reportID, snapshot: await assemble(now)),
+            onBlocks: onBlocks
         )
     }
 

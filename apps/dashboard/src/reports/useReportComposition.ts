@@ -1,14 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBridge } from "../state/BridgeProvider";
-import type { ReportDocument } from "./reportDocument";
+import type { ReportBlock } from "./reportDocument";
+import type { ReportCompositionPayload } from "../bridge/cerebralBridge";
 
 /** Where one composition has got to. */
 export type ReportCompositionStatus = "idle" | "composing" | "ready" | "unavailable";
 
 export interface ReportComposition {
   readonly status: ReportCompositionStatus;
-  /** The model's document — its blocks and the envelope the host wrapped them in. */
-  readonly document: ReportDocument | null;
+  /**
+   * Every block the model has written so far.
+   *
+   * Replaced wholesale on each emission rather than appended to — the host sends the whole set, so
+   * there is no per-block reconciliation here to drift out of step with the composition, and a
+   * retry that discarded its first attempt simply sends a shorter set.
+   */
+  readonly blocks: readonly ReportBlock[];
+  /** True once the composition finished, successfully or not. */
+  readonly complete: boolean;
   /** Reader-facing prose when the composition could not be produced. Never a decoder's complaint. */
   readonly reason: string | null;
   /**
@@ -38,34 +47,30 @@ export interface ReportComposition {
 export function useReportComposition(reportId: string, enabled: boolean): ReportComposition {
   const bridge = useBridge();
   const [status, setStatus] = useState<ReportCompositionStatus>("idle");
-  const [document, setDocument] = useState<ReportDocument | null>(null);
+  const [blocks, setBlocks] = useState<readonly ReportBlock[]>([]);
   const [reason, setReason] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
   const started = useRef(false);
-  // Guards against a composition that resolves after the reader closed the report, or after a
-  // refresh superseded it: a nine-second round trip has plenty of time to be overtaken.
+  // Guards against emissions from a composition the reader has moved on from: closing the report or
+  // asking for a refresh supersedes one that is still streaming, and a long composition has ample
+  // time to be overtaken.
   const run = useRef(0);
 
   const compose = useCallback(() => {
     run.current += 1;
     const ticket = run.current;
     setStatus("composing");
+    setBlocks([]);
     setReason(null);
     setGeneration((value) => value + 1);
 
     void bridge
       .composeReport(reportId)
       .then((result) => {
-        if (ticket !== run.current) {
+        if (ticket !== run.current || result.state !== "unavailable") {
           return;
         }
-        if (result.state === "ready" && result.document) {
-          setDocument(result.document);
-          setStatus("ready");
-          return;
-        }
-        // No document is not an empty document. The region shows why rather than a blank body.
-        setDocument(null);
+        // The host refused to start at all — no model configured. Nothing will stream.
         setReason(result.reason ?? "The brief couldn’t be written just now.");
         setStatus("unavailable");
       })
@@ -73,13 +78,40 @@ export function useReportComposition(reportId: string, enabled: boolean): Report
         if (ticket !== run.current) {
           return;
         }
-        // The bridge itself failed — a different thing from the model failing, and not something
-        // the reader can act on differently, so it reads the same honest way.
-        setDocument(null);
         setReason("The brief couldn’t be written just now.");
         setStatus("unavailable");
       });
   }, [bridge, reportId]);
+
+  // The blocks arrive as events, exactly as the health-check run's results do. Subscribed for as
+  // long as the report is open rather than per composition, so a refresh does not race a resubscribe.
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    return bridge.subscribe((event) => {
+      if (event.type !== "report.composition.changed") {
+        return;
+      }
+      const payload = event.payload as unknown as ReportCompositionPayload;
+      // Another report's composition, or one this hook has superseded.
+      if (payload.reportId !== reportId || !Array.isArray(payload.blocks)) {
+        return;
+      }
+      setBlocks(payload.blocks);
+      if (!payload.complete) {
+        setStatus("composing");
+        return;
+      }
+      if (payload.state === "unavailable") {
+        setReason(payload.reason ?? "The brief couldn’t be written just now.");
+        setStatus("unavailable");
+        return;
+      }
+      setReason(null);
+      setStatus("ready");
+    });
+  }, [bridge, enabled, reportId]);
 
   useEffect(() => {
     if (!enabled) {
@@ -88,7 +120,7 @@ export function useReportComposition(reportId: string, enabled: boolean): Report
       started.current = false;
       run.current += 1;
       setStatus("idle");
-      setDocument(null);
+      setBlocks([]);
       setReason(null);
       return;
     }
@@ -99,5 +131,12 @@ export function useReportComposition(reportId: string, enabled: boolean): Report
     compose();
   }, [enabled, compose]);
 
-  return { status, document, reason, generation, refresh: compose };
+  return {
+    status,
+    blocks,
+    complete: status === "ready" || status === "unavailable",
+    reason,
+    generation,
+    refresh: compose
+  };
 }

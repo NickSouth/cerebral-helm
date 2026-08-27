@@ -141,7 +141,7 @@ export function useTypewriter(
     );
 
     /**
-     * Whether this run's node still holds text this hook wrote.
+     * What this hook last wrote into each run's node, so it can tell its own edits from React's.
      *
      * `run.text` was captured when the timeline was collected, and the DOM can move on afterwards:
      * React reuses a text node and rewrites it when a document's content changes under a STABLE
@@ -150,20 +150,29 @@ export function useTypewriter(
      * restore, puts the stale capture back and DELETES the new content: the reader is left looking
      * at "Writing your brief…" with the finished brief rendered underneath it.
      *
-     * The only edit this hook makes is truncation, so what it wrote is always a PREFIX of what it
-     * captured. A node still holding a prefix is ours to finish; a node holding anything else
-     * belongs to React now and is left alone.
+     * A prefix test is NOT enough, and the hole is specific: blanking writes `""`, and every string
+     * starts with `""`. A node this hook blanked and React then rewrote still looked like its own —
+     * which is exactly the case a reader hits by looking away while a brief composes, since the run
+     * pauses with everything blank while the tab is hidden and `requestAnimationFrame` stops.
      *
-     * Deliberately NOT a check on whether the node is still attached. A node detached by an unmount
-     * is still this hook's to restore — React may reuse those very nodes, and handing them back
-     * truncated is how a report comes back half-written.
+     * Recording the exact value written removes the ambiguity: a node holding something else has
+     * been changed by React and is left alone. Deliberately NOT a check on whether the node is
+     * attached — a node detached by an unmount is still this hook's to restore, because React may
+     * reuse those very nodes and handing them back truncated is how a report comes back
+     * half-written.
      */
-    const isOurs = (run: Run) => run.text.startsWith(run.node.data);
+    const written = new Map<Text, string>();
+    const isOurs = (run: Run) => written.get(run.node) === run.node.data;
+
+    const write = (run: Run, value: string) => {
+      run.node.data = value;
+      written.set(run.node, value);
+    };
 
     const restore = () => {
       for (const run of runs) {
         if (isOurs(run)) {
-          run.node.data = run.text;
+          write(run, run.text);
         }
       }
       // Remove the property rather than clearing the style: these elements carry React's own
@@ -197,7 +206,7 @@ export function useTypewriter(
       started = true;
       last = now;
       for (const run of runs) {
-        run.node.data = "";
+        write(run, "");
       }
       for (const ornament of ornaments) {
         ornament.element.style.visibility = "hidden";
@@ -251,7 +260,7 @@ export function useTypewriter(
         // Same rule as `restore`, and it matters here too: a body that lands while the header is
         // still being written would otherwise be overwritten a frame later.
         if (run.node.data.length !== want && isOurs(run)) {
-          run.node.data = run.text.slice(0, want);
+          write(run, run.text.slice(0, want));
         }
       }
 

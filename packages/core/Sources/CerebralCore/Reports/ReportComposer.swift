@@ -55,7 +55,14 @@ public struct ReportComposer: Sendable {
     ///
     /// Never throws. Every way this can fail is a state a surface has to render honestly, and an
     /// error escaping here would make "Ollama is not running" indistinguishable from a bug.
-    public func compose(_ request: ReportCompositionRequest) async -> ReportCompositionOutcome {
+    /// - Parameter onBlocks: called as blocks arrive, with **every block so far** rather than the
+    ///   new ones. Whole-set semantics, matching the health-check run the bridge already streams:
+    ///   a consumer that had to reconcile per-block updates could drift out of step, and a retry
+    ///   simply replaces the set rather than needing an undo. Omit it for a buffered composition.
+    public func compose(
+        _ request: ReportCompositionRequest,
+        onBlocks: (@Sendable ([Block]) -> Void)? = nil
+    ) async -> ReportCompositionOutcome {
         guard let composer = composers.composerReports.first(
             where: { $0.composerReportID == request.reportID }
         ) else {
@@ -92,8 +99,8 @@ public struct ReportComposer: Sendable {
 
             let completion: ModelCompletion
             do {
-                completion = try await provider.complete(
-                    ModelRequest(messages: messages, options: options)
+                completion = try await stream(
+                    ModelRequest(messages: messages, options: options), onBlocks: onBlocks
                 )
             } catch let error as ModelProviderError {
                 // A transport or lifecycle failure is not something a retry fixes, and cancellation
@@ -146,6 +153,55 @@ public struct ReportComposer: Sendable {
         }
 
         return .failed(lastFailure)
+    }
+
+    // MARK: - Reading the stream
+
+    /// Collects a completion, handing finished blocks to `onBlocks` as they close.
+    ///
+    /// This replaces `ModelProvider.complete(_:)` rather than wrapping it, because that extension
+    /// collects the stream itself and there is no seam in it to watch the deltas go past. The two
+    /// behaviours it is careful to keep are the ones that method documents, and both are load-bearing:
+    /// a stream that ends without its terminal event is a BROKEN stream rather than an empty answer,
+    /// and cancellation is checked BEFORE concluding anything, because cancelling an
+    /// `AsyncThrowingStream` consumer terminates the stream rather than throwing through it — so a
+    /// cancelled request arrives here looking exactly like a truncated one.
+    private func stream(
+        _ request: ModelRequest,
+        onBlocks: (@Sendable ([Block]) -> Void)?
+    ) async throws -> ModelCompletion {
+        var text = ""
+        var usage: ModelUsage?
+        var parser = IncrementalBlockParser()
+        var seen: [Block] = []
+
+        do {
+            for try await event in provider.stream(request) {
+                switch event {
+                case let .textDelta(delta):
+                    text += delta
+                    guard let onBlocks else { continue }
+                    let arrived = parser.consume(delta)
+                    guard !arrived.isEmpty else { continue }
+                    seen += arrived
+                    onBlocks(seen)
+                case let .completed(reported):
+                    usage = reported
+                // Deliberation is off for composition, and the passive tier calls nothing — but a
+                // runtime that emitted either must not break the read.
+                case .thinkingDelta, .toolCall:
+                    continue
+                }
+            }
+        } catch is CancellationError {
+            throw ModelProviderError.cancelled
+        }
+
+        if Task.isCancelled { throw ModelProviderError.cancelled }
+        guard let usage else {
+            throw ModelProviderError.decodeFailed("The stream ended without reporting completion.")
+        }
+        return ModelCompletion(text: text, toolCalls: [], usage: usage)
     }
 
     // MARK: - The prompt

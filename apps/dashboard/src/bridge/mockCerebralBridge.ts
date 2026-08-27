@@ -1122,46 +1122,63 @@ export function createMockCerebralBridge(
       });
     },
     composeReport(reportId: string) {
-      // A representative composition for browser previews (NIC-228). The wait is opt-in via
-      // `?composedelay` — see `readComposeDelay` for why it must be off by default.
+      // Streams like the host does (NIC-253): blocks arrive as `report.composition.changed` events
+      // carrying the whole set so far, and the operation itself only says the work began. A mock
+      // that answered with a finished document would exercise a path the app no longer has.
+      //
+      // The pacing is opt-in via `?composedelay` — see `readComposeDelay` for why it must be off by
+      // default.
       if (reportId !== "daily-brief") {
         return Promise.resolve<ComposeReportResult>({
           state: "unavailable",
-          reason: "This report isn\u2019t composed by a model."
+          reason: "This report isn’t composed by a model."
         });
       }
-      return new Promise<ComposeReportResult>((resolve) => {
-        setTimeout(() => {
-          resolve({
-            state: "ready",
-            attempts: 1,
-            totalMs: readComposeDelay() || 8700,
-            document: {
-              schemaVersion: "1.0.0",
-              reportId: "daily-brief",
-              blocks: [
-                {
-                  blockKind: "line",
-                  text: "Your investor call is at 9:30 \u2014 the only fixed thing today.",
-                  lineEmphasis: "normal"
-                },
-                {
-                  blockKind: "list",
-                  listItems: [
-                    { text: "Billing: invoice 4021, due Friday", meta: "09:04" },
-                    { text: "Anna: reschedule Thursday?", meta: "08:12" }
-                  ]
-                },
-                {
-                  blockKind: "line",
-                  text: "The sprint is on pace, so the afternoon is genuinely free. It\u2019s clear and 78 later.",
-                  lineEmphasis: "normal"
-                }
-              ]
-            }
+
+      const composed = [
+        {
+          blockKind: "line" as const,
+          text: "Your investor call is at 9:30 — the only fixed thing today.",
+          lineEmphasis: "normal" as const
+        },
+        {
+          blockKind: "list" as const,
+          listItems: [
+            { text: "Billing: invoice 4021, due Friday", meta: "09:04" },
+            { text: "Anna: reschedule Thursday?", meta: "08:12" }
+          ]
+        },
+        {
+          blockKind: "line" as const,
+          text: "The sprint is on pace, so the afternoon is genuinely free. It’s clear and 78 later.",
+          lineEmphasis: "normal" as const
+        }
+      ];
+
+      const total = readComposeDelay();
+      const step = total / composed.length;
+      composed.forEach((_, index) => {
+        const at = Math.round(step * (index + 1));
+        const emitBlocks = () =>
+          emit({
+            eventId: `brevt_compose${index}`,
+            type: "report.composition.changed",
+            schemaVersion: "1.0.0",
+            timestamp: new Date().toISOString(),
+            payload: {
+              reportId,
+              state: index === composed.length - 1 ? "ready" : "composing",
+              blocks: composed.slice(0, index + 1),
+              complete: index === composed.length - 1,
+              firstBlockMs: Math.round(step),
+              totalMs: index === composed.length - 1 ? total : undefined
+            } as unknown as Record<string, unknown>
           });
-        }, readComposeDelay());
+        if (at <= 0) emitBlocks();
+        else setTimeout(emitBlocks, at);
       });
+
+      return Promise.resolve<ComposeReportResult>({ state: "composing" });
     },
     runSystemChecks() {
       // A representative run for browser previews (quick actions phase 5), streamed rather than

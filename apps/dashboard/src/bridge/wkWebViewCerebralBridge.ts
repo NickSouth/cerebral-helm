@@ -104,6 +104,7 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "news.changed",
   "mail.changed",
   "system.checks.changed",
+  "report.composition.changed",
   "schedule.changed",
   "apps.changed"
 ]);

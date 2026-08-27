@@ -315,4 +315,26 @@ describe("useTypewriter", () => {
     expect(textOf(doc)).toBe(FIRST);
   });
 
+
+  it("leaves alone a node it had blanked that React then rewrote", () => {
+    // The hole a prefix test leaves: blanking writes `""`, and EVERY string starts with `""`, so a
+    // node this hook blanked and React then rewrote still looked like its own.
+    //
+    // A reader hits this by looking away while a brief composes. The run pauses with everything
+    // blank — `requestAnimationFrame` stops firing on a hidden tab — and the model's blocks land
+    // meanwhile. Restoring on the way out then put the placeholder back OVER the model's first line
+    // and deleted it: "Writing your brief…" with the finished brief rendered underneath.
+    const { getByTestId } = render(<Host paragraphs={[FIRST]} />);
+    const doc = getByTestId("doc");
+    const node = doc.querySelector("p")!.firstChild as Text;
+
+    frame(0); // blanks; from here the node holds ""
+    expect(textOf(doc)).toBe("");
+
+    // React swaps the content while this hook is paused mid-run.
+    node.data = SECOND;
+
+    frame(5000);
+    expect(textOf(doc)).toBe(SECOND);
+  });
 });

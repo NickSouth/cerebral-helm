@@ -180,7 +180,12 @@ export function dailyBriefDocument(
  */
 export function composeDailyBrief(
   snapshot: DailyBriefSnapshot,
-  composed: { status: string; document: ReportDocument | null; reason: string | null } | null = null
+  composed: {
+    status: string;
+    /** Every block the model has written so far — growing while it composes (NIC-253). */
+    blocks: readonly ReportBlock[];
+    reason: string | null;
+  } | null = null
 ): ReportDocument {
   const header = headerBlocks(snapshot);
 
@@ -189,16 +194,22 @@ export function composeDailyBrief(
     return dailyBriefDocument([...header, ...deterministicBody(snapshot)]);
   }
   if (composed.status === "composing" || composed.status === "idle") {
+    // Blocks stream in, so once the first one lands the reader watches the brief arrive rather than
+    // a placeholder. The line only stands in for the silence BEFORE anything has been written.
     return dailyBriefDocument([
       ...header,
-      { blockKind: "line", text: "Writing your brief…", lineEmphasis: "muted" }
+      ...(composed.blocks.length > 0
+        ? composed.blocks
+        : [{ blockKind: "line", text: "Writing your brief…", lineEmphasis: "muted" } as ReportBlock])
     ], true);
   }
-  if (composed.status === "ready" && composed.document) {
-    return dailyBriefDocument([...header, ...composed.document.blocks], true);
+  if (composed.status === "ready") {
+    return dailyBriefDocument([...header, ...composed.blocks], true);
   }
   // Unavailable: say why, then fall back to the facts the web layer can state on its own. A reason
-  // without a brief would be a worse report than the one this app shipped with.
+  // without a brief would be a worse report than the one this app shipped with. Whatever streamed
+  // before the failure is discarded with it — it came from an attempt that did not survive
+  // validation, and showing it would render a document the composer rejected.
   return dailyBriefDocument([
     ...header,
     ...(composed.reason

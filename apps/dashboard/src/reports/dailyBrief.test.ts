@@ -147,14 +147,10 @@ describe("renderableBlocks", () => {
  * stopped daemon would be a regression rather than a degradation.
  */
 
-const composedDocument = {
-  schemaVersion: "1.0.0",
-  reportId: "daily-brief",
-  blocks: [
-    { blockKind: "line", text: "Your investor call is the only fixed thing today." },
-    { blockKind: "count", value: "3", label: "unread that look like they need you" }
-  ]
-} as const;
+const composedBlocks = [
+  { blockKind: "line", text: "Your investor call is the only fixed thing today." },
+  { blockKind: "count", value: "3", label: "unread that look like they need you" }
+] as const satisfies readonly ReportBlock[];
 
 function headerTexts(document: { blocks: readonly ReportBlock[] }): string[] {
   return document.blocks.slice(0, 3).map((block) => block.text ?? block.value ?? "");
@@ -166,10 +162,10 @@ describe("the deterministic header", () => {
     // rewritten. A header that changed when the body landed would be a visible rewrite of text the
     // reader had already started on.
     const snap = snapshot();
-    const composing = composeDailyBrief(snap, { status: "composing", document: null, reason: null });
-    const ready = composeDailyBrief(snap, { status: "ready", document: composedDocument, reason: null });
+    const composing = composeDailyBrief(snap, { status: "composing", blocks: [], reason: null });
+    const ready = composeDailyBrief(snap, { status: "ready", blocks: composedBlocks, reason: null });
     const failed = composeDailyBrief(snap, {
-      status: "unavailable", document: null, reason: "Ollama isn’t running."
+      status: "unavailable", blocks: [], reason: "Ollama isn’t running."
     });
 
     expect(headerTexts(composing)).toEqual(headerTexts(ready));
@@ -180,7 +176,7 @@ describe("the deterministic header", () => {
   it("states today's high, which is the number a morning actually turns on", () => {
     const document = composeDailyBrief(
       snapshot({ weather: { state: "ready", temperatureF: 63.4, condition: "Clear", highF: 78.2 } }),
-      { status: "ready", document: composedDocument, reason: null }
+      { status: "ready", blocks: composedBlocks, reason: null }
     );
 
     // Appended rather than substituted: the current reading is still what you feel stepping outside.
@@ -190,7 +186,7 @@ describe("the deterministic header", () => {
   it("omits the high when the provider supplied none", () => {
     const document = composeDailyBrief(
       snapshot({ weather: { state: "ready", temperatureF: 63.4, condition: "Clear" } }),
-      { status: "ready", document: composedDocument, reason: null }
+      { status: "ready", blocks: composedBlocks, reason: null }
     );
 
     expect(document.blocks[2].value).toBe("63°F · Clear");
@@ -200,7 +196,7 @@ describe("the deterministic header", () => {
 describe("the composed body", () => {
   it("is the model's blocks, under the header", () => {
     const document = composeDailyBrief(snapshot(), {
-      status: "ready", document: composedDocument, reason: null
+      status: "ready", blocks: composedBlocks, reason: null
     });
 
     expect(document.blocks).toHaveLength(5);
@@ -214,7 +210,7 @@ describe("the composed body", () => {
   it("says something is happening while the model is writing", () => {
     // Nine seconds of a header and nothing else reads as a report that failed to load.
     const document = composeDailyBrief(snapshot(), {
-      status: "composing", document: null, reason: null
+      status: "composing", blocks: [], reason: null
     });
 
     expect(document.blocks).toHaveLength(4);
@@ -228,7 +224,7 @@ describe("the composed body", () => {
     // its own follow — a reason with no brief under it would be the worse report.
     const document = composeDailyBrief(
       snapshot({ unreadCount: inbox(4) }),
-      { status: "unavailable", document: null, reason: "Ollama isn’t running." }
+      { status: "unavailable", blocks: [], reason: "Ollama isn’t running." }
     );
     const texts = document.blocks.map((block) => block.text ?? block.label ?? "");
 
@@ -251,9 +247,9 @@ describe("the composed body", () => {
     // every block survives rather than trusting the shapes above.
     for (const composed of [
       null,
-      { status: "composing", document: null, reason: null },
-      { status: "ready", document: composedDocument, reason: null },
-      { status: "unavailable", document: null, reason: "Ollama isn’t running." }
+      { status: "composing", blocks: [], reason: null },
+      { status: "ready", blocks: composedBlocks, reason: null },
+      { status: "unavailable", blocks: [], reason: "Ollama isn’t running." }
     ]) {
       const document = composeDailyBrief(snapshot({ unreadCount: inbox(2) }), composed);
       expect(document.blocks.every(isRenderable)).toBe(true);
@@ -270,7 +266,7 @@ describe("the refresh control", () => {
     for (const status of ["composing", "ready", "unavailable"] as const) {
       const document = composeDailyBrief(snap, {
         status,
-        document: status === "ready" ? composedDocument : null,
+        blocks: status === "ready" ? composedBlocks : [],
         reason: status === "unavailable" ? "Ollama isn’t running." : null
       });
       expect(document.refreshable).toBe(true);

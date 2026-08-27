@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import CerebralBridge
+import CerebralContracts
 import CerebralCore
 import CerebralMacAdapters
 import CerebralRuntimeHost
@@ -454,7 +455,7 @@ final class AppBridgeRuntime: @unchecked Sendable {
         // says so honestly rather than the app failing to start.
         let weatherForBrief = weatherPublisher
         let linearForBrief = composition.linear
-        let composeReportClosure: (@Sendable (String) async -> ReportCompositionOutcome)? = {
+        let composeReportClosure: (@Sendable (String, @escaping @Sendable ([Block]) -> Void) async -> ReportCompositionOutcome)? = {
             guard case let .valid(config) = ConfigValidator.validate(
                 configDirectory: paths.configDirectory
             ) else { return nil }
@@ -493,7 +494,9 @@ final class AppBridgeRuntime: @unchecked Sendable {
                     provider: modelProvider, profiles: catalog, composers: composers
                 )
             )
-            return { reportID in await service.compose(reportID: reportID, now: Date()) }
+            return { reportID, onBlocks in
+                await service.compose(reportID: reportID, now: Date(), onBlocks: onBlocks)
+            }
         }()
 
         let systemChecksClosure: @Sendable () -> [any HealthCheck] = {
