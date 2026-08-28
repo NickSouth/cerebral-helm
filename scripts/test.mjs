@@ -24,6 +24,7 @@ runCommand("node", ["--test", "./scripts/fixture-catalog.test.mjs"]);
 // run, it silently corrupts every number the run produces.
 runCommand("node", ["--test", "./scripts/evals-catalog.test.mjs"]);
 runCommand("node", ["--test", "./scripts/evals-runtime.test.mjs"]);
+runCommand("node", ["--test", "./scripts/evals-composer.test.mjs"]);
 runCommand("node", ["--test", "./scripts/validate-docs.test.mjs"]);
 runCommand("swift", ["test"]);
 runCommand("corepack", ["pnpm", "--dir", "apps/dashboard", "test", "--run"]);

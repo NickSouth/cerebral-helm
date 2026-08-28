@@ -60,9 +60,20 @@ public struct MailUnreadSummary: Equatable, Sendable {
 
 /// One message, as far as a report needs to describe it.
 ///
-/// **Headers only, deliberately.** The grant allows reading bodies; this type cannot carry one, so
-/// no surface above it can accidentally render or log the contents of an email. The capability the
-/// user granted is broader than the capability this code gives itself.
+/// **Headers, plus a short preview (owner decision, 2026-08-26.)** This type used to be headers
+/// only, on the principle that the capability the user granted was broader than the capability the
+/// code gave itself. That was deliberate and it has been deliberately overturned: the daily brief
+/// is asked to say which mail needs the reader, and sender-and-subject is not enough to judge that.
+///
+/// What changed is the amount, not the principle. ``preview`` is a **preview, never the message**,
+/// bounded at ``previewLimit`` — enough to tell an invoice from a newsletter, not enough to
+/// reconstruct correspondence, and cheap enough that eight of them fit a context window beside a
+/// calendar and a sprint. Reading whole bodies remains unbuilt.
+///
+/// Two rules travel with it. It is **untrusted text**: anyone who can email the user can put words
+/// in front of a model through this field, so every consumer treats it as quoted data and never as
+/// instruction. And it **does not cross the bridge** — the composer runs host-side, so no preview
+/// reaches the web layer, and `UnreadMailItem` still carries subject and byline alone.
 public struct MailMessage: Equatable, Sendable {
     public let id: String
     /// The sender as Gmail reports it — usually `Display Name <address@host>`.
@@ -76,15 +87,51 @@ public struct MailMessage: Equatable, Sendable {
     /// returned by its API, so this is what a link is built from. Nil when the sender omitted it,
     /// in which case the row simply is not a link.
     public let rfc822MessageID: String?
+    /// A short excerpt of the message text, bounded at ``previewLimit``, or nil when the provider
+    /// supplied none. Absent rather than empty when unavailable: "there was no preview" and "the
+    /// message opens with nothing" are different facts, and a composer told the second would
+    /// describe an empty email.
+    public let preview: String?
+
+    /// How much of a message a preview may carry.
+    ///
+    /// Sized against what it is for. Gmail's own snippet runs to roughly this length, eight of them
+    /// cost only a few hundred tokens beside a snapshot and a profile, and the figure is small
+    /// enough that the field cannot quietly become a body: at 300 characters a reader can tell an
+    /// invoice from a newsletter and cannot reconstruct the correspondence.
+    public static let previewLimit = 300
 
     public init(
-        id: String, from: String, subject: String, receivedAt: String?, rfc822MessageID: String?
+        id: String,
+        from: String,
+        subject: String,
+        receivedAt: String?,
+        rfc822MessageID: String?,
+        preview: String? = nil
     ) {
         self.id = id
         self.from = from
         self.subject = subject
         self.receivedAt = receivedAt
         self.rfc822MessageID = rfc822MessageID
+        self.preview = MailMessage.bounded(preview)
+    }
+
+    /// Trims and caps a preview at the source, so no caller has to remember to.
+    ///
+    /// Bounded here rather than at the surface that renders or sends it, because a limit applied
+    /// late is a limit that one new caller forgets. Whitespace collapses first: Gmail's snippets
+    /// arrive with the newlines of the original message in them, and a preview that spans six lines
+    /// costs a model more attention than the fact inside it is worth.
+    static func bounded(_ preview: String?) -> String? {
+        guard let preview else { return nil }
+        let collapsed = preview.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\r" || $0 == "\t" })
+            .joined(separator: " ")
+        guard !collapsed.isEmpty else { return nil }
+        guard collapsed.count > previewLimit else { return collapsed }
+        // A hard cut, with an ellipsis so a reader — or a model — can see it was cut rather than
+        // that the sender stopped mid-sentence.
+        return String(collapsed.prefix(previewLimit - 1)) + "\u{2026}"
     }
 
     /// The sender's display name where there is one — "Mum" from `Mum <mum@example.com>` — else
@@ -110,4 +157,38 @@ public enum MailError: Error, Equatable, Sendable {
     /// publishing status) or one revoked by a password change. The remedy is to reconnect.
     case reconnectRequired
     case providerFailed(String)
+}
+
+/// A fixed-outcome ``MailProvider`` for tests and for any build with no account attached: it
+/// ignores the limit and yields the messages (or throws the error) it was constructed with.
+///
+/// Follows the convention every other port in this package uses — `MockCalendarProvider`,
+/// `MockWeatherProvider`, `MockModelProvider`. It does not record what it was asked; a test that
+/// needs that declares its own recorder.
+public struct MockMailProvider: MailProvider {
+    private let messages: Result<[MailMessage], MailError>
+    private let summary: Result<MailUnreadSummary, MailError>
+
+    public init(
+        messages: [MailMessage],
+        summary: MailUnreadSummary? = nil
+    ) {
+        self.messages = .success(messages)
+        // Defaults to a count that agrees with the listing, because the real provider derives both
+        // from one query and the two cannot disagree there either.
+        self.summary = .success(
+            summary ?? MailUnreadSummary(count: messages.count, isCapped: false, scope: .primary)
+        )
+    }
+
+    public init(error: MailError) {
+        self.messages = .failure(error)
+        self.summary = .failure(error)
+    }
+
+    public func unreadSummary() async throws -> MailUnreadSummary { try summary.get() }
+
+    public func unread(limit: Int) async throws -> [MailMessage] {
+        Array(try messages.get().prefix(max(0, limit)))
+    }
 }

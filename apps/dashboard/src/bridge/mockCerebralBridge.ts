@@ -5,6 +5,7 @@ import type {
   BridgeEventListener,
   CerebralBridge,
   ChromeProfile,
+  ComposeReportResult,
   LayoutSession,
   RecentActivity,
   SettingsSnapshot,
@@ -47,6 +48,34 @@ const RECENT_ACTIVITY = (recentActivityResponse.payload as { recentActivity: Rec
  * with a test pass rather than here.
  */
 const WIDGET_ARRIVAL_DELAY_MS = readWidgetArrivalDelay();
+
+/**
+ * Model the real host's composition wait (NIC-228), opt-in via `?composedelay[=ms]`.
+ *
+ * The same shape as `?widgetdelay` above, and for the same reason: a real composition takes around
+ * nine seconds against a local model, and a mock that answers instantly hides every question the
+ * wait raises — whether the header renders on its own, what the region says meanwhile, and whether
+ * the body's arrival disturbs text the reader has already started.
+ *
+ * OFF by default, which is not a preference but a requirement: the test suite drives this bridge,
+ * and a multi-second pending timer on every render of the daily brief made unrelated report tests
+ * flaky. Previews opt in; tests get an immediate answer.
+ *
+ * A bare `?composedelay` is 4500ms rather than the true nine seconds — long enough to outlast the
+ * region's own ~2.4s opening handover, which an earlier 900ms default did not, so the "writing"
+ * state was unreachable in the preview.
+ */
+function readComposeDelay(): number {
+  if (typeof window === "undefined") {
+    return 0;
+  }
+  const raw = new URLSearchParams(window.location.search).get("composedelay");
+  if (raw === null) {
+    return 0;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 4500;
+}
 
 function readWidgetArrivalDelay(): number {
   if (typeof window === "undefined") {
@@ -1091,6 +1120,65 @@ export function createMockCerebralBridge(
         total: notes.length,
         notes: limit === undefined ? notes : notes.slice(0, limit)
       });
+    },
+    composeReport(reportId: string) {
+      // Streams like the host does (NIC-253): blocks arrive as `report.composition.changed` events
+      // carrying the whole set so far, and the operation itself only says the work began. A mock
+      // that answered with a finished document would exercise a path the app no longer has.
+      //
+      // The pacing is opt-in via `?composedelay` — see `readComposeDelay` for why it must be off by
+      // default.
+      if (reportId !== "daily-brief") {
+        return Promise.resolve<ComposeReportResult>({
+          state: "unavailable",
+          reason: "This report isn’t composed by a model."
+        });
+      }
+
+      const composed = [
+        {
+          blockKind: "line" as const,
+          text: "Your investor call is at 9:30 — the only fixed thing today.",
+          lineEmphasis: "normal" as const
+        },
+        {
+          blockKind: "list" as const,
+          listItems: [
+            { text: "Billing: invoice 4021, due Friday", meta: "09:04" },
+            { text: "Anna: reschedule Thursday?", meta: "08:12" }
+          ]
+        },
+        {
+          blockKind: "line" as const,
+          text: "The sprint is on pace, so the afternoon is genuinely free. It’s clear and 78 later.",
+          lineEmphasis: "normal" as const
+        }
+      ];
+
+      const total = readComposeDelay();
+      const step = total / composed.length;
+      composed.forEach((_, index) => {
+        const at = Math.round(step * (index + 1));
+        const emitBlocks = () =>
+          emit({
+            eventId: `brevt_compose${index}`,
+            type: "report.composition.changed",
+            schemaVersion: "1.0.0",
+            timestamp: new Date().toISOString(),
+            payload: {
+              reportId,
+              state: index === composed.length - 1 ? "ready" : "composing",
+              blocks: composed.slice(0, index + 1),
+              complete: index === composed.length - 1,
+              firstBlockMs: Math.round(step),
+              totalMs: index === composed.length - 1 ? total : undefined
+            } as unknown as Record<string, unknown>
+          });
+        if (at <= 0) emitBlocks();
+        else setTimeout(emitBlocks, at);
+      });
+
+      return Promise.resolve<ComposeReportResult>({ state: "composing" });
     },
     runSystemChecks() {
       // A representative run for browser previews (quick actions phase 5), streamed rather than

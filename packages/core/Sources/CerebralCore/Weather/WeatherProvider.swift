@@ -12,11 +12,34 @@ public struct WeatherReading: Equatable, Sendable {
     public let condition: String
     /// When the sample was observed (the provider's reported observation time, or fetch time).
     public let observedAt: Date
+    /// Today's forecast high in °F, or nil when the provider did not supply one.
+    ///
+    /// Added for the daily brief (NIC-228): at 07:00 the current temperature is the least useful
+    /// number weather has to offer, and "high of 78, clear" is what decides whether a free
+    /// afternoon is worth protecting. Optional because the bottom bar predates it and a provider
+    /// that only reports current conditions is still a usable provider.
+    public let highF: Double?
+    /// Today's forecast low in °F, or nil when unavailable.
+    public let lowF: Double?
+    /// Today's maximum chance of precipitation, 0-100, or nil when unavailable. A percentage
+    /// rather than a phrase, because "70" and "a chance of rain" are different claims and only one
+    /// of them is the provider's.
+    public let precipitationChance: Int?
 
-    public init(temperatureF: Double, condition: String, observedAt: Date) {
+    public init(
+        temperatureF: Double,
+        condition: String,
+        observedAt: Date,
+        highF: Double? = nil,
+        lowF: Double? = nil,
+        precipitationChance: Int? = nil
+    ) {
         self.temperatureF = temperatureF
         self.condition = condition
         self.observedAt = observedAt
+        self.highF = highF
+        self.lowF = lowF
+        self.precipitationChance = precipitationChance
     }
 }
 

@@ -384,7 +384,11 @@ public struct SystemStatusReadHandler: ToolHandler {
             let metrics = readings.map { reading in
                 Metric(
                     availability: AvailabilityEnum(rawValue: reading.availability.rawValue) ?? .unavailable,
-                    id: MetricElement(rawValue: reading.id.rawValue) ?? .cpu,
+                    // `ID` is codegen's name for the metric-id enum, not an authored one: quicktype
+                    // names types from property names, and this one has been called both `ID` and
+                    // `MetricElement` depending on which other schemas happened to exist. The
+                    // domain type is `SystemMetricID` above; this is only its wire mirror.
+                    id: ID(rawValue: reading.id.rawValue) ?? .cpu,
                     sampledAt: nil,
                     unit: reading.unit,
                     value: reading.value

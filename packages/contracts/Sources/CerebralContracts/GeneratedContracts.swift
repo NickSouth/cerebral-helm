@@ -18,6 +18,7 @@
 //   let cerebralHelmConfigValidationError = try CerebralHelmConfigValidationError(json)
 //   let cerebralHelmModeOverride = try CerebralHelmModeOverride(json)
 //   let cerebralHelmModeConfig = try CerebralHelmModeConfig(json)
+//   let cerebralHelmModelComposerCatalog = try CerebralHelmModelComposerCatalog(json)
 //   let cerebralHelmModelProfileCatalog = try CerebralHelmModelProfileCatalog(json)
 //   let cerebralHelmSettingsPatch = try CerebralHelmSettingsPatch(json)
 //   let cerebralHelmNoteMetadata = try CerebralHelmNoteMetadata(json)
@@ -1596,14 +1597,27 @@ public enum UIState: String, Codable {
 public struct DashboardWeatherChannel: Codable {
     /// Short condition phrase, e.g. "Partly Cloudy".
     public let condition: String?
+    /// Today's forecast high in °F, when known. Added for the daily brief (NIC-228): at 07:00
+    /// the current temperature is the least useful number weather has, and the high is what
+    /// decides whether a free afternoon is worth protecting.
+    public let highF: Double?
     public let label: String
+    /// Today's forecast low in °F, when known.
+    public let lowF: Double?
+    /// Today's maximum chance of precipitation as a percentage, when known. A number rather than
+    /// a phrase: "70" and "a chance of rain" are different claims, and only one of them is the
+    /// provider's.
+    public let precipitationChance: Int?
     public let state: DashboardRegionState
     /// Temperature in °F, when known.
     public let temperatureF: Double?
 
-    public init(condition: String?, label: String, state: DashboardRegionState, temperatureF: Double?) {
+    public init(condition: String?, highF: Double?, label: String, lowF: Double?, precipitationChance: Int?, state: DashboardRegionState, temperatureF: Double?) {
         self.condition = condition
+        self.highF = highF
         self.label = label
+        self.lowF = lowF
+        self.precipitationChance = precipitationChance
         self.state = state
         self.temperatureF = temperatureF
     }
@@ -1629,13 +1643,19 @@ public extension DashboardWeatherChannel {
 
     func with(
         condition: String?? = nil,
+        highF: Double?? = nil,
         label: String? = nil,
+        lowF: Double?? = nil,
+        precipitationChance: Int?? = nil,
         state: DashboardRegionState? = nil,
         temperatureF: Double?? = nil
     ) -> DashboardWeatherChannel {
         return DashboardWeatherChannel(
             condition: condition ?? self.condition,
+            highF: highF ?? self.highF,
             label: label ?? self.label,
+            lowF: lowF ?? self.lowF,
+            precipitationChance: precipitationChance ?? self.precipitationChance,
             state: state ?? self.state,
             temperatureF: temperatureF ?? self.temperatureF
         )
@@ -1797,6 +1817,7 @@ public enum CerebralHelmBridgeEventType: String, Codable {
     case modeQuickappsChanged = "mode.quickapps.changed"
     case modeWindowcollapseChanged = "mode.windowcollapse.changed"
     case newsChanged = "news.changed"
+    case reportCompositionChanged = "report.composition.changed"
     case scheduleChanged = "schedule.changed"
     case settingsChanged = "settings.changed"
     case systemChecksChanged = "system.checks.changed"
@@ -2269,6 +2290,7 @@ public enum Operation: String, Codable {
     case closeAllWindows = "closeAllWindows"
     case closeLayout = "closeLayout"
     case closeWindow = "closeWindow"
+    case composeReport = "composeReport"
     case connectGmail = "connectGmail"
     case connectSpotify = "connectSpotify"
     case createCalendarEvent = "createCalendarEvent"
@@ -4204,6 +4226,306 @@ public extension Widgets {
 
 // Do not edit by hand; edit packages/contracts/schemas instead.
 
+/// How a model composes each Report-archetype document: the shared system prompt, and the
+/// per-report instruction, capability profile and generation budget. The passive tier
+/// composes prose and proposals and executes nothing, so nothing here grants capability — it
+/// is editorial direction plus a budget.
+///
+/// One file rather than a prompt embedded in Swift, because two consumers read it: the host
+/// composer and `evals/run-report.mjs`. A gate measuring a different prompt from the one
+/// that ships is not a gate. Eval THRESHOLDS deliberately do not live here — they are the
+/// harness's own policy, the app never reads them, and shipping them inside the packaged app
+/// buys nothing.
+///
+/// Optional, like the profile catalog: with no such file no report is model-composed and the
+/// app runs exactly as it does today.
+// MARK: - CerebralHelmModelComposerCatalog
+public struct CerebralHelmModelComposerCatalog: Codable {
+    /// The quick actions a composed report may offer the reader, and what each one does. This is
+    /// the ONLY list a model may draw a `reportActions` id from, and it is enforced host-side
+    /// rather than trusted: `report-document.schema.json` constrains the id's SHAPE and not its
+    /// membership. The renderer is not fooled — `resolveQuickAction` returns null for an
+    /// unregistered id and `ActionLink` falls back to inert text, so no phantom button is ever
+    /// pressable — but the reader is still shown an offer, labelled from the id, that can never
+    /// be taken up. `ReportComposer` drops any entry that is not named here so the prose stands
+    /// on its own instead.
+    ///
+    /// Each carries a `composerActionUse` because listing bare ids does not work — measured four
+    /// separate times on this project, a vocabulary stated without its meaning is the single
+    /// most reliable way to make this model wrong. Given only ids it described the offer in its
+    /// own words instead ('shall I make you a shopping list?') and attached no action at all,
+    /// which is the same failure wearing a friendlier face.
+    public let composerActions: [CerebralHelmComposerActionCatalog]
+    public let composerReports: [ComposerReport]
+    /// Shared across every composed report, so all of them hit one prefix-cache prefix. Steady
+    /// state measured 98.7% cached, turning ~46 s of cold prefill into ~1.5 s; interleaving
+    /// distinct prefixes dropped a 1,819-token cached prefix to 345. A per-report system prompt
+    /// would forfeit that, which is why editorial direction goes in `composerInstruction`
+    /// instead.
+    public let composerSystemPrompt: String
+    public let extensions: [String: JSONAny]?
+    public let schemaVersion: String
+
+    public init(composerActions: [CerebralHelmComposerActionCatalog], composerReports: [ComposerReport], composerSystemPrompt: String, extensions: [String: JSONAny]?, schemaVersion: String) {
+        self.composerActions = composerActions
+        self.composerReports = composerReports
+        self.composerSystemPrompt = composerSystemPrompt
+        self.extensions = extensions
+        self.schemaVersion = schemaVersion
+    }
+}
+
+// MARK: CerebralHelmModelComposerCatalog convenience initializers and mutators
+
+public extension CerebralHelmModelComposerCatalog {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmModelComposerCatalog.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        composerActions: [CerebralHelmComposerActionCatalog]? = nil,
+        composerReports: [ComposerReport]? = nil,
+        composerSystemPrompt: String? = nil,
+        extensions: [String: JSONAny]?? = nil,
+        schemaVersion: String? = nil
+    ) -> CerebralHelmModelComposerCatalog {
+        return CerebralHelmModelComposerCatalog(
+            composerActions: composerActions ?? self.composerActions,
+            composerReports: composerReports ?? self.composerReports,
+            composerSystemPrompt: composerSystemPrompt ?? self.composerSystemPrompt,
+            extensions: extensions ?? self.extensions,
+            schemaVersion: schemaVersion ?? self.schemaVersion
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - CerebralHelmComposerActionCatalog
+public struct CerebralHelmComposerActionCatalog: Codable {
+    /// A registered quick-action id. Must exist in the dashboard's quick-action registry — an id
+    /// that does not is rendered as inert text rather than a control, which reads as an offer
+    /// the app is quietly unable to honour.
+    public let composerActionID: String
+    /// When to offer it, in the words a model needs to choose it correctly. Written as the
+    /// occasion rather than the mechanism: 'to write anything down for him — a list, a reminder,
+    /// a thought' picks the right action where 'captures a note' does not.
+    public let composerActionUse: String
+
+    public enum CodingKeys: String, CodingKey {
+        case composerActionID = "composerActionId"
+        case composerActionUse
+    }
+
+    public init(composerActionID: String, composerActionUse: String) {
+        self.composerActionID = composerActionID
+        self.composerActionUse = composerActionUse
+    }
+}
+
+// MARK: CerebralHelmComposerActionCatalog convenience initializers and mutators
+
+public extension CerebralHelmComposerActionCatalog {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(CerebralHelmComposerActionCatalog.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        composerActionID: String? = nil,
+        composerActionUse: String? = nil
+    ) -> CerebralHelmComposerActionCatalog {
+        return CerebralHelmComposerActionCatalog(
+            composerActionID: composerActionID ?? self.composerActionID,
+            composerActionUse: composerActionUse ?? self.composerActionUse
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
+// MARK: - ComposerReport
+public struct ComposerReport: Codable {
+    /// Whether the host discards every `greeting` block the model writes. Defaults to false.
+    ///
+    /// For a report that renders its own opening — the daily brief states the greeting, date and
+    /// weather deterministically above the model's first block — the model is ASKED for a
+    /// greeting and then has it thrown away. That is deliberate. Told plainly not to restate the
+    /// header it restated it anyway on 6 of 9 measured compositions, because opening with the
+    /// day and the weather is what a brief looks like; the instruction was fighting the shape of
+    /// the task. Asking for the block and discarding it costs a few output tokens, removes a
+    /// rule that did not hold, and makes the outcome structural rather than a matter of the
+    /// model's compliance.
+    ///
+    /// The instruction must confine the greeting to greeting, date and weather — anything else
+    /// the model puts there is lost. The eval's `mustMention` coverage is what catches that.
+    public let composerDiscardsGreeting: Bool?
+    /// Editorial direction for this one report — what to lead with, what to do when there is
+    /// nothing to report, when to propose. Per-report rather than in the system prompt so every
+    /// composer shares one cache prefix.
+    public let composerInstruction: String
+    /// How many blocks this report may contain. A second, tighter bound beneath the report
+    /// schema's own `blocks` cap of 64: that one is a safety limit against a runaway, this one
+    /// is editorial — a brief holding thirty blocks is a failure of judgement rather than of
+    /// validity. `scripts/contracts-config.test.mjs` asserts this maximum never exceeds the
+    /// report schema's.
+    public let composerMaxBlocks: Int
+    /// REQUIRED, deliberately. A grammar over an under-constrained schema will emit valid output
+    /// forever: one measured composition produced 123 blocks and ran to 15,655 tokens before it
+    /// hit the context wall and truncated mid-token — UNPARSEABLE rather than merely invalid.
+    /// Real compositions emit ~250 tokens and peaked at 790 once the report schema was bounded,
+    /// so this is headroom, not a target.
+    public let composerMaxOutputTokens: Int
+    /// The quick-action id this composer writes, matching `reportId` in
+    /// report-document.schema.json. A report with no entry here is composed deterministically,
+    /// which is how a surface opts out.
+    public let composerReportID: String
+    /// Defaults to 0.4 when absent. Note that composition at any non-zero temperature makes a
+    /// SINGLE run prove nothing: one sample flipped a leaf-type violation on and off and briefly
+    /// read as a decisive result, where six repetitions gave the real rates. Tool-selection
+    /// cases pin temperature to 0 and are far more stable — do not carry that intuition here.
+    public let composerTemperature: Double?
+    public let extensions: [String: JSONAny]?
+    /// The capability profile product logic asks for. 'local' is not a capability but a policy:
+    /// a surface that must never leave this machine even if a cloud escape hatch is later
+    /// enabled.
+    ///
+    /// Defined once and referenced, here and from model-composer.schema.json, because there is
+    /// one capability-profile vocabulary rather than two that happen to agree. Stating it twice
+    /// would also mint two generated enums with identical cases, which codegen then unifies
+    /// under whichever property name it reaches first — silently renaming the other schema's
+    /// type.
+    public let modelProfileID: ModelProfileID
+
+    public enum CodingKeys: String, CodingKey {
+        case composerDiscardsGreeting, composerInstruction, composerMaxBlocks, composerMaxOutputTokens
+        case composerReportID = "composerReportId"
+        case composerTemperature, extensions
+        case modelProfileID = "modelProfileId"
+    }
+
+    public init(composerDiscardsGreeting: Bool?, composerInstruction: String, composerMaxBlocks: Int, composerMaxOutputTokens: Int, composerReportID: String, composerTemperature: Double?, extensions: [String: JSONAny]?, modelProfileID: ModelProfileID) {
+        self.composerDiscardsGreeting = composerDiscardsGreeting
+        self.composerInstruction = composerInstruction
+        self.composerMaxBlocks = composerMaxBlocks
+        self.composerMaxOutputTokens = composerMaxOutputTokens
+        self.composerReportID = composerReportID
+        self.composerTemperature = composerTemperature
+        self.extensions = extensions
+        self.modelProfileID = modelProfileID
+    }
+}
+
+// MARK: ComposerReport convenience initializers and mutators
+
+public extension ComposerReport {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(ComposerReport.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        composerDiscardsGreeting: Bool?? = nil,
+        composerInstruction: String? = nil,
+        composerMaxBlocks: Int? = nil,
+        composerMaxOutputTokens: Int? = nil,
+        composerReportID: String? = nil,
+        composerTemperature: Double?? = nil,
+        extensions: [String: JSONAny]?? = nil,
+        modelProfileID: ModelProfileID? = nil
+    ) -> ComposerReport {
+        return ComposerReport(
+            composerDiscardsGreeting: composerDiscardsGreeting ?? self.composerDiscardsGreeting,
+            composerInstruction: composerInstruction ?? self.composerInstruction,
+            composerMaxBlocks: composerMaxBlocks ?? self.composerMaxBlocks,
+            composerMaxOutputTokens: composerMaxOutputTokens ?? self.composerMaxOutputTokens,
+            composerReportID: composerReportID ?? self.composerReportID,
+            composerTemperature: composerTemperature ?? self.composerTemperature,
+            extensions: extensions ?? self.extensions,
+            modelProfileID: modelProfileID ?? self.modelProfileID
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+/// The capability profile product logic asks for. 'local' is not a capability but a policy:
+/// a surface that must never leave this machine even if a cloud escape hatch is later
+/// enabled.
+///
+/// Defined once and referenced, here and from model-composer.schema.json, because there is
+/// one capability-profile vocabulary rather than two that happen to agree. Stating it twice
+/// would also mint two generated enums with identical cases, which codegen then unifies
+/// under whichever property name it reaches first — silently renaming the other schema's
+/// type.
+public enum ModelProfileID: String, Codable {
+    case balanced = "balanced"
+    case deep = "deep"
+    case fast = "fast"
+    case local = "local"
+}
+
+// Generated by scripts/generate-contracts.mjs.
+
+// Do not edit by hand; edit packages/contracts/schemas instead.
+
 /// Which model serves each capability profile, how much context it may allocate, and how
 /// long it stays resident (ADR-009). Product logic addresses profiles; exact model ids are
 /// resolved here so that no named local model becomes an architectural dependency. Optional:
@@ -4282,6 +4604,12 @@ public struct ModelProfile: Codable {
     /// The capability profile product logic asks for. 'local' is not a capability but a policy:
     /// a surface that must never leave this machine even if a cloud escape hatch is later
     /// enabled.
+    ///
+    /// Defined once and referenced, here and from model-composer.schema.json, because there is
+    /// one capability-profile vocabulary rather than two that happen to agree. Stating it twice
+    /// would also mint two generated enums with identical cases, which codegen then unifies
+    /// under whichever property name it reaches first — silently renaming the other schema's
+    /// type.
     public let id: ModelProfileID
     /// The runtime's own tag for the model, e.g. 'qwen3.6:35b-mlx'.
     public let modelID: String
@@ -4376,16 +4704,6 @@ public extension ModelProfile {
     func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
         return String(data: try self.jsonData(), encoding: encoding)
     }
-}
-
-/// The capability profile product logic asks for. 'local' is not a capability but a policy:
-/// a surface that must never leave this machine even if a cloud escape hatch is later
-/// enabled.
-public enum ModelProfileID: String, Codable {
-    case balanced = "balanced"
-    case deep = "deep"
-    case fast = "fast"
-    case local = "local"
 }
 
 /// pinned for an always-on surface, where a ~70 s cold reload would be felt every time;
@@ -9492,9 +9810,9 @@ public struct CerebralHelmSystemStatusReadInput: Codable {
     /// the user asked about specific ones. A requested metric the host cannot supply comes back
     /// with an explicit unavailable state rather than being dropped, so a missing entry never
     /// has to be inferred.
-    public let metrics: [MetricElement]?
+    public let metrics: [ID]?
 
-    public init(metrics: [MetricElement]?) {
+    public init(metrics: [ID]?) {
         self.metrics = metrics
     }
 }
@@ -9518,7 +9836,7 @@ public extension CerebralHelmSystemStatusReadInput {
     }
 
     func with(
-        metrics: [MetricElement]?? = nil
+        metrics: [ID]?? = nil
     ) -> CerebralHelmSystemStatusReadInput {
         return CerebralHelmSystemStatusReadInput(
             metrics: metrics ?? self.metrics
@@ -9534,7 +9852,7 @@ public extension CerebralHelmSystemStatusReadInput {
     }
 }
 
-public enum MetricElement: String, Codable {
+public enum ID: String, Codable {
     case battery = "battery"
     case cpu = "cpu"
     case display = "display"
@@ -9597,11 +9915,11 @@ public extension CerebralHelmSystemStatusReadOutput {
 // MARK: - Metric
 public struct Metric: Codable {
     public let availability: AvailabilityEnum
-    public let id: MetricElement
+    public let id: ID
     public let sampledAt, unit: String?
     public let value: Double?
 
-    public init(availability: AvailabilityEnum, id: MetricElement, sampledAt: String?, unit: String?, value: Double?) {
+    public init(availability: AvailabilityEnum, id: ID, sampledAt: String?, unit: String?, value: Double?) {
         self.availability = availability
         self.id = id
         self.sampledAt = sampledAt
@@ -9630,7 +9948,7 @@ public extension Metric {
 
     func with(
         availability: AvailabilityEnum? = nil,
-        id: MetricElement? = nil,
+        id: ID? = nil,
         sampledAt: String?? = nil,
         unit: String?? = nil,
         value: Double?? = nil

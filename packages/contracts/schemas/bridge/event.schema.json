@@ -40,7 +40,8 @@
         "news.changed",
         "mail.changed",
         "schedule.changed",
-        "apps.changed"
+        "apps.changed",
+        "report.composition.changed"
       ]
     },
     "timestamp": {

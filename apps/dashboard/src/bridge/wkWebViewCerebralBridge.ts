@@ -30,6 +30,7 @@ import type {
   KnowledgeRebuildResult,
   ListNotesResult,
   ListCoursesResult,
+  ComposeReportResult,
   RunSystemChecksResult,
   ConnectGmailInput,
   ConnectGmailResult,
@@ -103,6 +104,7 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<BridgeEventType>([
   "news.changed",
   "mail.changed",
   "system.checks.changed",
+  "report.composition.changed",
   "schedule.changed",
   "apps.changed"
 ]);
@@ -334,6 +336,9 @@ export function createWKWebViewCerebralBridge(): CerebralBridge {
     },
     rebuildKnowledgeIndex() {
       return operation<KnowledgeRebuildResult>("rebuildKnowledgeIndex", {});
+    },
+    composeReport(reportId: string) {
+      return operation<ComposeReportResult>("composeReport", { reportId });
     },
     runSystemChecks() {
       return operation<RunSystemChecksResult>("runSystemChecks", {});

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0",
+  "composerSystemPrompt": "You compose CerebralHelm report documents.",
+  "composerActions": [
+    {
+      "composerActionId": "open-mail",
+      "composerActionUse": "to take him to his inbox, whenever mail is the thing that needs him"
+    },
+    {
+      "composerActionId": "capture-note",
+      "composerActionUse": "to write anything down for him — a list, a reminder, a thought"
+    }
+  ],
+  "composerReports": [
+    {
+      "composerReportId": "daily-brief",
+      "modelProfileId": "local",
+      "composerInstruction": "Compile the morning brief.",
+      "composerMaxOutputTokens": 1200,
+      "composerMaxBlocks": 12,
+      "allowedToolIds": [
+        "note.capture"
+      ]
+    }
+  ]
+}

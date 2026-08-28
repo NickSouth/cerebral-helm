@@ -11,8 +11,15 @@
    and the surface sits in the mirrored wash painted by `CenterShade` instead (approved 2026-08-07).
 
    The halo travels with the text here too, so nothing on this element may clip. */
+/* Right-anchored in `.heimlich__surfaces`, and BOTTOM-anchored within it, so a short form still
+   sits just above the quick-action grid and a tall one grows upward into the empty middle —
+   exactly where it sat when it was a child of the foot. What changed is that its height is now
+   its own: it shares a row with the report instead of a column, so growing upward no longer takes
+   height away from a surface on the other side of the panel. */
 .input-region {
   align-self: flex-end;
+  margin-left: auto;
+  flex: 0 1 auto;
   width: 50%;
   max-width: 28rem;
   min-width: 0;
@@ -21,8 +28,12 @@
   gap: var(--ch-space-3);
   /* The tallest form (create-ticket, six fields) can outgrow a short panel and push the
      quick-action grid off the bottom. Bounding the region makes that impossible: it scrolls
-     inside itself instead. On a tall display the cap never binds, so nothing changes there. */
-  max-height: 60vh;
+     inside itself instead. On a tall display the cap never binds, so nothing changes there.
+
+     `100%` is the second half of that bound and the one the band added: out of the column, an
+     over-tall form would run past the wordmark and be cut by the panel's `overflow: hidden`
+     instead of pushing anything. Whichever limit is smaller wins. */
+  max-height: min(60vh, 100%);
   overflow: visible;
   text-shadow: var(--ch-text-halo);
 }

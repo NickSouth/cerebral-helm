@@ -148,4 +148,114 @@ func gmailMapsAuthErrors() {
         return
     }
 }
+
+// MARK: - Previews
+
+@Test("Gmail's snippet becomes the message preview")
+func gmailParsesSnippet() throws {
+    // `snippet` is a TOP-LEVEL field of the Message resource, beside `id` and `internalDate`,
+    // rather than part of `payload` — so the header allowlist does not govern it.
+    let body = Data(#"""
+    {"id":"m1","internalDate":"1755000000000","snippet":"Invoice 4021 is attached and due Friday.",
+     "payload":{"headers":[{"name":"From","value":"Billing <billing@example.com>"},
+                           {"name":"Subject","value":"Invoice 4021"}]}}
+    """#.utf8)
+
+    let message = try #require(GmailAPIProvider.parseMessage(body))
+    #expect(message.preview == "Invoice 4021 is attached and due Friday.")
+}
+
+@Test("a message with no snippet has no preview, and is still a message")
+func gmailToleratesAbsentSnippet() throws {
+    // Google's reference describes `metadata` as returning "only email message ID, labels, and
+    // email headers" and does not list `snippet`. Whether a given account returns one anyway is
+    // what the live probe below settles; until then, absent must be an ordinary outcome — a brief
+    // without previews is thinner, not broken.
+    let body = Data(#"""
+    {"id":"m2","payload":{"headers":[{"name":"Subject","value":"No preview here"}]}}
+    """#.utf8)
+
+    let message = try #require(GmailAPIProvider.parseMessage(body))
+    #expect(message.preview == nil)
+    #expect(message.subject == "No preview here")
+}
+
+@Test("a preview is collapsed and capped by the initializer, not by whoever remembers to")
+func previewIsBounded() throws {
+    // Bounded at construction rather than at the surface that renders or sends it: a limit applied
+    // late is a limit one new caller forgets. Asserted through the initializer for that reason —
+    // it is where the guarantee actually lives.
+    func preview(_ raw: String?) -> String? {
+        MailMessage(
+            id: "m", from: "a@b.c", subject: "s", receivedAt: nil, rfc822MessageID: nil, preview: raw
+        ).preview
+    }
+
+    // Snippets arrive carrying the original message's newlines. A preview spanning six lines costs
+    // a model more attention than the fact inside it is worth, so whitespace collapses first.
+    #expect(preview("  Meeting\n\nmoved  to\tThursday ") == "Meeting moved to Thursday")
+
+    // Absent, not empty: "there was no preview" and "the message opens with nothing" are different
+    // facts, and a composer told the second would describe an empty email.
+    #expect(preview("   ") == nil)
+    #expect(preview(nil) == nil)
+
+    let bounded = try #require(preview(String(repeating: "a", count: MailMessage.previewLimit + 200)))
+    #expect(bounded.count == MailMessage.previewLimit)
+    // Ellipsised, so a reader can see it was cut rather than that the sender stopped mid-sentence.
+    #expect(bounded.hasSuffix("\u{2026}"))
+}
+
+// MARK: - Live probe
+
+// OPT-IN (CEREBRAL_GMAIL_TESTS=1): this one test reaches the real Gmail API with the account's own
+// stored grant. Gated for the same reason every other live test here is — it needs a network, a
+// connected account, and the Keychain — and kept to a single question.
+//
+//     CEREBRAL_GMAIL_TESTS=1 swift test --filter gmailSnippetProbe
+//
+// THE QUESTION: does `format=metadata` return `snippet`? Google's reference says metadata returns
+// "only email message ID, labels, and email headers" and does not list it. If the probe says yes,
+// previews cost nothing — no extra request, no format change, no re-consent. If it says no, the
+// brief needs `format=full` plus MIME-part walking and HTML stripping, which is a much larger
+// piece of work and would be scoped as its own increment.
+//
+// The probe reports the ANSWER rather than asserting one, because either answer is a fact about
+// Google's API rather than a defect in this code — and a failing test is the wrong way to learn it.
+@Test("PROBE: whether Gmail returns a snippet under format=metadata")
+func gmailSnippetProbe() async throws {
+    guard ProcessInfo.processInfo.environment["CEREBRAL_GMAIL_TESTS"] == "1" else { return }
+
+    let session = GoogleAuthSession(
+        secretStore: KeychainSecretCapability(), refresher: GoogleTokenExchange()
+    )
+    let provider = GmailAPIProvider(session: session)
+
+    let messages: [MailMessage]
+    do {
+        messages = try await provider.unread(limit: 5)
+    } catch {
+        Issue.record("PROBE INCONCLUSIVE — could not read the inbox: \(error). Connect Gmail in Settings first.")
+        return
+    }
+    guard !messages.isEmpty else {
+        Issue.record("PROBE INCONCLUSIVE — no unread mail to sample. Leave one message unread and re-run.")
+        return
+    }
+
+    let withPreview = messages.filter { $0.preview?.isEmpty == false }
+    print("""
+
+    ── snippet probe ──────────────────────────────────────────────
+    format=metadata returned \(withPreview.count)/\(messages.count) messages carrying a snippet.
+    \(withPreview.isEmpty
+        ? "ANSWER: NO. Previews need format=full and MIME walking — scope that separately."
+        : "ANSWER: YES. Previews are free at format=metadata, no extra request.")
+    Longest preview: \(withPreview.map { $0.preview?.count ?? 0 }.max() ?? 0) characters \
+    (capped at \(MailMessage.previewLimit)).
+    ───────────────────────────────────────────────────────────────
+
+    """)
+}
+
 #endif

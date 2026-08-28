@@ -1,79 +1,451 @@
 {
-  "$comment": "Passive-tier (phase 1) composer inputs. Each snapshot is the TYPED data an Assembler would gather deterministically — the Composer's job is to turn it into a ReportDocument and nothing else. `mustMention` are facts that must survive composition; `factsAreOnlyHere` lists every number appearing in the snapshot so the runner can flag any figure the model produced that has no source. Fabrication is the failure that matters: a brief that invents a meeting is worse than no brief.",
+  "$comment": "Passive-tier (phase 1) composer inputs. Each snapshot is the TYPED data the Assembler gathers deterministically — the Composer's job is to turn it into a ReportDocument and nothing else. `mustMention` are facts that must survive composition; a figure in the output with no source in the snapshot is flagged as possible fabrication. Fabrication is the failure that matters: a brief that invents a meeting is worse than no brief.\n\nSHAPE: `daily-brief` snapshots mirror `DailyBriefAssembler` exactly — now / dayOfWeek / weather / calendar{today,tomorrow} / mail{unreadTotal,recent} / sprint{cycle,pace,issues} / profile{notes} — because a gate measuring an imagined shape measures an imagined composer. Every section carries its own `state`, so an unreadable source is a stated fact rather than a missing key: the model cannot otherwise tell 'nothing scheduled' from 'nobody could look'.\n\nA snapshot whose reportId has no entry in config/models/composer.json is ASPIRATIONAL — it describes a surface that does not ship — and is skipped under `--gate`.",
   "snapshots": [
     {
       "id": "executive-daily-brief",
       "reportId": "daily-brief",
-      "instruction": "Compose the user's morning brief. Open with a greeting, then what matters today, then anything that needs a decision.",
+      "$comment": "The ordinary busy morning. Everything is readable, there is real work, and the sprint is behind — so the brief should lead with the call and the deadline rather than suggesting a day off.",
       "snapshot": {
-        "now": "2026-08-11T07:15:00",
-        "user": { "name": "Nick", "mode": "executive" },
-        "weather": { "conditionText": "light rain", "highC": 19, "lowC": 12, "precipitationChance": 70 },
-        "calendar": [
-          { "title": "Investor call", "startsAt": "2026-08-11T09:30", "endsAt": "2026-08-11T10:15", "calendar": "Work" },
-          { "title": "Dentist", "startsAt": "2026-08-11T14:00", "endsAt": "2026-08-11T14:45", "calendar": "Personal" }
-        ],
-        "linear": {
-          "assignedOpen": 7,
-          "dueToday": [{ "identifier": "NIC-204", "title": "Ship window snapping" }]
+        "now": "2026-08-27T07:15:00-04:00",
+        "dayOfWeek": "Thursday",
+        "weather": {
+          "state": "ready",
+          "temperatureF": 63,
+          "condition": "Light rain",
+          "highF": 66,
+          "lowF": 54,
+          "precipitationChance": 70,
+          "outdoorConditions": "unsuitable",
+          "outdoorReason": "likely wet"
         },
-        "repos": [
-          { "name": "cerebral-helm", "branch": "feat/llm-eval-harness", "uncommitted": 14, "behindRemote": 0 }
-        ],
-        "mail": { "unreadImportant": 3 }
+        "calendar": {
+          "state": "ready",
+          "today": [
+            {
+              "title": "Investor call",
+              "start": "09:30",
+              "end": "10:15",
+              "calendar": "Work"
+            },
+            {
+              "title": "Dentist",
+              "start": "14:00",
+              "end": "14:45",
+              "calendar": "Personal"
+            }
+          ],
+          "tomorrow": [
+            {
+              "title": "Board prep review",
+              "start": "08:00",
+              "end": "09:00",
+              "calendar": "Work"
+            }
+          ]
+        },
+        "mail": {
+          "state": "ready",
+          "unreadTotal": 12,
+          "isCapped": false,
+          "scope": "primary",
+          "recent": [
+            {
+              "from": "Marcus Webb",
+              "subject": "Re: term sheet — one open point",
+              "receivedAt": "2026-08-27T06:48:00Z",
+              "preview": "Legal came back on the liquidation preference. Can we settle it before the call this morning?"
+            },
+            {
+              "from": "Billing",
+              "subject": "Invoice 4021",
+              "receivedAt": "2026-08-26T21:04:00Z",
+              "preview": "Invoice 4021 is attached and due Friday. No action needed if already scheduled."
+            }
+          ]
+        },
+        "sprint": {
+          "state": "ready",
+          "project": "CerebralHelm",
+          "cycle": {
+            "number": 3,
+            "startsAt": "2026-08-24T00:00:00-04:00",
+            "endsAt": "2026-08-31T00:00:00-04:00"
+          },
+          "pace": {
+            "basis": "points",
+            "total": 34,
+            "done": 6,
+            "inProgress": 5,
+            "percentComplete": 18,
+            "percentElapsed": 43,
+            "daysElapsed": 3,
+            "daysRemaining": 4,
+            "status": "behind"
+          },
+          "issues": [
+            {
+              "identifier": "NIC-204",
+              "title": "Ship window snapping",
+              "state": "In Progress",
+              "stateType": "started",
+              "priority": 2,
+              "estimate": 5
+            },
+            {
+              "identifier": "NIC-228",
+              "title": "Passive tier: daily brief composer",
+              "state": "Todo",
+              "stateType": "unstarted",
+              "priority": 3,
+              "estimate": 8
+            }
+          ]
+        },
+        "profile": {
+          "state": "ready",
+          "notes": "## About Me\nLocation: New England. Golfs whenever the weather allows — the season is short here.\n\n## Work\nBuilding CerebralHelm. Deep work in the morning; protects unscheduled days rather than filling them."
+        }
       },
-      "mustMention": ["investor call", "dentist", "nic-204"],
-      "expectedBlockKinds": ["greeting"]
+      "mustMention": [
+        "investor call",
+        "dentist"
+      ],
+      "expectedBlockKinds": [
+        "greeting"
+      ]
     },
     {
       "id": "empty-day",
       "reportId": "daily-brief",
-      "instruction": "Compose the user's morning brief.",
-      "$comment": "Nothing scheduled. The composer must say so plainly rather than padding with invented activity — the single most likely fabrication case. ALSO the profile-context experiment: an empty day plus good weather plus 'he golfs' should produce a suggestion, and that connection needs no reasoning — only the fact. Tests whether context substitutes for thinking.",
+      "$comment": "Nothing scheduled and the sprint on pace. The single most likely fabrication case — the composer must say the day is clear rather than padding it with invented activity. ALSO the profile-context measurement: an empty day plus good weather plus 'he golfs' should produce a suggestion, and that connection needs no reasoning, only the fact. This is the case that showed context substituting for thinking.\n\nWHAT `mustMention` ASSERTS, and why it moved: it used to require the word 'clear', which the model writes into its greeting — and the greeting is discarded, because the brief renders the weather deterministically. A fact the reader sees either way is not worth gating on. 'golf' is: it can only appear if the profile note reached the model AND it connected an empty day to a fact about the person, which is the entire claim this case exists to test.\n\nIt also gates RECITATION now. The profile reaching the model is what `mustMention: golf` proves; `mustNotMention` proves the model uses it rather than reading it aloud — quoting \"whenever the weather allows\" back at the person who wrote it is the failure, and it happened in nearly every measured brief before the instruction said not to.",
       "snapshot": {
-        "now": "2026-08-16T08:00:00",
-        "user": { "name": "Nick", "mode": "executive" },
-        "profile": {
-          "location": "New England",
-          "interests": ["golf", "fantasy football", "building CerebralHelm"],
-          "workingPreferences": "Deep work in the morning; protects unscheduled days rather than filling them.",
-          "currentFocus": "Shipping local LLM integration for CerebralHelm.",
-          "notes": "Golfs whenever the weather allows — the season is short here."
+        "now": "2026-08-29T08:00:00-04:00",
+        "dayOfWeek": "Saturday",
+        "weather": {
+          "state": "ready",
+          "temperatureF": 68,
+          "condition": "Clear",
+          "highF": 78,
+          "lowF": 59,
+          "precipitationChance": 5,
+          "outdoorConditions": "good"
         },
-        "weather": { "conditionText": "clear", "highC": 24, "lowC": 15, "precipitationChance": 5 },
-        "calendar": [],
-        "linear": { "assignedOpen": 0, "dueToday": [] },
-        "repos": [],
-        "mail": { "unreadImportant": 0 }
+        "calendar": {
+          "state": "ready",
+          "today": [],
+          "tomorrow": []
+        },
+        "mail": {
+          "state": "ready",
+          "unreadTotal": 0,
+          "isCapped": false,
+          "scope": "primary",
+          "recent": []
+        },
+        "sprint": {
+          "state": "ready",
+          "project": "CerebralHelm",
+          "cycle": {
+            "number": 3,
+            "startsAt": "2026-08-24T00:00:00-04:00",
+            "endsAt": "2026-08-31T00:00:00-04:00"
+          },
+          "pace": {
+            "basis": "points",
+            "total": 34,
+            "done": 26,
+            "inProgress": 3,
+            "percentComplete": 76,
+            "percentElapsed": 71,
+            "daysElapsed": 5,
+            "daysRemaining": 2,
+            "status": "on-pace"
+          },
+          "issues": []
+        },
+        "profile": {
+          "state": "ready",
+          "notes": "## About Me\nLocation: New England. Golfs whenever the weather allows — the season is short here.\n\n## Work\nBuilding CerebralHelm. Deep work in the morning; protects unscheduled days rather than filling them."
+        }
       },
-      "mustMention": ["clear"],
-      "expectedBlockKinds": ["greeting"]
+      "mustMention": [
+        "golf"
+      ],
+      "expectedBlockKinds": [
+        "greeting"
+      ],
+      "mustNotMention": [
+        "whenever the weather allows"
+      ]
+    },
+    {
+      "id": "unavailable-sources",
+      "reportId": "daily-brief",
+      "$comment": "The honesty case. Two sources could not be read, and the difference between 'nothing scheduled' and 'nobody could look' is the whole point of the per-section `state`. A composer that reports an unreadable calendar as an empty one is telling the reader something false in the most reassuring possible way — and it will do exactly that unless the prompt makes the distinction stick.",
+      "snapshot": {
+        "now": "2026-08-27T07:15:00-04:00",
+        "dayOfWeek": "Thursday",
+        "weather": {
+          "state": "ready",
+          "temperatureF": 63,
+          "condition": "Clear",
+          "highF": 71,
+          "lowF": 55,
+          "precipitationChance": 10,
+          "outdoorConditions": "good"
+        },
+        "calendar": {
+          "state": "unavailable",
+          "reason": "Calendar access hasn’t been granted."
+        },
+        "mail": {
+          "state": "unavailable",
+          "reason": "The mail connection needs renewing."
+        },
+        "sprint": {
+          "state": "ready",
+          "project": "CerebralHelm",
+          "cycle": {
+            "number": 3,
+            "startsAt": "2026-08-24T00:00:00-04:00",
+            "endsAt": "2026-08-31T00:00:00-04:00"
+          },
+          "pace": {
+            "basis": "points",
+            "total": 34,
+            "done": 6,
+            "inProgress": 5,
+            "percentComplete": 18,
+            "percentElapsed": 43,
+            "daysElapsed": 3,
+            "daysRemaining": 4,
+            "status": "behind"
+          },
+          "issues": [
+            {
+              "identifier": "NIC-204",
+              "title": "Ship window snapping",
+              "state": "In Progress",
+              "stateType": "started",
+              "priority": 2,
+              "estimate": 5
+            }
+          ]
+        },
+        "profile": {
+          "state": "ready",
+          "notes": "## About Me\nLocation: New England."
+        }
+      },
+      "mustMention": [
+        "calendar"
+      ],
+      "expectedBlockKinds": [
+        "greeting"
+      ]
+    },
+    {
+      "id": "winter-open-day",
+      "reportId": "daily-brief",
+      "$comment": "The deliberate twin of `empty-day`: same open calendar, same empty inbox, same profile, same cloudless sky — only the temperature changes, from 68°F to 10°F. `empty-day` proves the profile reaches the model; this one proved the day's weather was not being read at all.\n\nIT NO LONGER GATES THAT, and the reason is the honest one: a keyword cannot tell recommending golf from ruling it out. The attempt leaked three times, in both directions. It first MISSED 'a morning golf session' — a real regression that passed silently. Then `for golf` FAILED a correct brief, because declining reads 'the weather is unsuitable for golf'. Then `golfing` failed another, because declining also reads 'golfing is off the table due to the cold'. A positive assertion fared no better: `mustMention: unsuitable` failed 2 of 3 correct briefs that phrased the verdict their own way. Every correct answer names the activity in order to decline it, and no substring separates the two classes.\n\nSo the behaviour is gated where it can be graded exactly: `weather.outdoorConditions` is computed by the assembler and covered by `OutdoorConditionsTests`, and the instruction tells the model to read the verdict rather than derive one. Measured 8 of 8 correct after that change, and 3 of 8 WRONG before it with an explicit instruction to check the temperature.\n\nWhat it still gates is recitation, which a keyword CAN judge, because quoting the profile verbatim is unambiguous. Keep the case: an open winter day is the shape that broke, it is worth reading by eye on any composer change, and a snapshot is cheap.",
+      "snapshot": {
+        "now": "2027-01-16T09:15:00-05:00",
+        "dayOfWeek": "Saturday",
+        "weather": {
+          "state": "ready",
+          "temperatureF": 10,
+          "condition": "Sunny",
+          "highF": 21,
+          "lowF": 3,
+          "precipitationChance": 0,
+          "outdoorConditions": "unsuitable",
+          "outdoorReason": "too cold to be outside for long"
+        },
+        "calendar": {
+          "state": "ready",
+          "today": [],
+          "tomorrow": []
+        },
+        "mail": {
+          "state": "ready",
+          "unreadTotal": 0,
+          "isCapped": false,
+          "scope": "primary",
+          "recent": []
+        },
+        "sprint": {
+          "state": "ready",
+          "project": "CerebralHelm",
+          "cycle": {
+            "number": 14,
+            "startsAt": "2027-01-11T00:00:00-05:00",
+            "endsAt": "2027-01-18T00:00:00-05:00"
+          },
+          "pace": {
+            "basis": "points",
+            "total": 24,
+            "done": 11,
+            "inProgress": 3,
+            "percentComplete": 45,
+            "percentElapsed": 42,
+            "daysElapsed": 3,
+            "daysRemaining": 4,
+            "status": "on-pace"
+          },
+          "issues": []
+        },
+        "profile": {
+          "state": "ready",
+          "notes": "## About Me\nLocation: New England. Golfs whenever the weather allows — the season is short here.\n\n## Work\nBuilding CerebralHelm. Deep work in the morning; protects unscheduled days rather than filling them."
+        }
+      },
+      "mustNotMention": [
+        "whenever the weather allows"
+      ],
+      "expectedBlockKinds": [
+        "greeting"
+      ]
+    },
+    {
+      "id": "sprint-behind-priority-one",
+      "reportId": "daily-brief",
+      "$comment": "An open day against a sprint at 18% done with 71% of the cycle gone, where the work is NOT uniform: NIC-204 is priority 1 and already started, and the two cheapest tickets are priority 2 and 3. Measured proposing the two cheap ones and calling them 'high-priority', passing over the priority-1 in the same breath as reporting that a teammate is blocked on it.\n\nSo this case gates the ORDERING, which nothing else in the suite touches — every other snapshot's issue list is short enough that any choice looks right. The instruction now says priority is never traded for a smaller estimate, and this is what holds it to that.",
+      "snapshot": {
+        "now": "2026-09-18T08:50:00-04:00",
+        "dayOfWeek": "Friday",
+        "weather": {
+          "state": "ready",
+          "temperatureF": 61,
+          "condition": "Light rain",
+          "highF": 65,
+          "lowF": 54,
+          "precipitationChance": 80,
+          "outdoorConditions": "unsuitable",
+          "outdoorReason": "likely wet"
+        },
+        "calendar": {
+          "state": "ready",
+          "today": [],
+          "tomorrow": []
+        },
+        "mail": {
+          "state": "ready",
+          "unreadTotal": 1,
+          "isCapped": false,
+          "scope": "primary",
+          "recent": [
+            {
+              "from": "Aleks Ryabinkin",
+              "subject": "Re: window snapping — blocked on you",
+              "receivedAt": "2026-09-18T01:20:00Z",
+              "preview": "I can't take NIC-204 any further until the snap thresholds land. Let me know if you want me to pick something else up off the board instead."
+            }
+          ]
+        },
+        "sprint": {
+          "state": "ready",
+          "project": "CerebralHelm",
+          "cycle": {
+            "number": 8,
+            "startsAt": "2026-09-14T00:00:00-04:00",
+            "endsAt": "2026-09-21T00:00:00-04:00"
+          },
+          "pace": {
+            "basis": "points",
+            "total": 40,
+            "done": 7,
+            "inProgress": 6,
+            "percentComplete": 18,
+            "percentElapsed": 71,
+            "daysElapsed": 5,
+            "daysRemaining": 2,
+            "status": "behind"
+          },
+          "issues": [
+            {
+              "identifier": "NIC-204",
+              "title": "Ship window snapping",
+              "state": "In Progress",
+              "stateType": "started",
+              "priority": 1,
+              "estimate": 8
+            },
+            {
+              "identifier": "NIC-231",
+              "title": "Report composition bridge op",
+              "state": "Todo",
+              "stateType": "unstarted",
+              "priority": 2,
+              "estimate": 5
+            },
+            {
+              "identifier": "NIC-247",
+              "title": "Weather daily fields",
+              "state": "Todo",
+              "stateType": "unstarted",
+              "priority": 3,
+              "estimate": 3
+            }
+          ]
+        },
+        "profile": {
+          "state": "ready",
+          "notes": "## About Me\nLocation: New England. Golfs whenever the weather allows — the season is short here.\n\n## Work\nBuilding CerebralHelm. Deep work in the morning; protects unscheduled days rather than filling them."
+        }
+      },
+      "mustMention": [
+        "nic-204"
+      ],
+      "expectedBlockKinds": [
+        "greeting"
+      ]
     },
     {
       "id": "school-deadlines",
       "reportId": "school-deadlines",
+      "$aspirational": "No composer entry ships for this report, so `--gate` skips it. Kept because it is the clearest test that the block format generalises past one surface — and because the deadlines report is a real intention, not an invention.",
       "instruction": "Compose a deadlines report for the user's classes. Lead with whatever is most urgent.",
       "snapshot": {
-        "now": "2026-08-11T16:00:00",
-        "user": { "name": "Nick", "mode": "school" },
+        "now": "2026-08-27T16:00:00-04:00",
+        "dayOfWeek": "Thursday",
         "courses": [
           {
             "course": "CS 250 Data Structures",
             "assignments": [
-              { "title": "Problem set 4", "dueAt": "2026-08-12T23:59", "points": 40, "submitted": false },
-              { "title": "Lab 6", "dueAt": "2026-08-18T23:59", "points": 25, "submitted": false }
+              {
+                "title": "Problem set 4",
+                "dueAt": "2026-08-28T23:59",
+                "points": 40,
+                "submitted": false
+              },
+              {
+                "title": "Lab 6",
+                "dueAt": "2026-09-03T23:59",
+                "points": 25,
+                "submitted": false
+              }
             ]
           },
           {
             "course": "PHIL 101 Ethics",
             "assignments": [
-              { "title": "Reading response 3", "dueAt": "2026-08-15T23:59", "points": 10, "submitted": true }
+              {
+                "title": "Reading response 3",
+                "dueAt": "2026-09-01T23:59",
+                "points": 10,
+                "submitted": true
+              }
             ]
           }
         ]
       },
-      "mustMention": ["problem set 4", "cs 250"],
-      "expectedBlockKinds": ["list"]
+      "mustMention": [
+        "problem set 4",
+        "cs 250"
+      ],
+      "expectedBlockKinds": [
+        "list"
+      ]
     }
   ]
 }

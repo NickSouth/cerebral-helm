@@ -568,6 +568,31 @@ Nothing calls it yet. The decision is recorded in [ADR-009](../adr/ADR-009-model
 
 ### Phase 1 — Passive tier: the LLM Composer
 
+> **BUILT AND IN DAILY USE (`NIC-228`, 2026-08-27).** The daily brief is composed by a
+> model on the `local` profile, streamed into the renderer block by block, and falls
+> back to the deterministic composer only as a last-resort degradation path. The gate
+> is `node evals/run-report.mjs --gate`. What this phase actually taught is in the
+> README's findings 17–21; the three that change how later phases should be written:
+>
+> - **Descriptors, not prompts** held at the prompt layer too. Four separate model
+>   failures in this phase traced to a vocabulary stated without its meaning —
+>   `reportActions` entries, `lineEmphasis`, the block kinds, and the action ids
+>   themselves. None was a capability limit.
+> - **Instruction KIND, not volume.** Constraints (never derive figures, unavailable ≠
+>   empty, you execute nothing, what a field means) earn their place; choreography
+>   (ordering rules, branch logic) flattens the writing into a filled-in form. Deleting
+>   the second is what produced an assistant that offers and warms; deleting the first
+>   by accident cost accuracy immediately.
+> - **A judgement the model makes correctly in isolation can be destroyed by
+>   composition load.** It answers "is 10°F good golf weather?" correctly 5/5 alone and
+>   fails it while composing. Where that happens, compute the fact host-side and let
+>   the model read it — the same shape as `SprintPace`. Reasoning mode recovers the
+>   judgement and costs 121–192 s, which is not a dashboard.
+>
+> Two follow-ons are Backlog and not blocking: `NIC-339` (report actions carry params,
+> so a model-offered web search actually searches) and `NIC-340` (a compose-reply
+> action, the brief's most frequent offer and its one real capability gap).
+
 Daily brief first. **Zero tool calling** — typed snapshot in, `ReportDocument`
 blocks out. Cheapest possible way to learn latency, quality, prompt assembly,
 streaming into the renderer, and redaction on the way out. Blast radius is a
@@ -706,16 +731,25 @@ breadth is affordable. Least privilege still applies, and two categories stay ou
    their agents. Heimlich has no business authoring a budget.
 2. **Financial reads.** This is the important one.
 
-> **Heimlich must not hold both financial reads and web search.**
+> **OVERRULED BY THE OWNER (2026-08-18). Heimlich MAY hold both `finance.*` and
+> `web.search`.** README decision 20 is the standing decision and this recommendation
+> is not. Rationale accepted: the worst case is a balance figure landing in a search
+> query, which the owner assessed as weird rather than harmful.
 >
-> That combination is exactly the aggregation-plus-egress risk the Financial Advisor
+> The recommendation is kept below rather than deleted, because the reasoning still
+> describes the risk accurately and a future reader deserves to see what was traded
+> away — and because one caveat raised at the time stands unanswered:
+> `finance.transactions` is a behavioural profile rather than a number, and a profile
+> leaving the house is a different thing from a balance doing so.
+>
+> ~~That combination is exactly the aggregation-plus-egress risk the Financial Advisor
 > charter refuses, and granting it to Heimlich would reinstate the risk by the back
 > door while leaving the Advisor's restriction technically intact and practically
-> meaningless.
+> meaningless.~~
 >
-> Heimlich gets web search. He does not get `finance.*`. Financial questions are what
+> ~~Heimlich gets web search. He does not get `finance.*`. Financial questions are what
 > the Financial Advisor is for — which is also what stops the specialists from being
-> redundant.
+> redundant.~~
 
 Agent delegation — Heimlich handing a financial question to the Financial Advisor and
 relaying the answer — is the eventual resolution, and is deliberately **not** in scope

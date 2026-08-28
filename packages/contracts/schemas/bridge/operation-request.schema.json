@@ -83,7 +83,8 @@
         "runSystemChecks",
         "connectGmail",
         "listUnreadMail",
-        "getLinearProjectCycle"
+        "getLinearProjectCycle",
+        "composeReport"
       ]
     },
     "payload": {

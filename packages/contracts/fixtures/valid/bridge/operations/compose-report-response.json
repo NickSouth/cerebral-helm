@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0.0",
+  "messageId": "brmsg_composeReportRes0001",
+  "type": "bridge.operation.response",
+  "operation": "composeReport",
+  "status": "ok",
+  "error": null,
+  "payload": {
+    "state": "ready",
+    "reason": null,
+    "attempts": 1,
+    "totalMs": 9042,
+    "document": {
+      "schemaVersion": "1.0.0",
+      "reportId": "daily-brief",
+      "blocks": [
+        {
+          "blockKind": "line",
+          "text": "Your investor call is at 9:30, and NIC-204 is due today.",
+          "lineEmphasis": "normal"
+        },
+        {
+          "blockKind": "count",
+          "value": "3",
+          "label": "unread that look like they need you"
+        }
+      ]
+    }
+  }
+}

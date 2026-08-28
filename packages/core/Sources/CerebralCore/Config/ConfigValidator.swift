@@ -16,19 +16,25 @@ public struct ValidatedConfig {
     /// `config/models/profiles.json`. Optional and defaulted so a configuration with no model
     /// attached stays exactly as valid as it is today.
     public let modelProfiles: CerebralHelmModelProfileCatalog?
+    /// How a model composes each report (NIC-250, NIC-252), or nil when this machine ships no
+    /// `config/models/composer.json`. Optional for the same reason the profile catalog is: a
+    /// machine that composes no report with a model is a perfectly valid machine.
+    public let modelComposers: CerebralHelmModelComposerCatalog?
 
     public init(
         defaults: CerebralHelmApplicationDefaults,
         modes: [CerebralHelmModeConfig],
         agents: [CerebralHelmAgentSurfaceConfig],
         toolIDs: [String],
-        modelProfiles: CerebralHelmModelProfileCatalog? = nil
+        modelProfiles: CerebralHelmModelProfileCatalog? = nil,
+        modelComposers: CerebralHelmModelComposerCatalog? = nil
     ) {
         self.defaults = defaults
         self.modes = modes
         self.agents = agents
         self.toolIDs = toolIDs
         self.modelProfiles = modelProfiles
+        self.modelComposers = modelComposers
     }
 }
 
@@ -69,6 +75,9 @@ public enum ConfigValidator {
     ]
     static let modelProfileCatalogKeys: Set<String> = [
         "schemaVersion", "residentBudgetGigabytes", "modelProfiles", "extensions"
+    ]
+    static let modelComposerCatalogKeys: Set<String> = [
+        "schemaVersion", "composerSystemPrompt", "composerActions", "composerReports", "extensions"
     ]
     static let overrideKeys: Set<String> = [
         "schemaVersion", "id", "quickApps", "layout", "extensions"
@@ -162,6 +171,41 @@ public enum ConfigValidator {
             }
         }
 
+        // Model composers (NIC-250, NIC-252). Optional on the same terms as the profile catalog
+        // above, and read from the same directory — `config/models/` holds two families, addressed
+        // by filename rather than by scanning, so neither is ever validated as the other.
+        var modelComposers: CerebralHelmModelComposerCatalog?
+        let modelComposerURL = configDirectory
+            .appendingPathComponent("models", isDirectory: true)
+            .appendingPathComponent("composer.json")
+        if FileManager.default.fileExists(atPath: modelComposerURL.path) {
+            let label = "models/composer.json"
+            if let data = readFile(modelComposerURL) {
+                let result = decodeModelComposers(file: label, data: data)
+                errors += result.errors
+                modelComposers = result.value
+            } else {
+                errors.append(unreadable(file: label))
+            }
+        }
+
+        // A composer naming a capability profile no catalog configures cannot run. Checked here
+        // rather than at composition time, where it would surface as a failed report rather than
+        // as the configuration mistake it is. Skipped entirely when no catalog is present: the
+        // composer file is inert on a machine with no model, which is not an error.
+        if let modelComposers, let modelProfiles {
+            let configured = Set(modelProfiles.modelProfiles.map(\.id))
+            for composer in modelComposers.composerReports where !configured.contains(composer.modelProfileID) {
+                errors.append(makeError(
+                    file: "models/composer.json",
+                    field: "/composerReports/modelProfileId",
+                    expected: "a configured capability profile",
+                    message: "Report \"\(composer.composerReportID)\" names profile \"\(composer.modelProfileID.rawValue)\", which models/profiles.json does not configure.",
+                    remediation: "Configure that profile in models/profiles.json, or point the report at one that exists."
+                ))
+            }
+        }
+
         // Cross-file references (only meaningful once defaults decoded).
         if let defaults {
             errors += crossReferenceErrors(
@@ -178,7 +222,8 @@ public enum ConfigValidator {
                 modes: modes,
                 agents: agents,
                 toolIDs: toolIDs,
-                modelProfiles: modelProfiles
+                modelProfiles: modelProfiles,
+                modelComposers: modelComposers
             ))
         }
         return .invalid(errors)
@@ -200,6 +245,10 @@ public enum ConfigValidator {
 
     public static func modelProfilesDocumentErrors(file: String, data: Data) -> [CerebralHelmConfigValidationError] {
         decodeModelProfiles(file: file, data: data).errors
+    }
+
+    public static func modelComposersDocumentErrors(file: String, data: Data) -> [CerebralHelmConfigValidationError] {
+        decodeModelComposers(file: file, data: data).errors
     }
 
     public static func overrideDocumentErrors(file: String, data: Data) -> [CerebralHelmConfigValidationError] {
@@ -270,6 +319,72 @@ public enum ConfigValidator {
         ) { catalog in
             structuralModelProfileErrors(catalog, file: file)
         }
+    }
+
+    private static func decodeModelComposers(
+        file: String, data: Data
+    ) -> (value: CerebralHelmModelComposerCatalog?, errors: [CerebralHelmConfigValidationError]) {
+        decode(
+            file: file,
+            data: data,
+            allowed: modelComposerCatalogKeys,
+            type: CerebralHelmModelComposerCatalog.self
+        ) { catalog in
+            structuralModelComposerErrors(catalog, file: file)
+        }
+    }
+
+    /// The one rule the schema cannot state: a report is composed once. Two entries for the same
+    /// report would leave which prompt wins to array order, so the second would look configured
+    /// while never being read.
+    private static func structuralModelComposerErrors(
+        _ catalog: CerebralHelmModelComposerCatalog,
+        file: String
+    ) -> [CerebralHelmConfigValidationError] {
+        var errors: [CerebralHelmConfigValidationError] = []
+        var seen: Set<String> = []
+
+        for composer in catalog.composerReports where !seen.insert(composer.composerReportID).inserted {
+            errors.append(makeError(
+                file: file,
+                field: "/composerReports",
+                expected: "one entry per report",
+                message: "Report \"\(composer.composerReportID)\" is composed more than once.",
+                remediation: "Remove the duplicate \"\(composer.composerReportID)\" entry."
+            ))
+        }
+
+        // Same argument one field over: two descriptions of one action leave which one the model
+        // reads to array order, and the losing entry looks configured while never being sent.
+        var actions: Set<String> = []
+        for action in catalog.composerActions
+        where !actions.insert(action.composerActionID).inserted {
+            errors.append(makeError(
+                file: file,
+                field: "/composerActions",
+                expected: "one entry per action",
+                message: "Action \"\(action.composerActionID)\" is described more than once.",
+                remediation: "Remove the duplicate \"\(action.composerActionID)\" entry."
+            ))
+        }
+
+        // An action the model is allowed to offer but is never told about cannot be chosen, and an
+        // id described in prose the catalog does not carry is dropped host-side before the reader
+        // sees it. Either way the two halves have to name the same set, so the drift is caught here
+        // rather than as an offer that quietly stopped appearing.
+        for action in catalog.composerActions
+        where !catalog.composerSystemPrompt.contains(action.composerActionID) {
+            errors.append(makeError(
+                file: file,
+                field: "/composerActions",
+                expected: "every offerable action named in the system prompt",
+                message: "Action \"\(action.composerActionID)\" is offerable but is not in the "
+                    + "system prompt, so no model will ever choose it.",
+                remediation: "Name \"\(action.composerActionID)\" in composerSystemPrompt, or "
+                    + "remove it from composerActions."
+            ))
+        }
+        return errors
     }
 
     /// The rules the schema cannot state on its own: one entry per profile, and a residency whose

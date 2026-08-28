@@ -40,9 +40,10 @@ Vector indexes = disposable and rebuildable.
 - **The MVP is closed.** ~139 issues Done, zero open. `.agent/spec/MVP-PRD.md` is now
   the record of what shipped and why, **not** a live scope gate. Don't reason about
   "MVP scope" as though it were pending work.
-- **Two workstreams.** (1) Minor features and fixes on the shipped app — currently
-  NIC-224 (report rendering), NIC-223 (news interests), NIC-221 (Linear projects
-  widget). (2) **Local LLM integration** — the big one, see the next section.
+- **Two workstreams.** (1) Minor features and fixes on the shipped app. (2) **Local LLM
+  integration** — the big one, see the next section. NIC-221/223/224/226/227 are merged
+  or deployed; NIC-228, the model-composed daily brief, is built and awaiting review on
+  `NIC-228/LLM-Daily-Report` (uncommitted at the time of writing).
 - **Branch flow:** feature branch → PR → `dev` → `prod`, both current as of
   2026-08-18. No `v1.0.0` git tag was ever pushed, despite NIC-106 being closed.
 - **Live trap:** every Playwright visual baseline is `-win32`, there is no Windows box
@@ -55,8 +56,15 @@ Vector indexes = disposable and rebuildable.
 
 ## LLM integration
 
-**Nothing model-facing is built.** All 92 issues (NIC-225 → NIC-317, Linear milestone
-_CerebralHelm Local LLMs_) are Backlog; 13 are pulled into the current cycle.
+**The passive tier is live; everything above it is not.** The daily brief is composed by
+a local model end to end (`NIC-228`, 2026-08-27) — assembler → snapshot → `ReportComposer`
+→ streamed blocks — and is the first caller of the provider port. The agent tier, tool
+calling, retrieval and the remaining surfaces are still Backlog (Linear milestone
+_CerebralHelm Local LLMs_, NIC-225 → NIC-340).
+
+**The regression gate for any prompt, descriptor or model change is
+`node evals/run-report.mjs --gate`.** It is opt-in and outside `scripts/test.mjs` because
+it needs the local models. A prompt edit without a gate re-run is not a finished change.
 
 **Any work touching models, agents, retrieval, or evals reads
 [`docs/llm-integration/README.md`](docs/llm-integration/README.md) first and keeps it
@@ -75,14 +83,19 @@ passive tier reads deterministically. **Models propose; risk classification and
 confirmation policy stay deterministic, outside the model, and absent from the
 model-facing manifest.** `ActionProvenance` may not be weakened. Agent memory is typed
 domain state, never freeform model notes. Descriptors — not prompts — are the lever
-for model accuracy, and every descriptor change owes an eval re-run.
+for model accuracy, and every descriptor change owes an eval re-run — which held at the
+prompt layer too: four separate failures in the passive tier traced to a vocabulary stated
+without its meaning, and none to a capability limit. Two companion rules earned there:
+**instruction _kind_ matters more than volume** (constraints earn their place;
+choreography flattens the writing into a filled-in form), and **a judgement the model
+makes correctly in isolation can be destroyed by composition load** — check it standalone
+before blaming the model, and compute the fact host-side where it is.
 
 _Both merged to `dev` 2026-08-18:_ the README and eval harness as `214813e` (#21), the
 descriptor-affordance work as `5e95795` (#20) — so the post-fix benchmark numbers in
-PLAN.md rest on descriptors that are now on `dev`. _Known doc conflict:_
-README decision 20 (owner override — Heimlich MAY hold both `finance.*` and
-`web.search`) contradicts PLAN.md's recommendation. **The owner's override wins**;
-PLAN.md is owed the correction.
+PLAN.md rest on descriptors that are now on `dev`. The `finance.*` + `web.search` doc
+conflict is **resolved**: PLAN.md now records the owner's override rather than
+contradicting it.
 
 ## Start here (orientation, cheapest first)
 
