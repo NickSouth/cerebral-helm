@@ -5,7 +5,11 @@
   "description": "How a model composes each Report-archetype document: the shared system prompt, and the per-report instruction, capability profile and generation budget. The passive tier composes prose and proposals and executes nothing, so nothing here grants capability — it is editorial direction plus a budget.\n\nOne file rather than a prompt embedded in Swift, because two consumers read it: the host composer and `evals/run-report.mjs`. A gate measuring a different prompt from the one that ships is not a gate. Eval THRESHOLDS deliberately do not live here — they are the harness's own policy, the app never reads them, and shipping them inside the packaged app buys nothing.\n\nOptional, like the profile catalog: with no such file no report is model-composed and the app runs exactly as it does today.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "composerSystemPrompt", "composerReports"],
+  "required": [
+    "schemaVersion",
+    "composerSystemPrompt",
+    "composerReports"
+  ],
   "properties": {
     "schemaVersion": {
       "type": "string",
@@ -78,6 +82,10 @@
         },
         "extensions": {
           "$ref": "#/$defs/extensions"
+        },
+        "composerDiscardsGreeting": {
+          "type": "boolean",
+          "description": "Whether the host discards every `greeting` block the model writes. Defaults to false.\n\nFor a report that renders its own opening — the daily brief states the greeting, date and weather deterministically above the model's first block — the model is ASKED for a greeting and then has it thrown away. That is deliberate. Told plainly not to restate the header it restated it anyway on 6 of 9 measured compositions, because opening with the day and the weather is what a brief looks like; the instruction was fighting the shape of the task. Asking for the block and discarding it costs a few output tokens, removes a rule that did not hold, and makes the outcome structural rather than a matter of the model's compliance.\n\nThe instruction must confine the greeting to greeting, date and weather — anything else the model puts there is lost. The eval's `mustMention` coverage is what catches that."
         }
       }
     },

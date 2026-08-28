@@ -86,6 +86,31 @@ public struct ReportComposer: Sendable {
             responseFormat: Self.responseFormat
         )
 
+        /// Drops the blocks the host writes itself.
+        ///
+        /// The daily brief renders its greeting, date and weather deterministically above the
+        /// model's first block, and the model is ASKED for a greeting anyway so that it can be
+        /// thrown away. Told plainly not to restate the header it restated it on 6 of 9 measured
+        /// compositions — opening with the day and the weather is simply what a brief looks like,
+        /// and the instruction was fighting the shape of the task rather than a bad habit.
+        ///
+        /// Filtering by block KIND rather than by position, so it holds wherever the model puts it
+        /// and does not need the first block to be the one it guessed.
+        let keep: @Sendable ([Block]) -> [Block] = { blocks in
+            composer.composerDiscardsGreeting == true
+                ? blocks.filter { $0.blockKind != .greeting }
+                : blocks
+        }
+
+        // Filtered on the way out too, so a discarded greeting never reaches a surface and flashes
+        // there before the rest of the document catches up.
+        let progress: (@Sendable ([Block]) -> Void)?
+        if let onBlocks {
+            progress = { blocks in onBlocks(keep(blocks)) }
+        } else {
+            progress = nil
+        }
+
         var messages: [ModelMessage] = [
             .system(composers.composerSystemPrompt),
             .user(Self.userContent(request: request, instruction: composer.composerInstruction))
@@ -100,7 +125,8 @@ public struct ReportComposer: Sendable {
             let completion: ModelCompletion
             do {
                 completion = try await stream(
-                    ModelRequest(messages: messages, options: options), onBlocks: onBlocks
+                    ModelRequest(messages: messages, options: options),
+                    onBlocks: progress
                 )
             } catch let error as ModelProviderError {
                 // A transport or lifecycle failure is not something a retry fixes, and cancellation
@@ -112,11 +138,15 @@ public struct ReportComposer: Sendable {
 
             switch Self.blocks(from: completion.text, cap: composer.composerMaxOutputTokens, usage: completion.usage) {
             case let .success(blocks):
+                // Bounds and the block cap are checked against what the model ACTUALLY produced.
+                // Checking the kept blocks instead would let a runaway of sixty greetings through
+                // on the grounds that none of them survived.
                 let overruns = ReportBlockBounds.violations(in: blocks)
-                if overruns.isEmpty, blocks.count <= composer.composerMaxBlocks {
+                let kept = keep(blocks)
+                if overruns.isEmpty, blocks.count <= composer.composerMaxBlocks, !kept.isEmpty {
                     return .composed(ComposedReport(
                         document: CerebralHelmReportDocument(
-                            blocks: blocks,
+                            blocks: kept,
                             // Composed from a snapshot the host assembled, not from a fetch the
                             // reader can repeat. Offering a refresh here would promise something
                             // the document cannot do.
@@ -129,9 +159,16 @@ public struct ReportComposer: Sendable {
                     ))
                 }
 
-                let reason = overruns.isEmpty
-                    ? "/blocks has \(blocks.count) blocks, more than the \(composer.composerMaxBlocks) this report allows"
-                    : overruns.map { $0.description }.joined(separator: "; ")
+                let reason: String
+                if !overruns.isEmpty {
+                    reason = overruns.map { $0.description }.joined(separator: "; ")
+                } else if blocks.count > composer.composerMaxBlocks {
+                    reason = "/blocks has \(blocks.count) blocks, more than the \(composer.composerMaxBlocks) this report allows"
+                } else {
+                    // Everything the model wrote was a greeting, which this report supplies itself —
+                    // so there is no report left. A retry is the right answer, not a blank body.
+                    reason = "the document contained nothing but a greeting, which this report writes itself"
+                }
                 lastFailure = .invalid(reason: reason, attempts: attempt)
                 messages += Self.correction(completion.text, reason: reason)
 

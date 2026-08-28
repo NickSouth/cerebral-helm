@@ -13,6 +13,7 @@ import CerebralContracts
 private let composers = CerebralHelmModelComposerCatalog(
     composerReports: [
         ComposerReport(
+            composerDiscardsGreeting: nil,
             composerInstruction: "Compile the morning brief.",
             composerMaxBlocks: 12,
             composerMaxOutputTokens: 1200,

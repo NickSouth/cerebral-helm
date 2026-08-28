@@ -4306,6 +4306,20 @@ public extension CerebralHelmModelComposerCatalog {
 
 // MARK: - ComposerReport
 public struct ComposerReport: Codable {
+    /// Whether the host discards every `greeting` block the model writes. Defaults to false.
+    ///
+    /// For a report that renders its own opening — the daily brief states the greeting, date and
+    /// weather deterministically above the model's first block — the model is ASKED for a
+    /// greeting and then has it thrown away. That is deliberate. Told plainly not to restate the
+    /// header it restated it anyway on 6 of 9 measured compositions, because opening with the
+    /// day and the weather is what a brief looks like; the instruction was fighting the shape of
+    /// the task. Asking for the block and discarding it costs a few output tokens, removes a
+    /// rule that did not hold, and makes the outcome structural rather than a matter of the
+    /// model's compliance.
+    ///
+    /// The instruction must confine the greeting to greeting, date and weather — anything else
+    /// the model puts there is lost. The eval's `mustMention` coverage is what catches that.
+    public let composerDiscardsGreeting: Bool?
     /// Editorial direction for this one report — what to lead with, what to do when there is
     /// nothing to report, when to propose. Per-report rather than in the system prompt so every
     /// composer shares one cache prefix.
@@ -4344,13 +4358,14 @@ public struct ComposerReport: Codable {
     public let modelProfileID: ModelProfileID
 
     public enum CodingKeys: String, CodingKey {
-        case composerInstruction, composerMaxBlocks, composerMaxOutputTokens
+        case composerDiscardsGreeting, composerInstruction, composerMaxBlocks, composerMaxOutputTokens
         case composerReportID = "composerReportId"
         case composerTemperature, extensions
         case modelProfileID = "modelProfileId"
     }
 
-    public init(composerInstruction: String, composerMaxBlocks: Int, composerMaxOutputTokens: Int, composerReportID: String, composerTemperature: Double?, extensions: [String: JSONAny]?, modelProfileID: ModelProfileID) {
+    public init(composerDiscardsGreeting: Bool?, composerInstruction: String, composerMaxBlocks: Int, composerMaxOutputTokens: Int, composerReportID: String, composerTemperature: Double?, extensions: [String: JSONAny]?, modelProfileID: ModelProfileID) {
+        self.composerDiscardsGreeting = composerDiscardsGreeting
         self.composerInstruction = composerInstruction
         self.composerMaxBlocks = composerMaxBlocks
         self.composerMaxOutputTokens = composerMaxOutputTokens
@@ -4380,6 +4395,7 @@ public extension ComposerReport {
     }
 
     func with(
+        composerDiscardsGreeting: Bool?? = nil,
         composerInstruction: String? = nil,
         composerMaxBlocks: Int? = nil,
         composerMaxOutputTokens: Int? = nil,
@@ -4389,6 +4405,7 @@ public extension ComposerReport {
         modelProfileID: ModelProfileID? = nil
     ) -> ComposerReport {
         return ComposerReport(
+            composerDiscardsGreeting: composerDiscardsGreeting ?? self.composerDiscardsGreeting,
             composerInstruction: composerInstruction ?? self.composerInstruction,
             composerMaxBlocks: composerMaxBlocks ?? self.composerMaxBlocks,
             composerMaxOutputTokens: composerMaxOutputTokens ?? self.composerMaxOutputTokens,

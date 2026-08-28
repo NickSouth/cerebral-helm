@@ -92,11 +92,13 @@ private let profiles = ModelProfileCatalog(
 private func composers(
     maxBlocks: Int = 12,
     maxOutputTokens: Int = 1200,
-    profile: ModelProfileID = .local
+    profile: ModelProfileID = .local,
+    discardsGreeting: Bool? = nil
 ) -> CerebralHelmModelComposerCatalog {
     CerebralHelmModelComposerCatalog(
         composerReports: [
             ComposerReport(
+                composerDiscardsGreeting: discardsGreeting,
                 composerInstruction: "Compile the morning brief.",
                 composerMaxBlocks: maxBlocks,
                 composerMaxOutputTokens: maxOutputTokens,
@@ -126,13 +128,18 @@ private func compose(
     _ provider: any ModelProvider,
     maxBlocks: Int = 12,
     maxOutputTokens: Int = 1200,
-    profile: ModelProfileID = .local
+    profile: ModelProfileID = .local,
+    discardsGreeting: Bool? = nil,
+    onBlocks: (@Sendable ([Block]) -> Void)? = nil
 ) async -> ReportCompositionOutcome {
     await ReportComposer(
         provider: provider,
         profiles: profiles,
-        composers: composers(maxBlocks: maxBlocks, maxOutputTokens: maxOutputTokens, profile: profile)
-    ).compose(request())
+        composers: composers(
+            maxBlocks: maxBlocks, maxOutputTokens: maxOutputTokens,
+            profile: profile, discardsGreeting: discardsGreeting
+        )
+    ).compose(request(), onBlocks: onBlocks)
 }
 
 private let goodAnswer = """
@@ -485,4 +492,100 @@ func actionNamesFollowTheSchemaPattern() {
     // `^[a-z][a-z0-9-]*$` rejects it. A bound laxer than its contract just moves the failure later.
     #expect(!violations("ouvrir-café").isEmpty)
     #expect(!violations("open-mail-٣").isEmpty)
+}
+
+// MARK: - A header the model writes and the host throws away
+
+private let greetingAnswer = """
+{"blocks":[{"blockKind":"greeting","text":"Good morning. Thursday, 27 August — light rain, 63°F.","greetingSize":"hero"},{"blockKind":"line","text":"Your investor call is at 9:30.","lineEmphasis":"normal"}]}
+"""
+
+@Test("a greeting the model writes is discarded when the report writes its own")
+func greetingIsDiscarded() async throws {
+    // Told plainly NOT to restate the header, the model restated it on 6 of 9 measured
+    // compositions: opening with the day and the weather is what a brief looks like, and the
+    // instruction was fighting the shape of the task rather than a bad habit. So it is asked for a
+    // greeting and the greeting is thrown away — the outcome becomes structural instead of a matter
+    // of the model's compliance.
+    guard case let .composed(report) = await compose(
+        provider(text: greetingAnswer), discardsGreeting: true
+    ) else {
+        Issue.record("A well-formed answer must compose.")
+        return
+    }
+
+    #expect(report.document.blocks.count == 1)
+    #expect(report.document.blocks.first?.text == "Your investor call is at 9:30.")
+    #expect(!report.document.blocks.contains { $0.blockKind == .greeting })
+}
+
+@Test("a report that writes no header of its own keeps the model's greeting")
+func greetingIsKeptByDefault() async throws {
+    // Discarding is a property of the REPORT, not of the tier: a surface with no deterministic
+    // opening should keep whatever the model wrote.
+    guard case let .composed(report) = await compose(provider(text: greetingAnswer)) else {
+        Issue.record("A well-formed answer must compose.")
+        return
+    }
+
+    #expect(report.document.blocks.count == 2)
+    #expect(report.document.blocks.first?.blockKind == .greeting)
+}
+
+@Test("a discarded greeting never reaches a streaming surface")
+func discardedGreetingIsNotStreamed() async throws {
+    // Filtered on the way out as well as at the end, or the greeting would appear as the first
+    // block to arrive and then vanish when the document settled — a visible flash of something the
+    // reader was never meant to see.
+    let seen = BlockRecorder()
+    _ = await compose(
+        provider(text: greetingAnswer),
+        discardsGreeting: true,
+        onBlocks: { blocks in Task { await seen.record(blocks) } }
+    )
+
+    try await Task.sleep(nanoseconds: 50_000_000)
+    let emissions = await seen.emissions
+    #expect(!emissions.isEmpty)
+    for emission in emissions {
+        #expect(!emission.contains { $0.blockKind == .greeting })
+    }
+}
+
+@Test("a document of nothing but a greeting is a failed composition, not an empty brief")
+func greetingOnlyDocumentFails() async {
+    // Everything the model wrote was a header this report supplies itself, so there is no report
+    // left. A retry is the right answer; a blank body under a correct header is not.
+    let onlyGreeting = """
+    {"blocks":[{"blockKind":"greeting","text":"Good morning.","greetingSize":"hero"}]}
+    """
+
+    guard case let .failed(.invalid(reason, _)) = await compose(
+        provider(text: onlyGreeting), discardsGreeting: true
+    ) else {
+        Issue.record("A greeting-only document must not compose.")
+        return
+    }
+    #expect(reason.contains("nothing but a greeting"))
+}
+
+@Test("the block cap counts what the model wrote, not what survived the filter")
+func capCountsRawOutput() async {
+    // Checking the kept blocks instead would let a runaway of sixty greetings through on the
+    // grounds that none of them survived — the cap exists to catch a model that will not stop.
+    let many = (0..<20).map { _ in "{\"blockKind\":\"greeting\",\"text\":\"Good morning.\"}" }
+        .joined(separator: ",")
+
+    guard case let .failed(.invalid(reason, _)) = await compose(
+        provider(text: "{\"blocks\":[\(many)]}"), discardsGreeting: true
+    ) else {
+        Issue.record("Twenty blocks against a cap of twelve must not compose.")
+        return
+    }
+    #expect(reason.contains("20 blocks"))
+}
+
+private actor BlockRecorder {
+    private(set) var emissions: [[Block]] = []
+    func record(_ blocks: [Block]) { emissions.append(blocks) }
 }

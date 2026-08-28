@@ -412,6 +412,70 @@ to 790.** `scripts/contracts-report.test.mjs` gates it, scoped to this schema al
 > the gate now asserts the flat shape stays. Bounds are validation-only, so the generated
 > TypeScript and Swift changed by doc comment alone — a union would have rewritten both.
 
+### The composer gate (2026-08-27, NIC-255)
+
+`evals/run-report.mjs --gate` now reads the **shipping** prompt and budget from
+`config/models/composer.json` rather than carrying its own copy, applies absolute thresholds, and
+exits non-zero. Before this the eval and the app held two prompts that agreed only by hand — a gate
+measuring a composer that does not exist is worse than no gate, because it is trusted.
+`scripts/evals-composer.test.mjs` pins that (it fails if a `SYSTEM_PROMPT` constant reappears) and
+runs in the normal suite; the gate itself stays opt-in, since it needs the models.
+
+**17. It failed on its first run, and the fault was an affordance — again.** 4 of 9 compositions
+produced invalid documents, and every failure was the same class: `reportActions` entries missing
+`action`, carrying extra properties, or naming an id that broke the `^[a-z][a-z0-9-]*$` pattern. The
+prompt said *"proposal uses `text` and `reportActions`"* and never said what an entry **is**, so the
+model invented `{label, action}`, `{title, url}`, capitalised ids.
+
+Describing the entry — one field, `action`, from a named list of registered ids, no others, omit when
+none fits — took it from **5/9 to 9/9**. This is finding 1 replayed at the prompt layer: a required
+field with no stated shape breaks the case, and the model was never the bottleneck.
+
+**18. The model restated the deterministic header on 6 of 9 runs, and the fix was to stop asking it
+not to.** The brief renders greeting, date and weather above the model's first block, and the
+instruction said plainly not to repeat them. It repeated them anyway — opening with the day and the
+weather is simply what a brief looks like, so the rule was fighting the shape of the task rather
+than a bad habit.
+
+**It is now asked for a greeting block and the greeting is thrown away** (owner, 2026-08-27):
+`composerDiscardsGreeting` on the composer entry, filtered by block KIND in `ReportComposer` so it
+holds wherever the model puts it. The rule left the prompt. Measured across two runs of nine:
+**0 and 1 restatements in what survives, down from 6 of 9.** Not zero — one run still echoed the
+condition in a surviving line — so this reduced the behaviour rather than eliminating it, and the
+REVIEW line stays for that reason.
+
+The trade is a few dozen output tokens for a block nobody sees, and it buys an outcome that is
+structural rather than a matter of the model's compliance. Two things it depends on, both covered:
+the instruction confines the greeting to greeting/date/weather so nothing of substance is lost
+there, and the eval applies the **same** filter before grading — an eval scoring the raw output
+would be scoring a document the reader never sees, which is the same mistake as keeping a private
+copy of the prompt.
+
+It also moved a fixture assertion. `empty-day` used to require the word "clear", which the model
+writes into the discarded greeting; it now requires **"golf"**, which can only appear if the profile
+note reached the model *and* it connected an empty day to a fact about the person. That is the claim
+the case exists to test, and the old assertion was not testing it.
+
+**19. Two more failures, both affordances, both fixed by naming a vocabulary.** `reportActions` was
+finding 17. The second: `lineEmphasis` arriving as `warning` or `critical` — tone words borrowed
+from `metricTone` — which invalidated the document on 2 of 2 runs it appeared in. The prompt did
+list `normal|strong|muted`; it did not say the field is **weight, not tone**, which the report
+schema's own comment says and the prompt did not carry. Saying it took that failure to zero.
+
+Three prompt defects in one increment, all the same shape: the vocabulary was stated and the
+*meaning* was not. Descriptors remain the lever.
+
+**Standing at the end of NIC-255: 9/9 clean, 0 leaf-type, 0 unparseable, gate exit 0.** Across
+every run in this session — roughly 45 compositions — the bounded report schema held on Ollama with
+no grammar: not one leaf-type violation and nothing unparseable. Median ~9.9 s, consistent with the
+9 s the spike recorded, though one composition took **580 s** on a machine under memory pressure and
+that outlier is worth remembering before quoting a median as a guarantee.
+
+The profile effect reproduced verbatim — an empty Saturday produced *"enjoy a round of golf given
+the clear weather and your location in New England"* with deliberation off — and it is now gated
+rather than admired: `empty-day` requires the word "golf" to survive composition, which it can only
+do if the profile note reached the model and it connected an empty day to a fact about the person.
+
 #### Runtime recommendation
 
 **Not a wholesale switch. Keep Ollama as the default runtime; reach for llama.cpp where

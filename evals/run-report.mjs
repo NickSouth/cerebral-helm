@@ -38,19 +38,44 @@ const BOLD = "\x1b[1m";
 const YELLOW = "\x1b[33m";
 const RESET = "\x1b[0m";
 
-const SYSTEM_PROMPT = `You compose CerebralHelm report documents.
+const COMPOSER_CONFIG_PATH = new URL("../config/models/composer.json", import.meta.url);
 
-You are given a SNAPSHOT of typed data that was gathered deterministically. Your only job is to turn it into the BLOCKS of a report document. The envelope around them is set by the system, not by you.
+/**
+ * The SHIPPING composer configuration — the prompt and budget the app actually uses.
+ *
+ * Read from `config/models/composer.json` rather than restated here, and that is the whole point of
+ * this file as a gate: an eval that measures a prompt of its own measures a composer that does not
+ * exist. Before this, the two were separate constants that agreed only by hand.
+ */
+function loadComposerConfig() {
+  const config = JSON.parse(readFileSync(COMPOSER_CONFIG_PATH, "utf8"));
+  const byReport = new Map(
+    (config.composerReports ?? []).map((entry) => [entry.composerReportId, entry])
+  );
+  return { systemPrompt: config.composerSystemPrompt, byReport };
+}
 
-Absolute rules:
-- Use ONLY facts present in the snapshot. Never invent an event, number, name, or status. If the snapshot is empty, say so plainly — do not pad the report with filler.
-- Do not restate the snapshot mechanically. Lead with what matters, and be brief. This is read at a glance.
-- Times in the snapshot are local wall-clock. Render them the way a person would say them.
-
-Block kinds available: greeting, line, metric, list, checklist, empty, count, proposal.
-Each block needs "blockKind". greeting/line/empty use "text"; greeting may set "greetingSize" (hero|standard); line may set "lineEmphasis" (normal|strong|muted). metric uses "label", "value", and may set "metricTone" (neutral|positive|warning|critical). count uses "value" and "label". list uses "listItems", an array of objects each with "text" and optionally "meta".
-
-Reply with a JSON object containing ONLY a "blocks" array, and nothing else.`;
+/**
+ * The bar a composer change has to clear, as absolute numbers (owner decision).
+ *
+ * Absolute rather than relative to a recorded baseline: simpler to reason about, and a baseline that
+ * drifts down one point per change is how a gate stops meaning anything. Set against what has
+ * actually been measured rather than what would be nice — Ollama produced a schema-invalid document
+ * on 6 of 18 runs of one snapshot before the report schema was bounded, and 0 of 18 after.
+ *
+ * `leafType` and `unparseable` are ZERO because both are structural: a document that will not
+ * validate or will not parse cannot be rendered, and there is no partial credit for one that
+ * sometimes can. `pass` allows for `dropped_facts`, which is a judgement failure rather than a
+ * structural one and which no grammar can prevent.
+ */
+const GATE = {
+  minPassRate: 0.8,
+  maxLeafTypeViolations: 0,
+  maxUnparseable: 0,
+  maxDroppedFactRate: 0.2,
+  /** Composition runs at a non-zero temperature, so one sample decides nothing. */
+  minReps: 3
+};
 
 /// Inlines internal $refs so the schema can be handed to a structured-output API.
 /// Runtimes vary in $ref support and a silently ignored $ref would mean the output is
@@ -96,10 +121,14 @@ function parseArgs(argv) {
     json: null,
     think: "false",
     reps: "1",
+    // `--gate` turns this from a look into a verdict: thresholds are applied and the process exits
+    // non-zero on a breach. "Swap the model" is a design goal, and a swap without a regression gate
+    // is a hope.
+    gate: null,
   };
   for (const arg of argv) {
     const [key, value] = arg.replace(/^--/, "").split("=");
-    if (key in options) options[key] = value;
+    if (key in options) options[key] = value === undefined ? "true" : value;
     else throw new Error(`Unknown option: ${arg}`);
   }
   if (!(options.runtime in RUNTIMES)) {
@@ -153,6 +182,33 @@ function unsourcedNumbers(document, snapshot) {
   return [...found];
 }
 
+/**
+ * Whether what SURVIVES the greeting filter still restates the deterministic header.
+ *
+ * Run against the kept document, not the raw output: the model is asked for a greeting and the host
+ * throws it away, so flagging that block would flag the thing that was requested. What matters is a
+ * SECOND restatement — a `line` or `metric` repeating the day and the weather after the greeting has
+ * already been discarded — which is the duplication a reader would actually see.
+ *
+ * Reported as REVIEW rather than as a failure: it is a judgement about prose, the document is
+ * perfectly valid, and a gate that failed on wording would be a gate nobody could keep green.
+ */
+function restatesHeader(document, snapshot) {
+  const first = (document.blocks ?? [])[0];
+  if (!first) return null;
+  const text = `${first.text ?? ""} ${first.label ?? ""} ${first.value ?? ""}`.toLowerCase();
+  const echoes = [];
+  const weekday = snapshot.dayOfWeek?.toLowerCase();
+  if (weekday && text.includes(weekday)) echoes.push(snapshot.dayOfWeek);
+  const condition = snapshot.weather?.condition?.toLowerCase();
+  if (condition && text.includes(condition)) echoes.push(snapshot.weather.condition);
+  const temperature = snapshot.weather?.temperatureF;
+  if (temperature !== undefined && text.includes(String(temperature))) {
+    echoes.push(`${temperature}°F`);
+  }
+  return echoes.length ? echoes : null;
+}
+
 function renderPreview(document) {
   const lines = [];
   for (const block of document.blocks ?? []) {
@@ -184,22 +240,27 @@ function renderPreview(document) {
   return lines.join("\n");
 }
 
-/// The snapshot as the model receives it.
-function userContent(snapshot) {
+/// The snapshot as the model receives it — assembled exactly as `ReportComposer.userContent` does.
+///
+/// `instruction` comes from the shipping composer config when the report has an entry, and from the
+/// fixture only for an ASPIRATIONAL case describing a surface that does not exist yet. A gate must
+/// not grade a prompt nobody ships.
+function userContent(snapshot, instruction) {
   return (
-    `reportId: ${snapshot.reportId}\n\n${snapshot.instruction}\n\n` +
+    `reportId: ${snapshot.reportId}\n\n${instruction}\n\n` +
     `SNAPSHOT:\n${JSON.stringify(snapshot.snapshot, null, 2)}`
   );
 }
 
-async function compose({ runtime, model, snapshot, formatMode, schema, think }) {
+async function compose({ runtime, model, snapshot, instruction, systemPrompt, formatMode, schema, think, maxOutputTokens }) {
   return RUNTIMES[runtime].compose({
     model,
-    system: SYSTEM_PROMPT,
-    user: userContent(snapshot),
+    system: systemPrompt,
+    user: userContent(snapshot, instruction),
     responseSchema: schema,
     formatMode,
     think,
+    maxOutputTokens,
   });
 }
 
@@ -229,17 +290,39 @@ async function main() {
   const suite = JSON.parse(
     readFileSync(new URL("./cases/report-snapshots.json", import.meta.url), "utf8")
   );
+  const composer = loadComposerConfig();
   let snapshots = suite.snapshots;
   if (options.snapshot) snapshots = snapshots.filter((s) => s.id === options.snapshot);
   if (!snapshots.length) throw new Error("No snapshots matched.");
 
   await assertRuntimeReady(options.runtime, options.model);
 
-  const reps = Math.max(1, Number(options.reps) || 1);
+  const gating = options.gate !== null && options.gate !== "false";
+  // Under `--gate` the repetition floor is enforced rather than suggested: composition runs at a
+  // non-zero temperature, and a verdict from one sample is a coin toss with a pass rate printed
+  // next to it.
+  const reps = gating
+    ? Math.max(GATE.minReps, Number(options.reps) || 0)
+    : Math.max(1, Number(options.reps) || 1);
   console.log(
     `${snapshots.length} snapshots · ${options.runtime} · ${options.model} · ` +
       `format=${options.format} · think=${options.think} · ${reps} rep${reps === 1 ? "" : "s"}\n`
   );
+
+  // A gate grades only what ships. An ASPIRATIONAL fixture describes a surface with no composer
+  // entry — worth keeping as a look at where the format is going, worth nothing as a verdict — so it
+  // is dropped from a gating run and named rather than silently skipped.
+  if (gating) {
+    const aspirational = snapshots.filter((snapshot) => !composer.byReport.has(snapshot.reportId));
+    if (aspirational.length) {
+      console.log(
+        `${DIM}gate: skipping ${aspirational.length} aspirational snapshot(s) with no composer ` +
+          `entry — ${aspirational.map((s) => s.id).join(", ")}${RESET}`
+      );
+    }
+    snapshots = snapshots.filter((snapshot) => composer.byReport.has(snapshot.reportId));
+    if (!snapshots.length) throw new Error("No shipping snapshots to gate.");
+  }
 
   const rows = [];
   // Repetitions are the OUTER loop so a run reads as successive passes over the same
@@ -250,12 +333,17 @@ async function main() {
   for (const snapshot of snapshots) {
     process.stdout.write(`${BOLD}── ${snapshot.id}${RESET}\n`);
 
+    const entry = composer.byReport.get(snapshot.reportId);
     let result;
     try {
       result = await compose({
         runtime: options.runtime,
         model: options.model,
         snapshot,
+        // The shipping prompt, or the fixture's own for an aspirational surface.
+        systemPrompt: composer.systemPrompt,
+        instruction: entry?.composerInstruction ?? snapshot.instruction,
+        maxOutputTokens: entry?.composerMaxOutputTokens,
         formatMode: options.format,
         schema: composerSchema,
         think: options.think === "true",
@@ -271,8 +359,17 @@ async function main() {
     try {
       // A model asked for "JSON and nothing else" still sometimes wraps it in a fence.
       const cleaned = result.text.trim().replace(/^```(?:json)?\n?/, "").replace(/```$/, "");
-      // The system supplies the envelope — exactly as the real Composer will.
-      document = { schemaVersion: "1.0.0", reportId: snapshot.reportId, blocks: JSON.parse(cleaned).blocks };
+      const blocks = JSON.parse(cleaned).blocks;
+      // The host discards the blocks a report writes itself — the daily brief renders its greeting,
+      // date and weather deterministically and ASKS the model for a greeting only so it can be
+      // thrown away. Applying the same filter here is not a detail: an eval that graded the raw
+      // output would be grading a document the reader never sees, which is the failure this whole
+      // file exists to prevent.
+      const kept = entry?.composerDiscardsGreeting
+        ? blocks.filter((block) => block?.blockKind !== "greeting")
+        : blocks;
+      // The system supplies the envelope — exactly as the real Composer does.
+      document = { schemaVersion: "1.0.0", reportId: snapshot.reportId, blocks: kept };
     } catch (error) {
       parseError = error.message;
     }
@@ -285,6 +382,7 @@ async function main() {
         )
       : snapshot.mustMention ?? [];
     const unsourced = document ? unsourcedNumbers(document, snapshot.snapshot) : [];
+    const restated = document ? restatesHeader(document, snapshot.snapshot) : null;
 
     const outcome = parseError
       ? "unparseable"
@@ -307,6 +405,11 @@ async function main() {
     if (unsourced.length) {
       console.log(`  ${YELLOW}REVIEW — numbers with no source in snapshot: ${unsourced.join(", ")}${RESET}`);
     }
+    if (restated) {
+      console.log(
+        `  ${YELLOW}REVIEW — opens by restating the deterministic header: ${restated.join(", ")}${RESET}`
+      );
+    }
     // The rendered preview exists for a human to judge the prose. Over repetitions it
     // is noise, so only a single-rep run prints it.
     if (document && reps === 1) console.log(`\n${renderPreview(document)}\n`);
@@ -323,6 +426,7 @@ async function main() {
       outputTokens: result.outputTokens ?? null,
       blocks: document?.blocks?.length ?? 0,
       unsourced,
+      restatesHeader: restated ?? undefined,
       // The raw text, but only when it could not be parsed. Same reasoning the tool
       // suite records `actualArgs`: without it an unparseable outcome has to be
       // reproduced by hand, and a rare one may not reproduce at all. Truncation, an
@@ -347,6 +451,13 @@ async function main() {
     `leaf-type violations: ${leafViolations}/${rows.length}` +
       (wall.length ? `   median ${wall[Math.floor(wall.length / 2)]}ms` : "")
   );
+  const restating = rows.filter((row) => row.restatesHeader).length;
+  if (restating) {
+    console.log(
+      `${YELLOW}header restated: ${restating}/${rows.length}${RESET} ` +
+        `${DIM}(prose, not validity — the model is spending its first block on what is already on screen)${RESET}`
+    );
+  }
   if (reps > 1) {
     const byOutcome = {};
     for (const row of rows) byOutcome[row.outcome] = (byOutcome[row.outcome] ?? 0) + 1;
@@ -360,9 +471,72 @@ async function main() {
     console.log(`wrote ${options.json}`);
   }
 
+  if (gating) {
+    // Leave the machine as we found it before the verdict, so a failing gate does not also leave a
+    // 21 GB model resident.
+    await RUNTIMES[options.runtime].unload?.(options.model);
+    reportGate(rows);
+  }
+
   // Leave the machine as we found it. A no-op on llama.cpp, where the memory is the
   // process — stopping the server is the operator's job, not the harness's.
   await RUNTIMES[options.runtime].unload?.(options.model);
+}
+
+/**
+ * Applies the thresholds and exits non-zero on a breach.
+ *
+ * Every breach is printed, not just the first: a composer change that broke two things should not
+ * need two runs to discover, and each run costs minutes.
+ */
+function reportGate(rows) {
+  const total = rows.length;
+  const passed = rows.filter((row) => row.outcome === "pass").length;
+  const leafType = rows.filter((row) => row.leafTypeErrors?.length).length;
+  const unparseable = rows.filter((row) => row.outcome === "unparseable").length;
+  const dropped = rows.filter((row) => row.outcome === "dropped_facts").length;
+  const errored = rows.filter((row) => row.outcome === "error").length;
+
+  const breaches = [];
+  const passRate = total ? passed / total : 0;
+  const droppedRate = total ? dropped / total : 0;
+
+  if (passRate < GATE.minPassRate) {
+    breaches.push(
+      `pass rate ${(passRate * 100).toFixed(1)}% is below the required ${(GATE.minPassRate * 100).toFixed(0)}%`
+    );
+  }
+  if (leafType > GATE.maxLeafTypeViolations) {
+    breaches.push(
+      `${leafType} leaf-type violation(s); the limit is ${GATE.maxLeafTypeViolations}. A document that will not validate cannot be rendered.`
+    );
+  }
+  if (unparseable > GATE.maxUnparseable) {
+    breaches.push(
+      `${unparseable} unparseable document(s); the limit is ${GATE.maxUnparseable}. Truncation is not invalidity — check the output cap.`
+    );
+  }
+  if (droppedRate > GATE.maxDroppedFactRate) {
+    breaches.push(
+      `${(droppedRate * 100).toFixed(1)}% of compositions dropped a required fact; the limit is ${(GATE.maxDroppedFactRate * 100).toFixed(0)}%`
+    );
+  }
+  if (errored > 0) {
+    breaches.push(`${errored} composition(s) errored outright`);
+  }
+
+  console.log(`${"=".repeat(60)}`);
+  if (breaches.length === 0) {
+    console.log(`GATE PASSED  ${passed}/${total} clean · 0 leaf-type · 0 unparseable`);
+    return;
+  }
+  console.log(`${YELLOW}GATE FAILED${RESET}`);
+  for (const breach of breaches) console.log(`  - ${breach}`);
+  console.log(
+    `\n${DIM}Composition is not deterministic: re-run before concluding a change caused this, ` +
+      `and read the per-snapshot output above for which case moved.${RESET}`
+  );
+  process.exitCode = 1;
 }
 
 main().catch((error) => {

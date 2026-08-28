@@ -1057,6 +1057,22 @@ export interface CerebralHelmModelComposerCatalog {
 
 export interface ComposerReport {
     /**
+     * Whether the host discards every `greeting` block the model writes. Defaults to false.
+     *
+     * For a report that renders its own opening — the daily brief states the greeting, date and
+     * weather deterministically above the model's first block — the model is ASKED for a
+     * greeting and then has it thrown away. That is deliberate. Told plainly not to restate the
+     * header it restated it anyway on 6 of 9 measured compositions, because opening with the
+     * day and the weather is what a brief looks like; the instruction was fighting the shape of
+     * the task. Asking for the block and discarding it costs a few output tokens, removes a
+     * rule that did not hold, and makes the outcome structural rather than a matter of the
+     * model's compliance.
+     *
+     * The instruction must confine the greeting to greeting, date and weather — anything else
+     * the model puts there is lost. The eval's `mustMention` coverage is what catches that.
+     */
+    composerDiscardsGreeting?: boolean;
+    /**
      * Editorial direction for this one report — what to lead with, what to do when there is
      * nothing to report, when to propose. Per-report rather than in the system prompt so every
      * composer shares one cache prefix.
