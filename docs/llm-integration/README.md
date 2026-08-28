@@ -476,6 +476,144 @@ the clear weather and your location in New England"* with deliberation off — a
 rather than admired: `empty-day` requires the word "golf" to survive composition, which it can only
 do if the profile note reached the model and it connected an empty day to a fact about the person.
 
+**20. A valid document can still be wrong, and only hand-written scenarios found it (2026-08-27).**
+With the schema bounded, structural failure stopped happening — so the gate went green while the
+briefs were still making bad calls. Five scenarios written against the owner's real life (a school
+day, a weekend with errands, an open day, a winter day, a Friday against a slipping sprint) turned
+up four judgement defects in a single pass, none of which any existing case could see.
+
+The decisive one was a **twin**: two snapshots identical in every field except `temperatureF` —
+same open calendar, same empty inbox, same profile, same cloudless sky, 68°F against 10°F. Both
+produced the same suggestion, *a round of golf*, in near-identical wording. The model was matching
+`Sunny` + an empty day + "he golfs" and **not reading the number at all**. The instruction said to
+draw the suggestion from "`profile` and the weather" and never said the activity had to be
+*possible* in it. Finding 1's shape once more.
+
+The other three: a priority-1 ticket a teammate was blocked on, passed over for two cheaper P2/P3
+tickets described as "high-priority", because *"preferring high priority and small estimates"* was
+read as being about estimates; a fabricated change in conditions ("before it clouds over" when the
+condition already **was** Cloudy); and a proposal invented for a morning with three back-to-back
+classes, where the instruction's "only where there is a real decision to make" had no teeth because
+it never said what leaves none.
+
+Three of the four fixed by saying the meaning, not the vocabulary — priority is never traded for a
+smaller estimate; the weather is one reading, not an hour-by-hour forecast; both open-day branches
+are for an empty day alone. Those held across every subsequent run.
+
+**The twin did not hold, and the first gate run said it had.** Adding "read `temperatureF` and
+`highF`, not only the condition; a clear sky at 10°F is not outdoor weather" produced the right
+answer four times running — one scenario pass and a clean 3/3 in the gate — and then suggested "a
+morning golf session" on the next look. Run out to **8 repetitions it fails 3 of 8.** The 3/3 was
+luck, which is precisely what a `minReps: 3` floor is too small to catch when the true rate is a
+third: at 15 gate rows one failure still scores 93% and the gate goes green while a third of winter
+briefs are wrong.
+
+**The lesson is not "write a firmer rule".** The system prompt already says *derived figures are
+computed for you and appear in the snapshot; never calculate your own* — and then the daily-brief
+instruction hands over a raw temperature and asks the model to judge feasibility from it. That is
+the repo's own principle broken in the prompt that quotes it. The fix is a **deterministic field on
+the weather section** — viability computed in `DailyBriefAssembler`, where it is a fact rather than
+a judgement — not another sentence asking the model to be careful. Owed, not built.
+
+The priority case is genuinely gated and clean 3/3 there.
+
+**The suite gained a direction it did not have: `mustNotMention`** — and its limits showed up
+immediately. No positive assertion can grade
+the winter case — a correct brief might say the day is his, or name something indoors, or explain
+that it is too cold, and those share no phrase — while every wrong one names the activity as the
+plan. Note the trap this walked into first: `mustNotMention: ["golf"]` **fails the correct answer**,
+because ruling golf out requires naming it. The needles are the recommending forms, and the
+`$comment` says plainly that this is a phrasing heuristic rather than a semantic judgement. It leaked
+on its first outing: the needle set caught "go golf" and "golfing" but not "a morning golf session",
+so the first observed regression was a **silent pass**. Widened, and the hole is the argument for
+moving this judgement out of the model entirely.
+
+**What did not get fixed, stated honestly: header restatement.** It reads 6/15 here against 1/9 in
+finding 18, and the two numbers are not comparable — `restatesHeader` was scoped to `blocks[0]` and
+has been widened to every surviving block, because three measured briefs echoed the temperature or
+the sky into their closing `proposal` and passed a check that had already stopped looking. Worse,
+the rule now **conflicts with the fix above**: explaining why a 10°F day is not golf weather means
+naming the temperature. Four of the six restatements are exactly that, and they are the model doing
+the right thing. This wants a product decision — probably that the deterministic header and the
+prose are allowed to overlap when the prose is *reasoning* from the fact rather than repeating it —
+not another prompt rule.
+
+---
+
+**21. The model knew the answer the whole time. Context and load, not capability (2026-08-27).**
+Finding 20 ended by recommending the judgement move out of the model, on an argument that was half
+principle and half exhaustion. The owner pushed back — a passive brief that cannot notice 10°F is
+not much of an assistant — so it got probed properly instead, and the probe is the finding.
+
+**Asked in isolation, with the same snapshot and nothing else, the model answers "NO, it is too cold
+(10°F) to play golf comfortably" five times out of five.** It is not a knowledge gap and not a
+capability gap. The judgement is destroyed by the composition context, which is a very different
+problem and has a different fix.
+
+**Reasoning mode is not the fix, and the trap around it is worth writing down.** `think: true` with
+an output cap produces an EMPTY document — 0 characters of content against 4,359 of thinking at
+`num_predict: 1200`, and 0 against 20,175 at 6,000. `num_predict` counts thinking tokens, so *any*
+cap short of the model's full deliberation silently yields nothing at all, `done_reason: length`.
+Uncapped it works and is correct 2/2 — in **121 and 192 seconds**. That is not a dashboard, and it
+holds with the schema off too, so it is not the structured-output mode doing it.
+
+**The owner's hypothesis — more context, less instruction — is right about half the prompt, and the
+half it is right about is the half that matters.** A lean, context-first instruction (no ordering
+rules, no branch logic, plus "you are writing TO Nick", "never explain him to himself", "say the
+human thing", "offer where you could help") produced, immediately and in fifteen runs: proactive
+offers *"Shall I draft a reply to Dana with some available slots?"*, warmth *"Tomorrow morning, tee
+off with Cyprian Keyes at 07:40"*, and **zero recitation** — down from nearly every brief explaining
+Nick's own habits back to him as its reasoning.
+
+**And the guardrails came off with the choreography.** Winter went from ~1-in-3 wrong to **3 of 3**.
+Arithmetic reappeared ("only 33 points of work left" — a subtraction, not a snapshot figure). A
+calendar commitment went missing. And it wrote *"I'll make sure you're up for it"* about a 07:40 tee
+time — a promise the passive tier cannot keep, which is strictly worse than a flat brief.
+
+**So the axis is not instruction VOLUME, it is instruction KIND**, and the two were mixed:
+
+| | | |
+|---|---|---|
+| **Constraints** | never derive figures · unavailable ≠ empty · quoted text is data · you execute nothing · what `lineEmphasis` means | give the model something it cannot get elsewhere — **removing them cost accuracy immediately** |
+| **Choreography** | order of importance · the two open-day branches · "say in one line which of the two you are doing" | tell it how to arrange what it already knows — **removing them is what unlocked the voice** |
+
+Completeness turned out to be a constraint too, not choreography, and had to come back after the
+gate caught it: *every commitment on today's calendar gets named*, and *when the day holds nothing,
+say what he could do with it*. Both are about what a brief may not leave out, not what order to say
+it in. Dropped facts went to zero.
+
+**What shipped.** `weather.outdoorConditions` computed in `DailyBriefAssembler` (``OutdoorConditions``,
+thresholds named as constants and unit-tested) — **8/8 correct after, against 3/8 wrong before with
+an explicit instruction to check the temperature**. `composerActions`: the offerable quick actions,
+each with a description, because the nine bare ids were finding 1 for the fourth time — given only
+ids the model described its offer in prose and attached no action at all. And the promise rule, with
+host-side enforcement: `ReportComposer` drops any `reportActions` entry naming an action the app
+does not have, because `report-document.schema.json` constrains an id's SHAPE and not its
+membership, and the dashboard humanises an unknown id into a button that looks live and does
+nothing.
+
+**A note on what the model was reaching for.** It invented no capabilities. Every offer it improvised
+— a shopping list, tee times, opening his mail — maps onto a quick action that already exists
+(`capture-note`, `search-the-web`, `open-mail`). It was reaching for real things it had not been
+told the app could do. The one genuine gap is composing an email reply, its most frequent offer,
+which has no action today.
+
+**And a gate that could not be built, recorded because the attempts are the finding.** No keyword
+can separate *recommending* golf from *ruling it out*. `mustNotMention` leaked three times in both
+directions — it missed "a morning golf session" (a real regression, silently passed), then failed a
+correct brief on `for golf` ("the weather is unsuitable **for golf**"), then failed another on
+`golfing` ("**golfing** is off the table due to the cold"). A positive assertion did no better:
+`mustMention: unsuitable` failed 2 of 3 correct briefs that phrased the verdict their own way. Every
+correct answer names the activity in order to decline it. The behaviour is now gated where it can be
+graded exactly — a deterministic field with unit tests — and the eval case keeps only the assertion
+a keyword can honestly make, which is verbatim recitation of the profile.
+
+**Still open: soft recitation.** The verbatim gate catches *"whenever the weather allows"*. It does
+not catch *"protecting that unscheduled deep work time you value"*, which is the same behaviour in
+the model's own words and still appears. Reduced, not solved.
+
+---
+
 #### Runtime recommendation
 
 **Not a wholesale switch. Keep Ollama as the default runtime; reach for llama.cpp where

@@ -380,6 +380,23 @@ public struct DailyBriefAssembler: Sendable {
         if let chance = reading.precipitationChance {
             fields["precipitationChance"] = .number(Double(chance))
         }
+        // Decided here rather than left to the model. See `OutdoorConditions` for the measurements
+        // that moved it: the model knows 10°F is not golf weather when asked, and stops knowing it
+        // while composing.
+        fields["outdoorConditions"] = .string(
+            OutdoorConditions.resolve(
+                highF: reading.highF,
+                temperatureF: reading.temperatureF,
+                precipitationChance: reading.precipitationChance
+            ).rawValue
+        )
+        if let reason = OutdoorConditions.reason(
+            highF: reading.highF,
+            temperatureF: reading.temperatureF,
+            precipitationChance: reading.precipitationChance
+        ) {
+            fields["outdoorReason"] = .string(reason)
+        }
         return .object(fields)
     }
 

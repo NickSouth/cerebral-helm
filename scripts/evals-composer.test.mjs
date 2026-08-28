@@ -56,11 +56,40 @@ test("every gated snapshot names a report the app actually composes", () => {
       snapshot.snapshot && typeof snapshot.snapshot === "object",
       `${snapshot.id}: needs a snapshot object`
     );
+    const asserts =
+      (snapshot.mustMention?.length ?? 0) + (snapshot.mustNotMention?.length ?? 0);
     assert.ok(
-      Array.isArray(snapshot.mustMention) && snapshot.mustMention.length > 0,
-      `${snapshot.id}: needs at least one fact that must survive composition`
+      asserts > 0,
+      `${snapshot.id}: needs at least one assertion — a fact that must survive composition, or one that must not appear`
     );
   }
+});
+
+test("the suite asserts on what must NOT be said, not only on what must", () => {
+  // Some defects have no positive form. "Did not suggest golf at 10°F" cannot be written as a
+  // `mustMention`, because the correct brief has many valid wordings and no phrase they all share —
+  // while every wrong one names the activity. Without this direction, a wrong recommendation is
+  // indistinguishable from a right one to the gate.
+  assert.match(runner, /mustNotMention/);
+  assert.match(runner, /forbidden_facts/);
+
+  const negative = suite.snapshots.filter((snapshot) => snapshot.mustNotMention?.length);
+  assert.ok(negative.length > 0, "no snapshot asserts on a thing that must not be said");
+});
+
+test("the header-restatement check reads every block, not just the opening one", () => {
+  // It was scoped to `blocks[0]` and missed three measured briefs that echoed the temperature or
+  // the sky into their closing `proposal` — the check passed while doing none of what it is named
+  // for. A REVIEW line nobody can trust is worse than no REVIEW line.
+  const body = runner.slice(runner.indexOf("function restatesHeader"));
+  const end = body.indexOf("\nfunction ");
+  const fn = body.slice(0, end === -1 ? undefined : end);
+  assert.equal(
+    /blocks\s*\?\?\s*\[\]\)\[0\]/.test(fn),
+    false,
+    "restatesHeader must not inspect only the first block"
+  );
+  assert.match(fn, /flatMap/);
 });
 
 test("an aspirational snapshot carries its own instruction and says why", () => {
@@ -99,6 +128,17 @@ test("the daily-brief snapshots mirror the shape the assembler actually produces
       assert.ok(
         typeof snapshot.snapshot[key].state === "string",
         `${snapshot.id}: "${key}" must carry a state`
+      );
+    }
+    // Whether the day supports being outside is decided by the assembler, not the model — it knows
+    // 10°F is not golf weather when asked and stops knowing it while composing. A fixture missing
+    // the field would exercise a composer that has to judge, which is no longer the one that ships.
+    if (snapshot.snapshot.weather.state === "ready") {
+      assert.ok(
+        ["good", "marginal", "unsuitable"].includes(
+          snapshot.snapshot.weather.outdoorConditions
+        ),
+        `${snapshot.id}: weather must carry outdoorConditions — the assembler emits it`
       );
     }
   }
@@ -143,6 +183,47 @@ test("the eval applies the host's greeting filter before grading", () => {
   assert.equal(brief.composerDiscardsGreeting, true);
   assert.match(runner, /composerDiscardsGreeting/);
   assert.match(runner, /blockKind !== "greeting"/);
+});
+
+test("every action the model may offer is one the app can actually run", () => {
+  // `report-document.schema.json` constrains the id's SHAPE and not its membership, and the
+  // dashboard labels an unknown id by humanising the id itself — so an unregistered action reaches
+  // the reader as a button that looks live and does nothing. `ReportComposer` drops those, but a
+  // catalog naming one is still a configuration error: it would silently offer nothing.
+  const registry = JSON.parse(
+    fs.readFileSync(
+      path.join(repositoryRoot, "apps/dashboard/src/shell/quickActions.registry.json"),
+      "utf8"
+    )
+  );
+  for (const action of composer.composerActions) {
+    assert.ok(
+      action.composerActionId in registry.actions,
+      `${action.composerActionId} is offerable but is not a registered quick action`
+    );
+  }
+});
+
+test("each offerable action is described, not merely named", () => {
+  // Four separate times on this project, a vocabulary stated without its meaning has been the cause
+  // of a model failure — reportActions entries, lineEmphasis, the action ids themselves. A bare
+  // list is the shape that keeps failing.
+  for (const action of composer.composerActions) {
+    assert.ok(
+      typeof action.composerActionUse === "string" && action.composerActionUse.length > 10,
+      `${action.composerActionId} needs a description a model can choose from`
+    );
+    assert.ok(
+      composer.composerSystemPrompt.includes(action.composerActionId),
+      `${action.composerActionId} is offerable but never reaches the model`
+    );
+  }
+});
+
+test("the eval notices a brief promising something nothing will do", () => {
+  // The passive tier writes and shows; nothing in a brief runs. "I'll make sure you're up for it"
+  // was measured verbatim — a brief taking on a 07:40 wake-up nobody will perform.
+  assert.match(runner, /promisesAction/);
 });
 
 test("the gate is not wired into the default test run", () => {

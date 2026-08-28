@@ -53,4 +53,5 @@ extension LeaderboardRow: @unchecked Sendable {}
 // `Sendable`.
 extension CerebralHelmModelComposerCatalog: @unchecked Sendable {}
 extension ComposerReport: @unchecked Sendable {}
+extension CerebralHelmComposerActionCatalog: @unchecked Sendable {}
 extension ModelProfileID: @unchecked Sendable {}

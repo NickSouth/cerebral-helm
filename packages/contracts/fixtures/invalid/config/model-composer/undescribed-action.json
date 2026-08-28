@@ -3,12 +3,7 @@
   "composerSystemPrompt": "You compose CerebralHelm report documents. Use ONLY facts present in the snapshot. Reply with a JSON object containing ONLY a \"blocks\" array.",
   "composerActions": [
     {
-      "composerActionId": "open-mail",
-      "composerActionUse": "to take him to his inbox, whenever mail is the thing that needs him"
-    },
-    {
-      "composerActionId": "capture-note",
-      "composerActionUse": "to write anything down for him — a list, a reminder, a thought"
+      "composerActionId": "open-mail"
     }
   ],
   "composerReports": [

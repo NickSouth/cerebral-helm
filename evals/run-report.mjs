@@ -118,6 +118,10 @@ function parseArgs(argv) {
     model: "qwen3.6:35b-mlx",
     format: "schema",
     snapshot: null,
+    // An alternative snapshot file, for trying scenarios that are not gate fixtures. The shipped
+    // suite stays the default and `--gate` refuses to run against anything else: a verdict is only
+    // worth something if everyone's verdict is about the same cases.
+    cases: null,
     json: null,
     think: "false",
     reps: "1",
@@ -130,6 +134,9 @@ function parseArgs(argv) {
     const [key, value] = arg.replace(/^--/, "").split("=");
     if (key in options) options[key] = value === undefined ? "true" : value;
     else throw new Error(`Unknown option: ${arg}`);
+  }
+  if (options.cases && options.gate !== null && options.gate !== "false") {
+    throw new Error("--gate runs against the shipped suite only; drop --cases or drop --gate.");
   }
   if (!(options.runtime in RUNTIMES)) {
     throw new Error(
@@ -187,26 +194,63 @@ function unsourcedNumbers(document, snapshot) {
  *
  * Run against the kept document, not the raw output: the model is asked for a greeting and the host
  * throws it away, so flagging that block would flag the thing that was requested. What matters is a
- * SECOND restatement — a `line` or `metric` repeating the day and the weather after the greeting has
- * already been discarded — which is the duplication a reader would actually see.
+ * SECOND restatement — a `line`, `metric` or `proposal` repeating the day and the weather after the
+ * greeting has already been discarded — which is the duplication a reader would actually see.
+ *
+ * EVERY surviving block is scanned, not just the first. Checking only the opening block was too
+ * narrow for the name: three measured briefs closed by echoing the temperature or the sky into the
+ * `proposal` — "enjoy the 64°F weather", "with clear skies" — and every one of them passed a check
+ * that had already stopped looking.
  *
  * Reported as REVIEW rather than as a failure: it is a judgement about prose, the document is
  * perfectly valid, and a gate that failed on wording would be a gate nobody could keep green.
  */
 function restatesHeader(document, snapshot) {
-  const first = (document.blocks ?? [])[0];
-  if (!first) return null;
-  const text = `${first.text ?? ""} ${first.label ?? ""} ${first.value ?? ""}`.toLowerCase();
+  const text = (document.blocks ?? [])
+    .flatMap((block) => [
+      block.text,
+      block.label,
+      block.value,
+      ...(block.listItems ?? []).flatMap((item) => [item.text, item.meta])
+    ])
+    .filter((part) => typeof part === "string")
+    .join(" ")
+    .toLowerCase();
+  if (!text) return null;
+
   const echoes = [];
   const weekday = snapshot.dayOfWeek?.toLowerCase();
   if (weekday && text.includes(weekday)) echoes.push(snapshot.dayOfWeek);
   const condition = snapshot.weather?.condition?.toLowerCase();
   if (condition && text.includes(condition)) echoes.push(snapshot.weather.condition);
   const temperature = snapshot.weather?.temperatureF;
-  if (temperature !== undefined && text.includes(String(temperature))) {
-    echoes.push(`${temperature}°F`);
+  // Word-bounded: a bare `includes` matches the 63 inside "NIC-631".
+  if (temperature !== undefined && new RegExp(`\\b${temperature}\\b`).test(text)) {
+    echoes.push(`${temperature}\u00B0F`);
   }
   return echoes.length ? echoes : null;
+}
+
+/**
+ * A proposal that says it WILL do something, with no action attached to make that true.
+ *
+ * The passive tier writes and shows; nothing in a brief runs. So "I'll make sure you're up for it"
+ * — measured, verbatim — is a brief quietly taking on a 07:40 wake-up nobody will perform, which is
+ * strictly worse than a brief that said nothing. An offer is honest only when it carries a
+ * `reportActions` entry the reader can press.
+ *
+ * REVIEW rather than failure: the document is valid, and first-person future is occasionally
+ * innocent ("I'll leave that with you"). What it must never be is unnoticed.
+ */
+function promisesAction(document) {
+  const guilty = [];
+  for (const block of document.blocks ?? []) {
+    if (block.blockKind !== "proposal") continue;
+    if ((block.reportActions ?? []).length > 0) continue;
+    const text = block.text ?? "";
+    if (/\b(I'll|I will|I've|I have already|let me)\b/i.test(text)) guilty.push(text.slice(0, 80));
+  }
+  return guilty.length ? guilty : null;
 }
 
 function renderPreview(document) {
@@ -287,9 +331,10 @@ async function main() {
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   const validate = ajv.compile(rawSchema);
 
-  const suite = JSON.parse(
-    readFileSync(new URL("./cases/report-snapshots.json", import.meta.url), "utf8")
-  );
+  const casesPath = options.cases
+    ? new URL(options.cases, `file://${process.cwd()}/`)
+    : new URL("./cases/report-snapshots.json", import.meta.url);
+  const suite = JSON.parse(readFileSync(casesPath, "utf8"));
   const composer = loadComposerConfig();
   let snapshots = suite.snapshots;
   if (options.snapshot) snapshots = snapshots.filter((s) => s.id === options.snapshot);
@@ -381,8 +426,17 @@ async function main() {
           (needle) => !JSON.stringify(document).toLowerCase().includes(needle.toLowerCase())
         )
       : snapshot.mustMention ?? [];
+    // The inverse assertion, and the only way to gate a WRONG suggestion. `mustMention` cannot
+    // express "did not propose golf at 10°F", because the correct brief has many valid wordings and
+    // no single phrase they all share — but every wrong one names the activity.
+    const forbidden = document
+      ? (snapshot.mustNotMention ?? []).filter((needle) =>
+          JSON.stringify(document).toLowerCase().includes(needle.toLowerCase())
+        )
+      : [];
     const unsourced = document ? unsourcedNumbers(document, snapshot.snapshot) : [];
     const restated = document ? restatesHeader(document, snapshot.snapshot) : null;
+    const promised = document ? promisesAction(document) : null;
 
     const outcome = parseError
       ? "unparseable"
@@ -390,7 +444,9 @@ async function main() {
         ? "invalid_schema"
         : missing.length
           ? "dropped_facts"
-          : "pass";
+          : forbidden.length
+            ? "forbidden_facts"
+            : "pass";
 
     console.log(
       `  ${outcome === "pass" ? "pass" : YELLOW + outcome + RESET}` +
@@ -402,12 +458,20 @@ async function main() {
       console.log(`  ${YELLOW}schema: ${schemaErrors.slice(0, 3).map((e) => `${e.instancePath || "/"} ${e.message}`).join("; ")}${RESET}`);
     }
     if (missing.length) console.log(`  ${YELLOW}dropped: ${missing.join(", ")}${RESET}`);
+    if (forbidden.length) {
+      console.log(`  ${YELLOW}must not have said: ${forbidden.join(", ")}${RESET}`);
+    }
     if (unsourced.length) {
       console.log(`  ${YELLOW}REVIEW — numbers with no source in snapshot: ${unsourced.join(", ")}${RESET}`);
     }
     if (restated) {
       console.log(
         `  ${YELLOW}REVIEW — opens by restating the deterministic header: ${restated.join(", ")}${RESET}`
+      );
+    }
+    if (promised) {
+      console.log(
+        `  ${YELLOW}REVIEW — promises an action with nothing attached to do it: ${promised.join(" / ")}${RESET}`
       );
     }
     // The rendered preview exists for a human to judge the prose. Over repetitions it
@@ -427,6 +491,7 @@ async function main() {
       blocks: document?.blocks?.length ?? 0,
       unsourced,
       restatesHeader: restated ?? undefined,
+      promisesAction: promised ?? undefined,
       // The raw text, but only when it could not be parsed. Same reasoning the tool
       // suite records `actualArgs`: without it an unparseable outcome has to be
       // reproduced by hand, and a rare one may not reproduce at all. Truncation, an
@@ -456,6 +521,13 @@ async function main() {
     console.log(
       `${YELLOW}header restated: ${restating}/${rows.length}${RESET} ` +
         `${DIM}(prose, not validity — the model is spending its first block on what is already on screen)${RESET}`
+    );
+  }
+  const promising = rows.filter((row) => row.promisesAction).length;
+  if (promising) {
+    console.log(
+      `${YELLOW}promised an action: ${promising}/${rows.length}${RESET} ` +
+        `${DIM}(the passive tier runs nothing — an offer is real only with a reportAction attached)${RESET}`
     );
   }
   if (reps > 1) {

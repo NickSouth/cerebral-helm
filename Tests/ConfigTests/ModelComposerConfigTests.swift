@@ -112,7 +112,10 @@ func duplicateReportIsRejected() {
     let found = errors("""
     {
       "schemaVersion": "1.0.0",
-      "composerSystemPrompt": "Compose report documents.",
+      "composerSystemPrompt": "Compose report documents. Offer open-mail where it fits.",
+      "composerActions": [
+        { "composerActionId": "open-mail", "composerActionUse": "to reach his inbox" }
+      ],
       "composerReports": [
         {"composerReportId":"daily-brief","modelProfileId":"local","composerInstruction":"One.","composerMaxOutputTokens":1200,"composerMaxBlocks":12},
         {"composerReportId":"daily-brief","modelProfileId":"fast","composerInstruction":"Two.","composerMaxOutputTokens":900,"composerMaxBlocks":8}
@@ -135,7 +138,10 @@ func unconfiguredProfileIsRejected() throws {
     let composer = """
     {
       "schemaVersion": "1.0.0",
-      "composerSystemPrompt": "Compose report documents.",
+      "composerSystemPrompt": "Compose report documents. Offer open-mail where it fits.",
+      "composerActions": [
+        { "composerActionId": "open-mail", "composerActionUse": "to reach his inbox" }
+      ],
       "composerReports": [
         {"composerReportId":"daily-brief","modelProfileId":"deep","composerInstruction":"Compose.","composerMaxOutputTokens":1200,"composerMaxBlocks":12}
       ]
@@ -191,7 +197,10 @@ func unknownKeyIsRejected() {
     let found = errors("""
     {
       "schemaVersion": "1.0.0",
-      "composerSystemPrompt": "Compose report documents.",
+      "composerSystemPrompt": "Compose report documents. Offer open-mail where it fits.",
+      "composerActions": [
+        { "composerActionId": "open-mail", "composerActionUse": "to reach his inbox" }
+      ],
       "composerReports": [
         {"composerReportId":"daily-brief","modelProfileId":"local","composerInstruction":"Compose.","composerMaxOutputTokens":1200,"composerMaxBlocks":12}
       ],
@@ -207,7 +216,10 @@ func missingOutputCapIsRejected() {
     let found = errors("""
     {
       "schemaVersion": "1.0.0",
-      "composerSystemPrompt": "Compose report documents.",
+      "composerSystemPrompt": "Compose report documents. Offer open-mail where it fits.",
+      "composerActions": [
+        { "composerActionId": "open-mail", "composerActionUse": "to reach his inbox" }
+      ],
       "composerReports": [
         {"composerReportId":"daily-brief","modelProfileId":"local","composerInstruction":"Compose.","composerMaxBlocks":12}
       ]

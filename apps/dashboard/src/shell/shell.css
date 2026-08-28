@@ -665,6 +665,19 @@
    two ends pin apart with the ribbon breathing in between (visual reference). */
 .heimlich__state,
 .heimlich__greeting-block,
+/* The middle band: the report on the left, the input form on the right, each claiming the full
+   height between the wordmark and the quick-action grid. A row rather than two rungs of the
+   column, because that is what they actually are — the previous stacking made the taller of the
+   two silently clip the other. */
+.heimlich__surfaces {
+  position: relative;
+  z-index: 2;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+
 .heimlich__foot {
   position: relative;
   z-index: 1;

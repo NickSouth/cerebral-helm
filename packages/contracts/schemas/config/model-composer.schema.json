@@ -8,6 +8,7 @@
   "required": [
     "schemaVersion",
     "composerSystemPrompt",
+    "composerActions",
     "composerReports"
   ],
   "properties": {
@@ -20,6 +21,17 @@
       "minLength": 1,
       "maxLength": 8192,
       "description": "Shared across every composed report, so all of them hit one prefix-cache prefix. Steady state measured 98.7% cached, turning ~46 s of cold prefill into ~1.5 s; interleaving distinct prefixes dropped a 1,819-token cached prefix to 345. A per-report system prompt would forfeit that, which is why editorial direction goes in `composerInstruction` instead."
+    },
+    "composerActions": {
+      "title": "CerebralHelm Composer Action Catalog",
+      "description": "The quick actions a composed report may offer the reader, and what each one does. This is the ONLY list a model may draw a `reportActions` id from, and it is enforced host-side rather than trusted: `report-document.schema.json` constrains the id's SHAPE and not its membership, and an unregistered id renders as a plausible button that does nothing. `ReportComposer` drops any entry that is not named here.\n\nEach carries a `composerActionUse` because listing bare ids does not work — measured four separate times on this project, a vocabulary stated without its meaning is the single most reliable way to make this model wrong. Given only ids it described the offer in its own words instead ('shall I make you a shopping list?') and attached no action at all, which is the same failure wearing a friendlier face.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/composerAction"
+      }
     },
     "composerReports": {
       "type": "array",
@@ -35,6 +47,29 @@
     }
   },
   "$defs": {
+    "composerAction": {
+      "title": "CerebralHelm Composer Action",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "composerActionId",
+        "composerActionUse"
+      ],
+      "properties": {
+        "composerActionId": {
+          "description": "A registered quick-action id. Must exist in the dashboard's quick-action registry — an id that does not renders a button labelled from the id itself, which looks live and is not.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 128
+        },
+        "composerActionUse": {
+          "description": "When to offer it, in the words a model needs to choose it correctly. Written as the occasion rather than the mechanism: 'to write anything down for him — a list, a reminder, a thought' picks the right action where 'captures a note' does not.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        }
+      }
+    },
     "composerReport": {
       "type": "object",
       "additionalProperties": false,

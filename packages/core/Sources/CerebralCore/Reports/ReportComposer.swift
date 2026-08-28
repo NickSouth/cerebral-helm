@@ -96,10 +96,40 @@ public struct ReportComposer: Sendable {
         ///
         /// Filtering by block KIND rather than by position, so it holds wherever the model puts it
         /// and does not need the first block to be the one it guessed.
+        ///
+        /// The same pass drops any `reportActions` entry naming an action that is not in the
+        /// catalog. That is enforcement, not tidying: `report-document.schema.json` constrains the
+        /// id's SHAPE and not its membership, and an unregistered id reaches the dashboard as a
+        /// button labelled from the id itself — which looks live, presses, and does nothing. A
+        /// model reaching for a capability the app does not have is the failure mode this whole
+        /// increment is about, and a prompt rule alone would leave it one sampling accident away.
+        let offerable = Set(composers.composerActions.map(\.composerActionID))
         let keep: @Sendable ([Block]) -> [Block] = { blocks in
-            composer.composerDiscardsGreeting == true
-                ? blocks.filter { $0.blockKind != .greeting }
-                : blocks
+            let grounded = blocks.map { block -> Block in
+                guard let actions = block.reportActions, !actions.isEmpty else { return block }
+                let allowed = actions.filter { offerable.contains($0.action) }
+                if allowed.count == actions.count { return block }
+                // Rebuilt rather than mutated: the generated contract types are immutable, which
+                // is the right default for something decoded off a model's output.
+                return Block(
+                    blockKind: block.blockKind,
+                    greetingSize: block.greetingSize,
+                    label: block.label,
+                    leaderboardPreview: block.leaderboardPreview,
+                    leaderboardRows: block.leaderboardRows,
+                    lineEmphasis: block.lineEmphasis,
+                    listItems: block.listItems,
+                    metricTone: block.metricTone,
+                    reportAction: block.reportAction,
+                    reportActions: allowed.isEmpty ? nil : allowed,
+                    scoreboardSides: block.scoreboardSides,
+                    text: block.text,
+                    value: block.value
+                )
+            }
+            return composer.composerDiscardsGreeting == true
+                ? grounded.filter { $0.blockKind != .greeting }
+                : grounded
         }
 
         // Filtered on the way out too, so a discarded greeting never reaches a surface and flashes

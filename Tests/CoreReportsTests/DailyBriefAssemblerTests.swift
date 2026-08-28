@@ -550,6 +550,31 @@ func weatherCarriesTheForecast() async {
     #expect(weather["precipitationChance"] == .number(5))
 }
 
+@Test("the snapshot decides whether the day is outdoor weather, so the model does not have to")
+func weatherCarriesOutdoorConditions() async {
+    // The measurement behind this: asked "is 10°F good golf weather?" on its own the composer model
+    // answers correctly five times out of five, and asked the same question while composing a brief
+    // it suggested a round of golf anyway — one time in three with an instruction telling it to
+    // check the temperature, three times in three without one. The knowledge is there and does not
+    // survive the load, so the fact is computed and the model reads it.
+    let warm = await weatherSection(WeatherReading(
+        temperatureF: 70, condition: "Clear", observedAt: now,
+        highF: 79, lowF: 58, precipitationChance: 0
+    ))
+    #expect(warm["outdoorConditions"]?.stringValue == "good")
+    // Nothing limits a good day, so nothing is said about it.
+    #expect(warm["outdoorReason"] == nil)
+
+    let freezing = await weatherSection(WeatherReading(
+        temperatureF: 10, condition: "Sunny", observedAt: now,
+        highF: 21, lowF: 3, precipitationChance: 0
+    ))
+    #expect(freezing["outdoorConditions"]?.stringValue == "unsuitable")
+    // The reason is carried because a bare verdict made the model invent its own wording for why;
+    // given the phrase it spends the words on what to do instead.
+    #expect(freezing["outdoorReason"]?.stringValue?.contains("cold") == true)
+}
+
 @Test("a provider that supplies no forecast leaves those fields absent, never zero")
 func absentForecastIsOmitted() async {
     // A fabricated high is a number the composer would state as a fact, and a zero chance of rain

@@ -11,6 +11,7 @@ import CerebralContracts
 /// no assembler opts out the same honest way a report with no composer entry does.
 
 private let composers = CerebralHelmModelComposerCatalog(
+    composerActions: offerableActions,
     composerReports: [
         ComposerReport(
             composerDiscardsGreeting: nil,

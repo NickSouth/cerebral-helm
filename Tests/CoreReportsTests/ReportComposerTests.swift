@@ -3,6 +3,13 @@ import Testing
 import CerebralContracts
 @testable import CerebralCore
 
+/// The actions a test composer may offer. Two is enough to prove the filter both keeps and drops.
+let offerableActions: [CerebralHelmComposerActionCatalog] = [
+    CerebralHelmComposerActionCatalog(composerActionID: "open-mail", composerActionUse: "to reach his inbox"),
+    CerebralHelmComposerActionCatalog(composerActionID: "capture-note", composerActionUse: "to write something down")
+]
+
+
 /// NIC-250: the model as the Composer, behind the seam the deterministic formula already occupies.
 ///
 /// Every test here drives `MockModelProvider`, so nothing depends on a runtime being installed.
@@ -96,6 +103,7 @@ private func composers(
     discardsGreeting: Bool? = nil
 ) -> CerebralHelmModelComposerCatalog {
     CerebralHelmModelComposerCatalog(
+        composerActions: offerableActions,
         composerReports: [
             ComposerReport(
                 composerDiscardsGreeting: discardsGreeting,
@@ -588,4 +596,85 @@ func capCountsRawOutput() async {
 private actor BlockRecorder {
     private(set) var emissions: [[Block]] = []
     func record(_ blocks: [Block]) { emissions.append(blocks) }
+}
+
+// MARK: - Grounding the offers
+
+/// The passive tier writes and shows; it never runs anything. So the only honest way for a brief to
+/// say "shall I do X" is to attach an action the reader can press — and the only way that stays
+/// honest is if the action is one the app actually has.
+///
+/// This is enforcement rather than tidying. `report-document.schema.json` constrains a
+/// `reportActions` id's SHAPE and not its membership, and the dashboard labels an unknown id by
+/// humanising the id itself — so `book-tee-time` arrives as a button reading "Book Tee Time" that
+/// presses and does nothing. Measured behaviour makes this a live risk, not a theoretical one: given
+/// a list of bare ids the model offered to draft replies, check tee times and set wake-ups, none of
+/// which it had been given.
+
+@Test("an action the app does not have is dropped before the reader can press it")
+func ungroundedActionIsDropped() async {
+    let answer = """
+    {"blocks":[{"blockKind":"proposal","text":"Shall I book you a tee time?",\
+    "reportActions":[{"action":"book-tee-time"}]}]}
+    """
+    guard case let .composed(report) = await compose(provider(text: answer)) else {
+        Issue.record("A schema-valid document composes; the offer is what gets edited.")
+        return
+    }
+    // The prose survives — it is the model's judgement about the day and may still be worth reading.
+    // What does not survive is a control that looks live.
+    #expect(report.document.blocks.first?.text == "Shall I book you a tee time?")
+    #expect(report.document.blocks.first?.reportActions == nil)
+}
+
+@Test("an offer the app can honour is left alone")
+func groundedActionSurvives() async {
+    let answer = """
+    {"blocks":[{"blockKind":"proposal","text":"Want me to write that down?",\
+    "reportActions":[{"action":"capture-note"}]}]}
+    """
+    guard case let .composed(report) = await compose(provider(text: answer)) else {
+        Issue.record("A grounded offer must compose unchanged.")
+        return
+    }
+    #expect(report.document.blocks.first?.reportActions?.count == 1)
+    #expect(report.document.blocks.first?.reportActions?.first?.action == "capture-note")
+}
+
+@Test("a mixed proposal keeps the real offers and loses only the invented one")
+func mixedActionsArePartiallyKept() async {
+    // The failure this guards is dropping the block, or the whole array, on one bad id — either
+    // would turn a model's small mistake into a brief that lost a working control.
+    let answer = """
+    {"blocks":[{"blockKind":"proposal","text":"A few things I could do.",\
+    "reportActions":[{"action":"open-mail"},{"action":"set-an-alarm"},{"action":"capture-note"}]}]}
+    """
+    guard case let .composed(report) = await compose(provider(text: answer)) else {
+        Issue.record("A mixed proposal still composes.")
+        return
+    }
+    let actions = report.document.blocks.first?.reportActions?.map(\.action)
+    #expect(actions == ["open-mail", "capture-note"])
+}
+
+@Test("the grounding holds on the streamed blocks too, not only the finished document")
+func groundingHoldsWhileStreaming() async throws {
+    // Same argument as the discarded greeting: a surface renders what it is handed as it arrives, so
+    // a phantom button filtered only at the end would still have been pressable on the way there.
+    let answer = """
+    {"blocks":[{"blockKind":"proposal","text":"Shall I book you a tee time?",\
+    "reportActions":[{"action":"book-tee-time"}]}]}
+    """
+    let seen = BlockRecorder()
+    _ = await compose(provider(text: answer), onBlocks: { blocks in
+        Task { await seen.record(blocks) }
+    })
+
+    try await Task.sleep(nanoseconds: 50_000_000)
+    let emissions = await seen.emissions
+    // Without this the test passes when nothing streamed at all, which proves nothing.
+    #expect(!emissions.isEmpty)
+    #expect(emissions.contains { blocks in blocks.contains { $0.blockKind == .proposal } })
+    let offered = emissions.flatMap { $0 }.flatMap { $0.reportActions ?? [] }.map(\.action)
+    #expect(!offered.contains("book-tee-time"))
 }

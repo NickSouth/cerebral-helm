@@ -14,7 +14,9 @@
           "condition": "Light rain",
           "highF": 66,
           "lowF": 54,
-          "precipitationChance": 70
+          "precipitationChance": 70,
+          "outdoorConditions": "unsuitable",
+          "outdoorReason": "likely wet"
         },
         "calendar": {
           "state": "ready",
@@ -115,7 +117,7 @@
     {
       "id": "empty-day",
       "reportId": "daily-brief",
-      "$comment": "Nothing scheduled and the sprint on pace. The single most likely fabrication case — the composer must say the day is clear rather than padding it with invented activity. ALSO the profile-context measurement: an empty day plus good weather plus 'he golfs' should produce a suggestion, and that connection needs no reasoning, only the fact. This is the case that showed context substituting for thinking.\n\nWHAT `mustMention` ASSERTS, and why it moved: it used to require the word 'clear', which the model writes into its greeting — and the greeting is discarded, because the brief renders the weather deterministically. A fact the reader sees either way is not worth gating on. 'golf' is: it can only appear if the profile note reached the model AND it connected an empty day to a fact about the person, which is the entire claim this case exists to test.",
+      "$comment": "Nothing scheduled and the sprint on pace. The single most likely fabrication case — the composer must say the day is clear rather than padding it with invented activity. ALSO the profile-context measurement: an empty day plus good weather plus 'he golfs' should produce a suggestion, and that connection needs no reasoning, only the fact. This is the case that showed context substituting for thinking.\n\nWHAT `mustMention` ASSERTS, and why it moved: it used to require the word 'clear', which the model writes into its greeting — and the greeting is discarded, because the brief renders the weather deterministically. A fact the reader sees either way is not worth gating on. 'golf' is: it can only appear if the profile note reached the model AND it connected an empty day to a fact about the person, which is the entire claim this case exists to test.\n\nIt also gates RECITATION now. The profile reaching the model is what `mustMention: golf` proves; `mustNotMention` proves the model uses it rather than reading it aloud — quoting \"whenever the weather allows\" back at the person who wrote it is the failure, and it happened in nearly every measured brief before the instruction said not to.",
       "snapshot": {
         "now": "2026-08-29T08:00:00-04:00",
         "dayOfWeek": "Saturday",
@@ -125,7 +127,8 @@
           "condition": "Clear",
           "highF": 78,
           "lowF": 59,
-          "precipitationChance": 5
+          "precipitationChance": 5,
+          "outdoorConditions": "good"
         },
         "calendar": {
           "state": "ready",
@@ -170,6 +173,9 @@
       ],
       "expectedBlockKinds": [
         "greeting"
+      ],
+      "mustNotMention": [
+        "whenever the weather allows"
       ]
     },
     {
@@ -185,7 +191,8 @@
           "condition": "Clear",
           "highF": 71,
           "lowF": 55,
-          "precipitationChance": 10
+          "precipitationChance": 10,
+          "outdoorConditions": "good"
         },
         "calendar": {
           "state": "unavailable",
@@ -232,6 +239,162 @@
       },
       "mustMention": [
         "calendar"
+      ],
+      "expectedBlockKinds": [
+        "greeting"
+      ]
+    },
+    {
+      "id": "winter-open-day",
+      "reportId": "daily-brief",
+      "$comment": "The deliberate twin of `empty-day`: same open calendar, same empty inbox, same profile, same cloudless sky — only the temperature changes, from 68°F to 10°F. `empty-day` proves the profile reaches the model; this one proved the day's weather was not being read at all.\n\nIT NO LONGER GATES THAT, and the reason is the honest one: a keyword cannot tell recommending golf from ruling it out. The attempt leaked three times, in both directions. It first MISSED 'a morning golf session' — a real regression that passed silently. Then `for golf` FAILED a correct brief, because declining reads 'the weather is unsuitable for golf'. Then `golfing` failed another, because declining also reads 'golfing is off the table due to the cold'. A positive assertion fared no better: `mustMention: unsuitable` failed 2 of 3 correct briefs that phrased the verdict their own way. Every correct answer names the activity in order to decline it, and no substring separates the two classes.\n\nSo the behaviour is gated where it can be graded exactly: `weather.outdoorConditions` is computed by the assembler and covered by `OutdoorConditionsTests`, and the instruction tells the model to read the verdict rather than derive one. Measured 8 of 8 correct after that change, and 3 of 8 WRONG before it with an explicit instruction to check the temperature.\n\nWhat it still gates is recitation, which a keyword CAN judge, because quoting the profile verbatim is unambiguous. Keep the case: an open winter day is the shape that broke, it is worth reading by eye on any composer change, and a snapshot is cheap.",
+      "snapshot": {
+        "now": "2027-01-16T09:15:00-05:00",
+        "dayOfWeek": "Saturday",
+        "weather": {
+          "state": "ready",
+          "temperatureF": 10,
+          "condition": "Sunny",
+          "highF": 21,
+          "lowF": 3,
+          "precipitationChance": 0,
+          "outdoorConditions": "unsuitable",
+          "outdoorReason": "too cold to be outside for long"
+        },
+        "calendar": {
+          "state": "ready",
+          "today": [],
+          "tomorrow": []
+        },
+        "mail": {
+          "state": "ready",
+          "unreadTotal": 0,
+          "isCapped": false,
+          "scope": "primary",
+          "recent": []
+        },
+        "sprint": {
+          "state": "ready",
+          "project": "CerebralHelm",
+          "cycle": {
+            "number": 14,
+            "startsAt": "2027-01-11T00:00:00-05:00",
+            "endsAt": "2027-01-18T00:00:00-05:00"
+          },
+          "pace": {
+            "basis": "points",
+            "total": 24,
+            "done": 11,
+            "inProgress": 3,
+            "percentComplete": 45,
+            "percentElapsed": 42,
+            "daysElapsed": 3,
+            "daysRemaining": 4,
+            "status": "on-pace"
+          },
+          "issues": []
+        },
+        "profile": {
+          "state": "ready",
+          "notes": "## About Me\nLocation: New England. Golfs whenever the weather allows — the season is short here.\n\n## Work\nBuilding CerebralHelm. Deep work in the morning; protects unscheduled days rather than filling them."
+        }
+      },
+      "mustNotMention": [
+        "whenever the weather allows"
+      ],
+      "expectedBlockKinds": [
+        "greeting"
+      ]
+    },
+    {
+      "id": "sprint-behind-priority-one",
+      "reportId": "daily-brief",
+      "$comment": "An open day against a sprint at 18% done with 71% of the cycle gone, where the work is NOT uniform: NIC-204 is priority 1 and already started, and the two cheapest tickets are priority 2 and 3. Measured proposing the two cheap ones and calling them 'high-priority', passing over the priority-1 in the same breath as reporting that a teammate is blocked on it.\n\nSo this case gates the ORDERING, which nothing else in the suite touches — every other snapshot's issue list is short enough that any choice looks right. The instruction now says priority is never traded for a smaller estimate, and this is what holds it to that.",
+      "snapshot": {
+        "now": "2026-09-18T08:50:00-04:00",
+        "dayOfWeek": "Friday",
+        "weather": {
+          "state": "ready",
+          "temperatureF": 61,
+          "condition": "Light rain",
+          "highF": 65,
+          "lowF": 54,
+          "precipitationChance": 80,
+          "outdoorConditions": "unsuitable",
+          "outdoorReason": "likely wet"
+        },
+        "calendar": {
+          "state": "ready",
+          "today": [],
+          "tomorrow": []
+        },
+        "mail": {
+          "state": "ready",
+          "unreadTotal": 1,
+          "isCapped": false,
+          "scope": "primary",
+          "recent": [
+            {
+              "from": "Aleks Ryabinkin",
+              "subject": "Re: window snapping — blocked on you",
+              "receivedAt": "2026-09-18T01:20:00Z",
+              "preview": "I can't take NIC-204 any further until the snap thresholds land. Let me know if you want me to pick something else up off the board instead."
+            }
+          ]
+        },
+        "sprint": {
+          "state": "ready",
+          "project": "CerebralHelm",
+          "cycle": {
+            "number": 8,
+            "startsAt": "2026-09-14T00:00:00-04:00",
+            "endsAt": "2026-09-21T00:00:00-04:00"
+          },
+          "pace": {
+            "basis": "points",
+            "total": 40,
+            "done": 7,
+            "inProgress": 6,
+            "percentComplete": 18,
+            "percentElapsed": 71,
+            "daysElapsed": 5,
+            "daysRemaining": 2,
+            "status": "behind"
+          },
+          "issues": [
+            {
+              "identifier": "NIC-204",
+              "title": "Ship window snapping",
+              "state": "In Progress",
+              "stateType": "started",
+              "priority": 1,
+              "estimate": 8
+            },
+            {
+              "identifier": "NIC-231",
+              "title": "Report composition bridge op",
+              "state": "Todo",
+              "stateType": "unstarted",
+              "priority": 2,
+              "estimate": 5
+            },
+            {
+              "identifier": "NIC-247",
+              "title": "Weather daily fields",
+              "state": "Todo",
+              "stateType": "unstarted",
+              "priority": 3,
+              "estimate": 3
+            }
+          ]
+        },
+        "profile": {
+          "state": "ready",
+          "notes": "## About Me\nLocation: New England. Golfs whenever the weather allows — the season is short here.\n\n## Work\nBuilding CerebralHelm. Deep work in the morning; protects unscheduled days rather than filling them."
+        }
+      },
+      "mustMention": [
+        "nic-204"
       ],
       "expectedBlockKinds": [
         "greeting"

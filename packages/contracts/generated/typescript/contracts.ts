@@ -1042,6 +1042,20 @@ export interface Widgets {
  * app runs exactly as it does today.
  */
 export interface CerebralHelmModelComposerCatalog {
+    /**
+     * The quick actions a composed report may offer the reader, and what each one does. This is
+     * the ONLY list a model may draw a `reportActions` id from, and it is enforced host-side
+     * rather than trusted: `report-document.schema.json` constrains the id's SHAPE and not its
+     * membership, and an unregistered id renders as a plausible button that does nothing.
+     * `ReportComposer` drops any entry that is not named here.
+     *
+     * Each carries a `composerActionUse` because listing bare ids does not work — measured four
+     * separate times on this project, a vocabulary stated without its meaning is the single
+     * most reliable way to make this model wrong. Given only ids it described the offer in its
+     * own words instead ('shall I make you a shopping list?') and attached no action at all,
+     * which is the same failure wearing a friendlier face.
+     */
+    composerActions: CerebralHelmComposerActionCatalog[];
     composerReports: ComposerReport[];
     /**
      * Shared across every composed report, so all of them hit one prefix-cache prefix. Steady
@@ -1053,6 +1067,20 @@ export interface CerebralHelmModelComposerCatalog {
     composerSystemPrompt: string;
     extensions?:          { [key: string]: any };
     schemaVersion:        string;
+}
+
+export interface CerebralHelmComposerActionCatalog {
+    /**
+     * A registered quick-action id. Must exist in the dashboard's quick-action registry — an id
+     * that does not renders a button labelled from the id itself, which looks live and is not.
+     */
+    composerActionId: string;
+    /**
+     * When to offer it, in the words a model needs to choose it correctly. Written as the
+     * occasion rather than the mechanism: 'to write anything down for him — a list, a reminder,
+     * a thought' picks the right action where 'captures a note' does not.
+     */
+    composerActionUse: string;
 }
 
 export interface ComposerReport {

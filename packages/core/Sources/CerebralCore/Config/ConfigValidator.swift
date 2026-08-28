@@ -77,7 +77,7 @@ public enum ConfigValidator {
         "schemaVersion", "residentBudgetGigabytes", "modelProfiles", "extensions"
     ]
     static let modelComposerCatalogKeys: Set<String> = [
-        "schemaVersion", "composerSystemPrompt", "composerReports", "extensions"
+        "schemaVersion", "composerSystemPrompt", "composerActions", "composerReports", "extensions"
     ]
     static let overrideKeys: Set<String> = [
         "schemaVersion", "id", "quickApps", "layout", "extensions"
@@ -351,6 +351,37 @@ public enum ConfigValidator {
                 expected: "one entry per report",
                 message: "Report \"\(composer.composerReportID)\" is composed more than once.",
                 remediation: "Remove the duplicate \"\(composer.composerReportID)\" entry."
+            ))
+        }
+
+        // Same argument one field over: two descriptions of one action leave which one the model
+        // reads to array order, and the losing entry looks configured while never being sent.
+        var actions: Set<String> = []
+        for action in catalog.composerActions
+        where !actions.insert(action.composerActionID).inserted {
+            errors.append(makeError(
+                file: file,
+                field: "/composerActions",
+                expected: "one entry per action",
+                message: "Action \"\(action.composerActionID)\" is described more than once.",
+                remediation: "Remove the duplicate \"\(action.composerActionID)\" entry."
+            ))
+        }
+
+        // An action the model is allowed to offer but is never told about cannot be chosen, and an
+        // id described in prose the catalog does not carry is dropped host-side before the reader
+        // sees it. Either way the two halves have to name the same set, so the drift is caught here
+        // rather than as a button that quietly stopped appearing.
+        for action in catalog.composerActions
+        where !catalog.composerSystemPrompt.contains(action.composerActionID) {
+            errors.append(makeError(
+                file: file,
+                field: "/composerActions",
+                expected: "every offerable action named in the system prompt",
+                message: "Action \"\(action.composerActionID)\" is offerable but is not in the "
+                    + "system prompt, so no model will ever choose it.",
+                remediation: "Name \"\(action.composerActionID)\" in composerSystemPrompt, or "
+                    + "remove it from composerActions."
             ))
         }
         return errors
