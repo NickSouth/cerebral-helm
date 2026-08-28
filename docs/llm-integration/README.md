@@ -38,6 +38,22 @@ two disagree, PLAN.md and the charters win, and this file should be corrected.
   schema was bounded to stop a grammar running away in it. See the converter trap under
   *Traps that cost time* before adding any `pattern` to a model-facing input schema, and
   finding 16 before pointing a grammar at any schema.
+- **The passive tier ships (`NIC-228`, 2026-08-27).** The daily brief is composed by a
+  model and is the first caller of anything in this programme. `DailyBriefAssembler`
+  gathers a typed snapshot from six deterministic sources — calendar, unread mail with
+  previews, the current Linear cycle with pace computed host-side, the profile folder,
+  weather, and the clock — `ReportComposer` turns it into `ReportDocument` blocks on the
+  `local` profile with validate-and-retry, and the dashboard streams them in as they
+  arrive. The deterministic composer survives only as a last-resort degradation path.
+  The gate is `node evals/run-report.mjs --gate` and is the regression gate for any
+  prompt, descriptor or model change.
+
+  Three things it enforces that a prompt rule alone would not: the greeting the model is
+  asked for is discarded by block kind, `reportActions` naming an action the app does
+  not have are dropped, and `weather.outdoorConditions` is decided by the assembler
+  rather than the model. Findings 17–21 are the reasoning. Two follow-ons are Backlog:
+  `NIC-339` (actions carry params — a model-offered web search currently cannot pass a
+  query, so the button always fails) and `NIC-340` (a compose-reply action).
 - **Phase 0 is underway.** `NIC-225`: ADR-009 is written and the `ModelProvider` port
   exists in `packages/core/Sources/CerebralCore/Model/` (`NIC-241`, 2026-08-18) — protocol,
   request/usage types, `ModelDeadline`, `MockModelProvider`. The profile catalog is configuration
@@ -45,8 +61,9 @@ two disagree, PLAN.md and the charters win, and this file should be corrected.
   `ModelProfileCatalog`, optional everywhere. The Ollama adapter (`NIC-242`) is built at
   `apps/mac/Sources/CerebralMacAdapters/OllamaModelProvider.swift` and **verified against a live
   Ollama 0.32.7** — a streamed completion in 9.0 s with real token accounting, plus 18 offline
-  helper tests. Nothing calls any of it, by design: phase 0 is complete and the first caller is
-  `NIC-250`. Everything else in the milestone remains Backlog.
+  helper tests. **Its first caller is now the passive tier above** — phase 0 shipped with
+  nothing calling it, by design, and `NIC-228` closed that. `NIC-250` (llama.cpp's first
+  caller) is still Backlog, and no model profile points at that runtime.
 - **Merged to `dev` (2026-08-18):** descriptor affordances as `5e95795` (#20); plan,
   charters and eval harness as `214813e` (#21). Full `node scripts/test.mjs` green on
   the contract change.
@@ -65,7 +82,11 @@ clock on it — SimpleFIN serves a 90-day window, so financial trend history exi
 only from whenever syncing begins, and it cannot be backfilled. It is also
 standalone: a provider, a Keychain entry and a cache, no model involved.
 
-Otherwise `NIC-225` (model provider port) is the root of everything else.
+Otherwise `NIC-225` (model provider port) is the root of everything else — though the
+port itself is built, so in practice the root is now finding 21: **before writing any
+model-facing prompt, read what the passive tier learned about instruction kind, and
+before blaming a model for a wrong answer, check whether it gets that answer right when
+asked in isolation.** It usually does.
 
 ---
 
@@ -589,8 +610,11 @@ each with a description, because the nine bare ids were finding 1 for the fourth
 ids the model described its offer in prose and attached no action at all. And the promise rule, with
 host-side enforcement: `ReportComposer` drops any `reportActions` entry naming an action the app
 does not have, because `report-document.schema.json` constrains an id's SHAPE and not its
-membership, and the dashboard humanises an unknown id into a button that looks live and does
-nothing.
+membership. *(Correcting an overstatement made while building this: the renderer is not fooled —
+`resolveQuickAction` returns null for an unregistered id and `ActionLink` falls back to inert text,
+so a phantom button is never pressable, and `docs/quick-actions/PLAN.md` said so all along. What the
+reader still gets is an offer, labelled from the id, that nothing can take up. Dropping it is right;
+the danger was smaller than first written.)*
 
 **A note on what the model was reaching for.** It invented no capabilities. Every offer it improvised
 — a shopping list, tee times, opening his mail — maps onto a quick action that already exists

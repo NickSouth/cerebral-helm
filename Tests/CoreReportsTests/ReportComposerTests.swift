@@ -604,12 +604,12 @@ private actor BlockRecorder {
 /// say "shall I do X" is to attach an action the reader can press — and the only way that stays
 /// honest is if the action is one the app actually has.
 ///
-/// This is enforcement rather than tidying. `report-document.schema.json` constrains a
-/// `reportActions` id's SHAPE and not its membership, and the dashboard labels an unknown id by
-/// humanising the id itself — so `book-tee-time` arrives as a button reading "Book Tee Time" that
-/// presses and does nothing. Measured behaviour makes this a live risk, not a theoretical one: given
-/// a list of bare ids the model offered to draft replies, check tee times and set wake-ups, none of
-/// which it had been given.
+/// `report-document.schema.json` constrains a `reportActions` id's SHAPE and not its membership.
+/// The renderer degrades safely on its own — an unregistered id resolves to no handler and renders
+/// as inert text — so this is not about a pressable phantom button. It is about the offer: the
+/// reader is shown "Book Tee Time", labelled from the id, and there is nothing behind it. Measured
+/// behaviour makes that a live risk rather than a theoretical one — given a list of bare ids the
+/// model offered to draft replies, check tee times and set wake-ups, none of which it had.
 
 @Test("an action the app does not have is dropped before the reader can press it")
 func ungroundedActionIsDropped() async {
@@ -621,8 +621,8 @@ func ungroundedActionIsDropped() async {
         Issue.record("A schema-valid document composes; the offer is what gets edited.")
         return
     }
-    // The prose survives — it is the model's judgement about the day and may still be worth reading.
-    // What does not survive is a control that looks live.
+    // The prose survives — it is the model's judgement about the day and may still be worth
+    // reading. What does not survive is an offer the app has no way to honour.
     #expect(report.document.blocks.first?.text == "Shall I book you a tee time?")
     #expect(report.document.blocks.first?.reportActions == nil)
 }

@@ -4244,8 +4244,11 @@ public struct CerebralHelmModelComposerCatalog: Codable {
     /// The quick actions a composed report may offer the reader, and what each one does. This is
     /// the ONLY list a model may draw a `reportActions` id from, and it is enforced host-side
     /// rather than trusted: `report-document.schema.json` constrains the id's SHAPE and not its
-    /// membership, and an unregistered id renders as a plausible button that does nothing.
-    /// `ReportComposer` drops any entry that is not named here.
+    /// membership. The renderer is not fooled — `resolveQuickAction` returns null for an
+    /// unregistered id and `ActionLink` falls back to inert text, so no phantom button is ever
+    /// pressable — but the reader is still shown an offer, labelled from the id, that can never
+    /// be taken up. `ReportComposer` drops any entry that is not named here so the prose stands
+    /// on its own instead.
     ///
     /// Each carries a `composerActionUse` because listing bare ids does not work — measured four
     /// separate times on this project, a vocabulary stated without its meaning is the single
@@ -4322,7 +4325,8 @@ public extension CerebralHelmModelComposerCatalog {
 // MARK: - CerebralHelmComposerActionCatalog
 public struct CerebralHelmComposerActionCatalog: Codable {
     /// A registered quick-action id. Must exist in the dashboard's quick-action registry — an id
-    /// that does not renders a button labelled from the id itself, which looks live and is not.
+    /// that does not is rendered as inert text rather than a control, which reads as an offer
+    /// the app is quietly unable to honour.
     public let composerActionID: String
     /// When to offer it, in the words a model needs to choose it correctly. Written as the
     /// occasion rather than the mechanism: 'to write anything down for him — a list, a reminder,

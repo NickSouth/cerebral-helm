@@ -186,10 +186,10 @@ test("the eval applies the host's greeting filter before grading", () => {
 });
 
 test("every action the model may offer is one the app can actually run", () => {
-  // `report-document.schema.json` constrains the id's SHAPE and not its membership, and the
-  // dashboard labels an unknown id by humanising the id itself — so an unregistered action reaches
-  // the reader as a button that looks live and does nothing. `ReportComposer` drops those, but a
-  // catalog naming one is still a configuration error: it would silently offer nothing.
+  // `report-document.schema.json` constrains the id's SHAPE and not its membership. The renderer
+  // degrades safely — an unregistered id resolves to no handler and renders as inert text — but the
+  // reader is still shown an offer, labelled from the id, that nothing can take up. `ReportComposer`
+  // drops those; a catalog naming one is a configuration error that would silently offer nothing.
   const registry = JSON.parse(
     fs.readFileSync(
       path.join(repositoryRoot, "apps/dashboard/src/shell/quickActions.registry.json"),

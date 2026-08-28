@@ -98,11 +98,14 @@ public struct ReportComposer: Sendable {
         /// and does not need the first block to be the one it guessed.
         ///
         /// The same pass drops any `reportActions` entry naming an action that is not in the
-        /// catalog. That is enforcement, not tidying: `report-document.schema.json` constrains the
-        /// id's SHAPE and not its membership, and an unregistered id reaches the dashboard as a
-        /// button labelled from the id itself — which looks live, presses, and does nothing. A
-        /// model reaching for a capability the app does not have is the failure mode this whole
-        /// increment is about, and a prompt rule alone would leave it one sampling accident away.
+        /// catalog. `report-document.schema.json` constrains the id's SHAPE and not its membership,
+        /// so nothing upstream of here checks that the app has it.
+        ///
+        /// The renderer is not fooled — `resolveQuickAction` returns nil for an unregistered id and
+        /// `ActionLink` falls back to inert text, so a phantom control is never pressable. What the
+        /// reader still gets is an offer, labelled from the id, that the app cannot take up. Drop
+        /// it and the prose stands on its own, which is the honest version of the same sentence. A
+        /// prompt rule alone would leave this one sampling accident away.
         let offerable = Set(composers.composerActions.map(\.composerActionID))
         let keep: @Sendable ([Block]) -> [Block] = { blocks in
             let grounded = blocks.map { block -> Block in

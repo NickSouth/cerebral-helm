@@ -167,6 +167,28 @@ anything.
 | dropped facts | ≤ 20% | A fact in `mustMention` that did not survive composition. |
 | repetitions | ≥ 3, enforced | A verdict from one sample is a coin toss with a pass rate printed beside it. |
 
+Two directions of assertion, because some defects have no positive form:
+
+| | |
+|---|---|
+| `mustMention` | facts that must survive composition |
+| `mustNotMention` | things that must **not** appear — graded as `forbidden_facts`, which counts against the pass rate |
+
+`mustNotMention` exists because "did not recite the profile back at him" cannot be written
+as a `mustMention`: a correct brief has many valid wordings and no phrase they all share,
+while the wrong one quotes the note verbatim. **It is a phrasing heuristic and not a
+semantic judgement, and it will leak in both directions if you let it.** The worked
+example is in the `winter-open-day` snapshot's own comment: three attempts to gate "did
+not suggest golf at 10°F" — one too narrow (a real regression passed silently) and two
+that failed *correct* briefs, because declining reads "the weather is unsuitable **for
+golf**" and "**golfing** is off the table". A positive assertion did no better. When a
+judgement cannot be graded by substring, move it out of the model and gate it with a unit
+test — do not weaken the case until it passes.
+
+**`--cases=<path>`** runs an alternative snapshot file, for trying scenarios that are not
+gate fixtures. It refuses to combine with `--gate`: a verdict is only worth something if
+everyone's verdict is about the same cases.
+
 A snapshot whose `reportId` has no entry in `config/models/composer.json` is
 **aspirational** — it describes a surface that does not ship — and is named and skipped
 rather than graded.
@@ -182,6 +204,14 @@ the reader never sees, which is the same mistake as keeping a private copy of th
 *surviving* the filter restates the header — a second `line` repeating the day and the
 weather, which is duplication a reader would actually see. Prose rather than validity, and
 a gate that failed on wording is one nobody could keep green.
+
+**`promised an action` is the other REVIEW line.** The passive tier writes and shows;
+nothing in a brief runs. So a `proposal` saying it *will* do something with no
+`reportActions` entry attached is a promise nobody will keep — measured verbatim as *"I'll
+make sure you're up for it"* about a 07:40 tee time, which is worse than a flat brief.
+First-person future is occasionally innocent, so it is flagged rather than failed; what it
+must never be is unnoticed. The hard half is enforced in `ReportComposer`, which drops any
+`reportActions` entry naming an action the app does not have.
 
 The gate leaves the machine as it found it — the model is unloaded before the verdict,
 so a failing run does not also leave 21 GB resident.

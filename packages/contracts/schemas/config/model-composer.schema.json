@@ -24,7 +24,7 @@
     },
     "composerActions": {
       "title": "CerebralHelm Composer Action Catalog",
-      "description": "The quick actions a composed report may offer the reader, and what each one does. This is the ONLY list a model may draw a `reportActions` id from, and it is enforced host-side rather than trusted: `report-document.schema.json` constrains the id's SHAPE and not its membership, and an unregistered id renders as a plausible button that does nothing. `ReportComposer` drops any entry that is not named here.\n\nEach carries a `composerActionUse` because listing bare ids does not work — measured four separate times on this project, a vocabulary stated without its meaning is the single most reliable way to make this model wrong. Given only ids it described the offer in its own words instead ('shall I make you a shopping list?') and attached no action at all, which is the same failure wearing a friendlier face.",
+      "description": "The quick actions a composed report may offer the reader, and what each one does. This is the ONLY list a model may draw a `reportActions` id from, and it is enforced host-side rather than trusted: `report-document.schema.json` constrains the id's SHAPE and not its membership. The renderer is not fooled — `resolveQuickAction` returns null for an unregistered id and `ActionLink` falls back to inert text, so no phantom button is ever pressable — but the reader is still shown an offer, labelled from the id, that can never be taken up. `ReportComposer` drops any entry that is not named here so the prose stands on its own instead.\n\nEach carries a `composerActionUse` because listing bare ids does not work — measured four separate times on this project, a vocabulary stated without its meaning is the single most reliable way to make this model wrong. Given only ids it described the offer in its own words instead ('shall I make you a shopping list?') and attached no action at all, which is the same failure wearing a friendlier face.",
       "type": "array",
       "minItems": 1,
       "maxItems": 32,
@@ -57,7 +57,7 @@
       ],
       "properties": {
         "composerActionId": {
-          "description": "A registered quick-action id. Must exist in the dashboard's quick-action registry — an id that does not renders a button labelled from the id itself, which looks live and is not.",
+          "description": "A registered quick-action id. Must exist in the dashboard's quick-action registry — an id that does not is rendered as inert text rather than a control, which reads as an offer the app is quietly unable to honour.",
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$",
           "maxLength": 128

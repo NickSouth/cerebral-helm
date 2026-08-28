@@ -371,7 +371,7 @@ public enum ConfigValidator {
         // An action the model is allowed to offer but is never told about cannot be chosen, and an
         // id described in prose the catalog does not carry is dropped host-side before the reader
         // sees it. Either way the two halves have to name the same set, so the drift is caught here
-        // rather than as a button that quietly stopped appearing.
+        // rather than as an offer that quietly stopped appearing.
         for action in catalog.composerActions
         where !catalog.composerSystemPrompt.contains(action.composerActionID) {
             errors.append(makeError(
