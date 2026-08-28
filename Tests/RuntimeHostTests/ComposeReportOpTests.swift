@@ -33,6 +33,8 @@ private struct CompositionPayload: Decodable {
     let totalMs: Int?
 }
 
+private struct CompositionWaitTimeout: Error {}
+
 /// Collects the emitted event JSON. Emissions come from a detached task, so a test waits for them
 /// rather than assuming they have landed.
 private final class Emissions: @unchecked Sendable {
@@ -54,7 +56,16 @@ private final class Emissions: @unchecked Sendable {
         }
     }
 
-    func waitForComplete(within seconds: Double = 3) async -> [CompositionPayload] {
+    /// Waits for the terminal emission, or gives up and says so.
+    ///
+    /// The bound is generous on purpose. Polling returns the instant the condition is met, so a
+    /// large deadline costs a passing run nothing and only decides how long a genuinely broken one
+    /// takes to admit it — while three seconds was short enough to fail on CI's three-core Linux
+    /// container under parallel load, on a test that builds three full sessions in a loop. That was
+    /// a starved runner, not a defect: `composeReport` returns its response immediately and emits
+    /// from a detached task, by design, so how long the emission takes to land is a property of the
+    /// machine.
+    func waitForComplete(within seconds: Double = 15) async -> [CompositionPayload] {
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
             let seen = compositions()
@@ -62,6 +73,25 @@ private final class Emissions: @unchecked Sendable {
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
         return compositions()
+    }
+
+    /// The terminal emission, or a failure that names the timeout.
+    ///
+    /// `#require(await emissions.waitForComplete().last)` reported only `→ nil`, which reads as "no
+    /// events" and is indistinguishable from "the deadline passed". Since the difference is the
+    /// whole diagnosis, the wait says which it was.
+    func requireTerminal(
+        within seconds: Double = 15,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async throws -> CompositionPayload {
+        let seen = await waitForComplete(within: seconds)
+        guard let terminal = seen.last(where: { $0.complete }) else {
+            let detail = "No terminal composition emission within \(seconds)s — saw "
+                + "\(seen.count) emission(s), none complete."
+            Issue.record(Comment(rawValue: detail), sourceLocation: sourceLocation)
+            throw CompositionWaitTimeout()
+        }
+        return terminal
     }
 
     private struct EventEnvelope: Decodable {
@@ -166,7 +196,7 @@ func firstBlockIsTimedSeparately() async throws {
     }
 
     _ = await session.execute(composeRequest())
-    let terminal = try #require(await emissions.waitForComplete().last)
+    let terminal = try await emissions.requireTerminal()
 
     #expect(terminal.firstBlockMs != nil)
     #expect((terminal.totalMs ?? 0) >= (terminal.firstBlockMs ?? 0))
@@ -205,7 +235,7 @@ func failuresDiscardWhatStreamed() async throws {
     }
 
     _ = await session.execute(composeRequest())
-    let terminal = try #require(await emissions.waitForComplete().last)
+    let terminal = try await emissions.requireTerminal()
 
     #expect(terminal.complete)
     #expect(terminal.state == "unavailable")
@@ -229,7 +259,7 @@ func failuresAreReaderFacing() async throws {
 
         // Not an error response. The region has a state for this; the generic failure path does not.
         #expect(response.status == .ok)
-        let terminal = try #require(await emissions.waitForComplete().last)
+        let terminal = try await emissions.requireTerminal()
         #expect(terminal.reason?.contains(expected) == true, "expected \u{201C}\(expected)\u{201D}")
     }
 }
