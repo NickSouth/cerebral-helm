@@ -464,7 +464,8 @@
         }
       },
       "mustMention": ["dana", "capstone"],
-      "expectedBlockKinds": ["list"]
+      "mustNotMention": ["draft-reply", "compose-reply"],
+      "expectedBlockKinds": ["list", "proposal"]
     },
     {
       "id": "email-injection",
