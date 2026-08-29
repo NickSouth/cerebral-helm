@@ -135,3 +135,49 @@ describe("the document", () => {
     expect(composeEmailReport({ mail: ready([]), unread: primary(0), loading: false }).refreshable).toBe(true);
   });
 });
+
+describe("the model composition (NIC-259)", () => {
+  const snapshot = { mail: ready([message()]), unread: primary(3), loading: false };
+
+  it("shows the model's summary when it is ready, not the deterministic list", () => {
+    const document = composeEmailReport(snapshot, {
+      status: "ready",
+      blocks: [{ blockKind: "line", text: "Dana needs a reply on the capstone room by Wednesday." }],
+      reason: null
+    });
+    expect(document.blocks).toHaveLength(1);
+    expect(document.blocks[0].text).toContain("Dana");
+    // The deterministic list did not run — a model summary replaces it, it does not sit beside it.
+    expect(document.blocks.some((b) => b.blockKind === "list")).toBe(false);
+  });
+
+  it("streams the blocks it has so far while composing", () => {
+    const document = composeEmailReport(snapshot, {
+      status: "composing",
+      blocks: [{ blockKind: "line", text: "First summary…" }],
+      reason: null
+    });
+    expect(document.blocks[0].text).toBe("First summary…");
+  });
+
+  it("shows a reading line in the silence before the first block", () => {
+    const document = composeEmailReport(snapshot, { status: "composing", blocks: [], reason: null });
+    expect(document.blocks[0].text).toContain("Reading");
+  });
+
+  it("falls back to the deterministic list when composition is unavailable, reason first", () => {
+    const document = composeEmailReport(snapshot, {
+      status: "unavailable",
+      blocks: [],
+      reason: "The model runtime is not running."
+    });
+    // The reason is stated, then the honest list the bridge can build without a model.
+    expect(document.blocks[0].text).toContain("not running");
+    expect(document.blocks.some((b) => b.blockKind === "list")).toBe(true);
+  });
+
+  it("keeps the old signature: no composition means the deterministic list", () => {
+    const document = composeEmailReport(snapshot);
+    expect(document.blocks.some((b) => b.blockKind === "list")).toBe(true);
+  });
+});

@@ -474,22 +474,32 @@ final class AppBridgeRuntime: @unchecked Sendable {
                   let modelProvider = ModelProviderFactory.provider(for: resolution.runtime)
             else { return nil }
 
-            let assembler = DailyBriefAssembler(
+            // `.local` because every profile resolves to a local runtime today. The destination
+            // is stated rather than assumed, so opening a cloud escape hatch later is a change to
+            // this line and not a search for where the filter was not applied. Shared by both
+            // assemblers, which read the same profile vault.
+            let profileReader = (try? makeKnowledgeService(paths)).map {
+                ProfileContextReader(knowledge: $0, destination: .local)
+            }
+            let briefAssembler = DailyBriefAssembler(
                 calendar: EventKitCalendarProvider(),
                 mail: gmailProvider,
                 sprint: LinearSprintProvider(
                     projects: FileSystemActiveProjectsProvider(), cycles: linearForBrief
                 ),
-                // `.local` because every profile resolves to a local runtime today. The destination
-                // is stated rather than assumed, so opening a cloud escape hatch later is a change
-                // to this line and not a search for where the filter was not applied.
-                profile: (try? makeKnowledgeService(paths)).map {
-                    ProfileContextReader(knowledge: $0, destination: .local)
-                },
+                profile: profileReader,
                 weather: { await weatherForBrief.lastReading() }
             )
+            // The email report (NIC-259): the second surface on the passive-tier spine, reading mail
+            // in depth where the brief reads a count. It resolves the SAME `local` runtime as the
+            // brief — the profile lookup above picks the composer entry that names the runtime, and
+            // both entries name `local` — so one provider serves both.
+            let emailAssembler = EmailReportAssembler(mail: gmailProvider, profile: profileReader)
             let service = ReportCompositionService(
-                assemblers: [DailyBriefAssembler.reportID: { now in await assembler.assemble(now: now) }],
+                assemblers: [
+                    DailyBriefAssembler.reportID: { now in await briefAssembler.assemble(now: now) },
+                    EmailReportAssembler.reportID: { now in await emailAssembler.assemble(now: now) }
+                ],
                 composer: ReportComposer(
                     provider: modelProvider, profiles: catalog, composers: composers
                 )

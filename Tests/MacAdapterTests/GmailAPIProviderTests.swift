@@ -258,4 +258,165 @@ func gmailSnippetProbe() async throws {
     """)
 }
 
+// MARK: - Thread refs (format=metadata list)
+
+@Test("message refs carry the thread id; a missing one falls back to the message's own id")
+func gmailParsesMessageRefs() throws {
+    let body = Data(#"""
+    {"messages":[{"id":"a","threadId":"t1"},{"id":"b","threadId":"t1"},{"id":"c"}],"resultSizeEstimate":3}
+    """#.utf8)
+    #expect(GmailAPIProvider.parseMessageRefs(body) == [
+        .init(id: "a", threadId: "t1"),
+        .init(id: "b", threadId: "t1"),
+        // No threadId: a message is a conversation of one, so it groups under itself rather than
+        // being dropped — which would understate the count the list is the source of.
+        .init(id: "c", threadId: "c")
+    ])
+    // The empty/error semantics are exactly parseMessageIDs': a real empty result is zero, anything
+    // unparseable is nil, so a shape change never reads as a clear inbox.
+    #expect(GmailAPIProvider.parseMessageRefs(Data(#"{"resultSizeEstimate":0}"#.utf8)) == [])
+    #expect(GmailAPIProvider.parseMessageRefs(Data("not json".utf8)) == nil)
+    #expect(GmailAPIProvider.parseMessageRefs(Data(#"{"error":{"code":403}}"#.utf8)) == nil)
+    // The id-only view stays byte-for-byte what it always was.
+    #expect(GmailAPIProvider.parseMessageIDs(body) == ["a", "b", "c"])
+}
+
+// MARK: - Body decoding (format=full)
+
+@Test("Gmail's web-safe base64 decodes, padding and line wraps and all")
+func gmailDecodesBase64URL() {
+    // "Hello, Nick" → URL-safe base64. Unpadded, with an injected newline of the kind Gmail wraps at.
+    #expect(GmailAPIProvider.decodeBase64URL("SGVsbG8sIE5pY2s=") == "Hello, Nick")
+    #expect(GmailAPIProvider.decodeBase64URL("SGVsbG8sIE5pY2s") == "Hello, Nick") // no padding
+    #expect(GmailAPIProvider.decodeBase64URL("SGVsbG8s\nIE5pY2s") == "Hello, Nick") // wrapped
+    // The web-safe alphabet uses - and _ where standard base64 uses + and /. "??>" standard-encodes
+    // to "Pz8+" and "???" to "Pz8/", so the web-safe forms exercise both substitutions.
+    #expect(GmailAPIProvider.decodeBase64URL("Pz8-") == "??>")
+    #expect(GmailAPIProvider.decodeBase64URL("Pz8_") == "???")
+    #expect(GmailAPIProvider.decodeBase64URL("!!not base64!!") == nil)
+}
+
+@Test("HTML strips to readable text: scripts and styles gone, blocks spaced, entities decoded")
+func gmailStripsHTML() {
+    let html = """
+    <html><head><style>.x{color:red}</style></head><body>
+    <p>Hi&nbsp;Nick</p><script>alert('x')</script><div>Invoice&nbsp;#42 &amp; done</div>
+    </body></html>
+    """
+    let text = GmailAPIProvider.stripHTML(html)
+    #expect(!text.contains("color:red"))   // style content removed
+    #expect(!text.contains("alert"))        // script content removed
+    #expect(!text.contains("<"))            // tags gone
+    #expect(text.contains("Hi Nick"))       // &nbsp; decoded, no fused words
+    #expect(text.contains("Invoice #42 & done"))
+}
+
+@Test("plain text is preferred over HTML across a nested multipart tree")
+func gmailPrefersPlainText() throws {
+    let payload: [String: Any] = [
+        "mimeType": "multipart/mixed",
+        "parts": [
+            [
+                "mimeType": "multipart/alternative",
+                "parts": [
+                    ["mimeType": "text/html", "body": ["data": "PHA-SFRNTCB2ZXJzaW9uPC9wPg=="]],
+                    // "The plain version" in web-safe base64.
+                    ["mimeType": "text/plain", "body": ["data": "VGhlIHBsYWluIHZlcnNpb24="]]
+                ]
+            ]
+        ]
+    ]
+    #expect(GmailAPIProvider.extractBodyText(from: payload) == "The plain version")
+}
+
+@Test("HTML is the fallback when there is no plain part")
+func gmailFallsBackToHTML() throws {
+    let payload: [String: Any] = [
+        "mimeType": "text/html",
+        // "<b>Only HTML</b>" in web-safe base64.
+        "body": ["data": "PGI-T25seSBIVE1MPC9iPg=="]
+    ]
+    let body = try #require(GmailAPIProvider.extractBodyText(from: payload))
+    #expect(body.contains("Only HTML"))
+    #expect(!body.contains("<b>"))
+}
+
+@Test("an attachment part is never read as body text")
+func gmailSkipsAttachments() {
+    let payload: [String: Any] = [
+        "mimeType": "multipart/mixed",
+        "parts": [
+            // A text/plain part that is actually an attachment (has a filename): not the message.
+            ["mimeType": "text/plain", "filename": "notes.txt", "body": ["attachmentId": "abc"]],
+            ["mimeType": "text/plain", "body": ["data": "VGhlIHJlYWwgYm9keQ=="]] // "The real body"
+        ]
+    ]
+    #expect(GmailAPIProvider.extractBodyText(from: payload) == "The real body")
+}
+
+@Test("a full message carries the decoded, bounded body alongside its headers")
+func gmailParsesFullMessage() throws {
+    let body = Data(#"""
+    {
+      "id": "m1",
+      "internalDate": "1793620800000",
+      "snippet": "A short preview",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Dana <dana@x.com>"},
+          {"name": "Subject", "value": "Lunch?"}
+        ],
+        "mimeType": "text/plain",
+        "body": {"data": "QXJlIHlvdSBmcmVlIFRodXJzZGF5Pw=="}
+      }
+    }
+    """#.utf8)
+    let message = try #require(GmailAPIProvider.parseFullMessage(body))
+    #expect(message.subject == "Lunch?")
+    #expect(message.byline == "Dana")
+    #expect(message.preview == "A short preview")
+    #expect(message.body == "Are you free Thursday?")
+}
+
+// MARK: - Live body probe
+
+// OPT-IN (CEREBRAL_GMAIL_TESTS=1): reads real unread threads with bodies through the stored grant.
+//
+//     CEREBRAL_GMAIL_TESTS=1 swift test --filter gmailBodyProbe
+//
+// Reports rather than asserts: body shapes vary wildly by sender, and the useful signal is that the
+// decoder produced readable text of a sane length, not a fixed value.
+@Test("PROBE: unread threads decode to bounded body text")
+func gmailBodyProbe() async throws {
+    guard ProcessInfo.processInfo.environment["CEREBRAL_GMAIL_TESTS"] == "1" else { return }
+
+    let session = GoogleAuthSession(
+        secretStore: KeychainSecretCapability(), refresher: GoogleTokenExchange()
+    )
+    let provider = GmailAPIProvider(session: session)
+
+    let threads: [MailThread]
+    do {
+        threads = try await provider.unreadThreads(limit: 5)
+    } catch {
+        Issue.record("PROBE INCONCLUSIVE — could not read threads: \(error). Connect Gmail in Settings first.")
+        return
+    }
+    guard !threads.isEmpty else {
+        Issue.record("PROBE INCONCLUSIVE — no unread mail. Leave one message unread and re-run.")
+        return
+    }
+
+    let bodies = threads.flatMap(\.messages).compactMap(\.body)
+    print("""
+
+    ── body probe ─────────────────────────────────────────────────
+    \(threads.count) thread(s), \(threads.flatMap(\.messages).count) unread message(s).
+    \(bodies.count) carried a decoded body (cap \(MailMessage.bodyLimit) chars).
+    Longest: \(bodies.map(\.count).max() ?? 0) chars. Subjects: \(threads.map(\.subject).joined(separator: " | "))
+    ───────────────────────────────────────────────────────────────
+
+    """)
+}
+
 #endif
