@@ -6,22 +6,29 @@
    is pushed back around the words rather than the words being placed on a panel — design
    reference Plate 02, approved 2026-08-07. Nothing here draws a background.
 
-   It is a normal flex child of `.heimlich`'s column, sitting between the wordmark and the foot
-   group, so it claims exactly the space that column already left empty — no magic inset numbers.
+   It is a normal flex child of `.heimlich__surfaces`, the row between the wordmark and the foot
+   group, so it claims exactly the space that band already left empty — no magic inset numbers.
    An earlier absolute-positioned version with rem insets collapsed to a 16px sliver whenever the
    panel was short, because the panel's height is viewport-driven. `position: relative` keeps it
-   above the WebGL field, which is what makes it composite over a still-running stream. */
+   above the WebGL field, which is what makes it composite over a still-running stream.
+
+   It STRETCHES to the band's full height rather than sitting at the top of a shared column. When
+   the two surfaces were rungs of one column, an open input form took its height out of the
+   report's — 117px of a daily brief was clipped by a create-event form on the far side of the
+   panel — and no width they were given could have fixed that, because the coupling was vertical. */
 
 .report-region {
   position: relative;
   z-index: 2;
-  align-self: flex-start;
-  flex: 1 1 auto;
+  align-self: stretch;
+  /* Fixed basis: this is a row now, so `flex: 1 1 auto` would spend the leftover width instead of
+     leaving it for the form. Height comes from the band, not from the content. */
+  flex: 0 0 40%;
   /* Without this a flex child refuses to shrink below its content and re-introduces overflow. */
   min-height: 0;
+  min-width: 0;
   /* Widened from 33% (owner, 2026-08-04). Reports were sized for counts and short lines; they now
      carry subjects, headlines and prose, and a third forced almost every row onto two lines. */
-  width: 40%;
   max-width: 48%;
   display: flex;
   flex-direction: column;

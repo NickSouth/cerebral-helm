@@ -438,6 +438,60 @@ public enum BridgeEventFactory {
         )
     }
 
+    // MARK: - Report composition (NIC-253)
+
+    /// One emission of a model composing a report.
+    ///
+    /// Carries **every block so far**, not the new ones — the same whole-set rule the health-check
+    /// run follows, and for the same reason: a consumer reconciling per-block updates could drift
+    /// out of step with the composition, and a retry that discarded its first attempt simply sends a
+    /// shorter set rather than needing an undo. A composition is a few hundred bytes; the class of
+    /// bug this removes is worth far more.
+    ///
+    /// `firstBlockMs` is reported apart from `totalMs` on purpose. They answer different questions —
+    /// how long until the reader sees something, and how long until it is finished — and the first is
+    /// the one that decides whether a nine-second composition feels like arrival or like a stall.
+    public static func reportCompositionEvent(
+        reportID: String,
+        blocks: [Block],
+        complete: Bool,
+        reason: String? = nil,
+        firstBlockMs: Int? = nil,
+        totalMs: Int? = nil,
+        id: String,
+        timestamp: Date
+    ) -> CerebralHelmBridgeEvent {
+        struct Payload: Encodable {
+            let reportId: String
+            /// `composing`, `ready`, or `unavailable` — the same vocabulary the buffered operation
+            /// answers with, so the region has one set of states rather than two.
+            let state: String
+            let blocks: [Block]
+            let complete: Bool
+            let reason: String?
+            let firstBlockMs: Int?
+            let totalMs: Int?
+        }
+        let state = complete ? (reason == nil ? "ready" : "unavailable") : "composing"
+        return CerebralHelmBridgeEvent(
+            eventID: id,
+            payload: encodedPayload(
+                Payload(
+                    reportId: reportID,
+                    state: state,
+                    blocks: blocks,
+                    complete: complete,
+                    reason: reason,
+                    firstBlockMs: firstBlockMs,
+                    totalMs: totalMs
+                )
+            ),
+            schemaVersion: "1.0.0",
+            timestamp: timestamp,
+            type: .reportCompositionChanged
+        )
+    }
+
     /// The unread-mail channel (Gmail integration, 2026-08-04).
     ///
     /// Machine-global rather than per-mode: how much mail is waiting is a fact about the account,
@@ -501,7 +555,13 @@ public enum BridgeEventFactory {
             let rounded = Int(reading.temperatureF.rounded())
             return DashboardWeatherChannel(
                 condition: reading.condition,
+                highF: reading.highF.map { Double(Int($0.rounded())) },
+                // The bottom bar's label is UNCHANGED. The forecast rides alongside it as data for
+                // the daily brief's header to compose; folding a high into this string would rewrite
+                // a shipped surface as a side effect of adding a field to another one.
                 label: "\(rounded)°F · \(reading.condition)",
+                lowF: reading.lowF.map { Double(Int($0.rounded())) },
+                precipitationChance: reading.precipitationChance,
                 state: .ready,
                 temperatureF: Double(rounded)
             )
@@ -509,7 +569,10 @@ public enum BridgeEventFactory {
             let isLocation = (error as? WeatherError).map { $0 == .locationUnavailable } ?? false
             return DashboardWeatherChannel(
                 condition: nil,
+                highF: nil,
                 label: isLocation ? "Location unavailable" : "Weather unavailable",
+                lowF: nil,
+                precipitationChance: nil,
                 state: .unavailable,
                 temperatureF: nil
             )

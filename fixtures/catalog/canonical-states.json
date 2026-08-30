@@ -12,7 +12,7 @@
         "mode": "Executive",
         "project": "Daily Command",
         "summary": "Executive mode is ready with planning, status, and cross-project briefing surfaces.",
-        "weather": { "state": "ready", "label": "72°F · Partly Cloudy", "temperatureF": 72, "condition": "Partly Cloudy" },
+        "weather": { "state": "ready", "label": "72°F · Partly Cloudy", "temperatureF": 72, "condition": "Partly Cloudy", "highF": 78, "lowF": 61, "precipitationChance": 20 },
         "commandsToday": 2,
         "pendingConfirmations": 0,
         "uiState": "ready",

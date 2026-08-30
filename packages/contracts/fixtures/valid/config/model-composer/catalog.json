@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "1.0.0",
+  "composerSystemPrompt": "You compose CerebralHelm report documents. Use ONLY facts present in the snapshot. Reply with a JSON object containing ONLY a \"blocks\" array.",
+  "composerActions": [
+    {
+      "composerActionId": "open-mail",
+      "composerActionUse": "to take him to his inbox, whenever mail is the thing that needs him"
+    },
+    {
+      "composerActionId": "capture-note",
+      "composerActionUse": "to write anything down for him — a list, a reminder, a thought"
+    }
+  ],
+  "composerReports": [
+    {
+      "composerReportId": "daily-brief",
+      "modelProfileId": "local",
+      "composerInstruction": "Compile the morning brief. Lead with what has to happen today.",
+      "composerTemperature": 0.4,
+      "composerMaxOutputTokens": 1200,
+      "composerMaxBlocks": 12
+    },
+    {
+      "composerReportId": "email-report",
+      "modelProfileId": "balanced",
+      "composerInstruction": "Summarise the unread inbox by thread, priority first.",
+      "composerMaxOutputTokens": 900,
+      "composerMaxBlocks": 10
+    }
+  ]
+}

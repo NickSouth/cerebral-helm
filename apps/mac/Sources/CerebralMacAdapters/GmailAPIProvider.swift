@@ -16,12 +16,27 @@ import CerebralCore
 ///
 /// Every request is a GET. Nothing here marks read, archives, labels, or sends; the adapter has no
 /// method that could.
+///
+/// **Two reads of a message, at two depths.** The sampled count and the daily brief's list use
+/// `format=metadata` — headers plus Gmail's own snippet, never a body (see ``metadataHeaders``). The
+/// email report's ``unreadThreads(limit:)`` reads `format=full` and decodes the body (NIC-258),
+/// on demand only and never on a cadence. Both stay within the granted `gmail.readonly` scope; the
+/// body is untrusted text, bounded and handled as such inside ``MailMessage``.
 public struct GmailAPIProvider: MailProvider {
     /// Headers worth asking for. `format=metadata` with an explicit allowlist means Gmail returns
-    /// only these — the body is not fetched, so it cannot end up in memory, a log, or a report.
-    /// `Message-ID` is here so a report row can link to the message: Gmail's web UI addresses
-    /// mail by an opaque per-account id the API never returns, and the RFC 5322 header is the only
-    /// stable handle there is. Still headers only — the body is never fetched.
+    /// only these headers, and never the message body: `payload.parts` is absent under this format,
+    /// so no body text can end up in memory, a log, or a report.
+    ///
+    /// `Message-ID` is here so a report row can link to the message: Gmail's web UI addresses mail
+    /// by an opaque per-account id the API never returns, and the RFC 5322 header is the only
+    /// stable handle there is.
+    ///
+    /// **A preview comes back alongside these, and that is now wanted** (owner decision,
+    /// 2026-08-26). `snippet` is a top-level field of the Message resource rather than part of
+    /// `payload`, so it is unaffected by the header allowlist. Reading it is a decision, not an
+    /// accident: the daily brief is asked to say which mail needs the reader, and a subject line
+    /// alone cannot support that judgement. The format stays `metadata`, so this remains the only
+    /// message text the adapter can see — a preview, not a body. See ``MailMessage/preview``.
     static let metadataHeaders = ["From", "Subject", "Date", "Message-ID"]
 
     /// Gmail's Primary tab. Its inbox categories are system labels (`CATEGORY_PERSONAL`,
@@ -39,6 +54,14 @@ public struct GmailAPIProvider: MailProvider {
     /// `resultSizeEstimate` is deliberately not used for this: Google documents it as an estimate,
     /// and a count on a dashboard should not be a guess.
     static let countCeiling = 100
+
+    /// How many unread messages of a single thread the email report reads.
+    ///
+    /// A conversation's most recent turns are what the reader needs; the older ones are context they
+    /// already have. Capped so one runaway thread cannot become the whole report — the bound on
+    /// bodies is per message, so a thread with no cap is a hole in the token budget — and small
+    /// because each message is one more full fetch against a personal quota.
+    static let maxMessagesPerThread = 3
 
     private let session: GoogleAuthSession
     private let urlSession: URLSession
@@ -91,6 +114,46 @@ public struct GmailAPIProvider: MailProvider {
         return messages
     }
 
+    public func unreadThreads(limit: Int) async throws -> [MailThread] {
+        let cappedThreads = max(1, min(limit, 15))
+        // List enough messages to fill the threads even if the first few conversations are chatty.
+        // The list is already the unread slice, so grouping it by thread yields exactly the unread
+        // messages of each — the read history is never fetched.
+        let (refs, _) = try await unreadMessageRefs(limit: cappedThreads * Self.maxMessagesPerThread)
+        guard !refs.isEmpty else { return [] }
+
+        // Group preserving newest-first thread order: the list is newest-first, so a thread first
+        // appears at its newest message, and iterating in that order ranks the threads the way the
+        // reader would.
+        var order: [String] = []
+        var byThread: [String: [MessageRef]] = [:]
+        for ref in refs {
+            if byThread[ref.threadId] == nil { order.append(ref.threadId) }
+            byThread[ref.threadId, default: []].append(ref)
+        }
+
+        var threads: [MailThread] = []
+        for threadID in order.prefix(cappedThreads) {
+            let group = (byThread[threadID] ?? []).prefix(Self.maxMessagesPerThread)
+            var messages: [MailMessage] = []
+            for ref in group {
+                let detail = try await get(
+                    path: "/gmail/v1/users/me/messages/\(ref.id)",
+                    query: [URLQueryItem(name: "format", value: "full")]
+                )
+                // A message whose body will not parse is dropped rather than failing the thread; the
+                // bounding and untrusted-text handling happen inside `MailMessage`.
+                if let message = Self.parseFullMessage(detail) { messages.append(message) }
+            }
+            guard !messages.isEmpty else { continue }
+            // Oldest first within a thread — a conversation reads forwards. ISO-8601 UTC strings sort
+            // chronologically as text; a missing timestamp sorts first, which keeps it deterministic.
+            messages.sort { ($0.receivedAt ?? "") < ($1.receivedAt ?? "") }
+            threads.append(MailThread(id: threadID, messages: messages))
+        }
+        return threads
+    }
+
     // MARK: - Selecting the unread mail that matters
 
     /// Unread message ids, newest first, and which slice they came from.
@@ -118,16 +181,24 @@ public struct GmailAPIProvider: MailProvider {
     /// honest answer, because otherwise the filter would report an empty inbox forever. The extra
     /// request happens only when Primary is empty, which is the cheap case by definition.
     private func unreadMessageIDs(limit: Int) async throws -> (ids: [String], scope: MailUnreadScope) {
-        let primary = try await listUnreadIDs(limit: limit, primaryOnly: true)
+        let (refs, scope) = try await unreadMessageRefs(limit: limit)
+        return (refs.map(\.id), scope)
+    }
+
+    /// The same selection as ``unreadMessageIDs(limit:)``, carrying the thread id each message
+    /// belongs to. The count and list paths need only the ids; the thread path needs the grouping,
+    /// and both come from one query so they can never describe different mailboxes.
+    private func unreadMessageRefs(limit: Int) async throws -> (refs: [MessageRef], scope: MailUnreadScope) {
+        let primary = try await listUnreadRefs(limit: limit, primaryOnly: true)
         if !primary.isEmpty {
             return (primary, .primary)
         }
-        if try await accountCategorizes() {
+        if await accountCategorizes() {
             return ([], .primary)
         }
         // No categories on this account: the filtered query can never match, so the plain inbox is
         // the only honest answer. Reported as `.inbox` so the surface stops claiming "Primary".
-        return (try await listUnreadIDs(limit: limit, primaryOnly: false), .inbox)
+        return (try await listUnreadRefs(limit: limit, primaryOnly: false), .inbox)
     }
 
     /// Whether this account applies Gmail's inbox categories.
@@ -144,7 +215,7 @@ public struct GmailAPIProvider: MailProvider {
         return total > 0
     }
 
-    private func listUnreadIDs(limit: Int, primaryOnly: Bool) async throws -> [String] {
+    private func listUnreadRefs(limit: Int, primaryOnly: Bool) async throws -> [MessageRef] {
         var query = [
             URLQueryItem(name: "labelIds", value: "INBOX"),
             URLQueryItem(name: "labelIds", value: "UNREAD")
@@ -154,10 +225,10 @@ public struct GmailAPIProvider: MailProvider {
         }
         query.append(URLQueryItem(name: "maxResults", value: String(limit)))
         let data = try await get(path: "/gmail/v1/users/me/messages", query: query)
-        guard let ids = Self.parseMessageIDs(data) else {
+        guard let refs = Self.parseMessageRefs(data) else {
             throw MailError.providerFailed("Gmail's message list was not in the shape we read.")
         }
-        return ids
+        return refs
     }
 
     // MARK: - Requests
@@ -270,18 +341,31 @@ public struct GmailAPIProvider: MailProvider {
         return root["messagesTotal"] as? Int ?? 0
     }
 
-    /// Message ids from a list response, or **nil when the response is not one**.
+    /// One entry of a `messages.list` response: a message id and the thread it belongs to.
+    struct MessageRef: Equatable {
+        let id: String
+        let threadId: String
+    }
+
+    /// Message refs from a list response, or **nil when the response is not one**.
     ///
-    /// The distinction carries the whole honesty of the count, which is now the length of this
-    /// array: a body that does not parse must not come back as an empty list, because empty means
-    /// "your inbox is clear" and would be a calm, confident lie. A genuinely empty result is a real
-    /// JSON object with no `messages` key (Gmail omits it), and only that reads as zero.
-    static func parseMessageIDs(_ data: Data) -> [String]? {
+    /// The distinction carries the whole honesty of the count, which is the length of this array: a
+    /// body that does not parse must not come back as an empty list, because empty means "your inbox
+    /// is clear" and would be a calm, confident lie. A genuinely empty result is a real JSON object
+    /// with no `messages` key (Gmail omits it), and only that reads as zero.
+    ///
+    /// A message that somehow arrived without a `threadId` is treated as its own thread — a message
+    /// is a conversation of one — so the id is never dropped over a missing group key, and the count
+    /// stays exact.
+    static func parseMessageRefs(_ data: Data) -> [MessageRef]? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
         if let messages = root["messages"] as? [[String: Any]] {
-            return messages.compactMap { $0["id"] as? String }
+            return messages.compactMap { message in
+                guard let id = message["id"] as? String else { return nil }
+                return MessageRef(id: id, threadId: message["threadId"] as? String ?? id)
+            }
         }
         // No `messages` key. That is what Gmail returns for a genuinely empty result — but only
         // alongside `resultSizeEstimate`, which every list response carries. Requiring it is the
@@ -290,18 +374,32 @@ public struct GmailAPIProvider: MailProvider {
         return root["resultSizeEstimate"] != nil ? [] : nil
     }
 
-    /// One message from a metadata response. Header names are matched **case-insensitively**: the
-    /// RFC makes them case-insensitive and Gmail echoes whatever the sender wrote.
-    static func parseMessage(_ data: Data) -> MailMessage? {
-        guard
-            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let id = root["id"] as? String
-        else { return nil }
+    /// Message ids from a list response, or nil when the response is not one — the count and list
+    /// paths' view of ``parseMessageRefs(_:)``, dropping the thread grouping they do not need.
+    static func parseMessageIDs(_ data: Data) -> [String]? {
+        parseMessageRefs(data)?.map(\.id)
+    }
+
+    /// The fields shared by the metadata and full parsers, or nil when the response has no id.
+    ///
+    /// Header names are matched **case-insensitively**: the RFC makes them case-insensitive and
+    /// Gmail echoes whatever the sender wrote.
+    private struct MessageFields {
+        let id: String
+        let from: String
+        let subject: String
+        let receivedAt: String?
+        let rfc822MessageID: String?
+        let preview: String?
+    }
+
+    private static func messageFields(_ root: [String: Any]) -> MessageFields? {
+        guard let id = root["id"] as? String else { return nil }
         let headers = (root["payload"] as? [String: Any])?["headers"] as? [[String: Any]] ?? []
         func header(_ name: String) -> String? {
             headers.first { ($0["name"] as? String)?.caseInsensitiveCompare(name) == .orderedSame }?["value"] as? String
         }
-        return MailMessage(
+        return MessageFields(
             id: id,
             // A message with neither is still a message; naming the gap beats dropping the row.
             from: header("From") ?? "Unknown sender",
@@ -314,8 +412,167 @@ public struct GmailAPIProvider: MailProvider {
             // internalDate is a plain epoch and is always present.
             receivedAt: Self.parseInternalDate(root["internalDate"])
                 ?? header("Date").flatMap(Self.parseRFC2822),
-            rfc822MessageID: header("Message-ID")?.trimmingCharacters(in: CharacterSet(charactersIn: "<> "))
+            rfc822MessageID: header("Message-ID")?.trimmingCharacters(in: CharacterSet(charactersIn: "<> ")),
+            // Gmail's own preview of the message text. A TOP-LEVEL field of the Message resource,
+            // not part of `payload`, so the header allowlist does not govern it.
+            //
+            // Note that Google's reference describes `metadata` as returning "only email message
+            // ID, labels, and email headers" and does not list `snippet` among them. Read
+            // defensively for that reason: absent is a normal outcome here, never an error, and a
+            // brief composed without previews is a thinner brief rather than a broken one. The
+            // live probe in GmailAPIProviderTests is what settles which way this account behaves.
+            preview: root["snippet"] as? String
         )
+    }
+
+    /// One message from a `format=metadata` response — headers and snippet, never a body.
+    static func parseMessage(_ data: Data) -> MailMessage? {
+        guard
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let fields = messageFields(root)
+        else { return nil }
+        return MailMessage(
+            id: fields.id, from: fields.from, subject: fields.subject,
+            receivedAt: fields.receivedAt, rfc822MessageID: fields.rfc822MessageID,
+            preview: fields.preview
+        )
+    }
+
+    /// One message from a `format=full` response — the same fields plus the decoded, stripped and
+    /// bounded body (NIC-258). The body is untrusted text and is bounded inside ``MailMessage``.
+    static func parseFullMessage(_ data: Data) -> MailMessage? {
+        guard
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let fields = messageFields(root)
+        else { return nil }
+        let body = (root["payload"] as? [String: Any]).flatMap(Self.extractBodyText(from:))
+        return MailMessage(
+            id: fields.id, from: fields.from, subject: fields.subject,
+            receivedAt: fields.receivedAt, rfc822MessageID: fields.rfc822MessageID,
+            preview: fields.preview, body: body
+        )
+    }
+
+    // MARK: - Reading a body out of a MIME tree
+
+    /// The best plain-text rendering of a message payload, or nil when there is no readable text.
+    ///
+    /// A Gmail payload is a MIME tree: a single part with `body.data`, or a `parts` array that may
+    /// nest (a `multipart/alternative` of text and HTML, inside a `multipart/mixed` with
+    /// attachments). Plain text is preferred; HTML is the fallback, stripped to text. Attachments —
+    /// a part with a filename or an `attachmentId` — are never read: a report summarises the
+    /// message, not what was stapled to it, and an attachment's bytes are not text anyway.
+    static func extractBodyText(from payload: [String: Any]) -> String? {
+        var plain: String?
+        var html: String?
+        collectText(payload, plain: &plain, html: &html)
+        if let plain, !plain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return plain
+        }
+        if let html { return stripHTML(html) }
+        return nil
+    }
+
+    /// Walks the MIME tree, keeping the FIRST plain and first HTML text part it finds.
+    ///
+    /// First-wins, not concatenated: the opening part of a message is the message, and appending
+    /// every later text part would drag quoted trails and signatures into a summary that wanted the
+    /// new content. A branch with children is descended into and never read directly — only leaves
+    /// carry `body.data`.
+    private static func collectText(_ node: [String: Any], plain: inout String?, html: inout String?) {
+        if let parts = node["parts"] as? [[String: Any]] {
+            for part in parts { collectText(part, plain: &plain, html: &html) }
+            return
+        }
+        let body = node["body"] as? [String: Any]
+        let filename = node["filename"] as? String
+        // An attachment part, even a text/* one: its bytes belong to a file, not to the message.
+        if (filename?.isEmpty == false) || body?["attachmentId"] != nil { return }
+        guard
+            let encoded = body?["data"] as? String,
+            let decoded = decodeBase64URL(encoded)
+        else { return }
+        switch (node["mimeType"] as? String)?.lowercased() {
+        case "text/plain": if plain == nil { plain = decoded }
+        case "text/html": if html == nil { html = decoded }
+        default: break
+        }
+    }
+
+    /// Gmail's web-safe base64 (`-`/`_`, unpadded, and often line-wrapped) into a UTF-8 string.
+    static func decodeBase64URL(_ value: String) -> String? {
+        var normalized = value
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+            .filter { !$0.isWhitespace }
+        // Standard base64 wants the length padded to a multiple of four.
+        while normalized.count % 4 != 0 { normalized.append("=") }
+        guard let data = Data(base64Encoded: normalized) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// HTML to readable plain text: scripts and styles removed, block boundaries turned into
+    /// whitespace, tags dropped, and the handful of entities that survive that turned back into
+    /// characters. Deliberately small — a bounded summary needs the words, not a faithful render —
+    /// and it is where the whitespace collapse in ``MailMessage`` earns its keep, since crude tag
+    /// removal leaves a lot of it behind.
+    static func stripHTML(_ html: String) -> String {
+        var text = removeElement("script", from: html)
+        text = removeElement("style", from: text)
+
+        var out = ""
+        out.reserveCapacity(text.count)
+        var insideTag = false
+        var tagName = ""
+        for character in text {
+            if character == "<" {
+                insideTag = true
+                tagName = ""
+                continue
+            }
+            if character == ">" {
+                insideTag = false
+                // Block-level closers and line breaks become a space so words do not fuse; the
+                // whitespace collapse downstream folds the runs this leaves.
+                let name = tagName.lowercased()
+                if ["br", "/p", "/div", "/tr", "/li", "/h1", "/h2", "/h3", "p", "div", "tr", "li"].contains(name) {
+                    out.append(" ")
+                }
+                continue
+            }
+            if insideTag {
+                if tagName.count < 8, character != " " { tagName.append(character) }
+                continue
+            }
+            out.append(character)
+        }
+        return decodeEntities(out)
+    }
+
+    /// Removes an element and its content wholesale (`<script>…</script>`), case-insensitively.
+    private static func removeElement(_ tag: String, from html: String) -> String {
+        var result = html
+        while let open = result.range(of: "<\(tag)", options: .caseInsensitive),
+              let close = result.range(
+                  of: "</\(tag)>", options: .caseInsensitive, range: open.upperBound..<result.endIndex
+              ) {
+            result.replaceSubrange(open.lowerBound..<close.upperBound, with: " ")
+        }
+        return result
+    }
+
+    /// The named and numeric entities common enough to matter in a summary. Anything else is left as
+    /// written — a stray `&copy;` reads fine and is not worth a full entity table.
+    private static func decodeEntities(_ text: String) -> String {
+        var result = text
+        let named = [
+            "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">",
+            "&quot;": "\"", "&#39;": "'", "&apos;": "'", "&mdash;": "\u{2014}", "&ndash;": "\u{2013}"
+        ]
+        for (entity, character) in named {
+            result = result.replacingOccurrences(of: entity, with: character, options: .caseInsensitive)
+        }
+        return result
     }
 
     /// Gmail's `internalDate` — milliseconds since the epoch, as the JSON string an int64 maps to

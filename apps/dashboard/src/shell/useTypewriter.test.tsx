@@ -269,4 +269,160 @@ describe("useTypewriter", () => {
       expect(textOf(doc).length).toBe(31);
     });
   });
+
+  it("leaves alone a text node whose content changed under it", () => {
+    // The failure this pins was found in the browser, not in a test. A model-composed brief renders
+    // "Writing your brief…" while it waits and replaces that line with the model's own when it
+    // lands — under a STABLE key, because re-keying would blank the header the reader is already
+    // looking at (NIC-228). React reuses the text node and rewrites it; this hook still holds the
+    // text it captured when it collected its timeline.
+    //
+    // Writing to that node afterwards put the stale capture back and DELETED the model's line: the
+    // reader saw "Writing your brief…" with the finished brief rendered underneath it.
+    //
+    // React's own update is simulated directly here rather than driven through `rerender`, so the
+    // case under test is the hook's behaviour and not React's reconciliation timing.
+    const { getByTestId } = render(<Host paragraphs={[FIRST]} />);
+    const doc = getByTestId("doc");
+
+    frame(0);
+    frame(200);
+    expect(textOf(doc).length).toBeLessThan(FIRST.length);
+
+    // Content changes under the hook, exactly as React does it.
+    const node = doc.querySelector("p")!.firstChild as Text;
+    node.data = SECOND;
+
+    // Neither the remaining frames nor the restore at the end may touch it again.
+    frame(400);
+    expect(textOf(doc)).toBe(SECOND);
+    frame(5000);
+    expect(textOf(doc)).toBe(SECOND);
+  });
+
+  it("still finishes a run it alone has been editing", () => {
+    // The other half of the same rule: a node still holding a PREFIX of the capture is this hook's
+    // own partial write, and leaving it truncated would strand the report half-written.
+    const { getByTestId } = render(<Host paragraphs={[FIRST]} />);
+    const doc = getByTestId("doc");
+
+    frame(0);
+    frame(200);
+    expect(textOf(doc).length).toBeLessThan(FIRST.length);
+    expect(FIRST.startsWith(textOf(doc))).toBe(true);
+
+    frame(1500);
+    expect(textOf(doc)).toBe(FIRST);
+  });
+
+
+  it("leaves alone a node it had blanked that React then rewrote", () => {
+    // The hole a prefix test leaves: blanking writes `""`, and EVERY string starts with `""`, so a
+    // node this hook blanked and React then rewrote still looked like its own.
+    //
+    // A reader hits this by looking away while a brief composes. The run pauses with everything
+    // blank — `requestAnimationFrame` stops firing on a hidden tab — and the model's blocks land
+    // meanwhile. Restoring on the way out then put the placeholder back OVER the model's first line
+    // and deleted it: "Writing your brief…" with the finished brief rendered underneath.
+    const { getByTestId } = render(<Host paragraphs={[FIRST]} />);
+    const doc = getByTestId("doc");
+    const node = doc.querySelector("p")!.firstChild as Text;
+
+    frame(0); // blanks; from here the node holds ""
+    expect(textOf(doc)).toBe("");
+
+    // React swaps the content while this hook is paused mid-run.
+    node.data = SECOND;
+
+    frame(5000);
+    expect(textOf(doc)).toBe(SECOND);
+  });
+
+  describe("a document that grows while it is being written (NIC-253)", () => {
+    /** A `MutationObserver` delivers asynchronously; these tests drive frames synchronously. */
+    function flushMutations() {
+      // jsdom queues observer callbacks as microtasks, so awaiting once lets them run.
+      return Promise.resolve();
+    }
+
+    it("types an appended paragraph instead of letting it appear whole", async () => {
+      // A streamed brief grows a block at a time under a STABLE key. Re-keying would blank the
+      // header the reader is already reading; letting the block appear whole would make the model's
+      // arrival the one part of the report that is not written.
+      const { getByTestId, rerender } = render(<Host paragraphs={[FIRST]} />);
+      const doc = getByTestId("doc");
+
+      frame(0);
+      frame(2000); // the first paragraph is fully written
+      expect(textOf(doc)).toBe(FIRST);
+
+      rerender(<Host paragraphs={[FIRST, SECOND]} />);
+      await flushMutations();
+
+      // The very next frame hides what has not been reached yet, rather than showing it whole.
+      frame(2001);
+      expect(textOf(doc)).toBe(FIRST);
+
+      frame(2100);
+      const partial = textOf(doc);
+      expect(partial.length).toBeGreaterThan(FIRST.length);
+      expect(partial.length).toBeLessThan(FIRST.length + SECOND.length);
+
+      frame(5000);
+      expect(textOf(doc)).toBe(FIRST + SECOND);
+    });
+
+    it("keeps what the reader has already read when a block lands mid-run", async () => {
+      // The whole reason growth is folded in rather than re-keyed: the text already on screen must
+      // not be blanked and rewritten under someone's eyes.
+      const { getByTestId, rerender } = render(<Host paragraphs={[FIRST]} />);
+      const doc = getByTestId("doc");
+
+      frame(0);
+      frame(300);
+      const before = textOf(doc);
+      expect(before.length).toBeGreaterThan(0);
+      expect(before.length).toBeLessThan(FIRST.length);
+
+      rerender(<Host paragraphs={[FIRST, SECOND]} />);
+      await flushMutations();
+      frame(301);
+
+      // Never goes backwards.
+      expect(textOf(doc).length).toBeGreaterThanOrEqual(before.length);
+      expect(FIRST.startsWith(textOf(doc))).toBe(true);
+    });
+
+    it("does not re-collect in response to its own writing", async () => {
+      // The observer watches character data as well as structure, because React can rewrite a line
+      // in place. Without ignoring this hook's own edits it would re-collect on every frame it drew.
+      const { getByTestId } = render(<Host paragraphs={[FIRST]} />);
+      const doc = getByTestId("doc");
+
+      frame(0);
+      frame(100);
+      await flushMutations();
+      frame(200);
+      await flushMutations();
+
+      // Still advancing rather than restarting: a re-collect loop would keep resetting the reveal.
+      frame(2000);
+      expect(textOf(doc)).toBe(FIRST);
+    });
+
+    it("adopts a line React rewrote mid-run rather than restoring the old one", async () => {
+      // The composed brief replaces "Writing your brief…" with the model's first line. The old text
+      // must not come back on restore, and the new text must still be written rather than appearing.
+      const { getByTestId, rerender } = render(<Host paragraphs={[FIRST]} />);
+      const doc = getByTestId("doc");
+
+      frame(0);
+      frame(300);
+      rerender(<Host paragraphs={[SECOND]} />);
+      await flushMutations();
+
+      frame(5000);
+      expect(textOf(doc)).toBe(SECOND);
+    });
+  });
 });

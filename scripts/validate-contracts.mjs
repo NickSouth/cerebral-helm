@@ -149,6 +149,13 @@ function schemaForFixture(filePath) {
     return schemaId("config", "model-profiles");
   }
 
+  if (
+    relativePath.startsWith("valid/config/model-composer/") ||
+    relativePath.startsWith("invalid/config/model-composer/")
+  ) {
+    return schemaId("config", "model-composer");
+  }
+
   if (relativePath.startsWith("valid/references/") || relativePath.startsWith("invalid/references/")) {
     return schemaId("references", "reference-catalog");
   }
@@ -215,7 +222,17 @@ function currentConfigExamples() {
     ...collectJsonFiles(path.join(configRoot, "references")).map((filePath) => ({
       filePath,
       schema: schemaId("references", "reference-catalog")
-    }))
+    })),
+    // `config/models/` is optional and holds two families, routed by filename. Until now the
+    // shipped catalogs here were checked by `validate-config.mjs`'s hand-written rules but never
+    // against their own JSON Schema, so a shipped file could drift from the contract that
+    // describes it while both gates stayed green.
+    ...collectJsonFiles(path.join(configRoot, "models"))
+      .filter((filePath) => path.basename(filePath) === "profiles.json")
+      .map((filePath) => ({ filePath, schema: schemaId("config", "model-profiles") })),
+    ...collectJsonFiles(path.join(configRoot, "models"))
+      .filter((filePath) => path.basename(filePath) === "composer.json")
+      .map((filePath) => ({ filePath, schema: schemaId("config", "model-composer") }))
   ];
 }
 

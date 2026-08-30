@@ -29,15 +29,19 @@
     }
   },
   "$defs": {
+    "modelProfileId": {
+      "title": "CerebralHelm Model Profile ID",
+      "description": "The capability profile product logic asks for. 'local' is not a capability but a policy: a surface that must never leave this machine even if a cloud escape hatch is later enabled.\n\nDefined once and referenced, here and from model-composer.schema.json, because there is one capability-profile vocabulary rather than two that happen to agree. Stating it twice would also mint two generated enums with identical cases, which codegen then unifies under whichever property name it reaches first — silently renaming the other schema's type.",
+      "type": "string",
+      "enum": ["fast", "balanced", "deep", "local"]
+    },
     "modelProfile": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "modelId", "runtimeId", "contextTokens", "residency", "thinking"],
       "properties": {
         "id": {
-          "type": "string",
-          "enum": ["fast", "balanced", "deep", "local"],
-          "description": "The capability profile product logic asks for. 'local' is not a capability but a policy: a surface that must never leave this machine even if a cloud escape hatch is later enabled."
+          "$ref": "#/$defs/modelProfileId"
         },
         "modelId": {
           "type": "string",

@@ -86,3 +86,34 @@ func weatherUnavailableOmitsNilFields() throws {
     #expect(!json.contains("\"temperatureF\":null"))
     #expect(!json.contains("\"condition\":null"))
 }
+
+// MARK: - The bottom bar's channel
+
+@Test("the forecast rides alongside the bar's label without changing it")
+func weatherChannelCarriesForecast() {
+    let channel = BridgeEventFactory.weather(
+        from: .success(WeatherReading(
+            temperatureF: 62.3, condition: "Partly Cloudy", observedAt: fixedNow,
+            highF: 78.4, lowF: 55.1, precipitationChance: 70
+        )),
+        now: fixedNow
+    )
+
+    // UNCHANGED. Folding a high into this string would rewrite a shipped surface as a side effect
+    // of adding a field for another one.
+    #expect(channel.label == "62°F · Partly Cloudy")
+    #expect(channel.highF == 78)
+    #expect(channel.lowF == 55)
+    #expect(channel.precipitationChance == 70)
+}
+
+@Test("an unavailable channel fabricates no forecast either")
+func unavailableChannelHasNoForecast() {
+    let channel = BridgeEventFactory.weather(from: .failure(WeatherError.locationUnavailable), now: fixedNow)
+
+    #expect(channel.state == .unavailable)
+    #expect(channel.highF == nil)
+    #expect(channel.lowF == nil)
+    #expect(channel.precipitationChance == nil)
+}
+

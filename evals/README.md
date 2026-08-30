@@ -128,6 +128,7 @@ node evals/run-report.mjs --runtime=llamacpp --model=<server alias> --reps=6
 | `--reps` | integer, default 1 | Repeat the suite. **Use it.** See below. |
 | `--think` | `false` (default), `true` | Off by default: composition from a typed snapshot is rendering, not reasoning. |
 | `--snapshot` | a snapshot id | Narrow to one case. |
+| `--gate` | present or absent | Apply thresholds and **exit non-zero** on a breach. Raises `--reps` to at least 3 and skips aspirational snapshots. |
 
 **Read `leaf-type violations`, not just the pass rate.** It is printed on its own line
 because it is the number the runtime question turns on, and an aggregate pass rate
@@ -138,6 +139,82 @@ schema-invalid document on **6 of 6** runs of one snapshot and llama.cpp on **0 
 tool suites which pin it to 0. A single sample once showed a violation appearing and
 vanishing between runs and briefly read as a decisive result; six repetitions gave the
 real rates.
+
+### The gate
+
+```bash
+node evals/run-report.mjs --gate
+```
+
+**This is the regression gate for any composer, prompt, descriptor or model change**
+(NIC-255). "Swap the model" is a design goal, and a swap without a gate is a hope.
+
+It reads the **shipping** prompt and budget from `config/models/composer.json` rather
+than carrying its own, which is the point: before that the eval and the app held two
+prompts that agreed only by hand, so the gate could pass while the app composed with
+something else. `scripts/evals-composer.test.mjs` pins it — that one runs in the normal
+suite and fails if a local `SYSTEM_PROMPT` reappears.
+
+Thresholds are **absolute** rather than relative to a recorded baseline (owner
+decision): a baseline that drifts down a point per change is how a gate stops meaning
+anything.
+
+| Threshold | Value | Why |
+|---|---|---|
+| pass rate | ≥ 80% | Allows for `dropped_facts`, which is a judgement failure no grammar prevents. |
+| leaf-type violations | **0** | Structural. A document that will not validate cannot be rendered. |
+| unparseable | **0** | Structural, and distinct from invalid — truncation, so check the output cap. |
+| dropped facts | ≤ 20% | A fact in `mustMention` that did not survive composition. |
+| repetitions | ≥ 3, enforced | A verdict from one sample is a coin toss with a pass rate printed beside it. |
+
+Two directions of assertion, because some defects have no positive form:
+
+| | |
+|---|---|
+| `mustMention` | facts that must survive composition |
+| `mustNotMention` | things that must **not** appear — graded as `forbidden_facts`, which counts against the pass rate |
+
+`mustNotMention` exists because "did not recite the profile back at him" cannot be written
+as a `mustMention`: a correct brief has many valid wordings and no phrase they all share,
+while the wrong one quotes the note verbatim. **It is a phrasing heuristic and not a
+semantic judgement, and it will leak in both directions if you let it.** The worked
+example is in the `winter-open-day` snapshot's own comment: three attempts to gate "did
+not suggest golf at 10°F" — one too narrow (a real regression passed silently) and two
+that failed *correct* briefs, because declining reads "the weather is unsuitable **for
+golf**" and "**golfing** is off the table". A positive assertion did no better. When a
+judgement cannot be graded by substring, move it out of the model and gate it with a unit
+test — do not weaken the case until it passes.
+
+**`--cases=<path>`** runs an alternative snapshot file, for trying scenarios that are not
+gate fixtures. It refuses to combine with `--gate`: a verdict is only worth something if
+everyone's verdict is about the same cases.
+
+A snapshot whose `reportId` has no entry in `config/models/composer.json` is
+**aspirational** — it describes a surface that does not ship — and is named and skipped
+rather than graded.
+
+**The greeting is discarded before anything is graded.** A report whose entry sets
+`composerDiscardsGreeting` renders its own opening, so the model is asked for a greeting
+purely so the host can throw it away — telling it *not* to write one failed on 6 of 9
+measured compositions, because opening with the day and the weather is what a brief looks
+like. The eval applies the **same** filter: grading the raw output would grade a document
+the reader never sees, which is the same mistake as keeping a private copy of the prompt.
+
+**`header restated` is a REVIEW line, not a threshold.** It now asks whether anything
+*surviving* the filter restates the header — a second `line` repeating the day and the
+weather, which is duplication a reader would actually see. Prose rather than validity, and
+a gate that failed on wording is one nobody could keep green.
+
+**`promised an action` is the other REVIEW line.** The passive tier writes and shows;
+nothing in a brief runs. So a `proposal` saying it *will* do something with no
+`reportActions` entry attached is a promise nobody will keep — measured verbatim as *"I'll
+make sure you're up for it"* about a 07:40 tee time, which is worse than a flat brief.
+First-person future is occasionally innocent, so it is flagged rather than failed; what it
+must never be is unnoticed. The hard half is enforced in `ReportComposer`, which drops any
+`reportActions` entry naming an action the app does not have.
+
+The gate leaves the machine as it found it — the model is unloaded before the verdict,
+so a failing run does not also leave 21 GB resident.
 
 ## Reading the output
 

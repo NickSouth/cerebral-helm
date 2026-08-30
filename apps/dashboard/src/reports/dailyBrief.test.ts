@@ -136,3 +136,145 @@ describe("renderableBlocks", () => {
     ]);
   });
 });
+
+/**
+ * NIC-228: the brief is two halves — a deterministic header that renders immediately, and a body
+ * the model writes about nine seconds later.
+ *
+ * What these protect is the seam. The header must be identical in every state, because it is the
+ * part a reader is already looking at while the rest is still being written; and an unavailable
+ * composition must still produce a brief, because the app shipped with one and losing it to a
+ * stopped daemon would be a regression rather than a degradation.
+ */
+
+const composedBlocks = [
+  { blockKind: "line", text: "Your investor call is the only fixed thing today." },
+  { blockKind: "count", value: "3", label: "unread that look like they need you" }
+] as const satisfies readonly ReportBlock[];
+
+function headerTexts(document: { blocks: readonly ReportBlock[] }): string[] {
+  return document.blocks.slice(0, 3).map((block) => block.text ?? block.value ?? "");
+}
+
+describe("the deterministic header", () => {
+  it("is the same three blocks whatever the model is doing", () => {
+    // Identical in every state, because it renders the instant the report opens and is never
+    // rewritten. A header that changed when the body landed would be a visible rewrite of text the
+    // reader had already started on.
+    const snap = snapshot();
+    const composing = composeDailyBrief(snap, { status: "composing", blocks: [], reason: null });
+    const ready = composeDailyBrief(snap, { status: "ready", blocks: composedBlocks, reason: null });
+    const failed = composeDailyBrief(snap, {
+      status: "unavailable", blocks: [], reason: "Ollama isn’t running."
+    });
+
+    expect(headerTexts(composing)).toEqual(headerTexts(ready));
+    expect(headerTexts(ready)).toEqual(headerTexts(failed));
+    expect(composing.blocks[0].blockKind).toBe("greeting");
+  });
+
+  it("states today's high, which is the number a morning actually turns on", () => {
+    const document = composeDailyBrief(
+      snapshot({ weather: { state: "ready", temperatureF: 63.4, condition: "Clear", highF: 78.2 } }),
+      { status: "ready", blocks: composedBlocks, reason: null }
+    );
+
+    // Appended rather than substituted: the current reading is still what you feel stepping outside.
+    expect(document.blocks[2].value).toBe("63°F · Clear · high 78°");
+  });
+
+  it("omits the high when the provider supplied none", () => {
+    const document = composeDailyBrief(
+      snapshot({ weather: { state: "ready", temperatureF: 63.4, condition: "Clear" } }),
+      { status: "ready", blocks: composedBlocks, reason: null }
+    );
+
+    expect(document.blocks[2].value).toBe("63°F · Clear");
+  });
+});
+
+describe("the composed body", () => {
+  it("is the model's blocks, under the header", () => {
+    const document = composeDailyBrief(snapshot(), {
+      status: "ready", blocks: composedBlocks, reason: null
+    });
+
+    expect(document.blocks).toHaveLength(5);
+    expect(document.blocks[3].text).toBe("Your investor call is the only fixed thing today.");
+    // The envelope is the system's in the web layer too: the model's `reportId` and `schemaVersion`
+    // are not carried through from its document, they are set here.
+    expect(document.reportId).toBe("daily-brief");
+    expect(document.schemaVersion).toBe("1.0.0");
+  });
+
+  it("says something is happening while the model is writing", () => {
+    // Nine seconds of a header and nothing else reads as a report that failed to load.
+    const document = composeDailyBrief(snapshot(), {
+      status: "composing", blocks: [], reason: null
+    });
+
+    expect(document.blocks).toHaveLength(4);
+    expect(document.blocks[3].text).toBe("Writing your brief…");
+    expect(document.blocks[3].lineEmphasis).toBe("muted");
+  });
+
+  it("falls back to the deterministic facts when no composition arrives", () => {
+    // The degradation path, and the reason it exists: a stopped daemon must not cost the reader the
+    // brief this app shipped with. The reason is stated, then the facts the web layer can state on
+    // its own follow — a reason with no brief under it would be the worse report.
+    const document = composeDailyBrief(
+      snapshot({ unreadCount: inbox(4) }),
+      { status: "unavailable", blocks: [], reason: "Ollama isn’t running." }
+    );
+    const texts = document.blocks.map((block) => block.text ?? block.label ?? "");
+
+    expect(texts).toContain("Ollama isn’t running.");
+    expect(document.blocks.some((block) => block.blockKind === "list")).toBe(true);
+    expect(document.blocks.some((block) => block.blockKind === "count")).toBe(true);
+  });
+
+  it("is the deterministic formula outright when nothing asked for a composition", () => {
+    // `null` is the pre-model call site — no composition was even attempted.
+    const document = composeDailyBrief(snapshot({ unreadCount: inbox(4) }));
+
+    expect(document.blocks.some((block) => block.blockKind === "list")).toBe(true);
+    expect(renderableBlocks(document).length).toBe(document.blocks.length);
+  });
+
+  it("renders every state through the existing renderer without a malformed block", () => {
+    // The renderer never changed, and it must not have to. A block it cannot draw is dropped, so a
+    // state that produced one would render short rather than loudly — which is why this asserts
+    // every block survives rather than trusting the shapes above.
+    for (const composed of [
+      null,
+      { status: "composing", blocks: [], reason: null },
+      { status: "ready", blocks: composedBlocks, reason: null },
+      { status: "unavailable", blocks: [], reason: "Ollama isn’t running." }
+    ]) {
+      const document = composeDailyBrief(snapshot({ unreadCount: inbox(2) }), composed);
+      expect(document.blocks.every(isRenderable)).toBe(true);
+    }
+  });
+});
+
+describe("the refresh control", () => {
+  it("is offered whenever a composition was attempted", () => {
+    // A composition IS a fetch the reader can repeat — which the old ambient-state formula was not,
+    // and which is why that control was withheld before. It matters most in the failure case: the
+    // commonest reason a brief is unavailable is a daemon that was still starting.
+    const snap = snapshot();
+    for (const status of ["composing", "ready", "unavailable"] as const) {
+      const document = composeDailyBrief(snap, {
+        status,
+        blocks: status === "ready" ? composedBlocks : [],
+        reason: status === "unavailable" ? "Ollama isn’t running." : null
+      });
+      expect(document.refreshable).toBe(true);
+    }
+  });
+
+  it("is withheld when nothing asked for a composition", () => {
+    // Nothing to re-run: offering the control would promise something it cannot do.
+    expect(composeDailyBrief(snapshot()).refreshable).toBe(false);
+  });
+});

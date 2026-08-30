@@ -1,4 +1,5 @@
 import type { DashboardBootstrapState } from "./types";
+import type { ReportBlock } from "../reports/reportDocument";
 
 /**
  * The `CerebralBridge` is the single contract every dashboard component and the state
@@ -27,6 +28,7 @@ export type BridgeEventType =
   | "mail.changed"
   | "schedule.changed"
   | "system.checks.changed"
+  | "report.composition.changed"
   | "apps.changed";
 
 export interface BridgeEvent {
@@ -542,6 +544,33 @@ export interface UnreadMailResult {
   readonly reason?: string | null;
 }
 
+/**
+ * The answer to *starting* a composition — not to finishing one (NIC-228, NIC-253).
+ *
+ * The blocks arrive as `report.composition.changed` events, so this says only whether the work
+ * began. `state` still distinguishes "no model here" from "under way", because a surface that got
+ * neither blocks nor a reason would have nothing to render. `reason` is reader-facing prose — never
+ * a decoder's complaint, which nobody can act on.
+ */
+export interface ComposeReportResult {
+  readonly state: "composing" | "unavailable";
+  readonly reason?: string | null;
+}
+
+/** One emission of a composition in progress, folded from `report.composition.changed`. */
+export interface ReportCompositionPayload {
+  readonly reportId: string;
+  readonly state: "composing" | "ready" | "unavailable";
+  /** EVERY block so far, not the new ones — the emission replaces rather than appends. */
+  readonly blocks: readonly ReportBlock[];
+  readonly complete: boolean;
+  readonly reason?: string | null;
+  /** Time to the first block, reported apart from the total: they answer different questions, and
+   *  this is the one that decides whether a long composition reads as arrival or as a stall. */
+  readonly firstBlockMs?: number | null;
+  readonly totalMs?: number | null;
+}
+
 export interface ConnectGmailInput {
   readonly disconnect?: boolean;
 }
@@ -1032,6 +1061,14 @@ export interface CerebralBridge {
    *  inventory reaches several third parties and a caller awaiting one response would show
    *  nothing while the interesting part (which checks exist) is already known. */
   runSystemChecks(): Promise<RunSystemChecksResult>;
+  /**
+   * Starts composing one Report with the local model (NIC-228, NIC-253).
+   *
+   * Takes a report id and nothing else: the snapshot is assembled host-side, so message previews,
+   * profile notes and sprint detail never enter the web layer. Returns as soon as the composition
+   * has STARTED; the blocks follow as `report.composition.changed` events.
+   */
+  composeReport(reportId: string): Promise<ComposeReportResult>;
   /** Create one templated note in a course (quick actions phase 5), minting the course folder on
    *  first use. The caller names a COURSE, never a folder: the host derives the folder inside the
    *  school root, so a note can only ever land there. Never overwrites an existing note. */

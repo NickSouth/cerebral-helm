@@ -78,7 +78,8 @@ const bridgeOperations = new Set([
   "runSystemChecks",
   "connectGmail",
   "listUnreadMail",
-  "getLinearProjectCycle"
+  "getLinearProjectCycle",
+  "composeReport"
 ]);
 
 function readJson(filePath) {

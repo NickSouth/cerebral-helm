@@ -39,7 +39,7 @@ export function ReportRegion({
   // The outgoing report stays mounted until it has finished receding, so a swap is a handover
   // rather than a blink. Everything below renders `shown`, not the live id.
   const { shown: shownReportId, leaving } = useLeaveTransition(openReportId);
-  const { document, refresh } = useReportDocument(shownReportId ?? "", undefined, openReportParams);
+  const { document, refresh, revision } = useReportDocument(shownReportId ?? "", undefined, openReportParams);
   const { reducedMotion } = useAppearance();
   const bodyRef = useRef<HTMLDivElement>(null);
   const caretRef = useRef<HTMLSpanElement>(null);
@@ -57,6 +57,12 @@ export function ReportRegion({
   // refresh, or the composition changed shape (a fetch resolving from its loading state into the
   // real thing). Block count is the cheap, stable expression of that last one — it survives a
   // re-render and a clock tick, and moves when the report genuinely becomes a different document.
+  //
+  // Except where a report says otherwise. A model-composed brief (NIC-228) renders its header
+  // immediately and grows a body around nine seconds later, so its block count moves DURING a read
+  // — and re-keying there would blank the header the reader is already looking at and type it
+  // again. Such a report supplies its own `revision`, which changes once per composition rather
+  // than once per block.
   const [refreshCount, setRefreshCount] = useState(0);
   const rewrite = useCallback(() => {
     refresh();
@@ -67,7 +73,7 @@ export function ReportRegion({
   // while the centre is still handing over, so the greeting is gone before this starts writing.
   const typewriterKey =
     document && !leaving && ready
-      ? `${shownReportId}:${refreshCount}:${document.blocks.length}`
+      ? `${shownReportId}:${refreshCount}:${revision ?? document.blocks.length}`
       : null;
   useTypewriter(bodyRef, typewriterKey, { enabled: !reducedMotion, caretRef });
 

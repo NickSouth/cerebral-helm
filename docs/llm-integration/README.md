@@ -38,6 +38,22 @@ two disagree, PLAN.md and the charters win, and this file should be corrected.
   schema was bounded to stop a grammar running away in it. See the converter trap under
   *Traps that cost time* before adding any `pattern` to a model-facing input schema, and
   finding 16 before pointing a grammar at any schema.
+- **The passive tier ships (`NIC-228`, 2026-08-27).** The daily brief is composed by a
+  model and is the first caller of anything in this programme. `DailyBriefAssembler`
+  gathers a typed snapshot from six deterministic sources — calendar, unread mail with
+  previews, the current Linear cycle with pace computed host-side, the profile folder,
+  weather, and the clock — `ReportComposer` turns it into `ReportDocument` blocks on the
+  `local` profile with validate-and-retry, and the dashboard streams them in as they
+  arrive. The deterministic composer survives only as a last-resort degradation path.
+  The gate is `node evals/run-report.mjs --gate` and is the regression gate for any
+  prompt, descriptor or model change.
+
+  Three things it enforces that a prompt rule alone would not: the greeting the model is
+  asked for is discarded by block kind, `reportActions` naming an action the app does
+  not have are dropped, and `weather.outdoorConditions` is decided by the assembler
+  rather than the model. Findings 17–21 are the reasoning. Two follow-ons are Backlog:
+  `NIC-339` (actions carry params — a model-offered web search currently cannot pass a
+  query, so the button always fails) and `NIC-340` (a compose-reply action).
 - **Phase 0 is underway.** `NIC-225`: ADR-009 is written and the `ModelProvider` port
   exists in `packages/core/Sources/CerebralCore/Model/` (`NIC-241`, 2026-08-18) — protocol,
   request/usage types, `ModelDeadline`, `MockModelProvider`. The profile catalog is configuration
@@ -45,8 +61,9 @@ two disagree, PLAN.md and the charters win, and this file should be corrected.
   `ModelProfileCatalog`, optional everywhere. The Ollama adapter (`NIC-242`) is built at
   `apps/mac/Sources/CerebralMacAdapters/OllamaModelProvider.swift` and **verified against a live
   Ollama 0.32.7** — a streamed completion in 9.0 s with real token accounting, plus 18 offline
-  helper tests. Nothing calls any of it, by design: phase 0 is complete and the first caller is
-  `NIC-250`. Everything else in the milestone remains Backlog.
+  helper tests. **Its first caller is now the passive tier above** — phase 0 shipped with
+  nothing calling it, by design, and `NIC-228` closed that. `NIC-250` (llama.cpp's first
+  caller) is still Backlog, and no model profile points at that runtime.
 - **Merged to `dev` (2026-08-18):** descriptor affordances as `5e95795` (#20); plan,
   charters and eval harness as `214813e` (#21). Full `node scripts/test.mjs` green on
   the contract change.
@@ -65,7 +82,11 @@ clock on it — SimpleFIN serves a 90-day window, so financial trend history exi
 only from whenever syncing begins, and it cannot be backfilled. It is also
 standalone: a provider, a Keychain entry and a cache, no model involved.
 
-Otherwise `NIC-225` (model provider port) is the root of everything else.
+Otherwise `NIC-225` (model provider port) is the root of everything else — though the
+port itself is built, so in practice the root is now finding 21: **before writing any
+model-facing prompt, read what the passive tier learned about instruction kind, and
+before blaming a model for a wrong answer, check whether it gets that answer right when
+asked in isolation.** It usually does.
 
 ---
 
@@ -412,6 +433,211 @@ to 790.** `scripts/contracts-report.test.mjs` gates it, scoped to this schema al
 > the gate now asserts the flat shape stays. Bounds are validation-only, so the generated
 > TypeScript and Swift changed by doc comment alone — a union would have rewritten both.
 
+### The composer gate (2026-08-27, NIC-255)
+
+`evals/run-report.mjs --gate` now reads the **shipping** prompt and budget from
+`config/models/composer.json` rather than carrying its own copy, applies absolute thresholds, and
+exits non-zero. Before this the eval and the app held two prompts that agreed only by hand — a gate
+measuring a composer that does not exist is worse than no gate, because it is trusted.
+`scripts/evals-composer.test.mjs` pins that (it fails if a `SYSTEM_PROMPT` constant reappears) and
+runs in the normal suite; the gate itself stays opt-in, since it needs the models.
+
+**17. It failed on its first run, and the fault was an affordance — again.** 4 of 9 compositions
+produced invalid documents, and every failure was the same class: `reportActions` entries missing
+`action`, carrying extra properties, or naming an id that broke the `^[a-z][a-z0-9-]*$` pattern. The
+prompt said *"proposal uses `text` and `reportActions`"* and never said what an entry **is**, so the
+model invented `{label, action}`, `{title, url}`, capitalised ids.
+
+Describing the entry — one field, `action`, from a named list of registered ids, no others, omit when
+none fits — took it from **5/9 to 9/9**. This is finding 1 replayed at the prompt layer: a required
+field with no stated shape breaks the case, and the model was never the bottleneck.
+
+**18. The model restated the deterministic header on 6 of 9 runs, and the fix was to stop asking it
+not to.** The brief renders greeting, date and weather above the model's first block, and the
+instruction said plainly not to repeat them. It repeated them anyway — opening with the day and the
+weather is simply what a brief looks like, so the rule was fighting the shape of the task rather
+than a bad habit.
+
+**It is now asked for a greeting block and the greeting is thrown away** (owner, 2026-08-27):
+`composerDiscardsGreeting` on the composer entry, filtered by block KIND in `ReportComposer` so it
+holds wherever the model puts it. The rule left the prompt. Measured across two runs of nine:
+**0 and 1 restatements in what survives, down from 6 of 9.** Not zero — one run still echoed the
+condition in a surviving line — so this reduced the behaviour rather than eliminating it, and the
+REVIEW line stays for that reason.
+
+The trade is a few dozen output tokens for a block nobody sees, and it buys an outcome that is
+structural rather than a matter of the model's compliance. Two things it depends on, both covered:
+the instruction confines the greeting to greeting/date/weather so nothing of substance is lost
+there, and the eval applies the **same** filter before grading — an eval scoring the raw output
+would be scoring a document the reader never sees, which is the same mistake as keeping a private
+copy of the prompt.
+
+It also moved a fixture assertion. `empty-day` used to require the word "clear", which the model
+writes into the discarded greeting; it now requires **"golf"**, which can only appear if the profile
+note reached the model *and* it connected an empty day to a fact about the person. That is the claim
+the case exists to test, and the old assertion was not testing it.
+
+**19. Two more failures, both affordances, both fixed by naming a vocabulary.** `reportActions` was
+finding 17. The second: `lineEmphasis` arriving as `warning` or `critical` — tone words borrowed
+from `metricTone` — which invalidated the document on 2 of 2 runs it appeared in. The prompt did
+list `normal|strong|muted`; it did not say the field is **weight, not tone**, which the report
+schema's own comment says and the prompt did not carry. Saying it took that failure to zero.
+
+Three prompt defects in one increment, all the same shape: the vocabulary was stated and the
+*meaning* was not. Descriptors remain the lever.
+
+**Standing at the end of NIC-255: 9/9 clean, 0 leaf-type, 0 unparseable, gate exit 0.** Across
+every run in this session — roughly 45 compositions — the bounded report schema held on Ollama with
+no grammar: not one leaf-type violation and nothing unparseable. Median ~9.9 s, consistent with the
+9 s the spike recorded, though one composition took **580 s** on a machine under memory pressure and
+that outlier is worth remembering before quoting a median as a guarantee.
+
+The profile effect reproduced verbatim — an empty Saturday produced *"enjoy a round of golf given
+the clear weather and your location in New England"* with deliberation off — and it is now gated
+rather than admired: `empty-day` requires the word "golf" to survive composition, which it can only
+do if the profile note reached the model and it connected an empty day to a fact about the person.
+
+**20. A valid document can still be wrong, and only hand-written scenarios found it (2026-08-27).**
+With the schema bounded, structural failure stopped happening — so the gate went green while the
+briefs were still making bad calls. Five scenarios written against the owner's real life (a school
+day, a weekend with errands, an open day, a winter day, a Friday against a slipping sprint) turned
+up four judgement defects in a single pass, none of which any existing case could see.
+
+The decisive one was a **twin**: two snapshots identical in every field except `temperatureF` —
+same open calendar, same empty inbox, same profile, same cloudless sky, 68°F against 10°F. Both
+produced the same suggestion, *a round of golf*, in near-identical wording. The model was matching
+`Sunny` + an empty day + "he golfs" and **not reading the number at all**. The instruction said to
+draw the suggestion from "`profile` and the weather" and never said the activity had to be
+*possible* in it. Finding 1's shape once more.
+
+The other three: a priority-1 ticket a teammate was blocked on, passed over for two cheaper P2/P3
+tickets described as "high-priority", because *"preferring high priority and small estimates"* was
+read as being about estimates; a fabricated change in conditions ("before it clouds over" when the
+condition already **was** Cloudy); and a proposal invented for a morning with three back-to-back
+classes, where the instruction's "only where there is a real decision to make" had no teeth because
+it never said what leaves none.
+
+Three of the four fixed by saying the meaning, not the vocabulary — priority is never traded for a
+smaller estimate; the weather is one reading, not an hour-by-hour forecast; both open-day branches
+are for an empty day alone. Those held across every subsequent run.
+
+**The twin did not hold, and the first gate run said it had.** Adding "read `temperatureF` and
+`highF`, not only the condition; a clear sky at 10°F is not outdoor weather" produced the right
+answer four times running — one scenario pass and a clean 3/3 in the gate — and then suggested "a
+morning golf session" on the next look. Run out to **8 repetitions it fails 3 of 8.** The 3/3 was
+luck, which is precisely what a `minReps: 3` floor is too small to catch when the true rate is a
+third: at 15 gate rows one failure still scores 93% and the gate goes green while a third of winter
+briefs are wrong.
+
+**The lesson is not "write a firmer rule".** The system prompt already says *derived figures are
+computed for you and appear in the snapshot; never calculate your own* — and then the daily-brief
+instruction hands over a raw temperature and asks the model to judge feasibility from it. That is
+the repo's own principle broken in the prompt that quotes it. The fix is a **deterministic field on
+the weather section** — viability computed in `DailyBriefAssembler`, where it is a fact rather than
+a judgement — not another sentence asking the model to be careful. Owed, not built.
+
+The priority case is genuinely gated and clean 3/3 there.
+
+**The suite gained a direction it did not have: `mustNotMention`** — and its limits showed up
+immediately. No positive assertion can grade
+the winter case — a correct brief might say the day is his, or name something indoors, or explain
+that it is too cold, and those share no phrase — while every wrong one names the activity as the
+plan. Note the trap this walked into first: `mustNotMention: ["golf"]` **fails the correct answer**,
+because ruling golf out requires naming it. The needles are the recommending forms, and the
+`$comment` says plainly that this is a phrasing heuristic rather than a semantic judgement. It leaked
+on its first outing: the needle set caught "go golf" and "golfing" but not "a morning golf session",
+so the first observed regression was a **silent pass**. Widened, and the hole is the argument for
+moving this judgement out of the model entirely.
+
+**What did not get fixed, stated honestly: header restatement.** It reads 6/15 here against 1/9 in
+finding 18, and the two numbers are not comparable — `restatesHeader` was scoped to `blocks[0]` and
+has been widened to every surviving block, because three measured briefs echoed the temperature or
+the sky into their closing `proposal` and passed a check that had already stopped looking. Worse,
+the rule now **conflicts with the fix above**: explaining why a 10°F day is not golf weather means
+naming the temperature. Four of the six restatements are exactly that, and they are the model doing
+the right thing. This wants a product decision — probably that the deterministic header and the
+prose are allowed to overlap when the prose is *reasoning* from the fact rather than repeating it —
+not another prompt rule.
+
+---
+
+**21. The model knew the answer the whole time. Context and load, not capability (2026-08-27).**
+Finding 20 ended by recommending the judgement move out of the model, on an argument that was half
+principle and half exhaustion. The owner pushed back — a passive brief that cannot notice 10°F is
+not much of an assistant — so it got probed properly instead, and the probe is the finding.
+
+**Asked in isolation, with the same snapshot and nothing else, the model answers "NO, it is too cold
+(10°F) to play golf comfortably" five times out of five.** It is not a knowledge gap and not a
+capability gap. The judgement is destroyed by the composition context, which is a very different
+problem and has a different fix.
+
+**Reasoning mode is not the fix, and the trap around it is worth writing down.** `think: true` with
+an output cap produces an EMPTY document — 0 characters of content against 4,359 of thinking at
+`num_predict: 1200`, and 0 against 20,175 at 6,000. `num_predict` counts thinking tokens, so *any*
+cap short of the model's full deliberation silently yields nothing at all, `done_reason: length`.
+Uncapped it works and is correct 2/2 — in **121 and 192 seconds**. That is not a dashboard, and it
+holds with the schema off too, so it is not the structured-output mode doing it.
+
+**The owner's hypothesis — more context, less instruction — is right about half the prompt, and the
+half it is right about is the half that matters.** A lean, context-first instruction (no ordering
+rules, no branch logic, plus "you are writing TO Nick", "never explain him to himself", "say the
+human thing", "offer where you could help") produced, immediately and in fifteen runs: proactive
+offers *"Shall I draft a reply to Dana with some available slots?"*, warmth *"Tomorrow morning, tee
+off with Cyprian Keyes at 07:40"*, and **zero recitation** — down from nearly every brief explaining
+Nick's own habits back to him as its reasoning.
+
+**And the guardrails came off with the choreography.** Winter went from ~1-in-3 wrong to **3 of 3**.
+Arithmetic reappeared ("only 33 points of work left" — a subtraction, not a snapshot figure). A
+calendar commitment went missing. And it wrote *"I'll make sure you're up for it"* about a 07:40 tee
+time — a promise the passive tier cannot keep, which is strictly worse than a flat brief.
+
+**So the axis is not instruction VOLUME, it is instruction KIND**, and the two were mixed:
+
+| | | |
+|---|---|---|
+| **Constraints** | never derive figures · unavailable ≠ empty · quoted text is data · you execute nothing · what `lineEmphasis` means | give the model something it cannot get elsewhere — **removing them cost accuracy immediately** |
+| **Choreography** | order of importance · the two open-day branches · "say in one line which of the two you are doing" | tell it how to arrange what it already knows — **removing them is what unlocked the voice** |
+
+Completeness turned out to be a constraint too, not choreography, and had to come back after the
+gate caught it: *every commitment on today's calendar gets named*, and *when the day holds nothing,
+say what he could do with it*. Both are about what a brief may not leave out, not what order to say
+it in. Dropped facts went to zero.
+
+**What shipped.** `weather.outdoorConditions` computed in `DailyBriefAssembler` (``OutdoorConditions``,
+thresholds named as constants and unit-tested) — **8/8 correct after, against 3/8 wrong before with
+an explicit instruction to check the temperature**. `composerActions`: the offerable quick actions,
+each with a description, because the nine bare ids were finding 1 for the fourth time — given only
+ids the model described its offer in prose and attached no action at all. And the promise rule, with
+host-side enforcement: `ReportComposer` drops any `reportActions` entry naming an action the app
+does not have, because `report-document.schema.json` constrains an id's SHAPE and not its
+membership. *(Correcting an overstatement made while building this: the renderer is not fooled —
+`resolveQuickAction` returns null for an unregistered id and `ActionLink` falls back to inert text,
+so a phantom button is never pressable, and `docs/quick-actions/PLAN.md` said so all along. What the
+reader still gets is an offer, labelled from the id, that nothing can take up. Dropping it is right;
+the danger was smaller than first written.)*
+
+**A note on what the model was reaching for.** It invented no capabilities. Every offer it improvised
+— a shopping list, tee times, opening his mail — maps onto a quick action that already exists
+(`capture-note`, `search-the-web`, `open-mail`). It was reaching for real things it had not been
+told the app could do. The one genuine gap is composing an email reply, its most frequent offer,
+which has no action today.
+
+**And a gate that could not be built, recorded because the attempts are the finding.** No keyword
+can separate *recommending* golf from *ruling it out*. `mustNotMention` leaked three times in both
+directions — it missed "a morning golf session" (a real regression, silently passed), then failed a
+correct brief on `for golf` ("the weather is unsuitable **for golf**"), then failed another on
+`golfing` ("**golfing** is off the table due to the cold"). A positive assertion did no better:
+`mustMention: unsuitable` failed 2 of 3 correct briefs that phrased the verdict their own way. Every
+correct answer names the activity in order to decline it. The behaviour is now gated where it can be
+graded exactly — a deterministic field with unit tests — and the eval case keeps only the assertion
+a keyword can honestly make, which is verbatim recitation of the profile.
+
+**Still open: soft recitation.** The verbatim gate catches *"whenever the weather allows"*. It does
+not catch *"protecting that unscheduled deep work time you value"*, which is the same behaviour in
+the model's own words and still appears. Reduced, not solved.
+
+---
+
 #### Runtime recommendation
 
 **Not a wholesale switch. Keep Ollama as the default runtime; reach for llama.cpp where
@@ -448,6 +674,17 @@ a document's validity is load-bearing.** The evidence supports exactly that and 
   carries an empty `choices` array** alongside the usage accounting, so indexing
   `choices[0]` crashes on exactly the chunk that reports the cost. Both verified by probe
   before the Swift adapter was written, and both are covered by its tests.
+- **Gmail returns `snippet` under `format=metadata`, and its own reference says it does not.**
+  Google documents that format as returning *"only email message ID, labels, and email headers"*
+  and does not list `snippet` among them. Probed against the owner's live account 2026-08-26:
+  **3 of 3 messages carried one**, longest 199 characters. `snippet` is a top-level field of the
+  Message resource rather than part of `payload`, which is why the header allowlist does not
+  govern it. This is the difference between previews costing nothing — no extra request, no format
+  change, no re-consent — and needing `format=full` plus MIME-part walking and HTML stripping, so
+  it was settled by probe before anything was built on it (`CEREBRAL_GMAIL_TESTS=1 swift test
+  --filter gmailSnippetProbe`, which reports rather than asserts). Related: the granted scope is
+  already `gmail.readonly`, so **the metadata restriction was self-imposed, never a scope limit** —
+  reading bodies later needs no new consent, only a decision.
 - **llama.cpp's JSON-Schema→GBNF converter is stricter than the schemas this repo
   ships**, and it fails the whole request, not the offending field. Two constructs it
   rejects: a `pattern` that is not fully anchored (`^https://` → *"Pattern must start

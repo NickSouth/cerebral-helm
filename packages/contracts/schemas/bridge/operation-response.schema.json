@@ -85,7 +85,8 @@
         "runSystemChecks",
         "connectGmail",
         "listUnreadMail",
-        "getLinearProjectCycle"
+        "getLinearProjectCycle",
+        "composeReport"
       ]
     },
     "status": {

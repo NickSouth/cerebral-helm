@@ -91,10 +91,18 @@ export function CenterStage() {
         <HeimlichConsciousness />
         <CenterShade side="report" open={reportOpen && surfacesReady} contentRef={reportContentRef} />
         <p className="heimlich__state">{assistantName}</p>
-        <ReportRegion contentRef={reportContentRef} ready={surfacesReady} />
+        {/* One band, two surfaces side by side. The report used to sit in the column ABOVE the
+            foot and the input inside it, which coupled their heights through a layout axis they
+            do not share: opening a 458px-tall form on the right shrank the report on the left to
+            92px and hid 117px of a brief, with 604px of the panel standing empty beneath it.
+            They occupy opposite halves and never overlap, so neither may take height from the
+            other. */}
+        <div className="heimlich__surfaces">
+          <ReportRegion contentRef={reportContentRef} ready={surfacesReady} />
+          <InputRegion contentRef={inputContentRef} ready={surfacesReady} />
+        </div>
         <CenterShade side="input" open={inputOpen && surfacesReady} contentRef={inputContentRef} />
         <div className="heimlich__foot">
-          <InputRegion contentRef={inputContentRef} ready={surfacesReady} />
           {greeting && showGreeting ? (
             /* Typed on every mode switch, the same way a report is. Today the line is hard-baked
                per mode; when a model writes it, only the source of the string changes — the

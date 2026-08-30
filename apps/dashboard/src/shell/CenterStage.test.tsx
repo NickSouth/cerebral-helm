@@ -145,4 +145,27 @@ describe("CenterStage handover", () => {
     expect(form()).not.toBeNull();
     expect(greeting()).toBeNull();
   });
+
+  it("puts the report and the form in one row, so neither takes height from the other", async () => {
+    // jsdom does not lay out, so this asserts the STRUCTURE the layout depends on rather than the
+    // pixels. It is worth pinning because the bug it replaces was invisible in every unit test:
+    // the report sat in `.heimlich`'s column and the form inside `.heimlich__foot` beneath it, so
+    // opening a 458px form on the right shrank the report on the left to 92px and clipped 117px
+    // of a brief — with 604px of panel standing empty below it. They render on opposite sides and
+    // never overlap; only the shared column made one cost the other.
+    //
+    // Moving the form back under the foot would restore that silently, which is why the sibling
+    // relationship is the assertion.
+    renderShell();
+    fireEvent.click(screen.getByRole("button", { name: "Daily brief" }));
+    await screen.findByRole("region", { name: "Daily brief report" });
+    fireEvent.click(screen.getByRole("button", { name: "Capture note" }));
+    await screen.findByRole("region", { name: "Capture note form" });
+
+    const band = document.querySelector(".heimlich__surfaces");
+    expect(band).not.toBeNull();
+    expect(band?.contains(report()!)).toBe(true);
+    expect(band?.contains(form()!)).toBe(true);
+    expect(document.querySelector(".heimlich__foot")?.contains(form()!)).toBe(false);
+  });
 });

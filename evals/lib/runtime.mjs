@@ -106,6 +106,10 @@ async function ollamaCompose({
   think = false,
   temperature = 0.4,
   contextTokens = 16384,
+  // The shipping composer always sets an output cap, so a measurement taken without one is
+  // measuring a different generation configuration. Optional here only because the tool suites
+  // share this module and do not set one.
+  maxOutputTokens,
 }) {
   const started = performance.now();
 
@@ -118,7 +122,11 @@ async function ollamaCompose({
       { role: "user", content: user },
     ],
     stream: false,
-    options: { temperature, num_ctx: contextTokens },
+    options: {
+      temperature,
+      num_ctx: contextTokens,
+      ...(maxOutputTokens ? { num_predict: maxOutputTokens } : {}),
+    },
   };
   if (formatMode === "schema" && responseSchema) body.format = responseSchema;
   else if (formatMode === "json") body.format = "json";
@@ -316,6 +324,9 @@ async function llamaCompose({
   formatMode = "schema",
   think = false,
   temperature = 0.4,
+  /// REQUIRED in production for this runtime: a grammar over an under-constrained schema emits
+  /// valid output forever, measured at 123 blocks and 15,655 tokens before the context wall.
+  maxOutputTokens,
 }) {
   const started = performance.now();
 
@@ -327,6 +338,7 @@ async function llamaCompose({
     ],
     stream: false,
     temperature,
+    ...(maxOutputTokens ? { max_tokens: maxOutputTokens } : {}),
     // NOT `reasoning_budget`. That flag is documented as "0 for immediate end" and
     // does not disable thinking — probed at 173 completion tokens with reasoning
     // still emitted, against 2 tokens and none for the template kwarg below. Getting

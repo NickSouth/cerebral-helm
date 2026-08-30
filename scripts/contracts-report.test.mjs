@@ -113,3 +113,101 @@ test("the block shape stays FLAT, not a discriminated union", () => {
   }
   assert.deepEqual(block.required, ["blockKind"]);
 });
+
+// The Swift composer restates these bounds, because `Codable` does not enforce them: decoding a
+// model's answer into the generated block type catches a wrong leaf type or an unknown enum case
+// and has no opinion whatsoever about length. Those are exactly the bounds that matter here — the
+// measured runaway was schema-legal in every respect except how much of it there was.
+//
+// A hand-mirror rots silently, so this pins it in both directions: every constant must match the
+// bound it claims to mirror, and every bound in the schema must be claimed. Add a bound above and
+// this fails until the composer learns to check it.
+const BOUND_MIRROR = {
+  "/properties/schemaVersion|maxLength": "schemaVersion",
+  "/properties/reportId|maxLength": "reportID",
+  "/properties/blocks|maxItems": "blocks",
+  "/$defs/reportActionReference/properties/action|maxLength": "actionName",
+  "/$defs/reportListItem/properties/text|maxLength": "listItemText",
+  "/$defs/reportListItem/properties/meta|maxLength": "listItemMeta",
+  "/$defs/reportListItem/properties/color|maxLength": "listItemColor",
+  "/$defs/reportBlock/properties/text|maxLength": "text",
+  "/$defs/reportBlock/properties/label|maxLength": "label",
+  "/$defs/reportBlock/properties/value|maxLength": "value",
+  "/$defs/reportBlock/properties/listItems|maxItems": "listItems",
+  "/$defs/reportBlock/properties/reportActions|maxItems": "reportActions",
+  "/$defs/reportBlock/properties/scoreboardSides|maxItems": "scoreboardSides",
+  "/$defs/reportBlock/properties/leaderboardRows|maxItems": "leaderboardRows",
+  "/$defs/reportBlock/properties/leaderboardPreview|minimum": "leaderboardPreviewMinimum",
+  "/$defs/reportBlock/properties/leaderboardPreview|maximum": "leaderboardPreviewMaximum",
+  "/$defs/reportScoreboardSide/properties/sideAbbreviation|maxLength": "sideAbbreviation",
+  "/$defs/reportScoreboardSide/properties/sideName|maxLength": "sideName",
+  "/$defs/reportScoreboardSide/properties/sideScore|maxLength": "sideScore",
+  "/$defs/reportScoreboardSide/properties/sideColor|maxLength": "sideColor",
+  "/$defs/reportScoreboardSide/properties/sideRecord|maxLength": "sideRecord",
+  "/$defs/reportLeaderboardRow/properties/rowPosition|maxLength": "rowPosition",
+  "/$defs/reportLeaderboardRow/properties/rowName|maxLength": "rowName",
+  "/$defs/reportLeaderboardRow/properties/rowScore|maxLength": "rowScore",
+  "/$defs/reportLeaderboardRow/properties/rowThru|maxLength": "rowThru",
+
+  // Checked as emptiness rather than as a number: `minLength: 1` says "not empty", and the
+  // composer asserts that directly instead of restating a 1 it would have to keep in step.
+  "/$defs/reportListItem/properties/text|minLength": null,
+  "/$defs/reportScoreboardSide/properties/sideAbbreviation|minLength": null,
+  "/$defs/reportLeaderboardRow/properties/rowName|minLength": null
+};
+
+const BOUND_KEYWORDS = ["maxItems", "maxLength", "minLength", "minimum", "maximum"];
+
+function schemaBounds() {
+  const found = new Map();
+  for (const [pointer, node] of subschemas(schema)) {
+    for (const keyword of BOUND_KEYWORDS) {
+      if (keyword in node) found.set(`${pointer}|${keyword}`, node[keyword]);
+    }
+  }
+  return found;
+}
+
+function swiftBounds() {
+  const source = fs.readFileSync(
+    path.join(
+      resolveRepositoryRoot(),
+      "packages/core/Sources/CerebralCore/Reports/ReportBlockBounds.swift"
+    ),
+    "utf8"
+  );
+  const found = new Map();
+  for (const match of source.matchAll(/public static let (\w+) = (\d+)$/gm)) {
+    found.set(match[1], Number(match[2]));
+  }
+  return found;
+}
+
+test("the composer's Swift bounds match the report schema they mirror", () => {
+  const inSchema = schemaBounds();
+  const inSwift = swiftBounds();
+
+  assert.ok(inSwift.size > 0, "no bounds parsed from ReportBlockBounds.swift — has its shape changed?");
+
+  for (const [key, value] of inSchema) {
+    assert.ok(
+      Object.hasOwn(BOUND_MIRROR, key),
+      `${key} is bounded in the schema but the composer does not mirror it (add it to BOUND_MIRROR, or to the waived set with a reason)`
+    );
+    const constant = BOUND_MIRROR[key];
+    if (constant === null) continue;
+    assert.ok(inSwift.has(constant), `ReportBlockBounds is missing ${constant}`);
+    assert.equal(
+      inSwift.get(constant),
+      value,
+      `ReportBlockBounds.${constant} is ${inSwift.get(constant)} but the schema says ${value} at ${key}`
+    );
+  }
+
+  for (const [key, constant] of Object.entries(BOUND_MIRROR)) {
+    assert.ok(inSchema.has(key), `BOUND_MIRROR claims ${key}, which the schema no longer bounds`);
+    if (constant !== null) {
+      assert.ok(inSwift.has(constant), `BOUND_MIRROR names ${constant}, which ReportBlockBounds does not declare`);
+    }
+  }
+});

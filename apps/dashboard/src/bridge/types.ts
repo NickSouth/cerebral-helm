@@ -119,6 +119,16 @@ export interface BatteryChannel extends MetricChannel {
 export interface WeatherChannel extends MetricChannel {
   readonly temperatureF?: number;
   readonly condition?: string;
+  /**
+   * Today's forecast high in °F, when known (NIC-228). The bottom bar does not render it — its
+   * `label` is unchanged — but the daily brief's deterministic header does: at 07:00 the current
+   * temperature is the least useful number weather has, and the high is what decides whether a free
+   * afternoon is worth protecting.
+   */
+  readonly highF?: number;
+  readonly lowF?: number;
+  /** Today's maximum chance of precipitation, 0–100, when known. */
+  readonly precipitationChance?: number;
 }
 
 /** macOS's own memory-pressure level (NIC-158) — see `memoryPressure` below. */

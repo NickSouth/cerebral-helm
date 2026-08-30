@@ -8,6 +8,7 @@ import { composeSystemChecks } from "./systemChecks";
 import { composeEmailReport } from "./emailReport";
 import { unreadFacts } from "./unreadCount";
 import { useUnreadMail } from "./useUnreadMail";
+import { useReportComposition } from "./useReportComposition";
 import { useSystemChecksRun } from "./useSystemChecksRun";
 import { useSportsEvents } from "../sports/sportsEvents";
 import type { DashboardState } from "../state/dashboardState";
@@ -25,7 +26,7 @@ export function useReportDocument(
   reportId: string,
   now: Date | undefined = undefined,
   params: readonly string[] = []
-): { document: ReportDocument | null; refresh: () => void } {
+): { document: ReportDocument | null; refresh: () => void; revision?: string } {
   const at = now ?? new Date();
   const state = useDashboardState();
   const calendarProfile = useActiveMode().calendarProfile;
@@ -40,6 +41,13 @@ export function useReportDocument(
   // Same discipline: called unconditionally so hook order never depends on which report is open,
   // and it reads nothing unless this is the report that needs it.
   const mail = useUnreadMail(reportId === "email-report");
+  // Same discipline again: called unconditionally so hook order never depends on which report is
+  // open, and it composes nothing unless this is the report that needs it. ONE composition per
+  // open, not per render — this function runs on every render, from a fresh `new Date()`.
+  const composition = useReportComposition("daily-brief", reportId === "daily-brief");
+  // The email report is model-composed too (NIC-259): it reads message bodies host-side and writes
+  // a per-thread summary. Same once-per-open hook; the deterministic list below is now its fallback.
+  const emailComposition = useReportComposition("email-report", reportId === "email-report");
 
   // The refresh is the sports read's, because that is the only report composed from a fetch. A
   // report built from ambient dashboard state has nothing to re-request, and says so by not
@@ -59,7 +67,17 @@ export function useReportDocument(
             : (sports.result?.reason ?? null)
       }) };
     case "daily-brief":
-      return { refresh, document: composeDailyBrief(dailyBriefSnapshot(state, calendarProfile, at)) };
+      return {
+        refresh: composition.refresh,
+        // The reveal is keyed on WHICH COMPOSITION this is — the generation alone, and
+        // deliberately NOT its status or its block count. Both of those move when the body lands
+        // partway through a read, and re-keying there blanks the header the reader is already
+        // looking at and types it again. Verified in the browser: including `status` here produced
+        // exactly that rewrite. What legitimately means "write this again" is a NEW composition,
+        // which is what the generation counts.
+        revision: `${composition.generation}`,
+        document: composeDailyBrief(dailyBriefSnapshot(state, calendarProfile, at), composition)
+      };
     case "open-schedule":
       return { refresh, document: composeOpenSchedule(openScheduleSnapshot(state, calendarProfile)) };
     case "system-status-checks":
@@ -72,14 +90,20 @@ export function useReportDocument(
       };
     case "email-report":
       return {
-        refresh: mail.refresh,
-        document: composeEmailReport({
-          mail: mail.result,
-          // The count comes from the live channel, not from the capped list: counting rows would
-          // report "5 unread" for an inbox holding fifty.
-          unread: unreadFacts(state.mail),
-          loading: mail.loading
-        })
+        // Refresh re-composes, which re-assembles the mail host-side — the model path is the fetch,
+        // exactly as it is for the daily brief.
+        refresh: emailComposition.refresh,
+        revision: `${emailComposition.generation}`,
+        document: composeEmailReport(
+          {
+            mail: mail.result,
+            // The count comes from the live channel, not from the capped list: counting rows would
+            // report "5 unread" for an inbox holding fifty.
+            unread: unreadFacts(state.mail),
+            loading: mail.loading
+          },
+          emailComposition
+        )
       };
     case "suggest-a-movie":
       return { refresh, document: composeSuggestAMovie(suggestAMovieSnapshot(state, at)) };
@@ -136,7 +160,12 @@ function dailyBriefSnapshot(
   return {
     now,
     weather: weather
-      ? { state: weather.state, temperatureF: weather.temperatureF, condition: weather.condition }
+      ? {
+          state: weather.state,
+          temperatureF: weather.temperatureF,
+          condition: weather.condition,
+          highF: weather.highF
+        }
       : null,
     schedule: scheduleOf(state, calendarProfile),
     // The live Gmail channel (2026-08-04). Absent unless it was actually measured: a count is
